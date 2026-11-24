@@ -440,6 +440,56 @@ fn a_form_route_takes_a_form_urlencoded_request_body() {
         .is_none());
 }
 
+/// `request: {unknown: ignore}` (beyond10x/ess#752,
+/// `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`): on a `json`
+/// route `{command}.Input` is open and the request body says what is ignored and that a member
+/// the path carries must equal the path's value; a `form` route that ignores is open as well, and
+/// a route without `ignore` stays closed.
+#[test]
+fn a_route_that_ignores_unknown_members_publishes_an_open_input() {
+    let ir = model();
+    let routes = "routes:
+  - command: catalog.items.ListItem
+    method: put
+    path: /listings/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {unknown: ignore}
+";
+    let document = bound(&ir, binding(&ir, routes));
+    let body = &document["paths"]["/listings/{item_id}"]["put"]["requestBody"];
+    let input = resolved(&document, &body["content"]["application/json"]["schema"]);
+    assert_eq!(input["additionalProperties"], true, "{input}");
+    assert_eq!(keys(&input["properties"]), ["title"]);
+    let description = body["description"].as_str().expect("a description");
+    assert!(
+        description.contains("A member no field names is ignored")
+            && description.contains("a member the path carries must equal the path's value"),
+        "{description}"
+    );
+
+    let closed = bound(&ir, binding(&ir, ONE_ROUTE));
+    let body = &closed["paths"]["/listings/{item_id}"]["put"]["requestBody"];
+    let input = resolved(&closed, &body["content"]["application/json"]["schema"]);
+    assert_eq!(input["additionalProperties"], false, "{input}");
+    assert_eq!(
+        body["description"],
+        "The input `catalog.items.ListItem` declares."
+    );
+
+    let (_, orders) = orders();
+    let body = &orders["paths"]["/api/orders"]["post"]["requestBody"];
+    let input = resolved(
+        &orders,
+        &body["content"]["application/x-www-form-urlencoded"]["schema"],
+    );
+    assert_eq!(input["additionalProperties"], true, "{input}");
+    let description = body["description"].as_str().expect("a description");
+    assert!(
+        description.ends_with(" A parameter no field names is ignored."),
+        "a route whose path carries nothing says nothing of it: {description}"
+    );
+}
+
 #[test]
 fn a_query_command_takes_its_unmapped_inputs_as_query_parameters_and_has_no_request_body() {
     let document = auth();
@@ -1209,6 +1259,8 @@ fn digest_of(text: &str) -> String {
     ess_gen::ess_http::digest(without_digests(text).as_bytes())
 }
 
+/// The two orders rows were re-recorded when a `form` route with `unknown: ignore` (`PlaceOrder`)
+/// started writing its `{command}.Input` with `additionalProperties: true` (beyond10x/ess#752).
 #[test]
 fn a_binding_that_declares_no_limit_keeps_every_stage_2_openapi_byte() {
     let orders = model_of("orders.yaml", ORDERS);
@@ -1227,9 +1279,9 @@ fn a_binding_that_declares_no_limit_keeps_every_stage_2_openapi_byte() {
     assert_eq!(
         digests,
         [
-            "sha256:b392cc20ec3639fc64a069de08e8832148412961cddddbc322d14a4d2acb5c75",
+            "sha256:58d9ead73146522044c1a8977ccb4a074426cfd15637c85ec481ad61497436a2",
             "sha256:3f9a5844122bf2eed0b5a920370eacc12397b6e153c59cc10998906ce2ffa7e3",
-            "sha256:989a90a67e8e0cedcbf674458c5a0e01121d7eab820c552fc4a0f5572d90e155",
+            "sha256:ca2bfe7d5d193be515362ff35c2a714f1c8fefd253ee8a69765ea3c894043ca9",
         ]
     );
 }
@@ -1407,4 +1459,124 @@ fn the_description_names_the_bound_only_where_a_route_is_bounded() {
         words.starts_with(held),
         "the paragraphs it holds today are kept"
     );
+}
+
+/// [`ANSWER_FORMS`] with each answer under one named member (beyond10x/ess#755): the one order
+/// under `order`, the orders of one size under `items`, and a placed order's response under
+/// `data`.
+fn wrapped_forms() -> String {
+    let wrapped = ANSWER_FORMS
+        .replace("    body: single\n", "    body: {order: single}\n")
+        .replace("    body: array\n", "    body: {items: array}\n")
+        .replace(
+            "    path: /api/orders\n    refusals:",
+            "    path: /api/orders\n    outcomes:\n      placed: {status: 201, body: {data: response}}\n    refusals:",
+        );
+    assert_eq!(wrapped.matches("{order: single}").count(), 1);
+    assert_eq!(wrapped.matches("{items: array}").count(), 1);
+    assert_eq!(wrapped.matches("{data: response}").count(), 1);
+    wrapped
+}
+
+/// The object a wrapped answer is: its one member required, nothing else.
+fn wrapper<'a>(response: &'a Value, member: &str) -> &'a Value {
+    let schema = &response["content"]["application/json"]["schema"];
+    assert_eq!(schema["type"], "object", "{response:#}");
+    assert_eq!(schema["required"], json!([member]), "{response:#}");
+    assert_eq!(schema["additionalProperties"], json!(false), "{response:#}");
+    assert_eq!(keys(&schema["properties"]), [member], "{response:#}");
+    &schema["properties"][member]
+}
+
+#[test]
+fn wrapped_answers_project_an_object_of_one_member() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let document = bound_document(&ir, binding(&ir, &wrapped_forms()), "orders-service");
+    let paths = &document["paths"];
+
+    // The one row under `order`; the empty answer as `empty` says.
+    let one = &paths["/orders/{order_id}"]["get"]["responses"]["200"];
+    let row = resolved(&document, wrapper(one, "order"));
+    assert_eq!(
+        keys(&row["properties"]),
+        ["order_id", "quantity"],
+        "{row:#}"
+    );
+    let description = one["description"].as_str().expect("a description");
+    assert!(
+        description.contains("`body: {order: single}`"),
+        "{description}"
+    );
+    let empty = &paths["/orders/{order_id}"]["get"]["responses"]["404"];
+    assert_eq!(literal(empty, "error"), "not_found", "{empty:#}");
+
+    // The rows under `items`, an array of the row schema.
+    let many = &paths["/orders/size/{quantity}"]["get"]["responses"]["200"];
+    let items = wrapper(many, "items");
+    assert_eq!(items["type"], "array", "{many:#}");
+    let row = resolved(&document, &items["items"]);
+    assert_eq!(keys(&row["properties"]), ["order_id"], "{row:#}");
+
+    // The command's response under `data`.
+    let placed = &paths["/api/orders"]["post"]["responses"]["201"];
+    let data = wrapper(placed, "data");
+    assert_eq!(
+        data["$ref"], "#/components/schemas/catalog.orders.PlaceOrder.Result",
+        "{placed:#}"
+    );
+    assert!(!resolved(&document, data).is_null());
+}
+
+/// A binding without a wrapped form writes the bytes it wrote before: the wrapped binding's
+/// document differs only on the routes it wraps.
+#[test]
+fn a_binding_without_a_wrapped_form_keeps_its_document() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let plain = bound_document(&ir, binding(&ir, ANSWER_FORMS), "orders-service");
+    let wrapped = bound_document(&ir, binding(&ir, &wrapped_forms()), "orders-service");
+    assert_ne!(plain, wrapped);
+    assert_eq!(
+        plain["paths"]["/api/orders/{order_id}/note"],
+        wrapped["paths"]["/api/orders/{order_id}/note"]
+    );
+    let rows = &plain["paths"]["/orders/size/{quantity}"]["get"]["responses"]["200"];
+    assert_eq!(
+        rows["content"]["application/json"]["schema"]["type"],
+        "array"
+    );
+}
+
+/// An identity that is a `Uuid` addresses its resource in the path (beyond10x/ess#755): the path
+/// parameter is the field's schema, a reference to the newtype, which says `format: uuid`.
+#[test]
+fn a_uuid_identity_is_a_path_parameter_of_its_own_schema() {
+    let text = ORDERS.replace(
+        "  - {name: catalog.orders.OrderId, kind: newtype, of: String}\n",
+        "  - {name: catalog.orders.OrderId, kind: newtype, of: Uuid}\n",
+    );
+    assert_ne!(text, ORDERS, "the fixture moved");
+    let ir = model_of("orders.yaml", &text);
+    let document = bound_document(&ir, binding(&ir, ORDERS_ROUTES), "orders-service");
+    for (path, method) in [
+        ("/api/orders/{order_id}/note", "post"),
+        ("/orders/{order_id}", "get"),
+    ] {
+        let parameters = document["paths"][path][method]["parameters"]
+            .as_array()
+            .expect("parameters");
+        let carried: Vec<&Value> = parameters
+            .iter()
+            .filter(|parameter| parameter["in"] == "path")
+            .collect();
+        assert_eq!(carried.len(), 1, "{path}: {parameters:?}");
+        assert_eq!(carried[0]["name"], "order_id", "{path}");
+        assert_eq!(
+            carried[0]["schema"],
+            json!({"$ref": "#/components/schemas/catalog.orders.OrderId"}),
+            "{path}"
+        );
+    }
+    let id = &document["components"]["schemas"]["catalog.orders.OrderId"];
+    assert_eq!(id["type"], "string", "{id}");
+    assert_eq!(id["format"], "uuid", "{id}");
 }

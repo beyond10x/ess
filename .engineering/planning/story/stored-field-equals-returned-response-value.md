@@ -14,6 +14,8 @@ relations:
 - serves: vision:O2
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/tests/response_source.rs
@@ -39,7 +41,7 @@ scope:
   path: docs/design/minted-value-sources.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:18Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:20Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":2}}}
@@ -85,7 +87,13 @@ obligation. The interpreter, the suite and synthesis follow in
 `story:synthesis-witnesses-a-guard-over-a-stored-response-value` and
 `story:the-go-and-typescript-runtimes-resolve-a-responded-value`.
 
+The fit review of story:a-later-event-of-a-creating-outcome-carries-the-minted-identity decides this need together with beyond10x/ess#823 and beyond10x/ess#816 item 5 (one generated value feeding several places of one outcome), in one design.
+
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - `docs/design/minted-value-sources.md` gains a section "A stored value read from the response"
   and `docs/design/language-grids.md` grid R gains the column "own response" (`{response: f}`):

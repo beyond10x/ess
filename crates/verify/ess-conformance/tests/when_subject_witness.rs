@@ -636,3 +636,154 @@ fn a_defined_pair_witnesses_both_presence_states() {
         );
     }
 }
+
+/// An item sealed once an approved review exists: its `already-sealed` scenario reaches `sealed ==
+/// true` by a setup run of `sealed`, which reads the review the input names (beyond10x/ess#554).
+const SEALED_BESIDE_A_REVIEW: &str = "format: ess/36
+system: demo
+version: v1
+domain: demo.ledger
+summary: An item is sealed once an approved review exists.
+types:
+  - {name: demo.ledger.ItemId, kind: newtype, of: Uuid}
+  - {name: demo.ledger.ReviewId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Item
+    identity: {name: item_id, type: demo.ledger.ItemId}
+    fields:
+      - {name: sealed, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.ledger.Review
+    identity: {name: review_id, type: demo.ledger.ReviewId}
+    fields:
+      - {name: approved, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.ledger.Operator
+    may: [demo.ledger.AddItem, demo.ledger.AddReview, demo.ledger.Seal]
+errors:
+  - {name: demo.ledger.NotFound, summary: Not found., fields: []}
+  - {name: demo.ledger.AlreadySealed, summary: Already sealed., fields: []}
+  - {name: demo.ledger.NotApproved, summary: Not approved., fields: []}
+events:
+  - name: demo.ledger.ItemAdded
+    fields: [{name: item_id, type: demo.ledger.ItemId}]
+  - name: demo.ledger.ReviewAdded
+    fields: [{name: review_id, type: demo.ledger.ReviewId}]
+  - name: demo.ledger.ItemSealed
+    fields: [{name: item_id, type: demo.ledger.ItemId}]
+commands:
+  - name: demo.ledger.AddItem
+    outcomes:
+      - name: added
+        creates: demo.ledger.Item
+        instance: item_id
+        sets: {sealed: false}
+        emits: [demo.ledger.ItemAdded]
+        payload: {demo.ledger.ItemAdded: {item_id: {generated: true}}}
+  - name: demo.ledger.AddReview
+    input:
+      - {name: approved, type: Boolean}
+    outcomes:
+      - name: added
+        creates: demo.ledger.Review
+        instance: review_id
+        sets: {approved: input.approved}
+        emits: [demo.ledger.ReviewAdded]
+        payload: {demo.ledger.ReviewAdded: {review_id: {generated: true}}}
+  - name: demo.ledger.Seal
+    input:
+      - {name: item_id, type: demo.ledger.ItemId}
+      - {name: review_id, type: demo.ledger.ReviewId}
+    outcomes:
+      - {name: unknown-item, unknown_instance: true, error: demo.ledger.NotFound}
+      - name: already-sealed
+        when_subject: {predicate: sealed == true}
+        error: demo.ledger.AlreadySealed
+      - name: no-review
+        when_related: {via: input.review_id, exists: false}
+        error: demo.ledger.NotFound
+      - name: not-approved
+        when_related: {via: input.review_id, predicate: approved == false}
+        error: demo.ledger.NotApproved
+      - name: sealed
+        updates: demo.ledger.Item
+        instance: item_id
+        sets: {sealed: true}
+        emits: [demo.ledger.ItemSealed]
+        payload: {demo.ledger.ItemSealed: {item_id: input.item_id}}
+views:
+  - name: demo.ledger.Items
+    source: demo.ledger.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.ledger.ItemId}
+      - {name: sealed, type: Boolean}
+  - name: demo.ledger.Reviews
+    source: demo.ledger.Review
+    consistency: read_your_writes
+    fields:
+      - {name: review_id, type: demo.ledger.ReviewId}
+      - {name: approved, type: Boolean}
+";
+
+#[test]
+fn a_subject_guard_scenario_arranges_the_related_row_its_setup_reads() {
+    use ess_conformance::interpret::Interpreted;
+    let raw = RawSpecFile::parse(SEALED_BESIDE_A_REVIEW).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("ledger.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap();
+    let result = ess_conformance::synthesize::synthesize(&ir);
+    let sealed = scenario(&result.suite, "demo.ledger.Seal/outcome/already-sealed");
+    // The setup run of `sealed` is sent naming a review an earlier step created approved.
+    let added_review = sealed.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ExecuteCommand { command, input, .. }
+            if command.to_string() == "demo.ledger.AddReview"
+                && input.get("approved").and_then(|value| value.as_literal())
+                    == Some(&Node::Bool(true)))
+    });
+    assert!(added_review, "{:#?}", sealed.steps);
+    let admitted = AdmittedSuite::from_suite(&result.suite).unwrap();
+    let report = Runner::for_suite(&result.suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+        .into_report();
+    let failed: Vec<(String, Status)> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+        .collect();
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(report.scenarios.len(), result.suite.scenarios.len());
+}
+
+#[test]
+fn a_subject_guard_scenario_no_command_can_arrange_the_related_row_for_is_refused() {
+    // Every review is created unapproved, so no setup run takes `sealed`.
+    let text = SEALED_BESIDE_A_REVIEW
+        .replace(
+            "    input:\n      - {name: approved, type: Boolean}\n    outcomes:\n      - name: added\n        creates: demo.ledger.Review",
+            "    outcomes:\n      - name: added\n        creates: demo.ledger.Review",
+        )
+        .replace("sets: {approved: input.approved}", "sets: {approved: false}");
+    let result = synthesis(&text);
+    let id = "demo.ledger.Seal/outcome/already-sealed";
+    assert!(
+        !result
+            .suite
+            .scenarios
+            .keys()
+            .any(|key| key.to_string() == id),
+        "a scenario written to fail"
+    );
+    let refused: Vec<(String, String)> = refusals(&result)
+        .into_iter()
+        .filter(|(code, _)| code.ends_with(id))
+        .collect();
+    // Refused by name where no setup run reaches the guarded row; the cause names the stored
+    // guard no arranged row satisfies.
+    assert_eq!(refused.len(), 1, "{:#?}", refusals(&result));
+    assert!(refused[0].0.starts_with("ESS-SYNTH-003 "), "{refused:#?}");
+    assert!(refused[0].1.contains("stored sealed"), "{refused:#?}");
+}

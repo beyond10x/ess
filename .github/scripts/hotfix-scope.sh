@@ -61,8 +61,14 @@ changed=""
 while IFS= read -r file; do
   [ -n "$file" ] || continue
   case "$file" in
-    # Prose and records: the checks job holds the documents to the code.
-    .engineering/* | changes/* | website/* | docs/* | CHANGELOG.md | README.md | WHATS-CHANGED.md)
+    # Prose and records: the checks job holds the documents to the code. Every hotfix carries
+    # `release-notes/<version>.md`, which `release-check` in the checks job validates.
+    .engineering/* | changes/* | website/* | docs/* | release-notes/* | CHANGELOG.md | README.md \
+      | WHATS-CHANGED.md)
+      continue ;;
+    # `ess-ui` embeds its schema at compile time; every other reader depends on `ess-ui`.
+    schemas/ui/ess-ui.schema.yaml)
+      changed="$changed ess-ui"
       continue ;;
     # The manifests and lockfiles change on every release by the version bump alone; anything
     # else in them (a dependency, a feature, a profile) is a change to every crate.

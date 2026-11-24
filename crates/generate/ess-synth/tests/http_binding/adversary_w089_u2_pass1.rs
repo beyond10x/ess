@@ -303,8 +303,8 @@ fn adv_a_bare_body_object_naming_the_path_field_is_malformed() {
 
 /// A member the list's element type does not declare is answered alike by both servers, in a bare
 /// body: `malformed`, as the Rust server answers. The Go server's `bareBody` hands the value to
-/// the decoder without `jsonBody`'s member check, and the Go decoder does not refuse a nested
-/// member no field names.
+/// the decoder without `jsonBody`'s member check, so `closedMembers` and the decoder's own
+/// `closedAt` refuse it.
 #[test]
 fn adv_the_servers_agree_on_an_extra_member_in_a_bare_body() {
     let (rust, go) = both();

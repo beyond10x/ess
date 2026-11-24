@@ -293,3 +293,144 @@ fn both_languages_report_the_same_result_for_every_case() {
         assert_eq!(typescript.asserts[name], go.asserts[name], "`{name}`");
     }
 }
+
+// ---- an external refusal answered before a related row (beyond10x/ess#554) -------------------
+
+/// `invalid-zone` refuses a zone the provider cannot parse before the job's name is looked up
+/// (`before_row: true`); `duplicate-name` refuses a name a stored job carries.
+const JOBS: &str = "format: ess/37
+system: demo
+version: v1
+domain: demo.jobs
+types:
+  - {name: demo.jobs.JobName, kind: newtype, of: String}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: name, type: demo.jobs.JobName}
+    fields:
+      - {name: zone, type: String}
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored], transitions: []}
+errors:
+  - {name: demo.jobs.InvalidZone}
+  - {name: demo.jobs.Duplicate}
+events:
+  - name: demo.jobs.JobStored
+    fields:
+      - {name: name, type: demo.jobs.JobName}
+commands:
+  - name: demo.jobs.StoreJob
+    input:
+      - {name: name, type: demo.jobs.JobName}
+      - {name: zone, type: String}
+    outcomes:
+      - name: invalid-zone
+        external: the zone id does not parse
+        before_row: true
+        error: demo.jobs.InvalidZone
+      - name: duplicate-name
+        when_related: {entity: demo.jobs.Job, where: name == input.name, exists: true}
+        error: demo.jobs.Duplicate
+      - name: stored
+        creates: demo.jobs.Job
+        instance: name
+        sets: {zone: input.zone}
+        emits: [demo.jobs.JobStored]
+        payload:
+          demo.jobs.JobStored: {name: input.name}
+";
+
+const INVALID_ZONE: &str = "demo.jobs.StoreJob/outcome/invalid-zone";
+
+fn jobs_ir(text: &str) -> EssIr {
+    let mut sources = SourceMap::new();
+    sources.insert("jobs.yaml", text);
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let specification = Specification::assemble(vec![(Source::new("jobs.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"))
+}
+
+/// The `StoreJob` invocations of the `invalid-zone` scenario that follow a forced provider, each
+/// with whether a stored job carried the name it sends.
+fn forced_sends(suite: &ConformanceSuite) -> Vec<bool> {
+    let scenario = suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == INVALID_ZONE)
+        .unwrap_or_else(|| panic!("no scenario {INVALID_ZONE}"))
+        .1;
+    let mut stored: Vec<ess_conformance::ScenarioValue> = Vec::new();
+    let mut forced = false;
+    let mut out = Vec::new();
+    let mut steps = scenario.steps.iter().peekable();
+    while let Some(step) = steps.next() {
+        match step {
+            ess_conformance::ScenarioStep::ConfigureExternalOutcome { .. } => forced = true,
+            ess_conformance::ScenarioStep::ExecuteCommand { input, .. } => {
+                let name = input.get("name").cloned().expect("a name");
+                let outcome = match steps.peek() {
+                    Some(ess_conformance::ScenarioStep::ExpectOutcome { outcome }) => {
+                        outcome.outcome.to_string()
+                    }
+                    _ => String::new(),
+                };
+                if forced {
+                    assert_eq!(outcome, "invalid-zone", "{scenario:#?}");
+                    out.push(stored.contains(&name));
+                    forced = false;
+                } else if outcome == "stored" {
+                    stored.push(name);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn failing_on_interpreted(suite: &ConformanceSuite, model: &str) -> Vec<String> {
+    let admitted = ess_conformance::AdmittedSuite::from_suite(suite).unwrap();
+    ess_conformance::Runner::for_suite(suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(jobs_ir(model)),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .filter(|scenario| scenario.status != ess_conformance::report::Status::Passed)
+        .map(|scenario| scenario.scenario.to_string())
+        .collect()
+}
+
+#[test]
+fn an_external_refusal_before_the_row_is_sent_beside_a_present_related_row() {
+    let synthesis = ess_conformance::synthesize(&jobs_ir(JOBS));
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let suite = synthesis.suite;
+    assert!(forced_sends(&suite).contains(&true), "{suite:#?}");
+    assert_eq!(failing_on_interpreted(&suite, JOBS), Vec::<String>::new());
+    // A service that looks the name up first: `duplicate-name` declared before the external
+    // refusal, which then answers at its own step.
+    let row_first = JOBS.replace("        before_row: true\n", "");
+    let refusal = "      - name: duplicate-name\n        when_related: {entity: demo.jobs.Job, where: name == input.name, exists: true}\n        error: demo.jobs.Duplicate\n";
+    let row_first = row_first.replace(refusal, "").replace(
+        "      - name: invalid-zone\n",
+        &format!("{refusal}      - name: invalid-zone\n"),
+    );
+    assert!(row_first.find("duplicate-name") < row_first.find("invalid-zone"));
+    assert_eq!(
+        failing_on_interpreted(&suite, &row_first),
+        vec![INVALID_ZONE.to_owned()]
+    );
+}
+
+#[test]
+fn no_overlap_scenario_without_a_related_row_refusal() {
+    let refusal = "      - name: duplicate-name\n        when_related: {entity: demo.jobs.Job, where: name == input.name, exists: true}\n        error: demo.jobs.Duplicate\n";
+    let alone = JOBS.replace(refusal, "");
+    assert_ne!(alone, JOBS);
+    let synthesis = ess_conformance::synthesize(&jobs_ir(&alone));
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    assert!(!forced_sends(&synthesis.suite).contains(&true));
+}

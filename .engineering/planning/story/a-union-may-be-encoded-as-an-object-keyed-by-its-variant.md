@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:union-tag-inline-with-fields
 - decomposes: epic:adopter-gaps-domain-language
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -28,6 +28,8 @@ suffices was not checked.
 
 Minimal reproduction (brand-free): `Content = Text(String) | File(FileRef)` whose wire form must be
 `{"text": "hi"}` or `{"file": {"uri": "…"}}`.
+
+Since 2026-11-24 the union's encoding selector is spelled `layout:`: `adjacent` (the default, with `content:`) and `flat` (story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object); the keyed-by-variant encoding is its third value, named when this story leaves draft.
 
 ## Where it lives
 

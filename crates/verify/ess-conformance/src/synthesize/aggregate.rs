@@ -1960,21 +1960,6 @@ fn scenario(
             continue;
         };
         if let Some(measured) = &aggregate.expr {
-            if aggregate.skip_absent || aggregate.r#where.is_some() {
-                return Err(unwitnessed(
-                    view,
-                    format!(
-                        "`{}` computes {aggregate}, an expression measure that {}; this \
-                         arrangement witnesses an expression measure over every row of its group",
-                        field.name,
-                        if aggregate.skip_absent {
-                            "skips absent values"
-                        } else {
-                            "reads only the rows its condition admits"
-                        }
-                    ),
-                ));
-            }
             for read in measured.fields() {
                 read_fields.push((field.name.as_str(), read));
             }
@@ -2018,8 +2003,26 @@ fn scenario(
     // The inputs a skipping aggregate reads (`docs/design/aggregate-views.md`, "Absent values"):
     // each is left out of the absent rows. One no created row can lack is refused, rather than
     // asserted over rows that all hold it — which would read as a check of skipping and be none.
+    // An expression measure that skips (beyond10x/ess#561) skips a row where any field it reads is
+    // absent: each such field a created row can lack is a skipping input of its own.
     let mut skipping: BTreeSet<String> = BTreeSet::new();
     for (field, aggregate) in &aggregation.functions {
+        if let (true, None, Some(measured)) =
+            (aggregate.skip_absent, &aggregate.input, &aggregate.expr)
+        {
+            let reads: Vec<String> = measured
+                .fields()
+                .into_iter()
+                .filter(|read| !aggregation.group_by.contains(read))
+                .collect();
+            let lacking: Vec<&String> = reads.iter().filter(|read| absent_able(read)).collect();
+            if lacking.is_empty() {
+                let named = reads.first().map_or("", String::as_str);
+                return Err(cannot_lack(named, &format!("`{field}` skips")));
+            }
+            skipping.extend(lacking.into_iter().cloned());
+            continue;
+        }
         let (true, Some(input)) = (aggregate.skip_absent, &aggregate.input) else {
             continue;
         };

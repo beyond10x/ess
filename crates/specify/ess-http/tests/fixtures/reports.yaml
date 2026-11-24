@@ -1,0 +1,73 @@
+# The fixture `tests/representations.rs` binds: a list view whose rows a route also answers as CSV,
+# one selecting by a parameter, one holding a `List` field, one selecting one row by identity, one
+# paged, and a command.
+format: ess/22
+system: demo
+version: v1
+domain: demo.reports
+types:
+  - {name: demo.reports.RowId, kind: newtype, of: String}
+entities:
+  - name: demo.reports.Row
+    identity: {name: row_id, type: demo.reports.RowId}
+    fields:
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>}
+      - {name: kind, type: String}
+      - {name: tags, type: List<String>}
+    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept], transitions: []}
+events:
+  - name: demo.reports.RowTouched
+    fields:
+      - {name: row_id, type: demo.reports.RowId}
+commands:
+  - name: demo.reports.TouchRow
+    input:
+      - {name: row_id, type: demo.reports.RowId}
+    outcomes:
+      - name: touched
+        emits: [demo.reports.RowTouched]
+        payload:
+          demo.reports.RowTouched: {row_id: input.row_id}
+views:
+  - name: demo.reports.Rows
+    source: demo.reports.Row
+    fields:
+      - {name: row_id, type: demo.reports.RowId}
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>}
+  - name: demo.reports.RowsOfKind
+    source: demo.reports.Row
+    params:
+      - {name: kind, type: String}
+    filter: kind == param.kind
+    fields:
+      - {name: row_id, type: demo.reports.RowId}
+      - {name: label, type: String}
+  - name: demo.reports.RowTags
+    source: demo.reports.Row
+    fields:
+      - {name: row_id, type: demo.reports.RowId}
+      - {name: tags, type: List<String>}
+  - name: demo.reports.RowById
+    source: demo.reports.Row
+    params:
+      - {name: row_id, type: demo.reports.RowId}
+    filter: row_id == param.row_id
+    fields:
+      - {name: row_id, type: demo.reports.RowId}
+  - name: demo.reports.RowPage
+    source: demo.reports.Row
+    params:
+      - {name: page, type: Integer}
+      - {name: size, type: Integer}
+    order_by: [row_id asc]
+    paging: {page: page, size: size}
+    fields:
+      - {name: row_id, type: demo.reports.RowId}
+components:
+  - component: reports
+    reached_by: network
+    owns: {domains: [demo.reports]}
+    accepts: {commands: [demo.reports.TouchRow]}
+    publishes: {events: [demo.reports.RowTouched]}

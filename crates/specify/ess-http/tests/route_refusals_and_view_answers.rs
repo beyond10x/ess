@@ -802,3 +802,137 @@ fn compiled_ir_with_limits_out_of_rules_is_refused() {
     value["refusals"] = json!({"too_large": {"status": 500, "body": "none"}});
     refuse(&value, "4xx");
 }
+
+// --- a wrapped view answer (beyond10x/ess#755) --------------------------------------------------
+
+/// `OrdersOfSize` on `get /orders/size/{quantity}` with `keys` beside its path.
+fn sized_route(keys: &str) -> String {
+    view_route("OrdersOfSize", keys).replace(
+        "/orders/{order_id}\n    parameters: {order_id: param.order_id}",
+        "/orders/size/{quantity}\n    parameters: {quantity: param.quantity}",
+    )
+}
+
+#[test]
+fn a_view_route_answers_under_one_named_member() {
+    let ir = model();
+    let single = compiled(
+        &ir,
+        &view_route(
+            "OrderById",
+            "    body: {order: single}\n    empty: {status: 404}\n",
+        ),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        ir_json(&single)["routes"][0]["body"],
+        json!({"order": "single"})
+    );
+    assert_eq!(
+        ir_json(&single)["routes"][0]["empty"],
+        json!({"status": 404})
+    );
+    round_trips(&single);
+    let array = compiled(&ir, &sized_route("    body: {items: array}\n"))
+        .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        ir_json(&array)["routes"][0]["body"],
+        json!({"items": "array"})
+    );
+    round_trips(&array);
+    // `{rows: array}` on a view that is not paged is `rows`, ESS's own answer: the same bytes.
+    let rows = compiled(&ir, &sized_route("    body: {rows: array}\n"))
+        .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    let plain = compiled(&ir, &sized_route("    body: rows\n"))
+        .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(rows.to_canonical_json(), plain.to_canonical_json());
+}
+
+#[test]
+fn a_wrapped_view_answer_is_refused_where_its_bare_form_is() {
+    let ir = model();
+    // A paged view's answer carries its page.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &view_route("OrderPage", "    body: {items: array}\n")
+        )),
+        [refused("ESS-HTTP-024", "routes[0].body")]
+    );
+    // `single` needs `empty`, and `empty` answers only a `single` view.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &view_route("OrderById", "    body: {order: single}\n")
+        )),
+        located(compiled(
+            &ir,
+            &view_route("OrderById", "    body: single\n")
+        ))
+    );
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &view_route(
+                "OrderById",
+                "    body: {items: array}\n    empty: {status: 404}\n"
+            )
+        )),
+        [refused("ESS-HTTP-030", "routes[0]")]
+    );
+    // `single` on a view not selected by its identity.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &sized_route("    body: {order: single}\n    empty: {status: 404}\n")
+        )),
+        located(compiled(
+            &ir,
+            &sized_route("    body: single\n    empty: {status: 404}\n")
+        ))
+    );
+    assert!(!located(compiled(
+        &ir,
+        &sized_route("    body: single\n    empty: {status: 404}\n")
+    ))
+    .is_empty());
+    // An empty member, a form a view does not answer, and `rows` under a member.
+    for body in [
+        "{'': array}",
+        "{items: response}",
+        "{items: rows}",
+        "{items: envelope}",
+    ] {
+        assert_eq!(
+            located(compiled(&ir, &sized_route(&format!("    body: {body}\n")))),
+            [refused("ESS-HTTP-024", "routes[0].body")],
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn compiled_ir_with_a_wrapped_view_answer_out_of_rules_is_refused() {
+    let ir = model();
+    let single = compiled(
+        &ir,
+        &view_route(
+            "OrderById",
+            "    body: {order: single}\n    empty: {status: 404}\n",
+        ),
+    )
+    .expect("compiles")
+    .to_canonical_json();
+    let written = "\"body\": {\n        \"order\": \"single\"\n      }";
+    assert!(single.contains(written), "{single}");
+    for (broken, named) in [
+        ("\"body\": {\"order\": \"array\"}", "empty"),
+        ("\"body\": {\"\": \"single\"}", "member"),
+        ("\"body\": {\"rows\": \"array\"}", "rows"),
+    ] {
+        let text = single.replace(written, broken);
+        assert_ne!(text, single);
+        let error = HttpIr::from_json(&text).expect_err(broken).to_string();
+        assert!(error.contains(named), "{broken}: {error}");
+    }
+}

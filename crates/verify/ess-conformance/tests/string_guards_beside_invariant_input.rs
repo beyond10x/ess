@@ -521,6 +521,26 @@ fn assert_unknown_pick_written_and_passing(text: &str) {
     );
 }
 
+/// Review of the #809 fix: an invariant of several conjuncts, a length window and a prefix,
+/// admits `QA` and `QAB`; the guard-read `pick` gets no candidate the whole invariant admits, and
+/// the branch stays refused as on 0.98.0 (`pick = "IBVD"`, "no candidate of the 1 tried").
+#[test]
+fn a_guard_read_code_under_a_length_window_and_a_prefix_is_witnessed() {
+    assert_unknown_pick_written_and_passing(&one_letter(
+        "value.count >= 2\n      - value.count <= 3\n      - {value: {starts_with: \"Q\"}}",
+        "Optional<depot.racks.Code>",
+    ));
+}
+
+/// Review of the #809 fix: an exact length beside a prefix and a suffix (`AZ` is the one text).
+#[test]
+fn a_guard_read_code_under_a_length_a_prefix_and_a_suffix_is_witnessed() {
+    assert_unknown_pick_written_and_passing(&one_letter(
+        "value.count == 2\n      - {value: {starts_with: \"A\"}}\n      - {value: {ends_with: \"Z\"}}",
+        "Optional<depot.racks.Code>",
+    ));
+}
+
 /// Review of the #809 fix, the control beside the two above: a length window alone is witnessed.
 #[test]
 fn a_guard_read_code_under_a_length_window_alone_is_witnessed() {

@@ -41,8 +41,10 @@ routes:
   `delete`, or to `get` when its path carries every input field.
 - `path` is a template: it starts with `/`, and a variable is a whole segment, `{name}`.
 - `parameters` maps every variable to the one value it carries: `input.<field>` of a command,
-  `param.<name>` of a view. That field is a `String`, an `Integer`, an enum or an unconstrained
-  newtype of one of them, because a path segment is always present and holds one value.
+  `param.<name>` of a view. That field is a `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`,
+  `Duration` or `Uuid`, an enum, or an unconstrained newtype of one of them, because a path segment
+  is always present and holds one value with one text spelling. `Bytes`, `Binary64` and `Json` are
+  refused, and so are `Optional`, `List`, a struct and a constrained newtype.
 
 Check a binding against the specification, or write its compiled form:
 
@@ -158,6 +160,49 @@ The document follows those keys on the routes that use them:
   the whole request body, bare: the request body's schema is the field's own, a list
   `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
   and the path must carry every other input field.
+- `unknown: ignore` beside `json`, `form` or `query` ignores a member or key no input field names,
+  for a client that sends a whole object back, and `{command}.Input` is written with
+  `additionalProperties: true`. A member the path carries is admitted when it equals the path's
+  value and malformed otherwise; under the default, `refuse`, both are malformed. A struct inside
+  the body stays as closed as it is declared, and a bare `body` takes no `unknown: ignore`:
+
+  ```yaml
+  - command: catalog.shelves.RelabelShelf
+    method: put
+    path: /shelves/{shelf_id}/label
+    parameters: {shelf_id: input.shelf_id}
+    request: {unknown: ignore}        # {"shelf_id": "s-1", "label": "A", "updated_at": "…"}
+  ```
+- `encoding: multipart` takes a `multipart/form-data` upload: one part per input field the path
+  does not carry, a `Bytes` field a file part holding the raw bytes, every other field a text part
+  spelled as `form` spells it. `parts` reads a file part's `filename` and `media_type` into
+  `String` input fields and lists the `media_types` it may carry. A `get` command takes no
+  `multipart`. The document publishes the body as `multipart/form-data`, a file part as
+  `{type: string, contentMediaType: application/octet-stream}` with its `media_types` as the part's
+  `encoding.contentType`. Both generated servers read it:
+
+  ```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request:
+      encoding: multipart
+      parts:
+        file:
+          filename: input.file_name
+          media_types: [text/csv, application/vnd.ms-excel]
+  ```
+- `query: [input.<field>, …]` reads the fields it lists from the query string beside the body of
+  a command on `post`, `put`, `patch` or `delete`, each under its wire name as `encoding: query`
+  spells it, and the document publishes each as an `in: query` parameter outside the body. Both
+  generated servers read it there:
+
+  ```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request: {encoding: multipart, query: [input.dry_run]}   # …/import?dry_run=true
+  ```
 - A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
   `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response
@@ -181,11 +226,41 @@ The document follows those keys on the routes that use them:
   literal object `empty: {status: 404, body: {error: {literal: not_found}}}` gives.
 - `body: array` on a view that is not paged answers its rows as a bare JSON array, `[]` when it
   holds none.
+- A member around a bare form answers the same value under that one name: `body: {order: single}`
+  answers `{"order": {…}}` (with `empty` as for `single`), `body: {items: array}` answers
+  `{"items": […]}`, and on a command `body: {data: response}` or `{id: response.order_id}` answers
+  the response, or the one field, under that member. Each is refused wherever its bare form is.
 - A `refusals:` entry replaces the standard answer for that refusal on every operation the binding
   names. A route's own `refusals:` replaces it on that route alone, so one endpoint can answer
   `malformed` with its protocol's error while the others keep the binding's.
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
+
+### Answer a view as CSV
+
+A view route may answer its rows as CSV when the query holds a value you choose, and as JSON
+otherwise:
+
+```yaml
+routes:
+  - view: demo.reports.Rows
+    method: get
+    path: /reports/rows
+    body: array
+    representations:
+      - query: {format: csv}
+        encoding: {csv: {separator: ";", header: true}}
+        headers:
+          Content-Disposition: {literal: attachment}
+```
+
+`GET /reports/rows` answers the JSON array; `GET /reports/rows?format=csv` answers
+`text/csv; charset=utf-8`: a header line of the fields' wire names, then one line per row, `;`
+between fields and CRLF at each line end. Another value of `format` is `malformed`. `separator`
+is `","` (the default), `";"` or `"\t"`, and `header: false` leaves the header line out. Every
+field of the view is a scalar or an `Optional` scalar; an absent value is an empty field. A
+representation is refused (`ESS-HTTP-035`) on a command, a `single` view and a paged view, and its
+headers are literals only.
 
 ### Limit the request body
 

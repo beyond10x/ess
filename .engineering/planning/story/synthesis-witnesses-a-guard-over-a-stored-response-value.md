@@ -15,6 +15,7 @@ relations:
 - depends_on: story:the-interpreter-answers-the-response-value-an-outcome-stores
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/admission.rs
@@ -34,7 +35,7 @@ scope:
   path: crates/verify/ess-conformance/tests/stored_response_values.rs
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:45Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:47Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -58,6 +59,8 @@ refused: refusal[ESS-SYNTH-001]: outcome example.order.Confirm/mismatch has no s
 ```
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - `ScenarioValue::Responded {field}` reads the named field of the actual response the scenario's
   last `capture_command_result` retained (`scenario.rs:2278`); a suite carrying it is the next

@@ -491,7 +491,8 @@ within one hour of the reproduction.
    gate instead of the 20 test shards: `Hotfix checks` (`task ci-lint` and `task ci-smoke`) and
    `Hotfix tests` (the crates changed since the previous tag and their direct dependents, chosen by
    `.github/scripts/hotfix-scope.sh`), beside the package builds; `Hotfix tests` then runs `task test-slow` on the same crates. A change the script cannot map to
-   crates, such as a workflow, the Taskfile or a dependency, runs the full gate.
+   crates, such as a workflow, the Taskfile or a dependency, runs the full gate. `CHANGELOG.md` and
+   `release-notes/` count as prose, and `schemas/ui/ess-ui.schema.yaml` as code of `ess-ui`.
 6. In the same minute, push the branch and open its pull request to `main`. The main ruleset needs
    its required checks on the tagged commit itself, and the tag's release run does not count; a pull
    request opened only after the release costs a second full CI run (0.91.2: 50 extra minutes).

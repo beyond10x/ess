@@ -1765,3 +1765,23 @@ mod errors_of_one_wire_name;
 
 #[path = "adversary_w089_u2_pass1.rs"]
 mod adversary_w089_u2_pass1;
+
+#[path = "wrapped_answers.rs"]
+mod wrapped_answers;
+
+#[path = "representations.rs"]
+mod representations;
+
+#[path = "uuid_segments.rs"]
+mod uuid_segments;
+
+#[path = "undeclared_members.rs"]
+mod undeclared_members;
+
+#[path = "ignored_members.rs"]
+mod ignored_members;
+
+#[path = "multipart.rs"]
+mod multipart;
+#[path = "query_beside_body.rs"]
+mod query_beside_body;

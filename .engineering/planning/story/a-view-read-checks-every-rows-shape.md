@@ -17,6 +17,7 @@ relations:
 - decomposes: epic:adopter-gaps-verdicts
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/admission.rs
@@ -44,7 +45,7 @@ scope:
   path: docs/design/view-row-shape.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:43Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:44Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
@@ -77,6 +78,8 @@ and `{$observed: …}` for a view row. This story is the second half, and the vo
 Rust runner part of it.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - `docs/design/view-row-shape.md` exists and states: which view steps carry a shape
   (`expect_view`, `eventually_view`), that the shape is the view's declared fields flattened as

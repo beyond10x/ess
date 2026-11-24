@@ -14,6 +14,7 @@ relations:
 - depends_on: story:projections-use-a-unions-declared-content-key
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs
@@ -37,7 +38,7 @@ scope:
   path: crates/verify/ess-conformance/src/ts/response.ts
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:44:12Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:44:13Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -55,6 +56,8 @@ key from the tag (`crates/verify/ess-conformance/src/go/response.go:720-723`,
 Minimal model: the parent story's `example.g.Kind` with `content: config`.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - Generated Rust, Go and TypeScript types for the minimal model encode `web_crawl` as
   `{"type": "web_crawl", "config": {…}}`, decode it, and refuse `{"type": "web_crawl", "value": {…}}`

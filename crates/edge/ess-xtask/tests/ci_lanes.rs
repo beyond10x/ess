@@ -5497,27 +5497,40 @@ fn test_xtask_builds_before_it_runs() {
     let commands = test_xtask_commands(&taskfile);
     assert_eq!(
         commands.len(),
-        2,
-        "`test-xtask` is a build line and a nextest run line: {commands:?}"
+        3,
+        "`test-xtask` is a build line of `ess`, a test build line and a nextest run line: \
+         {commands:?}"
     );
+    // The unit tests run the `ess` built here, beside their executable: a test running
+    // `cargo run` compiled the CLI inside the test, over the 60 s test budget.
     assert!(
-        commands[0].trim_end().ends_with("--no-run"),
-        "the first command does not end `--no-run`: {}",
+        commands[0].contains("cargo build --package ess-cli --bin ess --locked"),
+        "the first command does not build `ess`: {}",
         commands[0]
     );
     assert!(
-        commands[1].contains("cargo nextest run") && commands[1].contains("--profile ci"),
-        "the second command is not a nextest run under the `ci` profile: {}",
+        commands[1].trim_end().ends_with("--no-run"),
+        "the second command does not end `--no-run`: {}",
         commands[1]
     );
     assert!(
-        !commands[1].contains("--no-run"),
-        "the second command is the run and does not build only: {}",
-        commands[1]
+        commands[2].contains("cargo nextest run") && commands[2].contains("--profile ci"),
+        "the third command is not a nextest run under the `ci` profile: {}",
+        commands[2]
     );
+    assert!(
+        !commands[2].contains("--no-run"),
+        "the third command is the run and does not build only: {}",
+        commands[2]
+    );
+    for command in &commands[1..] {
+        assert!(
+            command.contains("--package ess-xtask --locked"),
+            "`--package ess-xtask --locked` is missing from: {command}"
+        );
+    }
     for command in &commands {
         for needed in [
-            "--package ess-xtask --locked",
             "RUSTUP_TOOLCHAIN=1.98.1",
             "-fuse-ld=lld",
             "CARGO_INCREMENTAL=0",
@@ -6123,5 +6136,140 @@ fn the_check_task_runs_the_slow_lane_after_the_tests() {
         check.get(test + 1).map(String::as_str),
         Some("test-slow"),
         "`task check` does not run `test-slow` directly after `test`: {check:?}"
+    );
+}
+
+// ---- hotfix-scope.sh: how much of the gate a patch tag runs ------------------------------------
+
+/// What `.github/scripts/hotfix-scope.sh` prints for the patch tag `1.0.1` of a small workspace
+/// whose change since `1.0.0` is `changes`: crates `low`, `high` (depending on `low`) and `ess-ui`,
+/// with a `cargo` stub on `PATH` that answers `metadata` with their JSON, so no cargo runs.
+fn hotfix_scope(case: &str, changes: &[(&str, &str)]) -> BTreeMap<String, String> {
+    let scratch = Scratch::new(&format!("hotfix-scope-{case}"));
+    let repo = scratch.0.join("repo");
+    let bin = scratch.0.join("bin");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&bin).unwrap();
+    let crates = [
+        ("low", "crates/low", None),
+        ("high", "crates/high", Some("low")),
+        ("ess-ui", "crates/ui/ess-ui", None),
+    ];
+    let write = |path: &str, contents: &str| {
+        let file = repo.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, contents).unwrap();
+    };
+    write(
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"crates/low\", \"crates/high\", \"crates/ui/ess-ui\"]\n",
+    );
+    write("CHANGELOG.md", "# Changelog\n");
+    write("schemas/ui/ess-ui.schema.yaml", "type: object\n");
+    let mut packages = Vec::new();
+    for (name, dir, depends) in crates {
+        write(
+            &format!("{dir}/Cargo.toml"),
+            &format!("[package]\nname = \"{name}\"\nedition = \"2021\"\n"),
+        );
+        write(&format!("{dir}/src/lib.rs"), "pub fn one() -> u8 { 1 }\n");
+        let dependencies: Vec<serde_json::Value> = depends
+            .map(|on| {
+                let path = crates.iter().find(|(name, _, _)| *name == on).unwrap().1;
+                json!({"name": on, "path": repo.join(path).display().to_string()})
+            })
+            .into_iter()
+            .collect();
+        packages.push(json!({
+            "name": name,
+            "manifest_path": repo.join(dir).join("Cargo.toml").display().to_string(),
+            "dependencies": dependencies,
+        }));
+    }
+    let metadata = json!({"workspace_root": repo.display().to_string(), "packages": packages});
+    let answer = scratch.0.join("metadata.json");
+    fs::write(&answer, metadata.to_string()).unwrap();
+    executable::install_bytes(
+        &bin.join("cargo"),
+        format!("#!/bin/sh\nexec cat '{}'\n", answer.display()).as_bytes(),
+    )
+    .unwrap();
+    git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+    git(&repo, &["add", "--all"]);
+    git(&repo, &["commit", "--quiet", "--message", "1.0.0"]);
+    git(&repo, &["tag", "1.0.0"]);
+    for (path, contents) in changes {
+        write(path, contents);
+    }
+    git(&repo, &["add", "--all"]);
+    git(&repo, &["commit", "--quiet", "--message", "1.0.1"]);
+    git(&repo, &["tag", "1.0.1"]);
+    let script = workspace_root().join(".github/scripts/hotfix-scope.sh");
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = isolated("bash", &repo)
+        .arg(&script)
+        .arg("1.0.1")
+        .env("PATH", path)
+        .env_remove("GITHUB_OUTPUT")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "hotfix-scope.sh {case}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect()
+}
+
+/// Every hotfix carries `CHANGELOG.md` and `release-notes/<version>.md` (`AGENTS.md` § Hotfix): a
+/// patch tag of one crate's code with those two runs the targeted gate, the crate and its direct
+/// dependents; a file outside every crate and outside the prose list still runs the full gate.
+#[test]
+fn a_patch_tag_with_its_release_notes_runs_the_targeted_gate() {
+    let fix = [
+        ("crates/low/src/lib.rs", "pub fn one() -> u8 { 2 }\n"),
+        ("CHANGELOG.md", "# Changelog\n\n## [1.0.1]\n\n- Fixed.\n"),
+        ("release-notes/1.0.1.md", "A fix.\n"),
+    ];
+    let targeted = hotfix_scope("notes", &fix);
+    assert_eq!(targeted["scope"], "targeted", "{targeted:?}");
+    assert_eq!(targeted["packages"], "high low", "{targeted:?}");
+    let mut stray = fix.to_vec();
+    stray.push(("tools/stray.txt", "a file of no crate\n"));
+    let full = hotfix_scope("stray", &stray);
+    assert_eq!(full["scope"], "full", "{full:?}");
+    assert!(full["reason"].contains("tools/stray.txt"), "{full:?}");
+}
+
+/// `ess-ui` embeds `schemas/ui/ess-ui.schema.yaml`, so a patch tag changing the schema runs the
+/// targeted gate of `ess-ui` and its dependents, not the full gate.
+#[test]
+fn a_patch_tag_of_the_ess_ui_schema_runs_the_targeted_gate_of_ess_ui() {
+    let scope = hotfix_scope(
+        "schema",
+        &[
+            (
+                "schemas/ui/ess-ui.schema.yaml",
+                "type: object\nrequired: []\n",
+            ),
+            ("CHANGELOG.md", "# Changelog\n\n## [1.0.1]\n\n- Fixed.\n"),
+            ("release-notes/1.0.1.md", "A fix.\n"),
+        ],
+    );
+    assert_eq!(scope["scope"], "targeted", "{scope:?}");
+    assert!(
+        scope["packages"]
+            .split(' ')
+            .any(|package| package == "ess-ui"),
+        "{scope:?}"
     );
 }

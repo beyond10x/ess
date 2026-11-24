@@ -16,6 +16,7 @@ relations:
 - depends_on: story:the-typescript-runtime-checks-a-view-rows-shape
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
@@ -35,7 +36,7 @@ scope:
   path: suites/generated/oracle-fixture/suite.json
 - confidence: inferred
   path: website/data/billing.presentation.json
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:55Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:56Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -58,6 +59,8 @@ The synthesized `expect_event` step carries `shape`; both synthesized `eventuall
 authored one (`contains: {title: a}`) carry none.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - `ess verify conform synthesize` on the model above writes `ess-conformance/64` (or `/65` with
   `--suite-format 5`), and each `eventually_view` step of `example.order.Orders` carries

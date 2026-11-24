@@ -233,3 +233,138 @@ views:
         "{report:#?}"
     );
 }
+
+/// The scenarios of `suite` that do not pass against the interpreted target of `model`.
+fn failed_on_interpreted(model: &EssIr, suite: &ess_conformance::ConformanceSuite) -> Vec<String> {
+    let admitted = ess_conformance::AdmittedSuite::from_suite(suite).unwrap();
+    ess_conformance::runner::Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model.clone()),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .filter(|result| result.status != ess_conformance::report::Status::Passed)
+        .map(|result| result.scenario.to_string())
+        .collect()
+}
+/// Review of #799: a member set to a value on creation and cleared by a later update. `{CLEAR}` is
+/// the clearing outcome's `sets:` line, filled per model.
+const CLEARS: &str = "format: ess/37
+system: demo
+version: v1
+domain: demo.slots
+types:
+  - {name: demo.slots.SlotId, kind: newtype, of: String}
+entities:
+  - name: demo.slots.Slot
+    identity: {name: slot_id, type: demo.slots.SlotId}
+    fields:
+      - {name: label, type: String}
+      - {name: tag, type: Optional<String>{PRESENCE}}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+errors:
+  - name: demo.slots.Duplicate
+  - name: demo.slots.UnknownSlot
+commands:
+  - name: demo.slots.OpenSlot
+    input:
+      - {name: slot_id, type: demo.slots.SlotId}
+      - {name: label, type: String}
+      - {name: tag, type: String}
+    outcomes:
+      - {name: duplicate, existing_instance: true, error: demo.slots.Duplicate}
+      - name: opened
+        creates: demo.slots.Slot
+        instance: slot_id
+        sets:
+          label: input.label
+          tag: input.tag
+        emits: [demo.slots.SlotOpened]
+        payload:
+          demo.slots.SlotOpened: {slot_id: input.slot_id}
+  - name: demo.slots.ClearTag
+    input:
+      - {name: slot_id, type: demo.slots.SlotId}
+      - {name: label, type: String}
+    outcomes:
+      - {name: unknown-slot, unknown_instance: true, error: demo.slots.UnknownSlot}
+      - name: cleared
+        updates: demo.slots.Slot
+        instance: slot_id
+        sets:
+          {CLEAR}
+        emits: [demo.slots.TagCleared]
+        payload:
+          demo.slots.TagCleared: {slot_id: input.slot_id}
+events:
+  - name: demo.slots.SlotOpened
+    fields:
+      - {name: slot_id, type: demo.slots.SlotId}
+  - name: demo.slots.TagCleared
+    fields:
+      - {name: slot_id, type: demo.slots.SlotId}
+views:
+  - name: demo.slots.Slots
+    source: demo.slots.Slot
+    consistency: read_your_writes
+    fields:
+      - {name: slot_id, type: demo.slots.SlotId}
+      - {name: label, type: String}
+      - {name: tag, type: Optional<String>}
+components:
+  - component: slots-service
+    reached_by: network
+    owns:
+      domains: [demo.slots]
+    accepts:
+      commands: [demo.slots.OpenSlot, demo.slots.ClearTag]
+    publishes:
+      events: [demo.slots.SlotOpened, demo.slots.TagCleared]
+";
+
+/// A target that never clears the member (its `ClearTag/cleared` writes only the label)
+/// must fail the suite synthesized for the model that clears it, under every presence: the suite
+/// claims the cleared member empty, so dropping that claim for any presence but
+/// `null_when_absent` (beyond10x/ess#799, as first built) leaves nothing that reads the member
+/// after the clear.
+#[test]
+fn review_a_target_that_never_clears_the_member_fails_the_suite() {
+    for presence in [
+        "",
+        ", presence: omitted_when_absent",
+        ", presence: omitted_or_null",
+    ] {
+        let model_text = CLEARS.replace("{PRESENCE}", presence).replace(
+            "{CLEAR}",
+            "label: input.label\n          tag: {cleared: true}",
+        );
+        let mutant_text = CLEARS
+            .replace("{PRESENCE}", presence)
+            .replace("{CLEAR}", "label: input.label");
+        let model = ir(&model_text);
+        let mutant = ir(&mutant_text);
+        let synthesis = ess_conformance::synthesize::synthesize(&model);
+        assert!(
+            synthesis
+                .suite
+                .scenarios
+                .keys()
+                .any(|id| id.to_string() == "demo.slots.ClearTag/outcome/cleared"),
+            "presence {presence:?}: no clearing scenario; refusals {:#?}",
+            synthesis.refusals
+        );
+        let failed = failed_on_interpreted(&mutant, &synthesis.suite);
+        assert!(
+            failed
+                .iter()
+                .any(|id| id == "demo.slots.ClearTag/outcome/cleared"),
+            "presence {presence:?}: a target that keeps the cleared member passes \
+             `ClearTag/outcome/cleared`; failed only {failed:?}"
+        );
+    }
+}

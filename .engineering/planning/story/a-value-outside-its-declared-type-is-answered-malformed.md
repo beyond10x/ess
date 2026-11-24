@@ -15,6 +15,7 @@ relations:
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:conformance-follows-a-views-continuation-to-its-last-page
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute.rs
@@ -34,7 +35,7 @@ scope:
   path: docs/design/malformed-requests.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:26Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:27Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -55,6 +56,8 @@ protocol has no `malformed` answer (`crates/verify/ess-conformance/src/target.rs
 reproduction holds no scenario for an out-of-range size (`run.txt` step 5).
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 Every bullet below is asserted by `cargo test -p ess-conformance --locked --test malformed_request`
 unless it names another command.

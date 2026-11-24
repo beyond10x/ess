@@ -308,6 +308,26 @@ fn reserve(flags: &mut BTreeSet<String>, flag: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// A flag binds a required `Boolean` (absent is `false`) and a repeated option a required
+/// `List<T>` (no occurrence is `[]`): over an `Optional`, absent would be a second spelling of
+/// that value (beyond10x/ess#694).
+fn switch_or_repeated(source: &ArgumentSource, shape: &Shape, field: &str) -> Result<(), Error> {
+    match source {
+        ArgumentSource::Option { repeated: true, .. } if !matches!(shape, Shape::List { .. }) => {
+            Err(refuse(format!(
+                "a repeated option binds a required List<T> field, and `{field}` is not one: no \
+                 occurrence is `[]`, so over `Optional<List<T>>` absent and `[]` would be two \
+                 spellings of one value"
+            )))
+        }
+        ArgumentSource::Flag { .. } if *shape != Shape::Boolean => Err(refuse(format!(
+            "a flag binds a required Boolean field, and `{field}` is not one: absent is `false`, \
+             so over `Optional<Boolean>` absent and `false` would be two spellings of one value"
+        ))),
+        _ => Ok(()),
+    }
+}
+
 fn validate_command(
     model: &EssIr,
     command: &mut Command,
@@ -333,7 +353,10 @@ fn validate_command(
         }
         let shape = resolved_ref(model, &field.type_ref, &mut BTreeSet::new())?;
         match &argument.source {
-            ArgumentSource::Option { long } => reserve(&mut flags, long)?,
+            ArgumentSource::Option { long, .. } | ArgumentSource::Flag { long } => {
+                reserve(&mut flags, long)?;
+                switch_or_repeated(&argument.source, &shape, &field.name)?;
+            }
             ArgumentSource::Positional { index } => {
                 if *index == 0 || positions.insert(*index, shape.optional()).is_some() {
                     return Err(refuse("duplicate or zero positional index"));
@@ -377,7 +400,9 @@ fn validate_command(
                     })
                 {
                     return Err(refuse(
-                        "a trailing source binds a required List<String> field",
+                        "a trailing source binds a required List<String> field; no `--`, or \
+                         nothing after it, is `[]`, so declare the field `List<String>` rather \
+                         than `Optional<List<String>>`",
                     ));
                 }
             }

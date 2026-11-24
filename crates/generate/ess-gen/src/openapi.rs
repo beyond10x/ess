@@ -212,6 +212,8 @@
 //! |---|---|
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
 //! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
+//! | `request: {query: [input.<field>, …]}` beside a body | each listed field is an `in: query` parameter under its wire name, in the order listed, by the rules of `encoding: query`, and is in neither the request body nor `{command}.Input` (beyond10x/ess#754) |
+//! | `request: {unknown: ignore}` beside `json` or `form` | `{command}.Input` is `additionalProperties: true`, and the request body says that what no field names is ignored and what the path carries must equal the path's value |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
@@ -227,6 +229,7 @@
 //! | `refusals.<key>` (`not_granted`, `malformed`, `unfinished`, `too_large`) | replaces the standard refusal's response on every bound operation that can answer it |
 //! | `routes[i].refusals.<key>` | replaces it on that route alone, in place of the binding's |
 //! | `limits.request_bytes`, `routes[i].limits.request_bytes` | `x-ess-request-max-bytes` on each operation that reads a body, and a response at the `too_large` status |
+//! | a view's `representations` | an optional `in: query` parameter, the selector, a `string` whose `enum` holds each value; at `200`, `text/csv` as a `string` beside the JSON answer, `x-ess-representations` naming each representation's selector, media type, separator, header line and columns, and each declared header described with the value that selects it |
 //!
 //! A bare body names no branch, so every response of a command whose route uses a stage-2 key
 //! carries `x-ess-outcomes`: the outcomes it answers, in the order the command declares them, and
@@ -249,6 +252,7 @@ use ess_compiler::ir::{
 };
 use ess_domain::binding::Delivery;
 use ess_domain::component::Reach;
+use ess_domain::types::UndeclaredFields;
 use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
@@ -275,6 +279,9 @@ const TEXT_MEDIA_TYPE: &str = "text/plain";
 /// The request media type of an `ess-http/1` route encoded `form` (RFC 6749 §4.1.3, Appendix B):
 /// the only place a request is not [`MEDIA_TYPE`], and only because a binding says so.
 const FORM_MEDIA_TYPE: &str = "application/x-www-form-urlencoded";
+
+/// The media type of a `multipart` request body (RFC 7578, beyond10x/ess#754).
+const MULTIPART_MEDIA_TYPE: &str = "multipart/form-data";
 
 /// The header a redirect's URI travels in; a binding never declares it, `redirect` writes it.
 const LOCATION: &str = "Location";
@@ -715,8 +722,9 @@ fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Ref
     declared.is_some_and(|route| {
         route.request.is_some()
             || route.declares_answers()
-            || route.body != ess_http::ViewBody::Rows
+            || route.body != ess_http::ViewAnswer::default()
             || route.empty.is_some()
+            || !route.representations.is_empty()
             || !route.refusals.is_empty()
             || refusals.is_some_and(|refusals| !refusals.is_empty())
     })
@@ -861,6 +869,7 @@ fn operation(
         .and_then(|route| route.request.clone())
         .unwrap_or_default();
     let carried = carried(declared);
+    let queried = http::queried(declared);
     let mut parameters = path_parameters(&command.input, declared, |field| {
         format!(
             "The input field `{}`, carried in the path rather than the request body.",
@@ -870,6 +879,10 @@ fn operation(
     if request.encoding == ess_http::Encoding::Query {
         parameters.extend(query_parameters(command, &carried));
     }
+    parameters.extend(listed_parameters(command, &request));
+    // What the path or the query string carries is not in the body.
+    let mut outside = carried.clone();
+    outside.extend(queried.iter().copied());
     parameters.extend(idempotency(ir, command));
     Operation {
         id: declared
@@ -913,12 +926,7 @@ fn operation(
             .collect(),
         consistency: None,
         parameters,
-        request_body: request_body(
-            command,
-            &carried,
-            &request,
-            http::bare_body(command, declared),
-        ),
+        request_body: request_body(ir, command, &outside, &request, declared),
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
             Some(route) if answered_by_binding(declared, refusals) => bound_responses(
@@ -962,6 +970,30 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
                 )
             }),
             required: !field.type_ref.is_optional() && !is_list(&field.type_ref) && !answers_absent,
+            style: is_list(&field.type_ref).then_some("form"),
+            explode: is_list(&field.type_ref).then_some(true),
+            schema: embedded(&types::field(field)),
+        })
+        .collect()
+}
+
+/// The input fields a route's `request.query` reads beside its body (beyond10x/ess#754), each an
+/// `in: query` parameter under its wire name, in the order the binding lists them, by the rules of
+/// [`query_parameters`]: required as the field is, a `List` repeating its key once per element.
+fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> Vec<Parameter> {
+    request
+        .query_fields()
+        .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .map(|field| Parameter {
+            name: types::wire_name(field).to_owned(),
+            location: "query",
+            description: field.naming.summary.clone().unwrap_or_else(|| {
+                format!(
+                    "The input field `{}`, read from the query string beside the request body.",
+                    field.name
+                )
+            }),
+            required: !field.type_ref.is_optional() && !is_list(&field.type_ref),
             style: is_list(&field.type_ref).then_some("form"),
             explode: is_list(&field.type_ref).then_some(true),
             schema: embedded(&types::field(field)),
@@ -1038,7 +1070,7 @@ fn query(
     // A read-granted view on a surface that checks grants answers the standard refusal too
     // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
     let read_checked = checks_grants && ir.read_granted(&view.name);
-    let responses = match declared {
+    let mut responses = match declared {
         Some(route) if answered_by_binding(declared, refusals) => {
             bound_view_responses(ir, view, read_checked, route, refusals)
         }
@@ -1064,6 +1096,12 @@ fn query(
             responses
         }
     };
+    if let Some(route) = declared.filter(|route| !route.representations.is_empty()) {
+        parameters.push(selector_parameter(&route.representations));
+        if let Some(read) = responses.get_mut(READ) {
+            represent(read, view, &route.representations);
+        }
+    }
     Operation {
         id: declared
             .and_then(|route| route.operation_id.clone())
@@ -1088,6 +1126,151 @@ fn query(
         parameters,
         request_body: None,
         responses,
+    }
+}
+
+/// The media type of a CSV representation (beyond10x/ess#753).
+const CSV_MEDIA_TYPE: &str = "text/csv";
+
+/// What the CSV answer of a view route says about its text cells (beyond10x/ess#753): both
+/// generated servers write a text cell a spreadsheet would read as a formula behind an apostrophe.
+const CSV_TEXT_CELLS: &str = "The rows as CSV. A text cell opening with `=`, `+`, `-`, `@`, \
+     a tab or a carriage return is written behind `'`, so a spreadsheet does not read it as \
+     a formula; a number, an enum or a timestamp is written as it is.";
+
+/// How a representation's separator is named in a sentence.
+fn separator_name(separator: ess_http::Separator) -> &'static str {
+    match separator {
+        ess_http::Separator::Comma => "`,`",
+        ess_http::Separator::Semicolon => "`;`",
+        ess_http::Separator::Tab => "a tab",
+    }
+}
+
+/// The query parameter that selects a view route's other representations (beyond10x/ess#753):
+/// optional, a `string` whose `enum` holds each selecting value in the order written. Compiling
+/// holds every representation of a route to one parameter.
+fn selector_parameter(representations: &[ess_http::Representation]) -> Parameter {
+    let name = representations
+        .first()
+        .map(|representation| representation.query.parameter.clone())
+        .unwrap_or_default();
+    let values: Vec<&str> = representations
+        .iter()
+        .map(|representation| representation.query.value.as_str())
+        .collect();
+    let selected: Vec<String> = representations
+        .iter()
+        .map(|representation| {
+            format!(
+                "`{}` answers the rows as CSV (`{CSV_MEDIA_TYPE}`), fields separated by {}",
+                representation.query.value,
+                separator_name(representation.encoding.csv.separator)
+            )
+        })
+        .collect();
+    Parameter {
+        name,
+        location: "query",
+        description: format!(
+            "Selects another representation of the rows: {}. Absent, the route answers \
+             `{MEDIA_TYPE}`.",
+            list(&selected)
+        ),
+        required: false,
+        style: None,
+        explode: None,
+        schema: written(json!({"type": "string", "enum": values})),
+    }
+}
+
+/// One representation as `x-ess-representations` names it: its selector, media type, separator,
+/// whether a header line comes first, and the columns as wire names in field order.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct RepresentationDoc {
+    query: BTreeMap<String, String>,
+    media_type: &'static str,
+    separator: String,
+    header: bool,
+    columns: Vec<String>,
+}
+
+/// Adds a view route's representations to its `200` response (beyond10x/ess#753): `text/csv` as
+/// a `string` beside the JSON answer, `x-ess-representations` in the order written, and each
+/// representation's headers, described with the value that selects them and never required, since
+/// the JSON answer writes none.
+fn represent(
+    response: &mut Response,
+    view: &ResolvedView,
+    representations: &[ess_http::Representation],
+) {
+    response
+        .content
+        .get_or_insert_with(BTreeMap::new)
+        .extend(content_as(
+            CSV_MEDIA_TYPE,
+            json!({"type": "string", "description": CSV_TEXT_CELLS}),
+        ));
+    let columns: Vec<String> = view
+        .fields
+        .iter()
+        .map(|field| types::wire_name(field).to_owned())
+        .collect();
+    response.representations = Some(
+        representations
+            .iter()
+            .map(|representation| RepresentationDoc {
+                query: [(
+                    representation.query.parameter.clone(),
+                    representation.query.value.clone(),
+                )]
+                .into_iter()
+                .collect(),
+                media_type: CSV_MEDIA_TYPE,
+                separator: representation.encoding.csv.separator.as_char().to_string(),
+                header: representation.encoding.csv.header,
+                columns: columns.clone(),
+            })
+            .collect(),
+    );
+    let mut declared: BTreeMap<&str, Vec<(String, &str)>> = BTreeMap::new();
+    for representation in representations {
+        let selector = format!(
+            "{}={}",
+            representation.query.parameter, representation.query.value
+        );
+        for (name, header) in &representation.headers {
+            // Compiling admits a literal only (`ESS-HTTP-026`).
+            if let ess_http::Header::Literal(text) = header {
+                declared
+                    .entry(name)
+                    .or_default()
+                    .push((selector.clone(), text));
+            }
+        }
+    }
+    for (name, values) in declared {
+        let sentences: Vec<String> = values
+            .iter()
+            .map(|(selector, text)| format!("`{text}` when `{selector}` selects the CSV answer"))
+            .collect();
+        let schema = match &values[..] {
+            [(_, text), rest @ ..] if rest.iter().all(|(_, other)| other == text) => {
+                json!({"type": "string", "const": text})
+            }
+            _ => json!({"type": "string"}),
+        };
+        response
+            .headers
+            .entry(name.to_owned())
+            .or_insert(ResponseHeader {
+                description: format!(
+                    "Written as {}; not written on the JSON answer.",
+                    list(&sentences)
+                ),
+                required: None,
+                schema: written(schema),
+            });
     }
 }
 
@@ -1197,30 +1380,39 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
 ///
 /// A command with no input gets no body at all rather than an empty object: `{}` in a request would
 /// be a shape a client has to construct for no reason. Neither does one whose every input field a
-/// bound route `carried` in its path, and a field carried there is not in the body. A route encoded
-/// `query` has no body either, and one encoded `form` sends the same fields form-encoded. A route
-/// whose body is one input field (`bare`) sends that field's value as the whole body, its schema
-/// the field's own.
+/// bound route `carried` in its path or its `request.query`, and a field carried there is not in
+/// the body. A route encoded `query` has no body either, and one encoded `form` sends the same
+/// fields form-encoded. A route whose body is one input field (`bare`) sends that field's value as
+/// the whole body, its schema the field's own. A route encoded `multipart` sends one part per input
+/// field ([`multipart`]).
 fn request_body(
+    ir: &EssIr,
     command: &ResolvedCommand,
     carried: &BTreeSet<&str>,
     request: &ess_http::Request,
-    bare: Option<&ResolvedField>,
+    declared: Option<&ess_http::Route>,
 ) -> Option<RequestBody> {
-    if let Some(field) = bare {
+    if let Some(field) = http::bare_body(command, declared) {
         let mut content = BTreeMap::new();
         content.insert(
             MEDIA_TYPE.to_owned(),
             MediaType {
                 schema: embedded(&types::field(field)),
+                encoding: None,
             },
         );
         return Some(RequestBody {
             description: field.naming.summary.clone().unwrap_or_else(|| {
                 format!(
                     "The input field `{}` of `{}`, bare: the whole body is its value, and the \
-                     path carries every other input field.",
-                    field.name, command.name
+                     path {} every other input field.",
+                    field.name,
+                    command.name,
+                    if request.query.is_empty() {
+                        "carries"
+                    } else {
+                        "and the query string carry"
+                    }
                 )
             }),
             required: http::body_required_without(command, carried),
@@ -1236,22 +1428,35 @@ fn request_body(
         return None;
     }
     let schema = json!({"$ref": reference(&format!("{}.Input", command.name))});
+    // Under `unknown: ignore` (beyond10x/ess#752) what no field names is ignored, and what the
+    // path carries is admitted only when it equals the path's value.
+    let ignored = |what: &str| {
+        if request.unknown != ess_http::Unknown::Ignore {
+            String::new()
+        } else if declared.is_none_or(|route| route.parameters.is_empty()) {
+            format!(" A {what} no field names is ignored.")
+        } else {
+            format!(
+                " A {what} no field names is ignored, and a {what} the path carries must equal \
+                 the path's value."
+            )
+        }
+    };
     let (description, content) = match request.encoding {
+        ess_http::Encoding::Multipart => {
+            return multipart(ir, command, carried, request, declared, &ignored("part"));
+        }
         ess_http::Encoding::Form => (
             format!(
                 "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, \
                  each field under its wire name, a list repeating its key once per element.{}",
                 command.name,
-                if request.unknown == ess_http::Unknown::Ignore {
-                    " A parameter no field names is ignored."
-                } else {
-                    ""
-                }
+                ignored("parameter")
             ),
             content_as(FORM_MEDIA_TYPE, schema),
         ),
         ess_http::Encoding::Json | ess_http::Encoding::Query => (
-            format!("The input `{}` declares.", command.name),
+            format!("The input `{}` declares.{}", command.name, ignored("member")),
             content(schema),
         ),
     };
@@ -1261,6 +1466,126 @@ fn request_body(
         required: http::body_required_without(command, carried),
         content,
     })
+}
+
+/// A `multipart` route's request body (beyond10x/ess#754): `multipart/form-data` holding an object
+/// of one part per input field neither the path nor a part attribute carries, under its wire name.
+/// A file part ([`http::file_part`]) is a string of raw bytes, `contentMediaType`
+/// `application/octet-stream` and no `contentEncoding`, an array of them for a `List`, described
+/// with the input fields its attributes are read into; its `media_types` are its Encoding Object's
+/// `contentType`. Every other part has its field's schema. A `List` part is not required: no part
+/// is the empty list. `None` when no part is left.
+fn multipart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    carried: &BTreeSet<&str>,
+    request: &ess_http::Request,
+    declared: Option<&ess_http::Route>,
+    ignored: &str,
+) -> Option<RequestBody> {
+    let read = http::attribute_fields(declared);
+    let mut outside = carried.clone();
+    outside.extend(read.iter().copied());
+    let fields: Vec<ResolvedField> = command
+        .input
+        .iter()
+        .filter(|field| !outside.contains(field.name.as_str()))
+        .cloned()
+        .collect();
+    if fields.is_empty() {
+        return None;
+    }
+    let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
+        UndeclaredFields::Ignored
+    } else {
+        UndeclaredFields::Refused
+    };
+    let mut node = types::message(&Message {
+        fields: &fields,
+        undeclared_fields,
+        ..Message::of_command(command)
+    });
+    // A `List` repeats its part once per element, so no part is the empty list, as both servers
+    // read it: the part is not required, as a `query` list's key is not.
+    node.required.retain(|wire| {
+        !fields
+            .iter()
+            .any(|field| types::wire_name(field) == wire && is_list(&field.type_ref))
+    });
+    let mut encoding = BTreeMap::new();
+    for field in &fields {
+        let Some(list) = http::file_part(ir, &field.type_ref) else {
+            continue;
+        };
+        let wire = types::wire_name(field);
+        let part = request.parts.get(&field.name);
+        if let Some(property) = node.properties.get_mut(wire) {
+            let mut file = types::file_part(list);
+            file.title = property.title.take();
+            file.ess_field = property.ess_field.take();
+            file.description = Some(file_description(field, part, list));
+            *property = file;
+        }
+        if let Some(part) = part.filter(|part| !part.media_types.is_empty()) {
+            encoding.insert(
+                wire.to_owned(),
+                PartEncoding {
+                    content_type: part.media_types.join(", "),
+                },
+            );
+        }
+    }
+    let mut content = BTreeMap::new();
+    content.insert(
+        MULTIPART_MEDIA_TYPE.to_owned(),
+        MediaType {
+            schema: embedded(&node),
+            encoding: (!encoding.is_empty()).then_some(encoding),
+        },
+    );
+    Some(RequestBody {
+        description: format!(
+            "The input `{}` declares, as `multipart/form-data` parts as the `ess-http/1` binding \
+             declares: each field one part under its wire name, a `Bytes` field a file part \
+             holding its bytes as sent, every other field a text part spelled as a form field, a \
+             list repeating its part.{ignored}",
+            command.name
+        ),
+        required: http::body_required_without(command, &outside),
+        content,
+    })
+}
+
+/// What a file part's property says: the field's own summary, that the part (one per element of a
+/// `list`) holds the bytes as sent, and the input fields its filename and media type are read into.
+fn file_description(field: &ResolvedField, part: Option<&ess_http::Part>, list: bool) -> String {
+    use std::fmt::Write as _;
+    let mut text = field
+        .naming
+        .summary
+        .as_ref()
+        .map(|summary| format!("{summary} "))
+        .unwrap_or_default();
+    text.push_str(if list {
+        "One file part per element, each holding the bytes as sent."
+    } else {
+        "A file part, holding the bytes as sent."
+    });
+    if let Some(source) = part.and_then(|part| part.filename.as_ref()) {
+        let _ = write!(
+            text,
+            " Its filename is read into the input field `{}`.",
+            source.field()
+        );
+    }
+    if let Some(source) = part.and_then(|part| part.media_type.as_ref()) {
+        let _ = write!(
+            text,
+            " Its media type is read into the input field `{}`.",
+            source.field()
+        );
+    }
+    text
 }
 
 /// One response per status the command's outcomes reach, and the `501` every served command can
@@ -1431,10 +1756,11 @@ enum Answer<'a> {
     TooLarge(u64),
     /// A `rows` view's rows.
     Rows(&'a ResolvedView),
-    /// A `single` view's one row, bare.
-    Row(&'a ResolvedView),
-    /// An `array` view's rows, bare: a JSON array.
-    Array(&'a ResolvedView),
+    /// A `single` view's one row, bare, or under the one member a wrapped body names
+    /// (beyond10x/ess#755).
+    Row(&'a ResolvedView, Option<&'a str>),
+    /// An `array` view's rows, bare: a JSON array, or under the one member a wrapped body names.
+    Array(&'a ResolvedView, Option<&'a str>),
     /// A `single` view's answer when it holds no row: no body, or one literal member.
     Empty(&'a ResolvedView, &'a ess_http::RefusalBody),
 }
@@ -1537,7 +1863,8 @@ fn bound_responses(
 
 /// The responses of a view whose route an `ess-http/1` binding answers its own way: `single` or
 /// `array`, or a standard refusal the view can answer, overridden by the binding or the route —
-/// `not_granted` where its read is checked, `malformed` where it declares a parameter. A view has
+/// `not_granted` where its read is checked, `malformed` where it declares a parameter or a
+/// representation, whose selector it answers so for a value no representation names. A view has
 /// no outcome, so its responses carry no `x-ess-outcomes`.
 fn bound_view_responses<'a>(
     ir: &EssIr,
@@ -1548,12 +1875,12 @@ fn bound_view_responses<'a>(
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'a>>> = BTreeMap::new();
     let overridden = |key| refusals.and_then(|refusals| refusals.get(&key).map(|r| (key, r)));
-    match (route.body, &route.empty) {
+    match (route.body.form, &route.empty) {
         (ess_http::ViewBody::Single, Some(empty)) => {
             by_status
                 .entry(READ.to_owned())
                 .or_default()
-                .push(Answer::Row(view));
+                .push(Answer::Row(view, route.body.member.as_deref()));
             by_status
                 .entry(empty.status.to_string())
                 .or_default()
@@ -1562,7 +1889,7 @@ fn bound_view_responses<'a>(
         (ess_http::ViewBody::Array, _) => by_status
             .entry(READ.to_owned())
             .or_default()
-            .push(Answer::Array(view)),
+            .push(Answer::Array(view, route.body.member.as_deref())),
         // Compiling refuses `single` without `empty` (`ESS-HTTP-030`).
         _ => by_status
             .entry(READ.to_owned())
@@ -1581,7 +1908,7 @@ fn bound_view_responses<'a>(
                 .push(Answer::NotGrantedRead),
         }
     }
-    if !view.params.is_empty() {
+    if !view.params.is_empty() || !route.representations.is_empty() {
         if let Some((key, refusal)) = overridden(ess_http::RefusalKey::Malformed) {
             by_status
                 .entry(refusal.status.to_string())
@@ -1720,6 +2047,7 @@ fn bound_response(
                 })
                 .collect()
         }),
+        representations: None,
     }
 }
 
@@ -1777,28 +2105,8 @@ fn rendered(
             Some(json!({"$ref": reference(&view_key(view))})),
             view_description(ir, view),
         ),
-        Answer::Row(view) => Rendered::standard(
-            Some(json!({"$ref": reference(&row_schema_key(view))})),
-            format!(
-                "The one row of `{}`, bare, as the `ess-http/1` binding declares (`body: \
-                 single`): its filter selects by the identity of `{}`, so it holds one row at \
-                 most.",
-                view.name,
-                ir.entity(&view.source).name
-            ),
-        ),
-        Answer::Array(view) => Rendered::standard(
-            Some(json!({
-                "type": "array",
-                "items": {"$ref": reference(&row_schema_key(view))},
-            })),
-            format!(
-                "Every row of `{}`, a projection of `{}`, as a bare JSON array, as the \
-                 `ess-http/1` binding declares (`body: array`): no object around it.",
-                view.name,
-                ir.entity(&view.source).name
-            ),
-        ),
+        Answer::Row(view, member) => view_answer(ir, view, *member, true),
+        Answer::Array(view, member) => view_answer(ir, view, *member, false),
         Answer::Empty(view, body) => Rendered::standard(
             literal_schema(body),
             format!(
@@ -1811,6 +2119,53 @@ fn rendered(
                         format!("A body whose one member `{member}` is `{text}`.")
                     }
                 }
+            ),
+        ),
+    }
+}
+
+/// A view's `single` (`one`) or `array` answer, bare or under its one `member`
+/// (beyond10x/ess#755).
+fn view_answer(ir: &EssIr, view: &ResolvedView, member: Option<&str>, one: bool) -> Rendered {
+    let source = &ir.entity(&view.source).name;
+    let row = json!({"$ref": reference(&row_schema_key(view))});
+    match (one, member) {
+        (true, None) => Rendered::standard(
+            Some(row),
+            format!(
+                "The one row of `{}`, bare, as the `ess-http/1` binding declares (`body: \
+                 single`): its filter selects by the identity of `{source}`, so it holds one row \
+                 at most.",
+                view.name
+            ),
+        ),
+        (true, Some(member)) => Rendered::standard(
+            Some(wrapped_schema(member, &row)),
+            format!(
+                "The one row of `{}` under the one member `{member}`, as the `ess-http/1` \
+                 binding declares (`body: {{{member}: single}}`): its filter selects by the \
+                 identity of `{source}`, so it holds one row at most.",
+                view.name
+            ),
+        ),
+        (false, None) => Rendered::standard(
+            Some(json!({"type": "array", "items": row})),
+            format!(
+                "Every row of `{}`, a projection of `{source}`, as a bare JSON array, as the \
+                 `ess-http/1` binding declares (`body: array`): no object around it.",
+                view.name
+            ),
+        ),
+        (false, Some(member)) => Rendered::standard(
+            Some(wrapped_schema(
+                member,
+                &json!({"type": "array", "items": row}),
+            )),
+            format!(
+                "Every row of `{}`, a projection of `{source}`, as a JSON array under the one \
+                 member `{member}`, as the `ess-http/1` binding declares (`body: {{{member}: \
+                 array}}`).",
+                view.name
             ),
         ),
     }
@@ -1835,6 +2190,18 @@ fn rendered_outcome(
         }),
         ess_http::Body::Response => Some(Member {
             schema: json!({"$ref": reference(&format!("{}.Result", command.name))}),
+            discriminated: None,
+            text: false,
+        }),
+        // The bare form's schema under its one member (beyond10x/ess#755).
+        ess_http::Body::Wrapped { member, field } => Some(Member {
+            schema: wrapped_schema(
+                member,
+                &match field {
+                    None => json!({"$ref": reference(&format!("{}.Result", command.name))}),
+                    Some(_) => json!({"$ref": key}),
+                },
+            ),
             discriminated: None,
             text: false,
         }),
@@ -1965,6 +2332,13 @@ fn listed_sentence(
             "the command's response field `{field}`, bare: its value alone, with no object around \
              it."
         ),
+        ess_http::Body::Wrapped { member, field } => format!(
+            "{}, under the one member `{member}`: no `outcome` names the branch.",
+            field.as_ref().map_or_else(
+                || "the command's response".to_owned(),
+                |field| format!("the command's response field `{field}`")
+            )
+        ),
         ess_http::Body::Error { member } => {
             let wire = outcome.error.as_ref().map_or("", |error| {
                 let error = ir.error(error);
@@ -1984,6 +2358,16 @@ fn listed_sentence(
         "Outcome `{}`, answered {status} as the `ess-http/1` binding declares, with {body}",
         outcome.name
     )
+}
+
+/// The object a wrapped body answers (beyond10x/ess#755): `inner` under its one `member`.
+fn wrapped_schema(member: &str, inner: &Value) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [member],
+        "properties": {member: inner},
+    })
 }
 
 /// The schema of a standard refusal's or an empty answer's body: none, or an object with the one
@@ -2427,7 +2811,7 @@ fn schemas(
         roots.extend(types::field_leaves(&view.params));
         let bare = binding
             .and_then(|binding| binding.route(http::Served::View(handle)))
-            .is_some_and(|route| route.body != ess_http::ViewBody::Rows);
+            .is_some_and(|route| route.body.form != ess_http::ViewBody::Rows);
         if !bare {
             out.insert(view_key(view), written(view_schema(view)));
         }
@@ -2449,11 +2833,13 @@ fn command_schemas<'a>(
     out: &mut BTreeMap<String, Fragment>,
     roots: &mut Vec<&'a TypeHandle>,
 ) {
-    let carried = carried(route);
-    let encoding = route
-        .and_then(|route| route.request.as_ref())
-        .map(|request| request.encoding)
+    // What the path or the query string carries (beyond10x/ess#754) is not in the body.
+    let mut carried = carried(route);
+    carried.extend(http::queried(route));
+    let request = route
+        .and_then(|route| route.request.clone())
         .unwrap_or_default();
+    let encoding = request.encoding;
     let body: Vec<ResolvedField> = command
         .input
         .iter()
@@ -2462,11 +2848,22 @@ fn command_schemas<'a>(
         .collect();
     // A bare body is one field's own schema, which `field_leaves` below reaches; no object wraps it.
     let bare = http::bare_body(command, route).is_some();
-    if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare {
+    // A `multipart` request writes its parts in its request body, not as `{command}.Input`
+    // (beyond10x/ess#754): a file part is not the base64 string that schema holds.
+    let parted = encoding == ess_http::Encoding::Multipart;
+    if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare && !parted {
+        // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
+        // open body.
+        let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
+            UndeclaredFields::Ignored
+        } else {
+            UndeclaredFields::Refused
+        };
         out.insert(
             format!("{}.Input", command.name),
             embedded(&types::message(&Message {
                 fields: &body,
+                undeclared_fields,
                 ..Message::of_command(command)
             })),
         );
@@ -2498,7 +2895,10 @@ fn command_schemas<'a>(
                 }
                 continue;
             }
-            ess_http::Body::ResponseField(field) => {
+            ess_http::Body::ResponseField(field)
+            | ess_http::Body::Wrapped {
+                field: Some(field), ..
+            } => {
                 if let Some(declared) = command
                     .response
                     .iter()
@@ -2512,7 +2912,9 @@ fn command_schemas<'a>(
                 }
                 continue;
             }
-            ess_http::Body::Response | ess_http::Body::None => continue,
+            ess_http::Body::Response
+            | ess_http::Body::None
+            | ess_http::Body::Wrapped { field: None, .. } => continue,
         }
         out.insert(
             response_key(command, outcome),
@@ -2725,8 +3127,9 @@ pub(crate) fn publishes_result(
             .map_or(ess_http::Body::Envelope, |listed| listed.body.clone());
         match body {
             ess_http::Body::Envelope => carries_result(ir, outcome),
-            ess_http::Body::Response => true,
+            ess_http::Body::Response | ess_http::Body::Wrapped { field: None, .. } => true,
             ess_http::Body::ResponseField(_)
+            | ess_http::Body::Wrapped { field: Some(_), .. }
             | ess_http::Body::Error { .. }
             | ess_http::Body::None => false,
         }
@@ -3250,6 +3653,7 @@ fn content_as(media_type: &str, schema: Value) -> BTreeMap<String, MediaType> {
         media_type.to_owned(),
         MediaType {
             schema: written(schema),
+            encoding: None,
         },
     );
     out
@@ -3469,6 +3873,13 @@ struct Response {
     /// absent everywhere else.
     #[serde(rename = "x-ess-outcomes", skip_serializing_if = "Option::is_none")]
     outcomes: Option<Vec<String>>,
+    /// A view route's other representations of its rows, in the order written, on its `200`
+    /// response only (beyond10x/ess#753); absent everywhere else.
+    #[serde(
+        rename = "x-ess-representations",
+        skip_serializing_if = "Option::is_none"
+    )]
+    representations: Option<Vec<RepresentationDoc>>,
 }
 
 impl Response {
@@ -3479,6 +3890,7 @@ impl Response {
             headers: BTreeMap::new(),
             content,
             outcomes: None,
+            representations: None,
         }
     }
 }
@@ -3498,6 +3910,18 @@ struct ResponseHeader {
 #[derive(Debug, serde::Serialize)]
 struct MediaType {
     schema: Fragment,
+    /// How a `multipart` request's file parts are encoded, by wire name: the media types each may
+    /// carry (beyond10x/ess#754). Absent everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encoding: Option<BTreeMap<String, PartEncoding>>,
+}
+
+/// One part's Encoding Object: the media types it may carry, comma-separated (`OpenAPI` 3.1
+/// § 4.8.15).
+#[derive(Debug, serde::Serialize)]
+struct PartEncoding {
+    #[serde(rename = "contentType")]
+    content_type: String,
 }
 
 /// Everything the document's `$ref`s resolve against.

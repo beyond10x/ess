@@ -734,6 +734,525 @@ pub fn single(rows: &str, empty: u16) -> Response {
 }
 "#;
 
+/// The readers of a route with `unknown: ignore` (beyond10x/ess#752), which follow [`BOUND`] only
+/// in a surface whose binding declares one, so every other bound surface keeps its bytes.
+pub(super) const IGNORING: &str = r#"
+/// A `json` request read under `unknown: ignore`: `value` less every member no field of `fields`
+/// names, at its top level only (a struct inside keeps its own closedness), and less every member
+/// the path carries that holds the path's value.
+///
+/// # Errors
+///
+/// A refusal naming the member under `at` when a member the path carries holds another value.
+pub fn ignoring(
+    value: crate::json::Value,
+    fields: &[&str],
+    path: &[(String, crate::json::Value)],
+    at: &str,
+) -> Result<crate::json::Value, String> {
+    let crate::json::Value::Object(members) = value else {
+        // Not an object: the decoder refuses it by name.
+        return Ok(value);
+    };
+    for (wire, carried) in path {
+        if let Some((_, member)) = members.iter().find(|(name, _)| name == wire) {
+            if !same_value(member, carried) {
+                return Err(echoed(at, wire));
+            }
+        }
+    }
+    Ok(crate::json::Value::Object(
+        members
+            .into_iter()
+            .filter(|(name, _)| fields.contains(&name.as_str()))
+            .collect(),
+    ))
+}
+
+/// Holds each key of a `form` body or a query string read under `unknown: ignore` that the path
+/// carries, `(wire name, flat)`, to the path's value, read as its field reads it.
+///
+/// # Errors
+///
+/// A refusal naming the key under `at` when its value does not decode or is not the path's.
+pub fn echoed_keys(
+    text: &str,
+    carried: &[(&str, Flat)],
+    path: &[(String, crate::json::Value)],
+    at: &str,
+) -> Result<(), String> {
+    for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let Some(key) = form_decoded(key) else {
+            continue;
+        };
+        let Some(position) = carried.iter().position(|(wire, _)| *wire == key) else {
+            continue;
+        };
+        let place = crate::json::nested(at, &key);
+        let text = form_decoded(value).ok_or_else(|| {
+            format!("{place}: expected percent-encoded UTF-8 text, found `{value}`")
+        })?;
+        let read = flat_value(text, carried[position].1, &place)?;
+        if !path
+            .iter()
+            .find(|(wire, _)| *wire == key)
+            .is_some_and(|(_, held)| same_value(&read, held))
+        {
+            return Err(echoed(at, &key));
+        }
+    }
+    Ok(())
+}
+
+/// The refusal of a member or key the path carries with another value.
+fn echoed(at: &str, wire: &str) -> String {
+    format!(
+        "{}: the path carries this field with another value",
+        crate::json::nested(at, wire)
+    )
+}
+
+/// Whether a request's `member` holds what the path's `carried` value does: the same JSON value,
+/// or two numbers that denote one integer.
+fn same_value(member: &crate::json::Value, carried: &crate::json::Value) -> bool {
+    use crate::json::Value;
+    match (member, carried) {
+        (Value::Number(_), Value::Number(_)) if member != carried => matches!(
+            (
+                crate::json::integer_at(member, "", ""),
+                crate::json::integer_at(carried, "", ""),
+            ),
+            (Ok(one), Ok(other)) if one == other
+        ),
+        _ => member == carried,
+    }
+}
+"#;
+
+/// What the `http` module of a surface adds where a route takes a `multipart` request
+/// (beyond10x/ess#754): the RFC 7578 reader, which reads a text part as a `form` value and a file
+/// part's bytes as the base64 text the input's `Bytes` decoder reads.
+pub(super) const MULTIPART: &str = r#"
+// ---- a `multipart/form-data` request (RFC 7578), served -----------------------------------------
+
+/// The media type of a `multipart` request body.
+pub const MULTIPART: &str = "multipart/form-data";
+
+/// What a `multipart` request carries one input field as.
+#[derive(Debug, Clone, Copy)]
+pub enum Part {
+    /// A text part, read as a `form` value is.
+    Text(Flat),
+    /// A file part: its bytes as sent, its filename and media type read into input fields.
+    File {
+        /// The input field its filename is read into, `(wire name, required)`.
+        filename: Option<(&'static str, bool)>,
+        /// The input field its media type is read into, `(wire name, required)`.
+        media_type: Option<(&'static str, bool)>,
+        /// The media types it may carry; any where empty.
+        media_types: &'static [&'static str],
+    },
+}
+
+/// One part of a `multipart/form-data` body, as sent.
+#[derive(Debug, Clone)]
+pub struct Sent {
+    /// Its `Content-Disposition` `name`.
+    pub name: String,
+    /// Its `Content-Disposition` `filename`, if it has one.
+    pub filename: Option<String>,
+    /// Its media type without parameters; `text/plain` where it states none (RFC 7578 §4.4).
+    pub media_type: String,
+    /// Its content.
+    pub bytes: Vec<u8>,
+}
+
+/// The first `needle` in `haystack` at or after `from`.
+fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    haystack
+        .get(from..)?
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|at| at + from)
+}
+
+/// A header parameter's value: a quoted string unquoted, its `\` escapes undone, or the token.
+fn unquoted(text: &str) -> String {
+    let Some(inner) = text
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    else {
+        return text.to_owned();
+    };
+    let mut out = String::new();
+    let mut escaped = false;
+    for character in inner.chars() {
+        if escaped || character != '\\' {
+            out.push(character);
+            escaped = false;
+        } else {
+            escaped = true;
+        }
+    }
+    out
+}
+
+/// A header value's first item and its `name=value` parameters, split at each `;` outside a
+/// quoted string.
+fn parameters(value: &str) -> (String, Vec<(String, String)>) {
+    let mut items = Vec::new();
+    let mut item = String::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    for character in value.chars() {
+        match character {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            ';' if !quoted => {
+                items.push(std::mem::take(&mut item));
+                continue;
+            }
+            _ => {}
+        }
+        item.push(character);
+    }
+    items.push(item);
+    let first = items.remove(0).trim().to_owned();
+    let pairs = items
+        .iter()
+        .filter_map(|item| item.split_once('='))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), unquoted(value.trim())))
+        .collect();
+    (first, pairs)
+}
+
+/// The `boundary` of a `multipart/form-data` request.
+///
+/// # Errors
+///
+/// A refusal when the request's `Content-Type` is not `multipart/form-data` or states no boundary
+/// of 1 to 70 characters.
+fn boundary(request: &Request) -> Result<String, String> {
+    let value = request
+        .headers
+        .iter()
+        .find(|(name, _)| name == "content-type")
+        .map_or("", |(_, value)| value.as_str());
+    let (essence, pairs) = parameters(value);
+    if !essence.eq_ignore_ascii_case(MULTIPART) {
+        return Err("the body is not `multipart/form-data`".to_owned());
+    }
+    pairs
+        .into_iter()
+        .find(|(name, value)| name == "boundary" && (1..=70).contains(&value.len()))
+        .map(|(_, value)| value)
+        .ok_or_else(|| "the body is `multipart/form-data` without a `boundary`".to_owned())
+}
+
+/// One part's header section and content.
+fn sent(head: &[u8], bytes: Vec<u8>) -> Result<Sent, String> {
+    let head = std::str::from_utf8(head).map_err(|_| "a part's headers are not UTF-8".to_owned())?;
+    let (mut name, mut filename, mut media_type) = (None, None, None);
+    for line in head.split("\r\n").filter(|line| !line.is_empty()) {
+        let Some((key, value)) = line.split_once(':') else {
+            return Err(format!("a part's header is not `name: value`: `{line}`"));
+        };
+        let key = key.trim();
+        if key.eq_ignore_ascii_case("content-disposition") {
+            let (kind, pairs) = parameters(value);
+            if !kind.eq_ignore_ascii_case("form-data") {
+                return Err(format!("a part's disposition is `{kind}`, not `form-data`"));
+            }
+            for (key, value) in pairs {
+                match key.as_str() {
+                    "name" => name = Some(value),
+                    "filename" => filename = Some(value),
+                    _ => {}
+                }
+            }
+        } else if key.eq_ignore_ascii_case("content-type") {
+            media_type = Some(parameters(value).0);
+        }
+    }
+    let name = name.ok_or_else(|| "a part has no `Content-Disposition: form-data` name".to_owned())?;
+    Ok(Sent {
+        name,
+        filename,
+        media_type: media_type.unwrap_or_else(|| "text/plain".to_owned()),
+        bytes,
+    })
+}
+
+/// The parts of a `multipart/form-data` body, in the order sent (RFC 2046 §5.1.1): what precedes
+/// the first boundary and follows the closing one is ignored.
+///
+/// # Errors
+///
+/// A refusal when the request is not `multipart/form-data` with a boundary, holds no boundary, is
+/// not closed by its final boundary, or holds a part without a `form-data` name.
+pub fn multipart_parts(request: &Request) -> Result<Vec<Sent>, String> {
+    let boundary = boundary(request)?;
+    let body = &request.body[..];
+    let delimiter = format!("--{boundary}").into_bytes();
+    let close = [b"\r\n".as_slice(), &delimiter].concat();
+    let mut at = if body.starts_with(&delimiter) {
+        delimiter.len()
+    } else {
+        find(body, &close, 0)
+            .map(|start| start + close.len())
+            .ok_or_else(|| "the body holds no `multipart` boundary".to_owned())?
+    };
+    let unclosed = || "the body is not closed by its final boundary".to_owned();
+    let mut parts = Vec::new();
+    loop {
+        if body[at..].starts_with(b"--") {
+            return Ok(parts);
+        }
+        while matches!(body.get(at), Some(b' ' | b'\t')) {
+            at += 1;
+        }
+        if !body[at..].starts_with(b"\r\n") {
+            return Err(unclosed());
+        }
+        at += 2;
+        let (head, start) = if body[at..].starts_with(b"\r\n") {
+            (&body[at..at], at + 2)
+        } else {
+            let end = find(body, b"\r\n\r\n", at).ok_or_else(unclosed)?;
+            (&body[at..end], end + 4)
+        };
+        let end = find(body, &close, start).ok_or_else(unclosed)?;
+        parts.push(sent(head, body[start..end].to_vec())?);
+        at = end + close.len();
+    }
+}
+
+/// A `multipart` body as the object the input's decoder reads: one member per declared
+/// `(wire name, part, shape)` a part names, keyed by the wire name, a `List` as an array, empty
+/// when no part names it, and a file part's filename and media type under the wire names it reads
+/// them into. A part the path carries, or no field declares, is unknown: ignored where `ignore`,
+/// and malformed otherwise.
+///
+/// # Errors
+///
+/// A refusal naming the part under `at` for an unknown part under `refuse`, a part that is not a
+/// `List` given twice, a text part that is not UTF-8 or is empty for a field that is not a
+/// `String`, a file part whose media type is not one it may carry, or one without the filename or
+/// media type a required input field reads; and the refusals of [`multipart_parts`].
+pub fn multipart_object(
+    request: &Request,
+    fields: &[(&str, Part, Shape)],
+    carried: &[&str],
+    ignore: bool,
+    at: &str,
+) -> Result<crate::json::Value, String> {
+    let mut found: Vec<Vec<Sent>> = vec![Vec::new(); fields.len()];
+    for part in multipart_parts(request)? {
+        let place = crate::json::nested(at, &part.name);
+        let index = fields.iter().position(|(wire, _, _)| *wire == part.name);
+        let Some(index) = index.filter(|_| !carried.contains(&part.name.as_str())) else {
+            if ignore {
+                continue;
+            }
+            return Err(if carried.contains(&part.name.as_str()) {
+                format!("{place}: the path carries this field, so it is not a part here")
+            } else {
+                format!("{place}: no field of this request is named so")
+            });
+        };
+        found[index].push(part);
+    }
+    let mut members = Vec::new();
+    for ((wire, part, shape), sent) in fields.iter().zip(found) {
+        let place = crate::json::nested(at, wire);
+        if *shape != Shape::List && sent.len() > 1 {
+            return Err(format!("{place}: expected one part, found {}", sent.len()));
+        }
+        let mut values = Vec::new();
+        for one in sent {
+            values.push(part_value(one, *part, &place, &mut members)?);
+        }
+        if *shape == Shape::List {
+            members.push(((*wire).to_owned(), crate::json::Value::Array(values)));
+        } else if let Some(value) = values.pop() {
+            members.push(((*wire).to_owned(), value));
+        }
+    }
+    Ok(crate::json::Value::Object(members))
+}
+
+/// One part's value, a file part's filename and media type pushed onto `members`.
+fn part_value(
+    sent: Sent,
+    part: Part,
+    place: &str,
+    members: &mut Vec<(String, crate::json::Value)>,
+) -> Result<crate::json::Value, String> {
+    use crate::json::Value;
+    let (filename, media_type, media_types) = match part {
+        Part::Text(flat) => {
+            let text = String::from_utf8(sent.bytes)
+                .map_err(|_| format!("{place}: expected UTF-8 text"))?;
+            return flat_value(text, flat, place);
+        }
+        Part::File { filename, media_type, media_types } => (filename, media_type, media_types),
+    };
+    if !media_types.is_empty()
+        && !media_types
+            .iter()
+            .any(|admitted| admitted.eq_ignore_ascii_case(&sent.media_type))
+    {
+        let admitted: Vec<String> = media_types.iter().map(|it| format!("`{it}`")).collect();
+        return Err(format!(
+            "{place}: the part's media type is `{}`, not one of {}",
+            sent.media_type,
+            admitted.join(", ")
+        ));
+    }
+    for (read, value, what) in [
+        (filename, sent.filename, "filename"),
+        (media_type, Some(sent.media_type), "media type"),
+    ] {
+        let Some((wire, required)) = read else {
+            continue;
+        };
+        match value {
+            Some(text) => members.push((wire.to_owned(), Value::Text(text))),
+            None if required => {
+                return Err(format!(
+                    "{place}: the part has no {what}, which input field `{wire}` requires"
+                ));
+            }
+            None => {}
+        }
+    }
+    let mut encoded = String::new();
+    crate::json::push_base64(&mut encoded, &sent.bytes);
+    Ok(Value::Text(encoded.trim_matches('"').to_owned()))
+}
+"#;
+
+/// What the `http` module adds where a `multipart` route has a path variable and
+/// `unknown: ignore`: a part the path carries is held to the path's value, as a `form` key is.
+pub(super) const ECHOED_PARTS: &str = r#"
+/// Holds each part of a `multipart` body read under `unknown: ignore` that the path carries,
+/// `(wire name, flat)`, to the path's value, read as its field reads it.
+///
+/// # Errors
+///
+/// A refusal naming the part under `at` when its text does not decode or is not the path's, and
+/// the refusals of [`multipart_parts`].
+pub fn echoed_parts(
+    request: &Request,
+    carried: &[(&str, Flat)],
+    path: &[(String, crate::json::Value)],
+    at: &str,
+) -> Result<(), String> {
+    for part in multipart_parts(request)? {
+        let Some(position) = carried.iter().position(|(wire, _)| *wire == part.name) else {
+            continue;
+        };
+        let place = crate::json::nested(at, &part.name);
+        let text = String::from_utf8(part.bytes)
+            .map_err(|_| format!("{place}: expected UTF-8 text"))?;
+        let read = flat_value(text, carried[position].1, &place)?;
+        if !path
+            .iter()
+            .find(|(wire, _)| *wire == part.name)
+            .is_some_and(|(_, held)| same_value(&read, held))
+        {
+            return Err(echoed(at, &part.name));
+        }
+    }
+    Ok(())
+}
+"#;
+
+/// What the `http` module adds where a route lists `request.query` (beyond10x/ess#754): the join
+/// of the fields read from the query string with the body's.
+pub(super) const QUERIED: &str = r#"
+/// `value` with the members the query string carries added (beyond10x/ess#754): a field the
+/// route's `request.query` lists, by wire name in `listed`, is read from the query string alone,
+/// and the body naming it is malformed, whether the query carries it or not.
+///
+/// # Errors
+///
+/// A refusal naming the member under `at` when `value` holds one `listed` names, the first in
+/// the order listed.
+pub fn with_query(
+    value: crate::json::Value,
+    query: crate::json::Value,
+    listed: &[&str],
+    at: &str,
+) -> Result<crate::json::Value, String> {
+    let crate::json::Value::Object(read) = query else {
+        return Ok(value);
+    };
+    match value {
+        crate::json::Value::Object(mut members) => {
+            for wire in listed {
+                if members.iter().any(|(key, _)| key == wire) {
+                    return Err(format!(
+                        "{}: the query carries this field, so the body does not",
+                        crate::json::nested(at, wire)
+                    ));
+                }
+            }
+            members.extend(read);
+            Ok(crate::json::Value::Object(members))
+        }
+        // Not an object: the decoder refuses it by name.
+        other => Ok(other),
+    }
+}
+"#;
+
+/// Whether a route of `binding` lists `request.query`, which the surface joins with [`QUERIED`].
+pub(super) fn reads_query_beside_body(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| !request.query.is_empty())
+    })
+}
+
+/// Whether a route of `binding` takes a `multipart` request, which the surface reads with
+/// [`MULTIPART`].
+pub(super) fn reads_multipart(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
+    })
+}
+
+/// Whether a `multipart` route of `binding` has a path variable and `unknown: ignore`, which the
+/// surface reads with [`ECHOED_PARTS`].
+pub(super) fn echoes_parts(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        !route.parameters.is_empty()
+            && route.request.as_ref().is_some_and(|request| {
+                request.encoding == ess_http::Encoding::Multipart
+                    && request.unknown == ess_http::Unknown::Ignore
+            })
+    })
+}
+
+/// Whether a route of `binding` declares `unknown: ignore` beside a `json` body or a path variable,
+/// which the surface reads with [`IGNORING`].
+pub(super) fn ignores_unknown(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route.request.as_ref().is_some_and(|request| {
+            request.unknown == ess_http::Unknown::Ignore
+                && (request.encoding == ess_http::Encoding::Json || !route.parameters.is_empty())
+        })
+    })
+}
+
 /// The route match of a bound surface: every row of the table, tried in turn in
 /// [`http::dispatch_order`], path order but for a literal segment taking precedence over a
 /// variable at the first position two templates of one method differ.
@@ -962,6 +1481,187 @@ fn flat_table(server: &Server<'_>, fields: &[ResolvedField], route: &http::Route
     format!("&[{}]", rows.join(", "))
 }
 
+/// How a bound command route joins the object it read with the members its path carries, as Rust
+/// source reading `value` and `request`. Under `unknown: ignore` (beyond10x/ess#752) what no field
+/// names is dropped and what the path carries is held to the path's value before the path's members
+/// are added.
+fn joined(
+    server: &Server<'_>,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    at: &str,
+) -> String {
+    let request = http::request(route);
+    let variables = !http::path_fields(server.ir, route).is_empty();
+    let ignore = request.unknown == ess_http::Unknown::Ignore;
+    let members = if variables {
+        path_members(server, route)
+    } else {
+        "Vec::new()".to_owned()
+    };
+    match (
+        ignore && (variables || request.encoding == Encoding::Json),
+        request.encoding,
+    ) {
+        (false, _) => format!("http::with_path(value, {members}, {at:?})"),
+        (true, Encoding::Multipart) => format!(
+            "let carried = {members};\n        http::echoed_parts(request, {}, &carried, \
+             {at:?})?;\n        http::with_path(value, carried, {at:?})",
+            carried_flat_table(server, route)
+        ),
+        (true, Encoding::Json) => format!(
+            "let carried = {members};\n        let value = http::ignoring(value, {}, &carried, \
+             {at:?})?;\n        http::with_path(value, carried, {at:?})",
+            wire_table(server, &command.input, route)
+        ),
+        (true, encoding) => format!(
+            "let carried = {members};\n        http::echoed_keys({}, {}, &carried, {at:?})?;\n        \
+             http::with_path(value, carried, {at:?})",
+            if encoding == Encoding::Query {
+                "&request.query"
+            } else {
+                "http::body_text(&request.body)?"
+            },
+            carried_flat_table(server, route)
+        ),
+    }
+}
+
+/// `joined`, the join of the body with the path's members, joined in turn with the fields the
+/// route's `request.query` lists, read from the query string as `encoding: query` reads them
+/// (beyond10x/ess#754). A route that lists none keeps `joined` and its bytes.
+fn queried(
+    server: &Server<'_>,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    joined: String,
+) -> String {
+    let request = http::request(route);
+    if request.query.is_empty() {
+        return joined;
+    }
+    let fields: Vec<&ResolvedField> = request
+        .query_fields()
+        .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .collect();
+    let rows: Vec<String> = fields
+        .iter()
+        .map(|field| {
+            let (shape, flat) = http::flat(server.ir, &field.type_ref)
+                .unwrap_or((http::Shape::One, http::Flat::Text));
+            format!(
+                "({:?}, http::Flat::{}, http::Shape::{})",
+                ess_gen::schema::wire_field_name(field),
+                flat.as_str(),
+                shape.as_str()
+            )
+        })
+        .collect();
+    let listed: Vec<String> = fields
+        .iter()
+        .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
+        .collect();
+    format!(
+        "let value = {{\n        {joined}\n        }}?;\n        let query = \
+         http::flat_object(&request.query, &[{}], &[], {}, \"query\")?;\n        \
+         http::with_query(value, query, &[{}], \"body\")",
+        rows.join(", "),
+        request.unknown == ess_http::Unknown::Ignore,
+        listed.join(", ")
+    )
+}
+
+/// A `multipart` request's `(wire name, part, shape)` table, as Rust source (beyond10x/ess#754):
+/// every input field neither the path nor a part attribute carries, in declaration order, a
+/// `Bytes` field ([`http::file_part`]) a file part with the wire names its attributes read into.
+fn part_table(server: &Server<'_>, command: &ResolvedCommand, route: &http::Route<'_>) -> String {
+    let carried = http::carried(server.ir, route);
+    let read = http::attribute_fields(route.declared);
+    let request = http::request(route);
+    // The input field an attribute reads, as `Some((wire name, required))`.
+    let attribute = |source: Option<&ess_http::Source>| {
+        source
+            .and_then(|source| {
+                command
+                    .input
+                    .iter()
+                    .find(|field| field.name == source.field())
+            })
+            .map_or_else(
+                || "None".to_owned(),
+                |field| {
+                    format!(
+                        "Some(({:?}, {}))",
+                        ess_gen::schema::wire_field_name(field),
+                        !field.type_ref.is_optional()
+                    )
+                },
+            )
+    };
+    let rows: Vec<String> = command
+        .input
+        .iter()
+        .filter(|field| {
+            !carried.contains(field.name.as_str()) && !read.contains(field.name.as_str())
+        })
+        .map(|field| {
+            let (shape, flat) = http::flat(server.ir, &field.type_ref)
+                .unwrap_or((http::Shape::One, http::Flat::Text));
+            let part = if http::file_part(server.ir, &field.type_ref).is_some() {
+                let declared = request.parts.get(&field.name);
+                let types: Vec<String> = declared
+                    .map(|part| {
+                        part.media_types
+                            .iter()
+                            .map(|it| format!("{it:?}"))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                format!(
+                    "http::Part::File {{ filename: {}, media_type: {}, media_types: &[{}] }}",
+                    attribute(declared.and_then(|part| part.filename.as_ref())),
+                    attribute(declared.and_then(|part| part.media_type.as_ref())),
+                    types.join(", ")
+                )
+            } else {
+                format!("http::Part::Text(http::Flat::{})", flat.as_str())
+            };
+            format!(
+                "({:?}, {part}, http::Shape::{})",
+                ess_gen::schema::wire_field_name(field),
+                shape.as_str()
+            )
+        })
+        .collect();
+    format!("&[{}]", rows.join(", "))
+}
+
+/// The wire names of the input fields the path does not carry, as a Rust slice.
+fn wire_table(server: &Server<'_>, fields: &[ResolvedField], route: &http::Route<'_>) -> String {
+    let carried = http::carried(server.ir, route);
+    let wires: Vec<String> = fields
+        .iter()
+        .filter(|field| !carried.contains(field.name.as_str()))
+        .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
+        .collect();
+    format!("&[{}]", wires.join(", "))
+}
+
+/// The `(wire name, flat)` of each field the path carries, as a Rust slice.
+fn carried_flat_table(server: &Server<'_>, route: &http::Route<'_>) -> String {
+    let rows: Vec<String> = http::path_fields(server.ir, route)
+        .iter()
+        .map(|(_, field)| {
+            format!(
+                "({:?}, http::Flat::{})",
+                ess_gen::schema::wire_field_name(field),
+                flat_of(server, field).as_str()
+            )
+        })
+        .collect();
+    format!("&[{}]", rows.join(", "))
+}
+
 /// The wire names of the fields the path carries, as a Rust slice.
 fn carried_table(server: &Server<'_>, route: &http::Route<'_>) -> String {
     let wires: Vec<String> = http::path_fields(server.ir, route)
@@ -988,6 +1688,9 @@ fn command(
     let variables = !http::path_fields(ir, route).is_empty();
     let ignore = request.unknown == ess_http::Unknown::Ignore;
     let bare = http::bare_body(command, route.declared);
+    // What the path or the query string (beyond10x/ess#754) carries is not the body's to hold.
+    let mut outside = http::carried(ir, route);
+    outside.extend(http::queried(route.declared));
     let read = match request.encoding {
         // One input field's value is the whole body: read as the object holding that field alone,
         // or, where the body is not required, no body as the input `{}`.
@@ -997,7 +1700,7 @@ fn command(
                 "json::Value::Object(vec![({wire:?}.to_owned(), http::json_body(&request.body, \
                  true)?)])"
             );
-            if http::body_required_without(command, &http::carried(ir, route)) {
+            if http::body_required_without(command, &outside) {
                 held
             } else {
                 format!(
@@ -1009,7 +1712,12 @@ fn command(
         }
         Encoding::Json => format!(
             "http::json_body(&request.body, {})?",
-            http::body_required_without(command, &http::carried(ir, route))
+            http::body_required_without(command, &outside)
+        ),
+        Encoding::Multipart => format!(
+            "http::multipart_object(request, {}, {}, {ignore}, \"body\")?",
+            part_table(server, command, route),
+            carried_table(server, route)
         ),
         Encoding::Form => format!(
             "{{\n            if !http::content_type_is(request, http::FORM) {{\n                \
@@ -1031,6 +1739,7 @@ fn command(
         "body"
     };
     let path = if variables { "path" } else { "_path" };
+    let joined = queried(server, route, command, joined(server, route, command, at));
     let suffix = refusal_suffix(server, route);
     let declares = http::declares_answers(route);
     let answer = if declares {
@@ -1043,7 +1752,7 @@ fn command(
         "\n/// `{}` `{}`: `{}`, read and answered as its `ess-http/1` binding declares.\nfn \
          {}{angled}(system: &mut {system_crate}::System{angled}, request: &http::Request, \
          {path}: &[String], taken: &mut Vec<{system_crate}::SystemEvent>) -> http::Response\n{}{{\n    let read = || -> Result<json::Value, \
-         String> {{\n        let value = {read};\n        http::with_path(value, {}, {at:?})\n    \
+         String> {{\n        let value = {read};\n        {joined}\n    \
          }};\n    let value = match read() {{\n        Ok(value) => value,\n        Err(detail) => \
          return refusal_malformed{suffix}(&detail),\n    }};\n    match {run}(system, &value, taken) {{\n        \
          Ok((status, envelope)) => {answer},\n        Err(refused) => refused_bound{suffix}(&refused),\n    \
@@ -1053,11 +1762,6 @@ fn command(
         command.name,
         bound_ident(layout, &command.name),
         where_clause(server),
-        if variables {
-            path_members(server, route)
-        } else {
-            "Vec::new()".to_owned()
-        },
     );
     if declares {
         outcome_answer(out, server, route, command);
@@ -1091,7 +1795,7 @@ fn outcome_answer(
         .any(|source| matches!(source, AnswerSource::Response(_)))
         || listed
             .iter()
-            .any(|(_, declared)| matches!(declared.body, Body::Response | Body::ResponseField(_)));
+            .any(|(_, declared)| declared.body.reads_response());
     let reads_payload = sources
         .iter()
         .any(|source| matches!(source, AnswerSource::Error(_)))
@@ -1155,6 +1859,20 @@ fn outcome_arm(
         }
         Body::Response => {
             format!("http::Response::new({status}, http::JSON, http::bare(response))")
+        }
+        // The bare form's JSON under its one member (beyond10x/ess#755).
+        Body::Wrapped { member, field } => {
+            let bare = match field {
+                None => "http::bare(response)".to_owned(),
+                Some(field) => format!(
+                    "http::bare(response.and_then(|response| response.member({:?})))",
+                    response_wire(command, field)
+                ),
+            };
+            format!(
+                "http::Response::new({status}, http::JSON, {})",
+                wrapped_json(member, &bare)
+            )
         }
         // A string field answered `encoding: text`: its value alone, not JSON. The media type is
         // written inline rather than as a constant beside `JSON`, so a server whose binding
@@ -1337,7 +2055,10 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
     let run = runner_ident(layout, &view.name);
     let variables = !http::path_fields(ir, route).is_empty();
     let path = if variables { "path" } else { "_path" };
-    let request = if view.params.is_empty() {
+    let representations = route
+        .declared
+        .map_or(&[][..], |declared| &declared.representations[..]);
+    let request = if view.params.is_empty() && representations.is_empty() {
         "_request"
     } else {
         "request"
@@ -1354,6 +2075,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
         bound_ident(layout, &view.name),
         where_clause(server),
     );
+    out.push_str(&selection(representations, &suffix));
     if view.params.is_empty() {
         let _ = writeln!(out, "    let result = {run}(system);");
     } else {
@@ -1380,31 +2102,187 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
     }
     let body = route
         .declared
-        .map_or(ess_http::ViewBody::Rows, |declared| declared.body);
+        .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
     let empty = route
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)
         .and_then(|declared| declared.empty.as_ref());
-    let (status, answer) = match (body, empty) {
-        (_, Some(empty)) => ("_status", single_answer(empty)),
+    // The member a wrapped body names (beyond10x/ess#755): the bare answer goes under it.
+    let member = route
+        .declared
+        .and_then(|declared| declared.body.member.as_deref());
+    let (status, answer) = match (body, empty, member) {
+        (_, Some(empty), None) => ("_status", single_answer(empty)),
+        // The one row under its member; the empty answer as declared.
+        (_, Some(empty), Some(member)) => (
+            "_status",
+            format!(
+                "{{\n            let mut answer = {};\n            if answer.status == 200 {{\n                \
+                 answer.body = {};\n            }}\n            answer\n        }}",
+                single_answer(empty),
+                wrapped_json(member, "answer.body")
+            ),
+        ),
         // The rows of `{"rows": [...]}`, bare.
-        (ess_http::ViewBody::Array, None) => (
+        (ess_http::ViewBody::Array, None, None) => (
             "status",
             "{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
              http::Response::new(status, http::JSON, http::bare(read.member(\"rows\")))\n        \
              }"
             .to_owned(),
         ),
+        // The rows of `{"rows": [...]}`, under the member.
+        (ess_http::ViewBody::Array, None, Some(member)) => (
+            "status",
+            format!(
+                "{{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
+                 http::Response::new(status, http::JSON, {})\n        }}",
+                wrapped_json(member, "http::bare(read.member(\"rows\"))")
+            ),
+        ),
         _ => (
             "status",
             "http::Response::new(status, http::JSON, body)".to_owned(),
         ),
     };
+    let answer = represented(answer, server, view, representations);
     let _ = write!(
         out,
         "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
          refused_bound{suffix}(&refused),\n    }}\n}}\n"
     );
+}
+
+/// Rust code for the JSON text `inner`, an expression of type `String`, under the one `member` of
+/// an object: a wrapped body (beyond10x/ess#755). Written inline, so a server whose binding wraps
+/// nothing keeps its bytes.
+fn wrapped_json(member: &str, inner: &str) -> String {
+    format!(
+        "{{ let mut wrapped = String::from(\"{{\"); crate::json::member(&mut wrapped, \
+         {member:?}); wrapped.push_str(&{inner}); wrapped.push('}}'); wrapped }}"
+    )
+}
+
+/// Rust code binding `selected`, the representation the query selects (beyond10x/ess#753): its
+/// separator, whether a header line comes first, and its headers, or `None` for the JSON answer.
+/// A value no representation names, and the parameter given twice, are `malformed`. Written only
+/// on a route that declares representations, so every other server keeps its bytes.
+pub(super) fn selection(representations: &[ess_http::Representation], suffix: &str) -> String {
+    let Some(first) = representations.first() else {
+        return String::new();
+    };
+    let parameter = &first.query.parameter;
+    let values: Vec<String> = representations
+        .iter()
+        .map(|representation| format!("`{}`", representation.query.value))
+        .collect();
+    let expected = match &values[..] {
+        [only] => only.clone(),
+        several => format!("one of {}", several.join(", ")),
+    };
+    let mut arms = String::new();
+    for representation in representations {
+        let headers: Vec<String> = representation
+            .headers
+            .iter()
+            .filter_map(|(name, header)| match header {
+                Header::Literal(text) => Some(format!("({name:?}, {text:?})")),
+                Header::Source(_) | Header::Challenge(_) => None,
+            })
+            .collect();
+        let _ = writeln!(
+            arms,
+            "            Some(json::Value::Text(value)) if value == {:?} => Some(({:?}, {}, &[{}])),",
+            representation.query.value,
+            representation.encoding.csv.separator.as_char(),
+            representation.encoding.csv.header,
+            headers.join(", ")
+        );
+    }
+    format!(
+        "    // The representation the query selects: its separator, whether a header line comes \
+         first, and\n    // its headers; `None` answers the JSON body.\n    let selected: \
+         Option<(char, bool, &[(&str, &str)])> =\n        match http::query_object(&request.query, \
+         &[({parameter:?}, http::Scalar::Text)], \"query\") {{\n            Err(detail) => return \
+         refusal_malformed{suffix}(&detail),\n            Ok(found) => match \
+         found.member({parameter:?}) {{\n            None => None,\n{arms}            Some(_) => {{\n                \
+         return refusal_malformed{suffix}({:?})\n            }}\n        }},\n    }};\n",
+        format!("query.{parameter}: expected {expected}")
+    )
+}
+
+/// `answer`, the JSON answer, as it stands, or beside the CSV one when the route declares
+/// `representations` (beyond10x/ess#753): `selected` chooses between them.
+fn represented(
+    answer: String,
+    server: &Server<'_>,
+    view: &ResolvedView,
+    representations: &[ess_http::Representation],
+) -> String {
+    if representations.is_empty() {
+        return answer;
+    }
+    format!(
+        "match selected {{\n            None => {answer},\n            Some((separator, header, headers)) => {}\n        }}",
+        csv_answer(server, view)
+    )
+}
+
+/// Whether each field of `view`, in declaration order, is a text cell of its CSV: a `String`, an
+/// `Optional<String>` or a newtype of one. Such a cell opening with `=`, `+`, `-`, `@`, a tab or a
+/// CR is written behind `'`, so a spreadsheet does not read it as a formula; a number, an enum or
+/// a timestamp is written as it is. The Go server's writer reads the same rule.
+fn text_cells(ir: &ess_compiler::ir::EssIr, view: &ResolvedView) -> Vec<&'static str> {
+    view.fields
+        .iter()
+        .map(|field| match http::flat(ir, &field.type_ref) {
+            Some((http::Shape::One | http::Shape::Optional, http::Flat::String)) => "true",
+            _ => "false",
+        })
+        .collect()
+}
+
+/// Rust code answering the rows of `{"rows": [...]}` (`body`, at `status`) as CSV, for the
+/// `separator`, `header` and `headers` [`selection`] bound: the view's fields in declaration order
+/// under their wire names, CRLF line ends, an absent value an empty field, each value in its flat
+/// text spelling, a text cell ([`text_cells`]) opening with `=`, `+`, `-`, `@`, a tab or a CR
+/// behind `'`, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
+fn csv_answer(server: &Server<'_>, view: &ResolvedView) -> String {
+    let columns: Vec<String> = view
+        .fields
+        .iter()
+        .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
+        .collect();
+    let guarded = text_cells(server.ir, view);
+    format!(
+        "{{\n                let read = json::parse(&body).unwrap_or(json::Value::Null);\n                \
+         let columns = [{}];\n                // A text cell opening with a character a spreadsheet reads as a formula is\n                // written behind an apostrophe.\n                let guarded = [{}];\n                let field = |out: &mut String, text: &str| {{\n                    \
+         if text.contains([separator, '\"', '\\r', '\\n']) {{\n                        \
+         out.push('\"');\n                        out.push_str(&text.replace('\"', \"\\\"\\\"\"));\n                        \
+         out.push('\"');\n                    }} else {{\n                        \
+         out.push_str(text);\n                    }}\n                }};\n                let mut csv \
+         = String::new();\n                if header {{\n                    for (index, column) in \
+         columns.iter().enumerate() {{\n                        if index > 0 {{\n                            \
+         csv.push(separator);\n                        }}\n                        field(&mut csv, \
+         column);\n                    }}\n                    csv.push_str(\"\\r\\n\");\n                \
+         }}\n                if let Some(json::Value::Array(rows)) = read.member(\"rows\") {{\n                    \
+         for row in rows {{\n                        for (index, column) in \
+         columns.iter().enumerate() {{\n                            if index > 0 {{\n                                \
+         csv.push(separator);\n                            }}\n                            let text = \
+         match row.member(column) {{\n                                None | \
+         Some(json::Value::Null) => String::new(),\n                                \
+         Some(json::Value::Text(text)) => text.clone(),\n                                \
+         Some(value) => http::bare(Some(value)),\n                            }};\n                            \
+         let text = if guarded[index]\n                                && text.starts_with(['=', '+', '-', '@', '\\t', '\\r'])\n                            {{\n                                format!(\"'{{text}}\")\n                            }} else {{\n                                text\n                            }};\n                            \
+         field(&mut csv, &text);\n                        }}\n                        \
+         csv.push_str(\"\\r\\n\");\n                    }}\n                }}\n                let mut \
+         answer = http::Response::new(status, \"text/csv; charset=utf-8\", csv);\n                \
+         answer.headers.extend(\n                    headers\n                        .iter()\n                        \
+         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),\n                );\n                \
+         answer\n            }}",
+        columns.join(", "),
+        guarded.join(", ")
+    )
 }
 
 /// A `single` view's answer: its one row, or `empty` when it holds none, with no body or the

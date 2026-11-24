@@ -12,7 +12,8 @@ use ess_compiler::ir::EssIr;
 use ess_domain::command::precedence::{phase_order, with_phase_order, Phase};
 use ess_domain::name::QualifiedName;
 
-use super::{created_memo, earlier_runs, first_kept, grant, related_guard, row_set, run_memo};
+use super::{created_memo, earlier_runs, first_kept, grant, prepare_memo, related_guard};
+use super::{row_set, run_memo};
 use super::{subject_fact, DroppedGrant, DroppedWrite};
 use super::{AddedGrant, Synthesis};
 
@@ -115,6 +116,11 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
         "STEERING_WORK",
         Handling::Counter,
     ),
+    ("synthesize/prepare_memo.rs", "ASKED", Handling::Counter),
+    ("synthesize/prepare_memo.rs", "KEPT", Handling::Memory),
+    ("synthesize/prepare_memo.rs", "KEYS", Handling::Test),
+    ("synthesize/prepare_memo.rs", "MADE", Handling::Counter),
+    ("synthesize/prepare_memo.rs", "UNKEPT", Handling::Context),
     (
         "synthesize/related_guard.rs",
         "BESIDE_OPEN",
@@ -133,6 +139,7 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ),
     ("synthesize/related_guard.rs", "OWN_WORK", Handling::Counter),
     ("synthesize/row_set.rs", "ATTEMPTS", Handling::Counter),
+    ("synthesize/row_set.rs", "SELECTORS", Handling::Counter),
     ("synthesize/row_set.rs", "TRIED", Handling::Counter),
     ("synthesize/run_memo.rs", "ASKED", Handling::Counter),
     ("synthesize/run_memo.rs", "KEPT", Handling::Memory),
@@ -166,20 +173,191 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ("witness_memo.rs", "WORK", Handling::Test),
 ];
 
+/// For every `Scope` and `Context` row of [`STATE`], and every Counter row whose flag [`Context`]
+/// carries, the part of a preparation's key that carries it ([`super::prepare_memo`]), or why it
+/// needs none. A row of either handling missing here fails
+/// `every_static_of_the_crate_is_classified`.
+#[cfg(test)]
+pub(super) const PREPARE_KEY: &[(&str, &str, &str)] = &[
+    ("synthesize.rs", "DROPPED", "Context::dropped_write"),
+    ("synthesize.rs", "SCOPE", "Context::scope"),
+    (
+        "synthesize/created_memo.rs",
+        "UNKEPT",
+        "Context::created_unkept",
+    ),
+    (
+        "synthesize/earlier_runs.rs",
+        "EARLIER",
+        "earlier_runs::captured",
+    ),
+    ("synthesize/first_kept.rs", "WORK", "Context::first_fresh"),
+    ("synthesize/grant.rs", "ADDED", "Context::added_grant"),
+    ("synthesize/grant.rs", "DROPPED", "Context::dropped_grant"),
+    (
+        "synthesize/prepare_memo.rs",
+        "UNKEPT",
+        "none: while it is set nothing is kept or read",
+    ),
+    (
+        "synthesize/related_guard.rs",
+        "BESIDE_OPEN",
+        "related_guard::open_key",
+    ),
+    (
+        "synthesize/related_guard.rs",
+        "COMPANION_WORK",
+        "Context::companion_fresh",
+    ),
+    (
+        "synthesize/related_guard.rs",
+        "OWN_OPEN",
+        "related_guard::open_key",
+    ),
+    (
+        "synthesize/row_set.rs",
+        "ATTEMPTS",
+        "Context::attempts_fresh",
+    ),
+    ("synthesize/run_memo.rs", "UNKEPT", "Context::runs_unkept"),
+    (
+        "synthesize/subject_fact.rs",
+        "HELD",
+        "subject_fact::held_key",
+    ),
+    (
+        "witness.rs",
+        "REFERENCE",
+        "none: set only inside the reference build of `Builder::entry`, which prepares no branch",
+    ),
+    ("witness.rs", "UNDER_TEST", "witness::under_test_key"),
+];
+
+/// Every `static` of the crates synthesis reads outside this one, `ess-domain` and
+/// `ess-primitives`: the crate, the path under its `src/`, the name, and the part of a
+/// preparation's key that carries it or why synthesis does not change it during a run.
+#[cfg(test)]
+pub(super) const OTHER_CRATES: &[(&str, &str, &str, &str)] = &[
+    (
+        "ess-domain",
+        "command.rs",
+        "NAMES_COMPENSATING_DELETE",
+        "none: set only while a source document is converted",
+    ),
+    (
+        "ess-domain",
+        "command.rs",
+        "READS_INPUT_NAMESPACE",
+        "none: set only while a source document is converted",
+    ),
+    (
+        "ess-domain",
+        "command/precedence.rs",
+        "PHASE_ORDER",
+        "Context::phase_order",
+    ),
+    (
+        "ess-domain",
+        "command/row_set.rs",
+        "FILTERED_READS",
+        "none: set only while a source document is parsed",
+    ),
+    (
+        "ess-domain",
+        "command/set_effects.rs",
+        "ADMITS_DELETIONS",
+        "none: set only while a source document is converted",
+    ),
+    (
+        "ess-domain",
+        "domain.rs",
+        "CONTAINMENT_CHECKS",
+        "none: a work counter",
+    ),
+    (
+        "ess-domain",
+        "domain.rs",
+        "DECLARATIONS_EXAMINED",
+        "none: a work counter",
+    ),
+    (
+        "ess-domain",
+        "expression/attributes.rs",
+        "CONVERTING_ATTRIBUTES",
+        "none: set only while a source document is converted",
+    ),
+    (
+        "ess-domain",
+        "system.rs",
+        "CHECKED",
+        "none: a memory answering what the inhabitation check answers",
+    ),
+    (
+        "ess-domain",
+        "system.rs",
+        "TYPE_CHECK_WORK",
+        "none: a work counter",
+    ),
+    (
+        "ess-domain",
+        "types.rs",
+        "CONVERSIONS_EXAMINED",
+        "none: a work counter",
+    ),
+    ("ess-domain", "types.rs", "COPIED", "none: a work counter"),
+    (
+        "ess-domain",
+        "types.rs",
+        "MAP_KEY_NEWTYPES",
+        "none: set only while a document is read (`MapKeyNewtypes::scope`)",
+    ),
+    (
+        "ess-primitives",
+        "facts.rs",
+        "EMPTY",
+        "none: an immutable `OnceLock`",
+    ),
+    (
+        "ess-primitives",
+        "facts.rs",
+        "INEXACT_DECIMALS",
+        "none: collected only while a document is read",
+    ),
+    (
+        "ess-primitives",
+        "facts.rs",
+        "TABLE",
+        "none: interns a value; what it hands out equals what it is given",
+    ),
+    (
+        "ess-primitives",
+        "json.rs",
+        "ON",
+        "none: a `OnceLock` of how the linked `serde_json` holds numbers, fixed per process",
+    ),
+    (
+        "ess-primitives",
+        "predicate.rs",
+        "SOURCE22_OPERANDS",
+        "none: set only while a source document is parsed",
+    ),
+];
+
 /// What a caller reading reads from the thread it runs on, as the planning thread holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)] // five independent switches, each read by one setter
+#[allow(clippy::struct_excessive_bools)] // six independent switches, each read by one setter
 pub(super) struct Context {
-    scope: Option<BTreeSet<QualifiedName>>,
-    dropped_write: Option<DroppedWrite>,
-    dropped_grant: Option<DroppedGrant>,
-    added_grant: Option<AddedGrant>,
-    phase_order: [Phase; 8],
-    created_unkept: bool,
-    runs_unkept: bool,
-    first_fresh: bool,
-    attempts_fresh: bool,
-    companion_fresh: bool,
+    pub(super) scope: Option<BTreeSet<QualifiedName>>,
+    pub(super) dropped_write: Option<DroppedWrite>,
+    pub(super) dropped_grant: Option<DroppedGrant>,
+    pub(super) added_grant: Option<AddedGrant>,
+    pub(super) phase_order: [Phase; 8],
+    pub(super) created_unkept: bool,
+    pub(super) runs_unkept: bool,
+    pub(super) prepares_unkept: bool,
+    pub(super) first_fresh: bool,
+    pub(super) attempts_fresh: bool,
+    pub(super) companion_fresh: bool,
 }
 
 impl Context {
@@ -193,6 +371,12 @@ impl Context {
                 && !subject_fact::holding_any(),
             "caller readings are planned outside every reading's scope"
         );
+        Self::current()
+    }
+
+    /// The context of this thread, wherever it is read: inside a reading too, where a preparation
+    /// keys its memory on it ([`super::prepare_memo`]).
+    pub(super) fn current() -> Self {
         Self {
             scope: super::scope(),
             dropped_write: super::dropped_write(),
@@ -201,6 +385,7 @@ impl Context {
             phase_order: phase_order(),
             created_unkept: created_memo::is_unkept(),
             runs_unkept: run_memo::is_unkept(),
+            prepares_unkept: prepare_memo::is_unkept(),
             first_fresh: first_kept::fresh(),
             attempts_fresh: row_set::attempts_fresh(),
             companion_fresh: related_guard::companion_fresh(),
@@ -222,6 +407,11 @@ impl Context {
                         };
                         let run: Box<dyn FnOnce() -> R + '_> = if self.runs_unkept {
                             Box::new(|| run_memo::unkept(run))
+                        } else {
+                            run
+                        };
+                        let run: Box<dyn FnOnce() -> R + '_> = if self.prepares_unkept {
+                            Box::new(|| prepare_memo::unkept(run))
                         } else {
                             run
                         };
@@ -298,6 +488,8 @@ work! {
     absent_built: u64 = super::model_memo::taken_absent_built();
     steering_maps: u64 = super::ordered_head::taken_steering_work().0;
     steering_checks: u64 = super::ordered_head::taken_steering_work().1;
+    prepare_asked: u64 = prepare_memo::taken_asked();
+    prepare_made: u64 = prepare_memo::taken_made();
     companion_asked: u64 = related_guard::taken_companion_work().0;
     companion_searched: u64 = related_guard::taken_companion_work().1;
     own_overlay_built: u64 = related_guard::taken_own_overlay_work().0;
@@ -306,6 +498,7 @@ work! {
     own_strict: u64 = related_guard::taken_own_work().1;
     own_deepest: usize = related_guard::taken_own_work().2;
     attempts: u64 = row_set::taken_attempts();
+    selectors: u64 = row_set::taken_selectors();
     tried: u64 = row_set::taken_tried();
     run_asked: u64 = run_memo::taken_asked();
     run_made: u64 = run_memo::taken_made();
@@ -349,10 +542,13 @@ impl Work {
         "synthesize/made.rs:RELATED_PICKS",
         "synthesize/model_memo.rs:ABSENT_BUILT",
         "synthesize/ordered_head.rs:STEERING_WORK",
+        "synthesize/prepare_memo.rs:ASKED",
+        "synthesize/prepare_memo.rs:MADE",
         "synthesize/related_guard.rs:COMPANION_WORK",
         "synthesize/related_guard.rs:OWN_OVERLAY_WORK",
         "synthesize/related_guard.rs:OWN_WORK",
         "synthesize/row_set.rs:ATTEMPTS",
+        "synthesize/row_set.rs:SELECTORS",
         "synthesize/row_set.rs:TRIED",
         "synthesize/run_memo.rs:ASKED",
         "synthesize/run_memo.rs:MADE",
@@ -394,6 +590,8 @@ impl Work {
         super::made::add_related_picks(self.related_picks);
         super::model_memo::add_absent_built(self.absent_built);
         super::ordered_head::add_steering_work((self.steering_maps, self.steering_checks));
+        prepare_memo::add_asked(self.prepare_asked);
+        prepare_memo::add_made(self.prepare_made);
         related_guard::add_companion_work((self.companion_asked, self.companion_searched));
         related_guard::add_own_overlay_work((
             self.own_overlay_built,
@@ -401,6 +599,7 @@ impl Work {
         ));
         related_guard::add_own_work((self.own_arranged, self.own_strict, self.own_deepest));
         row_set::add_attempts(self.attempts);
+        row_set::add_selectors(self.selectors);
         row_set::add_tried(self.tried);
         run_memo::add_asked(self.run_asked);
         run_memo::add_made(self.run_made);
@@ -445,7 +644,7 @@ mod tests {
         created_memo, creations_made, earlier_runs, first_rows_made, scoped_to, with_added_grant,
         with_dropped_grant, with_dropped_write, AddedGrant, DroppedGrant, DroppedWrite,
     };
-    use super::{Context, Handling, Work, STATE};
+    use super::{Context, Handling, Work, OTHER_CRATES, PREPARE_KEY, STATE};
 
     /// Every `.rs` file under `dir`, as its path under `base` with `/` and its text, in byte
     /// order of the path.
@@ -547,6 +746,63 @@ mod tests {
         assert!(
             keys.windows(2).all(|pair| pair[0] < pair[1]),
             "`STATE` is sorted by path, then name, with no row twice"
+        );
+        // Every row a preparation may read the value of names the part of its key carrying it.
+        let carried: BTreeSet<(&str, &str)> = PREPARE_KEY
+            .iter()
+            .map(|(path, name, _)| (*path, *name))
+            .collect();
+        let unkeyed: Vec<_> = STATE
+            .iter()
+            .filter(|(_, _, handling)| matches!(handling, Handling::Scope | Handling::Context))
+            .filter(|(path, name, _)| !carried.contains(&(*path, *name)))
+            .map(|(path, name, _)| format!("  src/{path}: {name}"))
+            .collect();
+        let stale: Vec<_> = carried
+            .iter()
+            .filter(|key| !keys.contains(key))
+            .map(|(path, name)| format!("  src/{path}: {name}"))
+            .collect();
+        assert!(
+            unkeyed.is_empty() && stale.is_empty(),
+            "a Scope or Context row of `STATE` names no part of the prepare key:\n{}\nin \
+             `PREPARE_KEY` and not in `STATE`:\n{}\nname the part of `prepare_memo::key` carrying \
+             it in `PREPARE_KEY` (`src/synthesize/threads.rs`), or why it needs none",
+            unkeyed.join("\n"),
+            stale.join("\n"),
+        );
+    }
+
+    #[test]
+    fn every_static_of_the_domain_and_primitives_crates_is_classified_for_the_prepare_key() {
+        let crates = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../specify"));
+        let mut declared = BTreeSet::new();
+        for name in ["ess-domain", "ess-primitives"] {
+            let base = crates.join(name).join("src");
+            let mut files = Vec::new();
+            sources(&base, &base, &mut files);
+            for (path, text) in &files {
+                for line in text.lines() {
+                    for found in statics_in(line) {
+                        declared.insert((name.to_owned(), path.clone(), found));
+                    }
+                }
+            }
+        }
+        let listed: BTreeSet<(String, String, String)> = OTHER_CRATES
+            .iter()
+            .map(|(krate, path, name, _)| {
+                ((*krate).to_owned(), (*path).to_owned(), (*name).to_owned())
+            })
+            .collect();
+        let missing: Vec<_> = declared.difference(&listed).collect();
+        let extra: Vec<_> = listed.difference(&declared).collect();
+        assert!(
+            missing.is_empty() && extra.is_empty(),
+            "the statics of ess-domain and ess-primitives and `OTHER_CRATES` differ\nmissing:\n\
+             {missing:#?}\nlisted and not declared:\n{extra:#?}\nname the part of \
+             `prepare_memo::key` carrying it in `OTHER_CRATES` (`src/synthesize/threads.rs`), or \
+             why synthesis does not change it during a run"
         );
     }
 

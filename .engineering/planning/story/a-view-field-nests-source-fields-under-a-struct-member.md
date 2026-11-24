@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -30,7 +31,7 @@ scope:
   path: docs/design/value-expressions.md
 - confidence: cited
   path: website/docs/guides/specify/values-and-views.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:34Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:35Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
@@ -65,6 +66,8 @@ Minimal reproduction (0.92.0, `ess/36`): struct `example.files.Meta` (`id`, `nam
 This story is the model half: the key, validation, IR, diff and the reference.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 The validation bullets run in `cargo test -p ess-domain --locked --test view_nested_field`.
 

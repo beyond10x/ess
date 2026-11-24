@@ -1,4 +1,4 @@
-#	models=407	commands=847
+#	models=409	commands=852
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -216,12 +216,19 @@ crates/specify/ess-http/tests/fixtures/catalog.yaml	ir=11e75f985e5228749c7c2764f
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.ListItem	default: listed
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.PurgeItems	default: purged
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.TouchItem	default: touched
+crates/specify/ess-http/tests/fixtures/imports.yaml	ir=32e21939e3b668c35c0773f36358d49a253f35edf795069f29d5ef6ccc0f0548:10095
+crates/specify/ess-http/tests/fixtures/imports.yaml	demo.imports.AttachFiles	default: attached
+crates/specify/ess-http/tests/fixtures/imports.yaml	demo.imports.AttachPhoto	default: attached
+crates/specify/ess-http/tests/fixtures/imports.yaml	demo.imports.ImportRows	default: imported
+crates/specify/ess-http/tests/fixtures/imports.yaml	demo.imports.ShapeRows	default: shaped
 crates/specify/ess-http/tests/fixtures/notes.yaml	ir=6f96343df02c571d719dacdb5a0ef098805379515c16fc96ee0b4a45d1d41c5a:10008
 crates/specify/ess-http/tests/fixtures/notes.yaml	demo.notes.CreateNote	input_refusal: too-large, negative, blank | accepting: skipped, fetched | default: inline
 crates/specify/ess-http/tests/fixtures/notes.yaml	demo.notes.TouchNote	default: touched
 crates/specify/ess-http/tests/fixtures/orders.yaml	ir=fddd48b56d6cbdc488eac31670526927c5688b1b586aaf658f263858597eef1e:13993
 crates/specify/ess-http/tests/fixtures/orders.yaml	catalog.orders.NoteOrder	default: noted
 crates/specify/ess-http/tests/fixtures/orders.yaml	catalog.orders.PlaceOrder	input_refusal: out-of-stock, too-many | accepting: placed | default: mislabelled
+crates/specify/ess-http/tests/fixtures/reports.yaml	ir=12083d0affb6ee17115ed8e441898d6cf82198a2d4c943c6896e5ee3c1c2c47e:8517
+crates/specify/ess-http/tests/fixtures/reports.yaml	demo.reports.TouchRow	default: touched
 crates/specify/ess-http/tests/fixtures/tasks.yaml	ir=834cec5502320fda7ef23ec2123b15a833d4e705d472266e328954943e575e38:10567
 crates/specify/ess-http/tests/fixtures/tasks.yaml	catalog.tasks.LabelTask	input_refusal: mislabelled | default: labelled
 crates/specify/ess-http/tests/fixtures/tasks.yaml	catalog.tasks.NoteTask	default: noted

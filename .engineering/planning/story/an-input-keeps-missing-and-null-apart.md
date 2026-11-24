@@ -15,6 +15,7 @@ relations:
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/src/lib.rs
@@ -46,7 +47,7 @@ scope:
   path: docs/design/omitted-or-null-presence.md
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:53Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":2,"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:54Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2,"verification":1}}}
@@ -79,6 +80,8 @@ example v1 — 1 file(s), valid                       # keeps on missing, but al
 ```
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - `docs/design/omitted-or-null-presence.md` gains § "Keep on missing, clear on null", status
   accepted, stating the three-valued input, both constructs, their positions on the grids, every

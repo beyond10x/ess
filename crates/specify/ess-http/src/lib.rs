@@ -63,6 +63,8 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-032",
     "ESS-HTTP-033",
     "ESS-HTTP-034",
+    "ESS-HTTP-035",
+    "ESS-HTTP-036",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -180,11 +182,15 @@ pub enum Encoding {
     /// No body: every input field the path does not map is in the query string. The only
     /// encoding a command on `get` may use, and one a command on `delete` may use too.
     Query,
+    /// A `multipart/form-data` body (RFC 7578): one part per input field the path does not map, a
+    /// `Bytes` field a file part, its bytes raw, every other field a text part spelled as `form`
+    /// spells it (beyond10x/ess#754).
+    Multipart,
 }
 
 impl Encoding {
     /// Every encoding, in the order the format lists them.
-    pub const ALL: [Self; 3] = [Self::Json, Self::Form, Self::Query];
+    pub const ALL: [Self; 4] = [Self::Json, Self::Form, Self::Query, Self::Multipart];
 
     /// The encoding as a binding spells it.
     pub fn as_str(self) -> &'static str {
@@ -192,6 +198,7 @@ impl Encoding {
             Self::Json => "json",
             Self::Form => "form",
             Self::Query => "query",
+            Self::Multipart => "multipart",
         }
     }
 
@@ -231,10 +238,11 @@ impl fmt::Display for Encoding {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Unknown {
-    /// A parameter no field names makes the request malformed.
+    /// A parameter or member no field names, or one the path carries, makes the request malformed.
     #[default]
     Refuse,
-    /// A parameter no field names is ignored (RFC 6749 §3.1).
+    /// A parameter or member no field names is ignored (RFC 6749 §3.1), and one the path carries
+    /// is admitted when its value is the path's (beyond10x/ess#752).
     Ignore,
 }
 
@@ -275,7 +283,7 @@ impl fmt::Display for Unknown {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestSpec {
-    /// `json`, `form` or `query`; absent, `json`.
+    /// `json`, `form`, `query` or `multipart`; absent, `json`.
     #[serde(default)]
     pub encoding: Option<String>,
     /// `refuse` or `ignore`; absent, `refuse`.
@@ -285,6 +293,121 @@ pub struct RequestSpec {
     /// body; absent, the body is the input object.
     #[serde(default)]
     pub body: Option<String>,
+    /// The attributes of a `multipart` request's file parts, by the `Bytes` input field each part
+    /// carries (beyond10x/ess#754); held to their rules by [`compile`] (`ESS-HTTP-036`).
+    #[serde(default)]
+    pub parts: Option<BTreeMap<String, PartSpec>>,
+    /// `input.<field>` each: the input fields read from the query string beside the body, each under
+    /// its wire name with the flat spelling `encoding: query` reads (beyond10x/ess#754); held to
+    /// their rules by [`compile`] (`ESS-HTTP-020`, `ESS-HTTP-021`).
+    #[serde(default)]
+    pub query: Option<Vec<String>>,
+}
+
+/// One file part's attributes, as written: what reads its filename and its media type into the
+/// input, and the media types it may carry. Each source is read as text, so that one outside its
+/// rules is refused with a code and a path (`ESS-HTTP-036`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartSpec {
+    /// `input.<field>`: the `String` input field the part's filename is read into.
+    #[serde(default)]
+    pub filename: Option<String>,
+    /// `input.<field>`: the `String` input field the part's media type is read into.
+    #[serde(default)]
+    pub media_type: Option<String>,
+    /// The media types the part may carry, RFC 6838 `type/subtype`; another is malformed.
+    #[serde(default)]
+    pub media_types: Option<Vec<String>>,
+}
+
+/// One file part of a compiled `multipart` request: what reads its filename and media type into
+/// the input, and the media types it may carry, each omitted when the binding states none.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Part {
+    /// The `String` input field the part's filename is read into.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "part_source"
+    )]
+    pub filename: Option<Source>,
+    /// The `String` input field the part's media type is read into.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "part_source"
+    )]
+    pub media_type: Option<Source>,
+    /// The media types the part may carry, in the order written; empty, any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_types: Vec<String>,
+}
+
+/// Reads a compiled part attribute's source, which names a command's input field.
+fn part_source<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Source>, D::Error> {
+    match <Source as serde::Deserialize>::deserialize(deserializer)? {
+        source @ Source::Input(_) => Ok(Some(source)),
+        source @ Source::Param(_) => Err(serde::de::Error::custom(format!(
+            "a part's `filename` or `media_type` is `{source}`; it reads into one input field of \
+             a command, `input.<field>`"
+        ))),
+    }
+}
+
+/// Reads a compiled request's `parts`, refusing them written empty: compiled IR omits them.
+fn written_parts<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Part>, D::Error> {
+    let parts = <BTreeMap<String, Part> as serde::Deserialize>::deserialize(deserializer)?;
+    if parts.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`request.parts` is written empty, which compiled IR omits",
+        ));
+    }
+    Ok(parts)
+}
+
+/// Reads a compiled request's `query`, refusing it written empty, which compiled IR omits, and an
+/// entry that is not `input.<field>`.
+fn written_query<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Source>, D::Error> {
+    let query = <Vec<Source> as serde::Deserialize>::deserialize(deserializer)?;
+    if query.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`request.query` is written empty, which compiled IR omits",
+        ));
+    }
+    if let Some(source) = query
+        .iter()
+        .find(|source| matches!(source, Source::Param(_)))
+    {
+        return Err(serde::de::Error::custom(format!(
+            "`request.query` lists `{source}`; it lists input fields of a command, `input.<field>`"
+        )));
+    }
+    Ok(query)
+}
+
+/// Whether `text` is an RFC 6838 media type without parameters, `type/subtype`: each name 1 to 127
+/// characters, starting with a letter or a digit, of letters, digits and ``!#$&-^_.+``.
+pub fn is_media_type(text: &str) -> bool {
+    let name = |part: &str| {
+        (1..=127).contains(&part.len())
+            && part
+                .bytes()
+                .next()
+                .is_some_and(|first| first.is_ascii_alphanumeric())
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$&-^_.+".contains(&byte))
+    };
+    text.split_once('/')
+        .is_some_and(|(kind, subtype)| name(kind) && name(subtype))
 }
 
 /// A compiled route's `request`. Each key whose value is its default is omitted from the IR, and
@@ -309,6 +432,22 @@ pub struct Request {
         deserialize_with = "omitted_default"
     )]
     pub encoding: Encoding,
+    /// The attributes of a `multipart` request's file parts, by the `Bytes` input field each part
+    /// carries, in name order; empty, and omitted, when the binding states none.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "written_parts"
+    )]
+    pub parts: BTreeMap<String, Part>,
+    /// The input fields read from the query string beside the body (`input.<field>`), in the order
+    /// written; empty, and omitted, when the binding lists none (beyond10x/ess#754).
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "written_query"
+    )]
+    pub query: Vec<Source>,
     /// What a request parameter no field names does.
     #[serde(
         default,
@@ -322,6 +461,12 @@ impl Request {
     /// The input field the body carries bare, by its local name, if it carries one.
     pub fn body_field(&self) -> Option<&str> {
         self.body.as_ref().map(Source::field)
+    }
+
+    /// The input fields read from the query string beside the body, by their local names, in the
+    /// order written.
+    pub fn query_fields(&self) -> impl Iterator<Item = &str> {
+        self.query.iter().map(Source::field)
     }
 }
 
@@ -389,16 +534,14 @@ pub enum BodySpec {
         /// Its text.
         text: String,
     },
-}
-
-impl BodySpec {
-    /// The word, when it is one.
-    fn word(&self) -> Option<&str> {
-        match self {
-            Self::Word(word) => Some(word),
-            Self::Error(_) | Self::Literal { .. } => None,
-        }
-    }
+    /// `{<member>: <form>}`, any word but `error`: what the bare form answers, under `<member>`
+    /// (beyond10x/ess#755). Which forms a key admits is [`compile`]'s to check.
+    Wrapped {
+        /// The member's name.
+        member: String,
+        /// The bare form it holds, as written.
+        form: String,
+    },
 }
 
 impl fmt::Display for BodySpec {
@@ -409,6 +552,7 @@ impl fmt::Display for BodySpec {
             Self::Literal { member, text } => {
                 write!(formatter, "{{{member}: {{literal: {text}}}}}")
             }
+            Self::Wrapped { member, form } => write!(formatter, "{{{member}: {form}}}"),
         }
     }
 }
@@ -445,6 +589,7 @@ impl<'de> serde::Deserialize<'de> for BodySpec {
                 Ok(match value {
                     MemberValue::Error => BodySpec::Error(member),
                     MemberValue::Literal(text) => BodySpec::Literal { member, text },
+                    MemberValue::Form(form) => BodySpec::Wrapped { member, form },
                 })
             }
         }
@@ -473,14 +618,21 @@ impl serde::Serialize for BodySpec {
                 )?;
                 map.end()
             }
+            Self::Wrapped { member, form } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(member, form)?;
+                map.end()
+            }
         }
     }
 }
 
-/// The value of a body object's one member: `error` or `{literal: <text>}`.
+/// The value of a body object's one member: `error`, `{literal: <text>}`, or another word, the
+/// bare form it wraps.
 enum MemberValue {
     Error,
     Literal(String),
+    Form(String),
 }
 
 /// `{literal: <text>}`, closed.
@@ -498,18 +650,15 @@ impl<'de> serde::Deserialize<'de> for MemberValue {
             type Value = MemberValue;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("`error` or `{literal: <text>}`")
+                formatter.write_str("`error`, a bare body form, or `{literal: <text>}`")
             }
 
             fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<Self::Value, E> {
-                if text == "error" {
-                    Ok(MemberValue::Error)
+                Ok(if text == "error" {
+                    MemberValue::Error
                 } else {
-                    Err(E::custom(format!(
-                        "`{text}` is not what a body member holds: `error`, or \
-                         `{{literal: <text>}}`"
-                    )))
-                }
+                    MemberValue::Form(text.to_owned())
+                })
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
@@ -547,6 +696,14 @@ pub enum Body {
         /// The member that carries the error's wire name.
         member: String,
     },
+    /// `{<member>: response}` or `{<member>: response.<field>}`: an object whose one `member`
+    /// holds what `response`, or `response.<field>`, answers bare (beyond10x/ess#755).
+    Wrapped {
+        /// The member that holds the value.
+        member: String,
+        /// The response field it holds, by local name; `None` for the whole response.
+        field: Option<String>,
+    },
 }
 
 impl Body {
@@ -559,7 +716,22 @@ impl Body {
             }
             Self::None => BodySpec::Word("none".into()),
             Self::Error { member } => BodySpec::Error(member.clone()),
+            Self::Wrapped { member, field } => BodySpec::Wrapped {
+                member: member.clone(),
+                form: field.as_ref().map_or_else(
+                    || "response".to_owned(),
+                    |field| AnswerSource::Response(field.clone()).to_string(),
+                ),
+            },
         }
+    }
+
+    /// Whether it answers the command's response, or a field of it, bare or wrapped.
+    pub fn reads_response(&self) -> bool {
+        matches!(
+            self,
+            Self::Response | Self::ResponseField(_) | Self::Wrapped { .. }
+        )
     }
 
     fn is_default(&self) -> bool {
@@ -601,6 +773,25 @@ impl<'de> serde::Deserialize<'de> for Body {
             BodySpec::Literal { .. } => Err(serde::de::Error::custom(format!(
                 "`{written}` is a literal body, which only a standard refusal answers"
             ))),
+            BodySpec::Wrapped { member, .. } if member.is_empty() => Err(serde::de::Error::custom(
+                format!("`{written}` names an empty member; a wrapped body has one named member"),
+            )),
+            BodySpec::Wrapped { member, form } => {
+                let field = match AnswerSource::parse(form) {
+                    _ if form == "response" => None,
+                    Some(AnswerSource::Response(field)) => Some(field),
+                    _ => {
+                        return Err(serde::de::Error::custom(format!(
+                            "`{written}` is not an outcome's body: compiled IR wraps `response` \
+                             or `response.<field>`"
+                        )))
+                    }
+                };
+                Ok(Self::Wrapped {
+                    member: member.clone(),
+                    field,
+                })
+            }
         }
     }
 }
@@ -630,12 +821,6 @@ pub enum ViewBody {
 }
 
 impl ViewBody {
-    // `skip_serializing_if` passes the field by reference.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn is_default(&self) -> bool {
-        *self == Self::default()
-    }
-
     /// The word that spells it.
     fn word(self) -> &'static str {
         match self {
@@ -646,9 +831,88 @@ impl ViewBody {
     }
 }
 
+/// A view route's answer: its form, bare, or under one named member (`{<member>: single}`,
+/// `{<member>: array}`, beyond10x/ess#755). `rows` is the default and compiled IR omits it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ViewAnswer {
+    /// What the route answers: `rows`, `single` or `array`.
+    pub form: ViewBody,
+    /// The member that holds the `single` or `array` answer; `None` where it is bare. Never
+    /// beside `rows`, which `{rows: array}` is.
+    pub member: Option<String>,
+}
+
+impl ViewAnswer {
+    /// The bare `form`.
+    pub fn bare(form: ViewBody) -> Self {
+        Self { form, member: None }
+    }
+
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn spec(&self) -> BodySpec {
+        match &self.member {
+            None => BodySpec::Word(self.form.word().to_owned()),
+            Some(member) => BodySpec::Wrapped {
+                member: member.clone(),
+                form: self.form.word().to_owned(),
+            },
+        }
+    }
+}
+
+impl fmt::Display for ViewAnswer {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.spec().fmt(formatter)
+    }
+}
+
+impl serde::Serialize for ViewAnswer {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.spec().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ViewAnswer {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let written = <BodySpec as serde::Deserialize>::deserialize(deserializer)?;
+        let form = |word: &str| match word {
+            "rows" => Some(ViewBody::Rows),
+            "single" => Some(ViewBody::Single),
+            "array" => Some(ViewBody::Array),
+            _ => None,
+        };
+        let refused = || {
+            serde::de::Error::custom(format!(
+                "`{written}` is not a view route's body: compiled IR writes `single`, `array`, \
+                 `{{<member>: single}}` or `{{<member>: array}}`"
+            ))
+        };
+        match &written {
+            BodySpec::Word(word) => form(word).map(Self::bare).ok_or_else(refused),
+            BodySpec::Wrapped { member, .. } if member.is_empty() => Err(serde::de::Error::custom(
+                format!("`{written}` names an empty member; a wrapped body has one named member"),
+            )),
+            BodySpec::Wrapped { member, form: word } => match form(word) {
+                Some(ViewBody::Array) if member == "rows" => Err(serde::de::Error::custom(
+                    format!("`{written}` is `rows`, ESS's own answer, which compiled IR omits"),
+                )),
+                Some(form @ (ViewBody::Single | ViewBody::Array)) => Ok(Self {
+                    form,
+                    member: Some(member.clone()),
+                }),
+                Some(ViewBody::Rows) | None => Err(refused()),
+            },
+            BodySpec::Error(_) | BodySpec::Literal { .. } => Err(refused()),
+        }
+    }
+}
+
 /// Reads a view route's `body` of compiled IR, refusing `rows` written out: compiled IR omits it.
-fn omitted_rows<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<ViewBody, D::Error> {
-    let body = <ViewBody as serde::Deserialize>::deserialize(deserializer)?;
+fn omitted_rows<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<ViewAnswer, D::Error> {
+    let body = <ViewAnswer as serde::Deserialize>::deserialize(deserializer)?;
     if body.is_default() {
         return Err(serde::de::Error::custom(
             "a view route's `body` is `rows`, its default, which compiled IR omits",
@@ -1606,6 +1870,61 @@ pub struct RouteSpec {
     /// the binding's. Only a command route that reads a body takes it.
     #[serde(default)]
     pub limits: Option<LimitsSpec>,
+    /// A view route's other representations of its rows, each selected by one literal value of one
+    /// query parameter (beyond10x/ess#753); absent, the route answers its `body` only.
+    #[serde(default)]
+    pub representations: Option<Vec<RepresentationSpec>>,
+}
+
+/// One `representations` entry of a view route, as written (beyond10x/ess#753).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepresentationSpec {
+    /// The query parameter and the literal value that select it, as written; [`compile`] holds it
+    /// to exactly one entry.
+    pub query: Entries<String>,
+    /// How the rows are written; required.
+    pub encoding: RepresentationEncodingSpec,
+    /// The headers the representation adds to the route's answer, literals only; absent, none.
+    #[serde(default)]
+    pub headers: Option<Entries<HeaderSpec>>,
+}
+
+/// A representation's `encoding`, as written: `{csv: {separator, header}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepresentationEncodingSpec {
+    /// Delimited text, one line per row.
+    pub csv: CsvSpec,
+}
+
+/// A `csv` encoding, as written. `separator` is read as text, so that one outside the set is
+/// refused with a code (`ESS-HTTP-035`) rather than as a parse error.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CsvSpec {
+    /// `","`, `";"` or a tab; absent, `","`.
+    #[serde(default)]
+    pub separator: Option<String>,
+    /// Whether a header line of wire names comes first; absent, `true`.
+    #[serde(default)]
+    pub header: Option<bool>,
+}
+
+impl RepresentationSpec {
+    /// The value a refinement compares (`ESS-HTTP-012`): a default written out or left out counts
+    /// as that default, and headers compare by name.
+    fn compared(&self) -> serde_json::Value {
+        let mut compared = serde_json::json!({
+            "query": compared_entries(Some(&self.query), |value: &String| serde_json::json!(value)),
+            "separator": self.encoding.csv.separator.as_deref().unwrap_or(","),
+            "header": self.encoding.csv.header.unwrap_or(true),
+        });
+        if let Some(headers) = compared_entries(self.headers.as_ref(), HeaderSpec::compared) {
+            compared["headers"] = headers;
+        }
+        compared
+    }
 }
 
 /// A `limits:` entry, as written: the largest request body a route reads.
@@ -2166,10 +2485,10 @@ pub struct Route {
     /// A view route's body. Absent when it is `rows`, and always absent on a command.
     #[serde(
         default,
-        skip_serializing_if = "ViewBody::is_default",
+        skip_serializing_if = "ViewAnswer::is_default",
         deserialize_with = "omitted_rows"
     )]
-    pub body: ViewBody,
+    pub body: ViewAnswer,
     /// A `single` view route's answer for a view that holds no row; present exactly with `single`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Empty>,
@@ -2185,6 +2504,15 @@ pub struct Route {
     /// Absent when the binding's stands, and always absent on a route that reads no body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limits: Option<Limits>,
+    /// A `rows` or `array` view route's other representations of its rows, in the order written,
+    /// each selected by one value of one query parameter (beyond10x/ess#753). Absent when empty,
+    /// and always absent on a command; without the parameter the route answers its `body`.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "canonical_representations"
+    )]
+    pub representations: Vec<Representation>,
 }
 
 /// A compiled `limits`: the largest request body a route reads.
@@ -2193,6 +2521,187 @@ pub struct Route {
 pub struct Limits {
     /// The largest request body, in bytes, from 1 to [`MAX_REQUEST_BYTES`].
     pub request_bytes: u64,
+}
+
+/// A compiled representation of a view route's rows: what answers when the query holds its
+/// selector (beyond10x/ess#753).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Representation {
+    /// The query parameter and the value that select it.
+    pub query: Selector,
+    /// How the rows are written.
+    pub encoding: RepresentationEncoding,
+    /// The literal headers it adds to the route's answer, in name order, each name as authored.
+    /// Absent when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_headers"
+    )]
+    pub headers: BTreeMap<String, Header>,
+}
+
+/// One query parameter and the one literal value of it that selects a representation, written
+/// `{<parameter>: <value>}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selector {
+    /// The query parameter's name.
+    pub parameter: String,
+    /// The value that selects the representation.
+    pub value: String,
+}
+
+impl serde::Serialize for Selector {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        let mut map = serializer.serialize_map(Some(1))?;
+        map.serialize_entry(&self.parameter, &self.value)?;
+        map.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Selector {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let Entries(mut entries) =
+            <Entries<String> as serde::Deserialize>::deserialize(deserializer)?;
+        if entries.len() != 1 {
+            return Err(serde::de::Error::custom(format!(
+                "a representation's `query` holds {} parameters; compiled IR writes exactly one",
+                entries.len()
+            )));
+        }
+        let (parameter, value) = entries.remove(0);
+        Ok(Self { parameter, value })
+    }
+}
+
+/// A compiled representation's `encoding`: `{csv: {…}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepresentationEncoding {
+    /// Delimited text, one line per row.
+    pub csv: Csv,
+}
+
+/// A compiled `csv` encoding: each default omitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Csv {
+    /// What separates two fields of a line. Absent when `,`.
+    #[serde(
+        default,
+        skip_serializing_if = "Separator::is_default",
+        deserialize_with = "omitted_comma"
+    )]
+    pub separator: Separator,
+    /// Whether a header line of the columns' wire names comes first. Absent when `true`.
+    #[serde(
+        default = "header_line",
+        skip_serializing_if = "is_header_line",
+        deserialize_with = "omitted_header_line"
+    )]
+    pub header: bool,
+}
+
+impl Default for Csv {
+    fn default() -> Self {
+        Self {
+            separator: Separator::default(),
+            header: true,
+        }
+    }
+}
+
+/// What separates two fields of a CSV line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Separator {
+    /// `,`, the default.
+    #[default]
+    #[serde(rename = ",")]
+    Comma,
+    /// `;`.
+    #[serde(rename = ";")]
+    Semicolon,
+    /// A horizontal tab.
+    #[serde(rename = "\t")]
+    Tab,
+}
+
+impl Separator {
+    /// The separator `text` spells, if it is one.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "," => Some(Self::Comma),
+            ";" => Some(Self::Semicolon),
+            "\t" => Some(Self::Tab),
+            _ => None,
+        }
+    }
+
+    /// The character it is.
+    pub fn as_char(self) -> char {
+        match self {
+            Self::Comma => ',',
+            Self::Semicolon => ';',
+            Self::Tab => '\t',
+        }
+    }
+
+    // `skip_serializing_if` passes the field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn header_line() -> bool {
+    true
+}
+
+// `skip_serializing_if` passes the field by reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_header_line(header: &bool) -> bool {
+    *header
+}
+
+/// Reads a `csv` encoding's `separator` of compiled IR, refusing `,` written out.
+fn omitted_comma<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Separator, D::Error> {
+    let separator = <Separator as serde::Deserialize>::deserialize(deserializer)?;
+    if separator.is_default() {
+        return Err(serde::de::Error::custom(
+            "a `csv` encoding's `separator` is `,`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(separator)
+}
+
+/// Reads a `csv` encoding's `header` of compiled IR, refusing `true` written out.
+fn omitted_header_line<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<bool, D::Error> {
+    let header = <bool as serde::Deserialize>::deserialize(deserializer)?;
+    if header {
+        return Err(serde::de::Error::custom(
+            "a `csv` encoding's `header` is `true`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(header)
+}
+
+/// Reads a route's `representations` of compiled IR, refusing them written empty: compiled IR
+/// omits a route's `representations` when it declares none.
+fn canonical_representations<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Representation>, D::Error> {
+    let representations = <Vec<Representation> as serde::Deserialize>::deserialize(deserializer)?;
+    if representations.is_empty() {
+        return Err(serde::de::Error::custom(
+            "a route's `representations` is empty; compiled IR omits it when the route declares \
+             none",
+        ));
+    }
+    Ok(representations)
 }
 
 impl Route {
@@ -2379,7 +2888,7 @@ impl HttpIr {
     /// not have, or read one source from two variables; a source outside the operation's
     /// namespace; a `request` on a view, holding only defaults or writing a default out, encoded
     /// `query` on any method but `get` and `delete` or `json` or `form` on `get`, or `ignore`
-    /// beside `json`; `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
+    /// beside a bare `body`; `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
     /// order or empty; an outcome status outside `100..=599`, a `1xx` or a `3xx` other than the
     /// [`REDIRECTS`]; an outcome body that is `envelope` written out, a literal, a view's body, an
     /// error object under an empty member, or anything but `none` on `204`; an outcome `encoding`
@@ -2407,7 +2916,11 @@ impl HttpIr {
     /// operation the IR routes or derives; and `servers` out of component order or empty, a
     /// component's list empty, or a server URL that is neither absolute `http(s)://` with a host
     /// nor `/`-rooted, holds whitespace, `{`, `}`, `?`, `#` or userinfo, or is given twice for one
-    /// component. Beyond these, it refuses, naming
+    /// component; and a route's `representations` beside a command or a `single` body, a
+    /// `query` of other than one parameter, two on different parameters or one value, a name
+    /// that is a path variable, a name or value outside RFC 3986 `unreserved`, a `separator`
+    /// outside `,`, `;` and a tab, or a header that is not a literal a binding may declare
+    /// (beyond10x/ess#753). Beyond these, it refuses, naming
     /// the key, any IR that would not write back what it was given: a key compiled IR omits,
     /// written as an empty map or list, a `null` or a default.
     ///
@@ -2416,7 +2929,8 @@ impl HttpIr {
     /// `returns`, whether a `text` field is a `String`, whether an `alike` name is an outcome of
     /// the command and whether error objects alike share one wire name, the distinguishability of
     /// outcomes and overridden refusals on one status, a
-    /// `single` view's identity selection and paging, an `array` view's paging, whether the outcome supplies each header,
+    /// `single` view's identity selection and paging, an `array` view's paging, a representation's
+    /// view parameters and flat fields, whether the outcome supplies each header,
     /// param and redirect source and its type, and collisions on each component's surface.
     /// A reader that needs those compiles the authored binding instead.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
@@ -2655,7 +3169,67 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
         }
         limits_invariants(*limits, &format!("{at}.limits"))?;
     }
+    representations_invariants(route, &variables, at)?;
     answer_invariants(route, at)
+}
+
+/// Holds a route's compiled `representations` to what compiling guarantees without the
+/// specification (beyond10x/ess#753): only on a view route that answers `rows` or `array`, every
+/// selector on one parameter that is no path variable, each value once, names and values of
+/// `unreserved` characters, and literal headers only, under names a binding may declare.
+fn representations_invariants(route: &Route, variables: &[String], at: &str) -> Result<(), String> {
+    let Some(first) = route.representations.first() else {
+        return Ok(());
+    };
+    let key = format!("{at}.representations");
+    if !matches!(route.operation, Operation::View(_)) || route.body.form == ViewBody::Single {
+        return Err(format!(
+            "`{key}` is on {} answering `{}`; only a view route answering `rows` or `array` \
+             has representations",
+            route.operation, route.body
+        ));
+    }
+    let parameter = &first.query.parameter;
+    if !unreserved(parameter) || variables.contains(parameter) {
+        return Err(format!(
+            "`{key}[0].query` selects by `{parameter}`, which is not one or more `unreserved` \
+             characters or is a variable of the path"
+        ));
+    }
+    let mut values: Vec<&str> = Vec::new();
+    for (index, representation) in route.representations.iter().enumerate() {
+        let at = format!("{key}[{index}]");
+        let Selector {
+            parameter: name,
+            value,
+        } = &representation.query;
+        if name != parameter {
+            return Err(format!(
+                "`{at}.query` selects by `{name}`, and `{key}[0]` by `{parameter}`; every \
+                 representation of a route is selected by one parameter"
+            ));
+        }
+        if !unreserved(value) || values.contains(&value.as_str()) {
+            return Err(format!(
+                "`{at}.query` selects by the value `{value}`, which is not one or more \
+                 `unreserved` characters or selects another representation too"
+            ));
+        }
+        values.push(value);
+        for (name, header) in &representation.headers {
+            if !is_token(name)
+                || RESERVED_HEADERS
+                    .iter()
+                    .any(|(owned, _)| owned.eq_ignore_ascii_case(name))
+                || !matches!(header, Header::Literal(text) if field_value_reason(text).is_none())
+            {
+                return Err(format!(
+                    "`{at}.headers.{name}` is not a literal header a binding may declare"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Holds a compiled `limits` to its range.
@@ -2694,15 +3268,16 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                     route.operation
                 ));
             }
-            match (route.body, &route.empty) {
+            match (route.body.form, &route.empty) {
                 (ViewBody::Single, None) => Err(format!(
-                    "`{at}.body` is `single`, and `{at}.empty` is missing; compiled IR writes \
-                     the empty answer of every `single` route"
+                    "`{at}.body` is `{}`, and `{at}.empty` is missing; compiled IR writes \
+                     the empty answer of every `single` route",
+                    route.body
                 )),
-                (body @ (ViewBody::Rows | ViewBody::Array), Some(_)) => Err(format!(
+                (ViewBody::Rows | ViewBody::Array, Some(_)) => Err(format!(
                     "`{at}.empty` is on a route that answers `{}`; only a `single` route has \
                      an empty answer",
-                    body.word()
+                    route.body
                 )),
                 (_, Some(empty)) if !(400..500).contains(&empty.status) => Err(format!(
                     "`{at}.empty.status` `{}` is not a `4xx` status",
@@ -2718,7 +3293,7 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
             }
         }
         Operation::Command(_) => {
-            if route.body != ViewBody::Rows {
+            if !route.body.is_default() {
                 return Err(format!(
                     "`{at}.body` is on {}; a command answers per outcome, under `outcomes`",
                     route.operation
@@ -2742,7 +3317,7 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                         errors.status
                     ));
                 }
-                if matches!(errors.body, Body::Response | Body::ResponseField(_)) {
+                if errors.body.reads_response() {
                     return Err(format!(
                         "`{key}.body` is `{}`, the command's response, and an outcome that \
                          reports an error answers none",
@@ -3030,8 +3605,8 @@ fn headers_invariants(
 }
 
 /// The invariants of one compiled route's `request` (see [`HttpIr::from_json`]): it is on a
-/// command, not all defaults, and admitted for the route's method, with `ignore` beside `form` or
-/// `query` only, and a bare `body` beside `json` only, naming no field the path carries.
+/// command, not all defaults, and admitted for the route's method, with `ignore` beside no
+/// bare `body`, and a bare `body` beside `json` only, naming no field the path carries.
 fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
     if let Operation::View(_) = route.operation {
         return Err(format!(
@@ -3062,7 +3637,7 @@ fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), 
     }
     let admitted = match request.encoding {
         Encoding::Query => matches!(route.method, Method::Get | Method::Delete),
-        Encoding::Json | Encoding::Form => route.method != Method::Get,
+        Encoding::Json | Encoding::Form | Encoding::Multipart => route.method != Method::Get,
     };
     if !admitted {
         return Err(format!(
@@ -3071,10 +3646,102 @@ fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), 
             request.encoding, route.method
         ));
     }
-    if request.encoding == Encoding::Json && request.unknown == Unknown::Ignore {
+    if request.body.is_some() && request.unknown == Unknown::Ignore {
         return Err(format!(
-            "`{at}.request.unknown` is `ignore` on a `json` body, which stays closed"
+            "`{at}.request.unknown` is `ignore` beside a bare `body`, which holds no member of the \
+             input to ignore"
         ));
+    }
+    parts_invariants(route, request, at)?;
+    query_invariants(route, request, at)
+}
+
+/// The invariants of a compiled request's `query` (see [`HttpIr::from_json`]): beside a body
+/// encoding off `get` only; each field listed once and carried nowhere else, neither by the path,
+/// the bare `body`, a part nor a part attribute.
+fn query_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
+    if request.query.is_empty() {
+        return Ok(());
+    }
+    if request.encoding == Encoding::Query || route.method == Method::Get {
+        return Err(format!(
+            "`{at}.request.query` is beside `{}` on `{}`; it lists the input fields read from the \
+             query string beside a body",
+            request.encoding, route.method
+        ));
+    }
+    for (index, source) in request.query.iter().enumerate() {
+        let attribute = request.parts.values().any(|part| {
+            part.filename.as_ref() == Some(source) || part.media_type.as_ref() == Some(source)
+        });
+        let carrier = if request.query[..index].contains(source) {
+            Some("listed twice")
+        } else if route.parameters.values().any(|carried| carried == source) {
+            Some("carried by the path")
+        } else if request.body.as_ref() == Some(source) {
+            Some("the bare body")
+        } else if request.parts.contains_key(source.field()) || attribute {
+            Some("read from a part")
+        } else {
+            None
+        };
+        if let Some(carrier) = carrier {
+            return Err(format!(
+                "`{at}.request.query` lists `{source}`, which is {carrier}; a field travels in \
+                 one place"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The invariants of a compiled request's `parts` (see [`HttpIr::from_json`]): beside `multipart`
+/// only; each part stating something; no attribute reading the path's field, a part's field or
+/// one another attribute reads; `media_types` distinct RFC 6838 `type/subtype` names.
+fn parts_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
+    if request.parts.is_empty() {
+        return Ok(());
+    }
+    if request.encoding != Encoding::Multipart {
+        return Err(format!(
+            "`{at}.request.parts` is beside `{}`; parts are a `multipart` request's",
+            request.encoding
+        ));
+    }
+    let mut read: Vec<&Source> = Vec::new();
+    for (key, part) in &request.parts {
+        let here = format!("{at}.request.parts.{key}");
+        if *part == Part::default() {
+            return Err(format!("`{here}` states nothing, which compiled IR omits"));
+        }
+        for (attribute, source) in [
+            ("filename", &part.filename),
+            ("media_type", &part.media_type),
+        ] {
+            let Some(source) = source else {
+                continue;
+            };
+            let carrier = if route.parameters.values().any(|carried| carried == source) {
+                Some("which the path carries")
+            } else if request.parts.contains_key(source.field()) {
+                Some("which is a part")
+            } else if read.contains(&source) {
+                Some("which another attribute reads")
+            } else {
+                None
+            };
+            if let Some(carrier) = carrier {
+                return Err(format!("`{here}.{attribute}` is `{source}`, {carrier}"));
+            }
+            read.push(source);
+        }
+        // An empty list is one left out, which admits any media type.
+        if part.media_types.is_empty() {
+            continue;
+        }
+        if let Some(rule) = media_types_rule(&part.media_types) {
+            return Err(format!("`{here}.media_types`: {rule}"));
+        }
     }
     Ok(())
 }
@@ -3203,13 +3870,13 @@ impl Refusals {
 /// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
-/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field neither the path nor `request.query` carries; at `routes[i].request.query`: `query` beside `encoding: query`, on a `get` command, or written empty, an entry that is not `input.<field>` naming an input field of the command, one listed twice, and one the path, the bare `body` or a part of a `multipart` request carries |
+/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried; at `routes[i].request.query`: a field `query` lists whose type has no flat spelling, beside any encoding |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
 /// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
 /// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, or with one wire name and one error always writing a field, its type not `Optional` through any newtype and its outcome not a `wrong_state` one that can answer an unknown instance, that the other never writes, do; one function decides the field rule for this check and for `alike`) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; at `routes[i].refusals.<key>`: the same for a route's own override, which stands on that route in place of the binding's; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names or over errors one of which always writes a field the other never writes (the message names the field), or that are not one answer, the fields of the errors differing otherwise (in an optional field, a type or an order), a header or challenge param reading `error.wire` under distinct error wire names, or redirects one of which always writes a parameter the other never does |
-/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
+/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>` or `routes[i].representations[j].headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header; any source or challenge in a representation's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
 /// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted`, `too_large` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
@@ -3218,6 +3885,8 @@ impl Refusals {
 /// | `ESS-HTTP-032` | at `routes[i].operation_id`: an id outside `[A-Za-z_][A-Za-z0-9_.-]*`; one an earlier route already gives, naming both routes; or the qualified name of another command or view of the specification, which is that operation's derived `operationId` |
 /// | `ESS-HTTP-033` | at `servers.<component>`: a component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; at `servers.<component>[j].url`: a URL that is neither absolute `http://` or `https://` with a host nor `/`-rooted, one holding whitespace, `{`, `}`, `?`, `#` or userinfo, or one given twice for the component |
 /// | `ESS-HTTP-034` | at `limits.request_bytes` or `routes[i].limits.request_bytes`: a request size outside 1 to 16777216 bytes; at `routes[i].limits`: a limit on a route that reads no request body (a view, a `get` command or a `request: {encoding: query}` command) |
+/// | `ESS-HTTP-035` | at `routes[i].representations`: `representations` on a command route, on a `single` view or on a paged view, or an empty list; at `routes[i].representations[j].query`: a `query` holding other than exactly one parameter, a parameter other than the first representation's, a value an earlier representation has, a parameter name that is a view parameter's wire name or a path variable or is not RFC 3986 `unreserved` characters, or a value that is empty or not `unreserved` characters; at `routes[i].representations[j].encoding.csv.separator`: a separator other than `","`, `";"` and `"\t"`; at `routes[i].representations[j].encoding`: a view field whose type has no flat spelling (a struct, a union, a `List`, a `Map`, `Json`), naming the field (beyond10x/ess#753) |
+/// | `ESS-HTTP-036` | at `routes[i].request.parts`: `parts` beside an encoding other than `multipart`; at `routes[i].request.parts.<field>`: a key naming no input field, or one whose type is not `Bytes` (a newtype of it, or an `Optional` of either), or a part stating nothing; at `routes[i].request.parts.<field>.filename` or `….media_type`: a source that is not `input.<field>` naming a `String` input field (a newtype of it, or an `Optional` of either), or one the path carries, that is a part, or that another attribute reads; at `routes[i].request.parts.<field>.media_types`: an empty list, an entry that is not an RFC 6838 `type/subtype`, or one entry twice (beyond10x/ess#754) |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -3248,7 +3917,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -3895,21 +4564,9 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
                 );
             }
         }
-        let fixed_request = written_request(fixed);
-        for ((key, new), (_, old)) in written_request(route).into_iter().zip(fixed_request) {
-            if new != old {
-                refusals.refuse(
-                    "ESS-HTTP-012",
-                    format!("routes[{index}].request.{key}"),
-                    format!(
-                        "{operation} has `request.{key}` `{new}` here, and the refined binding \
-                         fixes `{old}` at `routes[{at}]`; a refinement restates the request of \
-                         every route it restates"
-                    ),
-                );
-            }
-        }
+        request_changes(route, fixed, &operation, [index, at], refusals);
         answer_changes(route, fixed, &operation, index, at, refusals);
+        representation_changes(route, fixed, &operation, [index, at], refusals);
         refusal_changes(
             route.refusals.as_ref(),
             fixed.refusals.as_ref(),
@@ -4169,6 +4826,48 @@ fn answer_changes(
     }
 }
 
+/// Refuses a refined route whose `representations` are added, dropped or changed
+/// (`ESS-HTTP-012`), compared as a whole at `routes[i].representations`: in order, each by its
+/// selector, its encoding with a default written out or left out counting as that default, and
+/// its headers by name; an empty list counts as none.
+fn representation_changes(
+    route: &RouteSpec,
+    fixed: &RouteSpec,
+    operation: &Operation,
+    [index, at]: [usize; 2],
+    refusals: &mut Refusals,
+) {
+    let compared = |route: &RouteSpec| {
+        route
+            .representations
+            .as_ref()
+            .filter(|written| !written.is_empty())
+            .map(|written| {
+                written
+                    .iter()
+                    .map(RepresentationSpec::compared)
+                    .collect::<Vec<_>>()
+            })
+    };
+    if compared(route) != compared(fixed) {
+        let shown = |route: &RouteSpec| match &route.representations {
+            Some(written) if !written.is_empty() => format!("{} representations", written.len()),
+            _ => "no representation".to_owned(),
+        };
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].representations"),
+            format!(
+                "{operation} declares {} here, and the refined binding fixes {} at \
+                 `routes[{at}]`, or the same number differing; a refinement restates the \
+                 representations of every route it restates",
+                shown(route),
+                shown(fixed)
+            ),
+        );
+    }
+}
+
 /// A route's `errors` as a refinement compares it: status, body (its default counted), headers and
 /// redirect.
 type ComparedErrors = (
@@ -4278,6 +4977,68 @@ fn extras_changes(
     }
 }
 
+/// Refuses (`ESS-HTTP-012`) a `request` key of `route`, at `routes[index]`, written otherwise than
+/// the refined binding's `fixed` route at `routes[at]` writes it: a default written out or left out
+/// counts as that default, `parts` are compared attribute by attribute and `query` in the order written.
+fn request_changes(
+    route: &RouteSpec,
+    fixed: &RouteSpec,
+    operation: &Operation,
+    [index, at]: [usize; 2],
+    refusals: &mut Refusals,
+) {
+    let fixed_request = written_request(fixed);
+    for ((key, new), (_, old)) in written_request(route).into_iter().zip(fixed_request) {
+        if new != old {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].request.{key}"),
+                format!(
+                    "{operation} has `request.{key}` `{new}` here, and the refined binding fixes \
+                     `{old}` at `routes[{at}]`; a refinement restates the request of every route \
+                     it restates"
+                ),
+            );
+        }
+    }
+    let parts = |route: &RouteSpec| {
+        route
+            .request
+            .as_ref()
+            .and_then(|request| request.parts.clone())
+            .unwrap_or_default()
+    };
+    if parts(route) != parts(fixed) {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].request.parts"),
+            format!(
+                "{operation} states other `request.parts` here than the refined binding fixes at \
+                 `routes[{at}]`; a refinement restates the parts of every route it restates, each \
+                 attribute as written"
+            ),
+        );
+    }
+    let query = |route: &RouteSpec| {
+        route
+            .request
+            .as_ref()
+            .and_then(|request| request.query.clone())
+            .unwrap_or_default()
+    };
+    if query(route) != query(fixed) {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].request.query"),
+            format!(
+                "{operation} lists other `request.query` fields here than the refined binding \
+                 fixes at `routes[{at}]`; a refinement restates the query of every route it \
+                 restates, in the order written"
+            ),
+        );
+    }
+}
+
 /// A route's `request` keys as written, each absent one as its default, so that writing a default
 /// out is not a change.
 fn written_request(route: &RouteSpec) -> [(&'static str, &str); 3] {
@@ -4368,7 +5129,8 @@ impl Target<'_> {
 /// field it carries (`021`), the unmapped `get` input (`014`), the answers (each listed outcome's
 /// name `022`, status `023`, body `024`, headers `026` and `027` and redirect `028` in document
 /// order, then `025`; a view's `outcomes`
-/// `022`, `body` `024`, `empty` `030` and identity `031`), and the operation routed twice (`005`).
+/// `022`, `body` `024`, `empty` `030` and identity `031`), the representations (`035`, their headers
+/// `026`), and the operation routed twice (`005`).
 fn routes(
     specs: &[RouteSpec],
     ir: &EssIr,
@@ -4424,6 +5186,7 @@ fn routes(
             &operation,
             target.as_ref(),
             &path,
+            &path_variables(segments.as_ref()),
             &standing,
             refusals,
         );
@@ -4458,6 +5221,7 @@ fn routes(
                     empty: answers.empty,
                     refusals: own,
                     limits: route_limits,
+                    representations: answers.representations,
                 })
             }
             _ => None,
@@ -4776,8 +5540,9 @@ fn sources(
                 at,
                 format!(
                     "`{text}` has type `{}`, which a path segment cannot carry: a segment is \
-                     always present and holds one `String`, `Integer`, enum, or unconstrained \
-                     newtype of one of them",
+                     always present and holds one `String`, `Integer`, `Boolean`, `Decimal`, \
+                     `Timestamp`, `Duration`, `Uuid`, enum, or unconstrained newtype of one of \
+                     them",
                     field.type_ref
                 ),
             );
@@ -4805,16 +5570,45 @@ fn carried(
     refusals: &mut Refusals,
 ) -> Result<Option<Request>, Refused> {
     let checked = request(spec, operation, method, path, refusals);
+    // What `request.query` lists, by local name, refused or not: neither the bare body nor the
+    // flat spelling of the encoding holds it.
+    let listed: Vec<String> = checked
+        .query
+        .iter()
+        .flatten()
+        .filter_map(|text| Source::parse(text))
+        .map(|source| source.field().to_owned())
+        .collect();
+    let mut beside = mapped.to_vec();
+    beside.extend(listed.iter().map(|field| format!("input.{field}")));
+    let query = match (target, &checked.query) {
+        (Some(target), Some(written)) => query_fields(
+            written,
+            target,
+            spec.request.as_ref(),
+            mapped,
+            path,
+            refusals,
+        ),
+        (None, Some(_)) => Err(Refused),
+        (_, None) => Ok(Vec::new()),
+    };
     let bare = match (target, &checked.body) {
-        (Some(target), Some(text)) => {
-            bare_body(target, text, mapped, spec.path.is_none(), path, refusals)
-        }
+        (Some(target), Some(text)) => bare_body(
+            target,
+            text,
+            [mapped, &listed],
+            spec.path.is_none(),
+            path,
+            refusals,
+        ),
         _ => Ok(None),
     };
     let flat = match (target, checked.encoding) {
-        (Some(target), Some(encoding @ (Encoding::Form | Encoding::Query))) => {
-            flat_input(target, encoding, mapped, path, refusals)
-        }
+        (
+            Some(target),
+            Some(encoding @ (Encoding::Form | Encoding::Query | Encoding::Multipart)),
+        ) => flat_input(target, encoding, &beside, path, refusals),
         _ => true,
     };
     let unmapped = match (target, method, checked.encoding) {
@@ -4823,21 +5617,226 @@ fn carried(
         }
         _ => false,
     };
-    match bare {
-        Ok(_) if checked.refused || !flat || unmapped => Err(Refused),
-        Err(Refused) => Err(Refused),
-        Ok(None) => Ok(checked.request),
-        Ok(Some(body)) => Ok(Some(Request {
-            body: Some(body),
+    let parts = match (
+        target,
+        spec.request
+            .as_ref()
+            .and_then(|written| written.parts.as_ref()),
+    ) {
+        (Some(target), Some(written)) => {
+            file_parts(written, target, checked.encoding, mapped, path, refusals)
+        }
+        (None, Some(_)) => Err(Refused),
+        (_, None) => Ok(BTreeMap::new()),
+    };
+    match (bare, parts, query) {
+        (Ok(_), Ok(_), Ok(_)) if checked.refused || !flat || unmapped => Err(Refused),
+        (Err(Refused), _, _) | (_, Err(Refused), _) | (_, _, Err(Refused)) => Err(Refused),
+        (Ok(None), Ok(parts), Ok(query)) if parts.is_empty() && query.is_empty() => {
+            Ok(checked.request)
+        }
+        (Ok(body), Ok(parts), Ok(query)) => Ok(Some(Request {
+            body,
+            parts,
+            query,
             ..checked.request.unwrap_or_default()
         })),
     }
 }
 
+/// A `multipart` request's `parts` (`ESS-HTTP-036`), compiled: only beside `multipart`; each key an
+/// input field of type `Bytes` (a newtype of it, or an `Optional` of either) stating at least one
+/// attribute; `filename` and `media_type` each `input.<field>` naming a `String` input field (a
+/// newtype of it, or an `Optional` of either) that neither the path, a part nor another attribute
+/// carries; `media_types` distinct RFC 6838 `type/subtype` names, at least one.
+fn file_parts(
+    written: &BTreeMap<String, PartSpec>,
+    target: &Target<'_>,
+    encoding: Option<Encoding>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<BTreeMap<String, Part>, Refused> {
+    match encoding {
+        Some(Encoding::Multipart) => {}
+        Some(other) => {
+            refusals.refuse(
+                "ESS-HTTP-036",
+                format!("{path}.request.parts"),
+                format!(
+                    "`parts` states the attributes of a `multipart` request's file parts, and this \
+                     request is encoded `{other}`"
+                ),
+            );
+            return Err(Refused);
+        }
+        // The encoding was refused by its own key, which leaves the parts unchecked.
+        None => return Err(Refused),
+    }
+    let mut compiled = BTreeMap::new();
+    let mut read: Vec<&str> = Vec::new();
+    let mut refused = false;
+    for (key, spec) in written {
+        let at = format!("{path}.request.parts.{key}");
+        let field = target.fields.iter().find(|field| field.name == *key);
+        let rule = match field {
+            None => Some(format!(
+                "`{key}` names no input field: a part's attributes are keyed by the `Bytes` input \
+                 field the part carries"
+            )),
+            Some(field) if !of_primitive(&field.type_ref, Primitive::Bytes, target.ir) => {
+                Some(format!(
+                    "input field `{key}` has type `{}`, and a file part carries a `Bytes` input \
+                     field (a newtype of it, or an `Optional` of either)",
+                    field.type_ref
+                ))
+            }
+            Some(_) if spec == &PartSpec::default() => Some(format!(
+                "`{key}` states nothing: a part's entry states a `filename`, a `media_type` or \
+                 `media_types`, and a file part without one needs no entry"
+            )),
+            Some(_) => None,
+        };
+        if let Some(rule) = rule {
+            refusals.refuse("ESS-HTTP-036", at, rule);
+            refused = true;
+            continue;
+        }
+        let mut part = Part::default();
+        for (attribute, text, slot) in [
+            ("filename", &spec.filename, &mut part.filename),
+            ("media_type", &spec.media_type, &mut part.media_type),
+        ] {
+            let Some(text) = text else {
+                continue;
+            };
+            match attribute_source(text, target, written, mapped, &read) {
+                Ok((source, field)) => {
+                    read.push(field);
+                    *slot = Some(source);
+                }
+                Err(rule) => {
+                    refusals.refuse(
+                        "ESS-HTTP-036",
+                        format!("{at}.{attribute}"),
+                        format!("a part's `{attribute}` {rule}"),
+                    );
+                    refused = true;
+                }
+            }
+        }
+        if let Some(types) = &spec.media_types {
+            match media_types_rule(types) {
+                Some(rule) => {
+                    refusals.refuse("ESS-HTTP-036", format!("{at}.media_types"), rule);
+                    refused = true;
+                }
+                None => part.media_types.clone_from(types),
+            }
+        }
+        compiled.insert(key.clone(), part);
+    }
+    if refused {
+        Err(Refused)
+    } else {
+        Ok(compiled)
+    }
+}
+
+/// The input field a part attribute's source `text` reads into, with its name, or why it may not:
+/// it is `input.<field>` naming a `String` input field that neither the path, a part nor an
+/// attribute already `read` carries.
+fn attribute_source<'a>(
+    text: &str,
+    target: &Target<'a>,
+    parts: &BTreeMap<String, PartSpec>,
+    mapped: &[String],
+    read: &[&str],
+) -> Result<(Source, &'a str), String> {
+    let source = Source::parse(text)
+        .filter(|source| matches!(source, Source::Input(_)))
+        .ok_or_else(|| {
+            format!(
+                "is `{text}`, which is not `input.<field>`: it is read into one input field of \
+                 the command"
+            )
+        })?;
+    let field = target
+        .fields
+        .iter()
+        .find(|field| field.name == source.field())
+        .ok_or_else(|| format!("is `{text}`, which names no input field of the command"))?;
+    if !of_primitive(&field.type_ref, Primitive::String, target.ir) {
+        return Err(format!(
+            "is `{text}`, of type `{}`: it is read into a `String` input field (a newtype of it, \
+             or an `Optional` of either)",
+            field.type_ref
+        ));
+    }
+    let carrier = if mapped.contains(&format!("input.{}", field.name)) {
+        Some("the path carries it")
+    } else if parts.contains_key(&field.name) {
+        Some("it is a part")
+    } else if read.contains(&field.name.as_str()) {
+        Some("another attribute reads it, so it would be read twice")
+    } else {
+        None
+    };
+    match carrier {
+        Some(carrier) => Err(format!(
+            "is `{text}`, and {carrier}: an input field travels in one place"
+        )),
+        None => Ok((source, field.name.as_str())),
+    }
+}
+
+/// Why a part's `media_types` is refused, if it is: empty, an entry that is not an RFC 6838
+/// `type/subtype`, or one entry twice.
+fn media_types_rule(types: &[String]) -> Option<String> {
+    if types.is_empty() {
+        return Some(
+            "`media_types` is empty: it lists the media types the part may carry, at least one, \
+             and is left out to admit any"
+                .to_owned(),
+        );
+    }
+    if let Some(bad) = types.iter().find(|text| !is_media_type(text)) {
+        return Some(format!(
+            "`{bad}` is not an RFC 6838 media type `type/subtype`, such as `text/csv`"
+        ));
+    }
+    types
+        .iter()
+        .enumerate()
+        .find(|(index, text)| types[..*index].contains(text))
+        .map(|(_, text)| format!("`media_types` names `{text}` twice"))
+}
+
+/// Whether `type_ref` is the primitive `wanted`, a newtype of it, or an `Optional` of either.
+fn of_primitive(type_ref: &ResolvedTypeRef, wanted: Primitive, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => of_primitive_value(of, wanted, ir),
+        _ => of_primitive_value(type_ref, wanted, ir),
+    }
+}
+
+/// Whether `type_ref` is the primitive `wanted` or a newtype of it, however deep.
+fn of_primitive_value(type_ref: &ResolvedTypeRef, wanted: Primitive, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => *name == wanted,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => of_primitive_value(of, wanted, ir),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// The input field a route's `request.body` names (`text`), once it is held to its rules
 /// (`ESS-HTTP-020`, at `routes[i].request.body`): it is `input.<field>` naming an input field of
-/// the command that is not `Optional` and that the path does not carry, and the path carries every
-/// other input field. A body that names no such field is the only refusal reported for it.
+/// the command that is not `Optional` and that the path does not carry, and the path (`mapped`) or
+/// `request.query` (`listed`, by local name) carries every other input field. A body that names no
+/// such field is the only refusal reported for it.
 ///
 /// On an `open` route, one without a path yet, whether the path carries every other input field
 /// is the document's to answer that fills the path in: a protocol binding may fix the body of a
@@ -4846,7 +5845,7 @@ fn carried(
 fn bare_body(
     target: &Target<'_>,
     text: &str,
-    mapped: &[String],
+    [mapped, listed]: [&[String]; 2],
     open: bool,
     path: &str,
     refusals: &mut Refusals,
@@ -4893,16 +5892,19 @@ fn bare_body(
     };
     let mut refused = false;
     for other in target.fields.iter().filter(|_| !open) {
-        if other.name == source.field() || mapped.contains(&format!("input.{}", other.name)) {
+        if other.name == source.field()
+            || mapped.contains(&format!("input.{}", other.name))
+            || listed.contains(&other.name)
+        {
             continue;
         }
         refusals.refuse(
             "ESS-HTTP-020",
             at.as_str(),
             format!(
-                "input field `{}` is in neither the path nor the body: a route whose body is \
-                 `{text}` carries every other input field in its path, so map `{}` to a variable \
-                 of the path",
+                "input field `{}` is in neither the path, the query nor the body: the path or \
+                 `request.query` carries every input field but the body `{text}`, so map `{}` to a \
+                 variable of the path or list it in `request.query`",
                 other.name, other.name
             ),
         );
@@ -4928,11 +5930,36 @@ struct Checked {
     /// `request.body` as written, when the encoding and the method admit one; the input field it
     /// names is [`bare_body`]'s to check.
     body: Option<String>,
+    /// `request.query` as written, when the encoding and the method admit one; the input fields it
+    /// lists are [`query_fields`]'s to check.
+    query: Option<Vec<String>>,
+}
+
+/// Why `encoding` is refused on a command route on `method` (`ESS-HTTP-020`), if it is: a body
+/// encoding `written` on `get`, or `query` on a method other than `get` and `delete`.
+fn encoding_rule(method: Option<Method>, encoding: Encoding, written: bool) -> Option<String> {
+    match (method, encoding) {
+        (Some(Method::Get), Encoding::Json | Encoding::Form | Encoding::Multipart) if written => {
+            Some(format!(
+                "`{encoding}` carries the input in a body, and `get` carries none; a command on \
+                 `get` is encoded `query`, or leaves `encoding` out and maps every input field to \
+                 the path"
+            ))
+        }
+        (Some(method), Encoding::Query) if !matches!(method, Method::Get | Method::Delete) => {
+            Some(format!(
+                "`query` carries the input in the query string, the encoding of a command on \
+                 `get` or `delete` only; a command on `{method}` is encoded `json`, `form` or \
+                 `multipart`"
+            ))
+        }
+        _ => None,
+    }
 }
 
 /// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
 /// the set that the method admits when one is written (`query` on `get` or `delete` only, and on
-/// `get` nothing else written), an `unknown` of the set, `ignore` only beside `form` or `query`,
+/// `get` nothing else written), an `unknown` of the set, `ignore` beside no bare `body`,
 /// and a `body` only beside `json` off `get` ([`view_request`], [`admitted_body`]). An absent
 /// `request` is a `json` body refusing an unknown key, which a `get` command is in stage 1.
 fn request(
@@ -4948,6 +5975,7 @@ fn request(
             request: None,
             encoding: Some(Encoding::Json),
             body: None,
+            query: None,
         };
     };
     if let Operation::View(_) = operation {
@@ -4963,8 +5991,8 @@ fn request(
                     "ESS-HTTP-020",
                     format!("{path}.request.encoding"),
                     format!(
-                        "`{text}` is not an encoding; a request is encoded `json`, `form` or \
-                         `query`"
+                        "`{text}` is not an encoding; a request is encoded `json`, `form`, `query` \
+                         or `multipart`"
                     ),
                 );
                 refused = true;
@@ -4973,21 +6001,8 @@ fn request(
         }
     };
     let encoding = parsed.filter(|&encoding| {
-        let rule = match (method, encoding) {
-            (Some(Method::Get), Encoding::Json | Encoding::Form) if written.encoding.is_some() => {
-                format!(
-                    "`{encoding}` carries the input in a body, and `get` carries none; a command \
-                     on `get` is encoded `query`, or leaves `encoding` out and maps every input \
-                     field to the path"
-                )
-            }
-            (Some(method), Encoding::Query) if !matches!(method, Method::Get | Method::Delete) => {
-                format!(
-                    "`query` carries the input in the query string, the encoding of a command on \
-                     `get` or `delete` only; a command on `{method}` is encoded `json` or `form`"
-                )
-            }
-            _ => return true,
+        let Some(rule) = encoding_rule(method, encoding, written.encoding.is_some()) else {
+            return true;
         };
         refusals.refuse("ESS-HTTP-020", format!("{path}.request.encoding"), rule);
         refused = true;
@@ -5011,12 +6026,14 @@ fn request(
             unknown
         }
     };
-    if parsed == Some(Encoding::Json) && unknown == Some(Unknown::Ignore) {
+    if parsed == Some(Encoding::Json) && written.body.is_some() && unknown == Some(Unknown::Ignore)
+    {
         refusals.refuse(
             "ESS-HTTP-020",
             format!("{path}.request.unknown"),
-            "`ignore` admits a request parameter no field names, which only a `form` or `query` \
-             request has; a `json` body stays closed, so `unknown` is `refuse` beside `json`",
+            "`ignore` admits a member no input field names, and a bare body is one input field's \
+             value, which holds no member of the input to ignore; `unknown` is `refuse` beside \
+             `body`",
         );
         refused = true;
     }
@@ -5025,10 +6042,17 @@ fn request(
         .as_deref()
         .and_then(|text| admitted_body(text, method, parsed, path, refusals));
     refused |= written.body.is_some() && body.is_none();
+    let query = written
+        .query
+        .as_ref()
+        .and_then(|listed| admitted_query(listed, method, parsed, path, refusals));
+    refused |= written.query.is_some() && query.is_none();
     let request = match (refused, encoding, unknown) {
         (false, Some(encoding), Some(unknown)) => Some(Request {
             body: None,
             encoding,
+            parts: BTreeMap::new(),
+            query: Vec::new(),
             unknown,
         })
         .filter(|request| *request != Request::default()),
@@ -5040,6 +6064,149 @@ fn request(
         // A refused body leaves the input it would carry unchecked, as a refused encoding does.
         encoding: encoding.filter(|_| body.is_some() || written.body.is_none()),
         body,
+        query,
+    }
+}
+
+/// `request.query` as written (`listed`), when a body encoding off `get` sits beside it; otherwise
+/// refused at `routes[i].request.query` (`ESS-HTTP-020`) and `None`. An encoding outside the set
+/// (`parsed` `None`) is refused by its own key, and leaves the list to [`query_fields`].
+fn admitted_query(
+    listed: &[String],
+    method: Option<Method>,
+    parsed: Option<Encoding>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<Vec<String>> {
+    let rule = match (method, parsed) {
+        (_, Some(Encoding::Query)) => {
+            "`query` lists the input fields read from the query string beside a body, and a \
+             request encoded `query` carries every field there already; list none, or encode the \
+             body `json`, `form` or `multipart`"
+                .to_owned()
+        }
+        (Some(Method::Get), _) => {
+            "`query` lists the input fields read from the query string beside a body, and `get` \
+             carries none; a command on `get` is encoded `query`"
+                .to_owned()
+        }
+        _ if listed.is_empty() => {
+            "`query` is empty: it lists at least one input field, and is left out to read none \
+             from the query string"
+                .to_owned()
+        }
+        _ => return Some(listed.to_vec()),
+    };
+    refusals.refuse("ESS-HTTP-020", format!("{path}.request.query"), rule);
+    None
+}
+
+/// The input fields a route's `request.query` lists (`listed`), once each is held to its rules
+/// (`ESS-HTTP-020` and `ESS-HTTP-021`, at `routes[i].request.query`): `input.<field>` naming an
+/// input field of the command, listed once, that neither the path, the bare `body` nor a part of a
+/// `multipart` request carries, of a type with a flat spelling.
+fn query_fields(
+    listed: &[String],
+    target: &Target<'_>,
+    written: Option<&RequestSpec>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Vec<Source>, Refused> {
+    let at = format!("{path}.request.query");
+    let field_of = |text: &str| {
+        Source::parse(text)
+            .filter(|source| matches!(source, Source::Input(_)))
+            .map(|source| source.field().to_owned())
+    };
+    let body = written
+        .and_then(|request| request.body.as_deref())
+        .and_then(field_of);
+    let parts = written
+        .and_then(|request| request.parts.as_ref())
+        .map(|parts| {
+            let mut read: Vec<String> = parts.keys().cloned().collect();
+            read.extend(
+                parts
+                    .values()
+                    .flat_map(|part| [&part.filename, &part.media_type])
+                    .flatten()
+                    .filter_map(|text| field_of(text)),
+            );
+            read
+        })
+        .unwrap_or_default();
+    let mut sources: Vec<Source> = Vec::new();
+    let mut refused = false;
+    for text in listed {
+        let source = Source::parse(text).filter(|source| matches!(source, Source::Input(_)));
+        let field = source.as_ref().and_then(|source| {
+            target
+                .fields
+                .iter()
+                .find(|field| field.name == source.field())
+        });
+        let rule = match (&source, field) {
+            (None, _) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` is not `input.<field>`: `query` lists input fields of the command, \
+                     each named by its namespace and its name"
+                ),
+            )),
+            (Some(source), None) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` names no input field: the command declares no input field `{}`",
+                    source.field()
+                ),
+            )),
+            (Some(source), Some(_)) if sources.contains(source) => Some((
+                "ESS-HTTP-020",
+                format!("`{text}` is listed twice, and a field is read from the query string once"),
+            )),
+            (Some(_), Some(field)) if mapped.contains(&format!("input.{}", field.name)) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` is carried by the path already, and a field travels in one place"
+                ),
+            )),
+            (Some(_), Some(field)) if body.as_deref() == Some(field.name.as_str()) => Some((
+                "ESS-HTTP-020",
+                format!("`{text}` is the bare `body` already, and a field travels in one place"),
+            )),
+            (Some(_), Some(field)) if parts.contains(&field.name) => Some((
+                "ESS-HTTP-020",
+                format!(
+                    "`{text}` is read from a part of the `multipart` request already, and a field \
+                 travels in one place"
+                ),
+            )),
+            (Some(_), Some(field)) if !flat_type(&field.type_ref, target.ir) => Some((
+                "ESS-HTTP-021",
+                format!(
+                    "input field `{}` has type `{}`, which has no flat spelling in the query \
+                     string: a field `query` lists is a scalar, an `Optional` scalar or a `List` \
+                     of scalars, a scalar being a primitive other than `Json`, an enum, or a \
+                     newtype of a scalar",
+                    field.name, field.type_ref
+                ),
+            )),
+            _ => None,
+        };
+        if let Some((code, rule)) = rule {
+            refusals.refuse(code, at.as_str(), rule);
+            refused = true;
+            continue;
+        }
+        if let Some(source) = source {
+            sources.push(source);
+        }
+    }
+    if refused {
+        Err(Refused)
+    } else {
+        Ok(sources)
     }
 }
 
@@ -5073,6 +6240,7 @@ fn view_request(
         request: None,
         encoding: None,
         body: None,
+        query: None,
     }
 }
 
@@ -5123,8 +6291,8 @@ fn flat_input(
             format!("{path}.request.encoding"),
             format!(
                 "input field `{}` has type `{}`, which has no flat spelling in a `{encoding}` \
-                 request: a `form` or `query` field is a scalar, an `Optional` scalar or a `List` \
-                 of scalars, a scalar being a primitive other than `Json`, an enum, or a newtype \
+                 request: a `form`, `query` or `multipart` field is a scalar, an `Optional` \
+                 scalar or a `List` of scalars, a scalar being a primitive other than `Json`, an enum, or a newtype \
                  of a scalar",
                 field.name, field.type_ref
             ),
@@ -5195,23 +6363,26 @@ struct Answers {
     outcomes: BTreeMap<String, Outcome>,
     errors: Option<Outcome>,
     alike: Vec<Vec<String>>,
-    body: ViewBody,
+    body: ViewAnswer,
     empty: Option<Empty>,
+    representations: Vec<Representation>,
 }
 
 /// The route's answers once every key of them is checked: a command's `outcomes` (`ESS-HTTP-022`
 /// to `-025`) and the view keys it may not carry (`ESS-HTTP-024`, `-030`), or a view's
-/// `outcomes`, `body` and `empty` (`ESS-HTTP-022`, `-024`, `-030`, `-031`).
+/// `outcomes`, `body` and `empty` (`ESS-HTTP-022`, `-024`, `-030`, `-031`), and the
+/// route's `representations` against the path's `variables` (`ESS-HTTP-035`, `-026`).
 fn answers(
     spec: &RouteSpec,
     operation: &Operation,
     target: Option<&Target<'_>>,
     path: &str,
+    variables: &[String],
     standard: &Standing,
     refusals: &mut Refusals,
 ) -> Result<Answers, Refused> {
     let before = refusals.0.len();
-    let answers = match operation {
+    let mut answers = match operation {
         Operation::Command(_) => {
             let command = target.and_then(|target| match target.served {
                 Served::Command(command) => Some((target.ir, command)),
@@ -5243,8 +6414,9 @@ fn answers(
                 outcomes,
                 errors,
                 alike,
-                body: ViewBody::Rows,
+                body: ViewAnswer::default(),
                 empty: None,
+                representations: Vec::new(),
             }
         }
         Operation::View(_) => {
@@ -5255,6 +6427,10 @@ fn answers(
             view_answers(spec, operation, view, path, refusals)
         }
     };
+    if let Ok(representations) = representations(spec, operation, target, variables, path, refusals)
+    {
+        answers.representations = representations;
+    }
     if refusals.0.len() == before {
         Ok(answers)
     } else {
@@ -6074,6 +7250,61 @@ fn outcome_status_checked(
 /// or any body but `none` on `204` or beside a redirect. `status` is the outcome's compiled status:
 /// one refused (`ESS-HTTP-023`) holds the body to no `204`; `redirects` says the outcome declares a
 /// `redirect` on a redirect status.
+/// What `response` or `response.<field>` answers, under one named member (beyond10x/ess#755):
+/// `bare` resolves the form as the outcome's bare body, and a member holding any other form, an
+/// empty member, or a form the outcome cannot answer bare is refused.
+fn wrapped_body(
+    wrapped: &BodySpec,
+    member: &str,
+    bare: impl FnOnce() -> Result<Body, String>,
+    forms: &str,
+) -> Result<Body, String> {
+    if member.is_empty() {
+        return Err(format!(
+            "the member of `{wrapped}` is empty; a wrapped body holds its value under a named \
+             member"
+        ));
+    }
+    let member = member.to_owned();
+    match bare() {
+        Ok(Body::Response) => Ok(Body::Wrapped {
+            member,
+            field: None,
+        }),
+        Ok(Body::ResponseField(field)) => Ok(Body::Wrapped {
+            member,
+            field: Some(field),
+        }),
+        Ok(_) => Err(format!(
+            "`{wrapped}` wraps another form; a member holds `response` or `response.<field>`, \
+             and {forms}"
+        )),
+        Err(reason) => Err(format!("in `{wrapped}`, {reason}")),
+    }
+}
+
+/// `body` unless the outcome answers `204` or declares a `redirect`, which answer `none` only.
+fn no_content(
+    body: Body,
+    name: &impl fmt::Display,
+    status: Option<u16>,
+    redirects: bool,
+) -> Result<Body, String> {
+    if status == Some(204) && body != Body::None {
+        Err(format!(
+            "outcome `{name}` answers `204`, which carries no content, and its body is \
+             `{body}`; a `204` answers `body: none`"
+        ))
+    } else if redirects && body != Body::None {
+        Err(format!(
+            "outcome `{name}` declares a `redirect`, and its body is `{body}`; a redirect \
+             answers `body: none`"
+        ))
+    } else {
+        Ok(body)
+    }
+}
+
 fn outcome_body(
     written: Option<&BodySpec>,
     status: Option<u16>,
@@ -6098,39 +7329,43 @@ fn outcome_body(
         )),
         (true, None) => None,
     };
-    let forms = "an outcome answers `envelope`, `response`, `response.<field>`, `none` or \
-                 `{<member>: error}`";
-    let resolved = match written {
-        None => Ok(Body::Envelope),
-        Some(BodySpec::Word(word)) => match word.as_str() {
-            "envelope" => Ok(Body::Envelope),
-            "none" => Ok(Body::None),
-            "response" => answers_none(word).map_or(Ok(Body::Response), Err),
-            "rows" | "array" | "single" => Err(format!("`{word}` is a view's body; {forms}")),
-            _ => match AnswerSource::parse(word) {
-                Some(AnswerSource::Response(field)) => match answers_none(word) {
-                    Some(reason) => Err(reason),
-                    None => match declared_type(&command.response, &field) {
-                        None => Err(format!(
-                            "`{word}` names no field: command `{}` declares no response field \
+    let forms = "an outcome answers `envelope`, `response`, `response.<field>`, `none`, \
+                 `{<member>: error}`, `{<member>: response}` or `{<member>: response.<field>}`";
+    let word_body = |word: &String| match word.as_str() {
+        "envelope" => Ok(Body::Envelope),
+        "none" => Ok(Body::None),
+        "response" => answers_none(word).map_or(Ok(Body::Response), Err),
+        "rows" | "array" | "single" => Err(format!("`{word}` is a view's body; {forms}")),
+        _ => match AnswerSource::parse(word) {
+            Some(AnswerSource::Response(field)) => match answers_none(word) {
+                Some(reason) => Err(reason),
+                None => match declared_type(&command.response, &field) {
+                    None => Err(format!(
+                        "`{word}` names no field: command `{}` declares no response field \
                              `{field}`",
-                            command.name
-                        )),
-                        Some(type_ref @ ResolvedTypeRef::Optional { .. }) => Err(format!(
-                            "`{word}` has type `{type_ref}`, and a body is always present: a \
+                        command.name
+                    )),
+                    Some(type_ref @ ResolvedTypeRef::Optional { .. }) => Err(format!(
+                        "`{word}` has type `{type_ref}`, and a body is always present: a \
                              `response.<field>` body names a field that is not `Optional`"
-                        )),
-                        Some(_) => Ok(Body::ResponseField(field)),
-                    },
+                    )),
+                    Some(_) => Ok(Body::ResponseField(field)),
                 },
-                Some(source) => Err(format!(
-                    "`{source}` is a source a header or a redirect reads, not a body: of the \
+            },
+            Some(source) => Err(format!(
+                "`{source}` is a source a header or a redirect reads, not a body: of the \
                      sources, a body answers only `response.<field>`, and an error answers its \
                      object with `{{<member>: error}}`"
-                )),
-                None => Err(format!("`{word}` is not a body; {forms}")),
-            },
+            )),
+            None => Err(format!("`{word}` is not a body; {forms}")),
         },
+    };
+    let resolved = match written {
+        None => Ok(Body::Envelope),
+        Some(BodySpec::Word(word)) => word_body(word),
+        Some(wrapped @ BodySpec::Wrapped { member, form }) => {
+            wrapped_body(wrapped, member, || word_body(form), forms)
+        }
         Some(BodySpec::Error(member)) => match error {
             None => Err(format!(
                 "outcome `{name}` reports no error, so it has no error object for \
@@ -6161,22 +7396,7 @@ fn outcome_body(
              answers"
         )),
     };
-    let checked = resolved.and_then(|body| {
-        if status == Some(204) && body != Body::None {
-            Err(format!(
-                "outcome `{name}` answers `204`, which carries no content, and its body is \
-                 `{body}`; a `204` answers `body: none`"
-            ))
-        } else if redirects && body != Body::None {
-            Err(format!(
-                "outcome `{name}` declares a `redirect`, and its body is `{body}`; a redirect \
-                 answers `body: none`"
-            ))
-        } else {
-            Ok(body)
-        }
-    });
-    match checked {
+    match resolved.and_then(|body| no_content(body, name, status, redirects)) {
         Ok(body) => Some(body),
         Err(reason) => {
             refusals.refuse("ESS-HTTP-024", format!("{at}.body"), reason);
@@ -7186,7 +8406,8 @@ fn view_answers(
     no_outcomes_on_a_view(spec, operation, path, refusals);
     // `None` when the body is refused, which leaves `empty` unchecked against it.
     let body = view_body(spec, operation, view, path, refusals);
-    match (body, &spec.empty) {
+    let form = body.as_ref().map(|body| body.form);
+    match (form, &spec.empty) {
         (Some(ViewBody::Single), None) => refusals.refuse(
             "ESS-HTTP-030",
             path,
@@ -7203,7 +8424,7 @@ fn view_answers(
         ),
         _ => {}
     }
-    let held = !matches!(body, Some(ViewBody::Rows | ViewBody::Array));
+    let held = !matches!(form, Some(ViewBody::Rows | ViewBody::Array));
     // An `empty` beside `rows` or `array` is refused above as a whole, so its status and body are
     // not refused again.
     let empty = spec.empty.as_ref().and_then(|empty| {
@@ -7226,7 +8447,7 @@ fn view_answers(
             .zip(body)
             .map(|(status, body)| Empty { status, body })
     });
-    if body == Some(ViewBody::Single) {
+    if form == Some(ViewBody::Single) {
         if let Some((ir, view)) = view {
             let entity = ir.entity(&view.source);
             let identity = entity.identity.name.as_str();
@@ -7255,6 +8476,7 @@ fn view_answers(
         alike: Vec::new(),
         body: body.unwrap_or_default(),
         empty,
+        representations: Vec::new(),
     }
 }
 
@@ -7266,29 +8488,53 @@ fn view_body(
     view: Option<(&EssIr, &ResolvedView)>,
     path: &str,
     refusals: &mut Refusals,
-) -> Option<ViewBody> {
+) -> Option<ViewAnswer> {
+    let form = |word: &str| match word {
+        "rows" => Some(ViewBody::Rows),
+        "single" => Some(ViewBody::Single),
+        "array" => Some(ViewBody::Array),
+        _ => None,
+    };
     let body = match &spec.body {
-        None => Some(ViewBody::Rows),
-        Some(written) => match written.word() {
-            Some("rows") => Some(ViewBody::Rows),
-            Some("single") => Some(ViewBody::Single),
-            Some("array") => Some(ViewBody::Array),
-            _ => {
-                refusals.refuse(
-                    "ESS-HTTP-024",
-                    format!("{path}.body"),
-                    format!(
-                        "{operation} answers `rows`, `array` or `single`, and `{written}` is not \
-                         a view's body"
-                    ),
-                );
-                None
-            }
+        None => Some(ViewAnswer::default()),
+        Some(written) => match written {
+            BodySpec::Word(word) => form(word).map(ViewAnswer::bare),
+            // `{rows: array}` is `rows`, ESS's own answer; `rows` is an object already, so it is
+            // never wrapped (beyond10x/ess#755).
+            BodySpec::Wrapped { member, form: word } if !member.is_empty() => match form(word) {
+                Some(ViewBody::Array)
+                    if member == "rows" && view.is_none_or(|(_, view)| view.paging.is_none()) =>
+                {
+                    Some(ViewAnswer::default())
+                }
+                Some(form @ (ViewBody::Single | ViewBody::Array)) => Some(ViewAnswer {
+                    form,
+                    member: Some(member.clone()),
+                }),
+                _ => None,
+            },
+            _ => None,
         },
     };
-    if matches!(body, Some(ViewBody::Single | ViewBody::Array)) {
+    if body.is_none() {
+        let written = spec
+            .body
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        refusals.refuse(
+            "ESS-HTTP-024",
+            format!("{path}.body"),
+            format!(
+                "{operation} answers `rows`, `array`, `single`, `{{<member>: array}}` or \
+                 `{{<member>: single}}` under a named member, and `{written}` is not a view's body"
+            ),
+        );
+    }
+    let form = body.as_ref().map(|body| body.form);
+    if matches!(form, Some(ViewBody::Single | ViewBody::Array)) {
         if let Some((_, view)) = view.filter(|(_, view)| view.paging.is_some()) {
-            let answer = if body == Some(ViewBody::Single) {
+            let answer = if form == Some(ViewBody::Single) {
                 "one bare row"
             } else {
                 "a bare array of rows"
@@ -7304,6 +8550,255 @@ fn view_body(
         }
     }
     body
+}
+
+/// A view route's `representations`, checked and compiled in the order written
+/// (beyond10x/ess#753): refused (`ESS-HTTP-035`) on a command, a `single` view or a paged view,
+/// empty, with a `query` of other than one parameter, on a parameter other than the first
+/// representation's, a view parameter's wire name or a path variable, on a name or value that is
+/// not `unreserved` characters or a value given twice, with a `separator` outside `,`, `;` and a
+/// tab, or over a view field without a flat spelling; its headers are literals, each checked as an
+/// answer's header is (`ESS-HTTP-026`). Empty when the route declares none.
+fn representations(
+    spec: &RouteSpec,
+    operation: &Operation,
+    target: Option<&Target<'_>>,
+    variables: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<Vec<Representation>, Refused> {
+    let Some(written) = &spec.representations else {
+        return Ok(Vec::new());
+    };
+    let before = refusals.0.len();
+    let key = format!("{path}.representations");
+    let view = target.and_then(|target| match target.served {
+        Served::View(view) => Some((target.ir, view)),
+        Served::Command(_) => None,
+    });
+    if let Some(reason) = misplaced(spec, operation, view) {
+        refusals.refuse("ESS-HTTP-035", key.as_str(), reason);
+    } else if written.is_empty() {
+        refusals.refuse(
+            "ESS-HTTP-035",
+            key.as_str(),
+            "`representations` is empty; a route that answers its `body` only leaves it out",
+        );
+    }
+    let mut selectors: Vec<Selector> = Vec::new();
+    let mut compiled = Vec::new();
+    for (index, representation) in written.iter().enumerate() {
+        let at = format!("{key}[{index}]");
+        let query = selector(representation, view, variables, &selectors, &at, refusals);
+        if let Some(query) = &query {
+            selectors.push(query.clone());
+        }
+        let csv = &representation.encoding.csv;
+        let separator = match csv.separator.as_deref() {
+            None => Some(Separator::default()),
+            Some(text) => Separator::parse(text).or_else(|| {
+                refusals.refuse(
+                    "ESS-HTTP-035",
+                    format!("{at}.encoding.csv.separator"),
+                    format!(
+                        "{text:?} is not a CSV separator: it is `\",\"`, `\";\"` or `\"\\t\"`, \
+                         a tab"
+                    ),
+                );
+                None
+            }),
+        };
+        if let Some((ir, view)) = view {
+            columns(ir, view, &at, refusals);
+        }
+        let headers = representation_headers(representation.headers.as_ref(), &at, refusals);
+        if let (Some(query), Some(separator), Ok(headers)) = (query, separator, headers) {
+            compiled.push(Representation {
+                query,
+                encoding: RepresentationEncoding {
+                    csv: Csv {
+                        separator,
+                        header: csv.header.unwrap_or(true),
+                    },
+                },
+                headers,
+            });
+        }
+    }
+    if refusals.0.len() == before {
+        Ok(compiled)
+    } else {
+        Err(Refused)
+    }
+}
+
+/// Why a route may not declare `representations`, or `None` where it may: a command route, a
+/// `single` view route and a paged view's route are refused (`ESS-HTTP-035`).
+fn misplaced(
+    spec: &RouteSpec,
+    operation: &Operation,
+    view: Option<(&EssIr, &ResolvedView)>,
+) -> Option<String> {
+    let single = match &spec.body {
+        Some(BodySpec::Word(form) | BodySpec::Wrapped { form, .. }) => form == "single",
+        _ => false,
+    };
+    match (operation, view) {
+        (Operation::Command(_), _) => Some(format!(
+            "{operation} answers per outcome, under `outcomes`; only a view route has \
+             representations of its rows"
+        )),
+        _ if single => Some(format!(
+            "{operation} answers `single`, one row, and a representation answers a list of rows"
+        )),
+        (_, Some((_, view))) if view.paging.is_some() => Some(format!(
+            "view `{}` is paged: its answer carries a page, which a representation of its rows \
+             cannot",
+            view.name
+        )),
+        _ => None,
+    }
+}
+
+/// Refuses each field of `view` that no CSV column spells (`ESS-HTTP-035`), at `{at}.encoding`:
+/// a column is a scalar or an `Optional` scalar ([`optional_scalar`]).
+fn columns(ir: &EssIr, view: &ResolvedView, at: &str, refusals: &mut Refusals) {
+    for field in &view.fields {
+        if !optional_scalar(&field.type_ref, ir) {
+            refusals.refuse(
+                "ESS-HTTP-035",
+                format!("{at}.encoding"),
+                format!(
+                    "view field `{}` has type `{}`, which has no flat spelling in a CSV column: a \
+                     column is a scalar or an `Optional` scalar, a scalar being a primitive other \
+                     than `Json`, an enum, or a newtype of a scalar",
+                    field.name, field.type_ref
+                ),
+            );
+        }
+    }
+}
+
+/// The variables of a route's path, in path order; none for an open path or one that did not
+/// parse.
+fn path_variables(segments: Option<&Option<Vec<Segment>>>) -> Vec<String> {
+    segments
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|segment| match segment {
+            Segment::Variable(name) => Some(name.clone()),
+            Segment::Literal(_) => None,
+        })
+        .collect()
+}
+
+/// A representation's `query`, checked (`ESS-HTTP-035`) at `{at}.query`: exactly one parameter,
+/// the one the first of `earlier` selects by, never a view parameter's wire name or a path
+/// variable, its name and value `unreserved` characters, and a value no earlier representation
+/// has. `None` once refused.
+fn selector(
+    representation: &RepresentationSpec,
+    view: Option<(&EssIr, &ResolvedView)>,
+    variables: &[String],
+    earlier: &[Selector],
+    at: &str,
+    refusals: &mut Refusals,
+) -> Option<Selector> {
+    let at = format!("{at}.query");
+    let [(parameter, value)] = &representation.query.0[..] else {
+        refusals.refuse(
+            "ESS-HTTP-035",
+            at,
+            format!(
+                "`query` holds {} parameters; a representation is selected by exactly one \
+                 parameter and one value of it, `{{<parameter>: <value>}}`",
+                representation.query.0.len()
+            ),
+        );
+        return None;
+    };
+    let before = refusals.0.len();
+    let mut refuse = |reason: String| refusals.refuse("ESS-HTTP-035", at.as_str(), reason);
+    if !unreserved(parameter) {
+        refuse(format!(
+            "{parameter:?} is not a selector parameter: a parameter name is one or more RFC 3986 \
+             `unreserved` characters, letters, digits and `-._~`"
+        ));
+    } else if let Some(first) = earlier
+        .first()
+        .filter(|first| first.parameter != *parameter)
+    {
+        refuse(format!(
+            "this representation is selected by `{parameter}`, and the first by `{}`; every \
+             representation of a route is selected by one parameter",
+            first.parameter
+        ));
+    } else if variables.contains(parameter) {
+        refuse(format!(
+            "`{parameter}` is a variable of the route's path; a representation is selected by a \
+             query parameter the route does not read otherwise"
+        ));
+    } else if let Some((_, view)) = view.filter(|(_, view)| {
+        view.params
+            .iter()
+            .any(|param| param.naming.wire.as_deref().unwrap_or(&param.name) == parameter)
+    }) {
+        refuse(format!(
+            "`{parameter}` is the wire name of a parameter of view `{}`; a representation is \
+             selected by a query parameter the route does not read otherwise",
+            view.name
+        ));
+    }
+    if !unreserved(value) {
+        refuse(format!(
+            "{value:?} is not a selector value: a value is one or more RFC 3986 `unreserved` \
+             characters, letters, digits and `-._~`"
+        ));
+    } else if earlier
+        .iter()
+        .any(|earlier| earlier.parameter == *parameter && earlier.value == *value)
+    {
+        refuse(format!(
+            "`{parameter}={value}` selects an earlier representation already; each value \
+             selects one"
+        ));
+    }
+    (refusals.0.len() == before).then(|| Selector {
+        parameter: parameter.clone(),
+        value: value.clone(),
+    })
+}
+
+/// A representation's `headers`, compiled: each a literal, checked as an answer's header is
+/// (`ESS-HTTP-026`); a source or a challenge is refused (`ESS-HTTP-026`), since a representation
+/// adds the same text to every answer.
+fn representation_headers(
+    written: Option<&Entries<HeaderSpec>>,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Result<BTreeMap<String, Header>, Refused> {
+    let before = refusals.0.len();
+    let mut literals = Entries::default();
+    for (name, header) in written.map_or(&[][..], |entries| &entries.0[..]) {
+        match header {
+            HeaderSpec::Literal(_) => literals.0.push((name.clone(), header.clone())),
+            HeaderSpec::Source(_) | HeaderSpec::Challenge(_) => refusals.refuse(
+                "ESS-HTTP-026",
+                format!("{at}.headers.{name}"),
+                format!(
+                    "header `{name}` is not a literal: a representation's headers are \
+                     `{{literal: <text>}}`, the same text on every answer"
+                ),
+            ),
+        }
+    }
+    let headers = answer_headers(Some(&literals), None, None, at, refusals);
+    if refusals.0.len() == before {
+        headers
+    } else {
+        Err(Refused)
+    }
 }
 
 /// Whether `filter` holds only of the row whose `identity` equals a view parameter: it is
@@ -7329,14 +8824,23 @@ fn selects_identity(filter: &Predicate, identity: &str) -> bool {
     }
 }
 
-/// Whether a value of `type_ref` fits one path segment: always present and one value, so `String`,
-/// `Integer`, an enum, or an unconstrained newtype of one of them, and never `Optional`, `List`,
-/// `Map`, a struct, a union or another primitive.
+/// Whether a value of `type_ref` fits one path segment: always present and one value with one
+/// text spelling, so `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an
+/// enum, or an unconstrained newtype of one of them (beyond10x/ess#755), and never `Optional`,
+/// `List`, `Map`, a struct, a union, `Bytes` (its base64 text holds `/`), `Binary64` (no one text
+/// spelling of a JSON number) or `Json`.
 fn segment_type(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
     match type_ref {
-        ResolvedTypeRef::Primitive { name } => {
-            matches!(name, Primitive::String | Primitive::Integer)
-        }
+        ResolvedTypeRef::Primitive { name } => matches!(
+            name,
+            Primitive::String
+                | Primitive::Integer
+                | Primitive::Boolean
+                | Primitive::Decimal
+                | Primitive::Timestamp
+                | Primitive::Duration
+                | Primitive::Uuid
+        ),
         ResolvedTypeRef::Declared { name } => {
             let declared = ir.named_type(name);
             match &declared.body {

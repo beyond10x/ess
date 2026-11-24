@@ -1209,3 +1209,138 @@ fn below_format_a_every_placement_is_unchanged() {
     }
     assert_eq!(checked, 64 * 18 * 16 * 26 * 3 * 2);
 }
+
+/// A related-row refusal declared above an input refusal (beyond10x/ess#554): the order is refused
+/// as before, and the hint also names the narrowing that keeps it.
+#[test]
+fn a_related_row_ordering_refusal_names_the_conjunction_idiom() {
+    let text = "format: ess/37
+system: demo
+version: v1
+domain: demo.session
+types:
+  - {name: demo.session.SessionId, kind: newtype, of: String}
+entities:
+  - name: demo.session.Session
+    identity: {name: session_id, type: demo.session.SessionId}
+    fields: []
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+errors:
+  - {name: demo.session.AlreadyInitialized}
+  - {name: demo.session.Malformed}
+events:
+  - name: demo.session.Initialized
+    fields:
+      - {name: session_id, type: demo.session.SessionId}
+commands:
+  - name: demo.session.Initialize
+    input:
+      - {name: session_id, type: demo.session.SessionId}
+      - {name: payload_valid, type: Boolean}
+    outcomes:
+      - name: already-initialized
+        when_related: {entity: demo.session.Session, where: session_id == input.session_id, exists: true}
+        error: demo.session.AlreadyInitialized
+      - name: malformed
+        when: payload_valid == false
+        error: demo.session.Malformed
+      - name: initialized
+        creates: demo.session.Session
+        instance: session_id
+        emits: [demo.session.Initialized]
+        payload:
+          demo.session.Initialized: {session_id: input.session_id}
+";
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+    let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) else {
+        panic!("the order is refused");
+    };
+    let errors = errors.to_string();
+    assert!(
+        errors.contains(
+            "`malformed` answers at step 1 of the precedence order and `already-initialized`, \
+             declared above it, at step 4; where both hold, the declaration order and the \
+             precedence order disagree (hint: declare `malformed` before `already-initialized`: \
+             step 1 answers first in either order; or keep the order and narrow `malformed` with \
+             `when_related: {…, exists: false}`)"
+        ),
+        "{errors}"
+    );
+    let narrowed = text.replace(
+        "        when: payload_valid == false\n",
+        "        when: payload_valid == false\n        when_related: {entity: demo.session.Session, \
+         where: session_id == input.session_id, exists: false}\n",
+    );
+    assert_ne!(narrowed, text);
+    let raw = RawSpecFile::parse(&narrowed).unwrap_or_else(|error| panic!("{error}"));
+    if let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) {
+        panic!("{errors}");
+    }
+}
+
+/// A plain external refusal declared above a related-row refusal (beyond10x/ess#554): the order is
+/// refused as before, and the hint also names `before_row: true`, which keeps it.
+#[test]
+fn an_external_ordering_refusal_names_before_row() {
+    let text = "format: ess/37
+system: demo
+version: v1
+domain: demo.jobs
+types:
+  - {name: demo.jobs.JobName, kind: newtype, of: String}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: name, type: demo.jobs.JobName}
+    fields: []
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored], transitions: []}
+errors:
+  - {name: demo.jobs.InvalidZone}
+  - {name: demo.jobs.Duplicate}
+events:
+  - name: demo.jobs.JobStored
+    fields:
+      - {name: name, type: demo.jobs.JobName}
+commands:
+  - name: demo.jobs.StoreJob
+    input:
+      - {name: name, type: demo.jobs.JobName}
+      - {name: zone, type: String}
+    outcomes:
+      - name: invalid-zone
+        external: the zone id does not parse
+        error: demo.jobs.InvalidZone
+      - name: duplicate-name
+        when_related: {entity: demo.jobs.Job, where: name == input.name, exists: true}
+        error: demo.jobs.Duplicate
+      - name: stored
+        creates: demo.jobs.Job
+        instance: name
+        emits: [demo.jobs.JobStored]
+        payload:
+          demo.jobs.JobStored: {name: input.name}
+";
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+    let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) else {
+        panic!("the order is refused");
+    };
+    let errors = errors.to_string();
+    assert!(
+        errors.contains(
+            "`duplicate-name` answers at step 4 of the precedence order and `invalid-zone`, \
+             declared above it, at step 5; where both hold, the declaration order and the \
+             precedence order disagree (hint: declare `duplicate-name` before `invalid-zone`: \
+             step 4 answers first in either order; or mark `invalid-zone` `before_row: true`: it \
+             then answers from the request alone, at step 1)"
+        ),
+        "{errors}"
+    );
+    let marked = text.replace(
+        "        external: the zone id does not parse\n",
+        "        external: the zone id does not parse\n        before_row: true\n",
+    );
+    assert_ne!(marked, text);
+    let raw = RawSpecFile::parse(&marked).unwrap_or_else(|error| panic!("{error}"));
+    if let Err(errors) = Specification::assemble([(Source::new("model.yaml"), raw)]) {
+        panic!("{errors}");
+    }
+}

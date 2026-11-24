@@ -17,6 +17,8 @@ relations:
 - depends_on: story:an-exchange-is-declared-in-the-specification
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret.rs
@@ -28,7 +30,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/exchange.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/exchange_scenarios.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:31Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:32Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
@@ -46,6 +48,10 @@ Reproduction: on 0.92.0 an exchange cannot be declared (`triage/650/repro/run.tx
 holds one.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 All tests are in `crates/verify/ess-conformance/tests/exchange_scenarios.rs` (new), run with
 `cargo test -p ess-conformance --locked --test exchange_scenarios`, on the `ess/37` specification

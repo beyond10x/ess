@@ -3844,6 +3844,60 @@ fn arranged_choosing(
         None => focus(ir, command, outcome),
     }
     .ok_or_else(unarranged)?;
+    let around = |via: &ResolvedRelatedVia| {
+        arranged_around(
+            models,
+            (command, outcome),
+            actors,
+            (distinction, goal, chosen),
+            via,
+        )
+    };
+    // A row owned by the focus row's entity, beside it, is filed under an owner of its own, which a
+    // guard comparing its link with the input naming the focus row reads apart from the focus row:
+    // `bound` beside `other-board: board_id != input.board_id` needs the node filed under the board
+    // the input names. Where the focus row finds nothing, that owned row is arranged as the focus,
+    // under the owner row arranged beside it (beyond10x/ess#801).
+    around(via).or_else(|cause| {
+        match goal
+            .is_none()
+            .then(|| owned_beside(ir, command, via))
+            .flatten()
+        {
+            Some(owned) => around(owned).map_err(|_| cause),
+            None => Err(cause),
+        }
+    })
+}
+
+/// Of `command`'s rows other than the one `via` names, the first whose entity the entity of that
+/// row owns.
+fn owned_beside<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    via: &ResolvedRelatedVia,
+) -> Option<&'c ResolvedRelatedVia> {
+    let rows = rows(command);
+    let (_, owner) = rows.iter().find(|(read, _)| read.field() == via.field())?;
+    rows.iter()
+        .find(|(other, entity)| {
+            other.field() != via.field()
+                && ir
+                    .owner_of(entity)
+                    .is_some_and(|owned| &owned.owner == *owner)
+        })
+        .map(|(other, _)| *other)
+}
+
+/// The tail of [`arranged_choosing`] around the row `via` names.
+fn arranged_around(
+    models: &super::caller::InvocationModels<'_>,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal, chosen): (Distinction, Option<&Goal>, Option<&BTreeMap<String, Node>>),
+    via: &ResolvedRelatedVia,
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let ir = models.arrangement;
     let projected = projection(command, via.field());
     let own = kept(&projected, outcome)?;
     let mut others = beside(
@@ -5407,11 +5461,21 @@ fn unclaimed(
         .map(|guard| Predicate::Not(Box::new((*guard).clone())))
         .collect();
     let goals: Vec<&Predicate> = negated.iter().collect();
+    let every = Predicate::All(negated.clone());
+    let together: [&Predicate; 1] = [&every];
+    let mut passes: Vec<&[&Predicate]> = vec![&[]];
+    if !goals.is_empty() {
+        passes.push(&goals);
+    }
+    if goals.len() > 1 {
+        passes.push(&together);
+    }
     let mut taken: Option<(&ResolvedOutcome, &Predicate)> = None;
     let mut tried = 0;
     // The plain candidates first, so an input found there is the one it always was; then those
-    // directed to refute every input-guarded refusal at once.
-    for directed in [&[][..], &goals[..]] {
+    // directed to refute each input-guarded refusal; last those directed to refute all of them in
+    // one goal, which the search over separate guards never asks for (beyond10x/ess#804).
+    for directed in passes {
         for mut input in
             candidates(ir, command, directed, distinction).map_err(RefusalCause::NoWitness)?
         {
@@ -5426,9 +5490,6 @@ fn unclaimed(
                     }
                 }
             }
-        }
-        if goals.is_empty() {
-            break;
         }
     }
     let Some((refusal, guard)) = taken else {

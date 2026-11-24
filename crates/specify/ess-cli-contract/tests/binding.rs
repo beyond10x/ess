@@ -660,3 +660,200 @@ fn an_older_plan_reader_refuses_the_json_shape_by_name() {
     assert!(error.contains("unknown variant `json5`"), "{error}");
     assert!(error.contains("`json`"), "{error}");
 }
+
+/// beyond10x/ess#694: a runner whose `net` switch is a valueless flag and whose `ro` paths are
+/// given once per element.
+const RUN_MODEL: &str = "format: ess/1
+system: demo
+version: v1
+types:
+  - name: demo.Switch
+    kind: newtype
+    of: Boolean
+  - name: demo.RunRequest
+    kind: struct
+    fields:
+      - {name: net, type: Boolean}
+      - {name: ro, type: 'List<String>'}
+      - {name: argv, type: 'List<String>'}
+  - name: demo.Ran
+    kind: struct
+    fields:
+      - {name: status, type: String}
+";
+
+const RUN_BINDING: &str = "format: ess-cli/1
+binary: demo
+about: Run a program
+globals: {config: config, state: state-dir, output: output}
+callables:
+  run:
+    target: {kind: local, owner: demo.cli, action: run}
+    input: demo.RunRequest
+    result: demo.Ran
+commands:
+  - path: [run]
+    callable: run
+    about: Run with the arguments after --
+    arguments:
+      - {field: net, source: {kind: flag, long: net}}
+      - {field: ro, source: {kind: option, long: ro, repeated: true}}
+      - {field: argv, source: {kind: trailing}}
+";
+
+#[test]
+fn a_flag_binds_a_required_boolean_and_repeated_a_required_list() {
+    use ess_cli_contract::wire::ArgumentSource;
+    for model_text in [
+        RUN_MODEL.to_owned(),
+        // A newtype over Boolean is a Boolean on the wire.
+        RUN_MODEL.replace(
+            "{name: net, type: Boolean}",
+            "{name: net, type: demo.Switch}",
+        ),
+        RUN_MODEL.replace(
+            "type: 'List<String>'}\n      - {name: argv",
+            "type: 'List<Integer>'}\n      - {name: argv",
+        ),
+    ] {
+        let compiled = launch(&model_text, RUN_BINDING).unwrap();
+        let arguments = &compiled.plan().commands[0].arguments;
+        assert!(
+            matches!(&arguments[0].source, ArgumentSource::Flag { long } if long == "net"),
+            "{:?}",
+            arguments[0].source
+        );
+        assert!(
+            matches!(&arguments[1].source, ArgumentSource::Option { long, repeated: true } if long == "ro"),
+            "{:?}",
+            arguments[1].source
+        );
+    }
+}
+
+#[test]
+fn binding_refuses_a_flag_on_anything_but_a_required_boolean() {
+    for shape in ["'Optional<Boolean>'", "String", "'List<Boolean>'"] {
+        let model_text = RUN_MODEL.replace(
+            "{name: net, type: Boolean}",
+            &format!("{{name: net, type: {shape}}}"),
+        );
+        let error = launch(&model_text, RUN_BINDING).unwrap_err();
+        assert!(error.contains("`net`"), "{shape}: {error}");
+        assert!(error.contains("required Boolean"), "{shape}: {error}");
+        assert!(
+            error.contains("absent and `false` would be two spellings of one value"),
+            "{shape}: {error}"
+        );
+    }
+}
+
+#[test]
+fn binding_refuses_a_repeated_option_on_anything_but_a_required_list() {
+    for shape in [
+        "'Optional<List<String>>'",
+        "String",
+        "'Map<String, String>'",
+    ] {
+        let model_text = RUN_MODEL.replace(
+            "{name: ro, type: 'List<String>'}",
+            &format!("{{name: ro, type: {shape}}}"),
+        );
+        let error = launch(&model_text, RUN_BINDING).unwrap_err();
+        assert!(error.contains("`ro`"), "{shape}: {error}");
+        assert!(error.contains("required List"), "{shape}: {error}");
+    }
+}
+
+#[test]
+fn an_option_without_repeated_keeps_its_plan_bytes() {
+    let compiled = launch(LAUNCH_MODEL, LAUNCH_BINDING).unwrap();
+    let json = compiled.to_canonical_json();
+    assert!(!json.contains("repeated"), "{json}");
+}
+
+#[test]
+fn the_trailing_refusal_names_the_idiom() {
+    let model_text = LAUNCH_MODEL.replace("type: 'List<String>'", "type: 'Optional<List<String>>'");
+    let error = launch(&model_text, LAUNCH_BINDING).unwrap_err();
+    assert!(
+        error.contains(
+            "a trailing source binds a required List<String> field; no `--`, or nothing after it, \
+             is `[]`, so declare the field `List<String>` rather than `Optional<List<String>>`"
+        ),
+        "{error}"
+    );
+}
+
+/// The design page's runner example compiles over the runner model.
+#[test]
+fn design_page_flag_example_compiles() {
+    let page = include_str!("../../../../docs/design/cli-presentation-binding.md");
+    let first = "```yaml\n# run-cli.yaml, over demo.RunRequest";
+    let start = page
+        .find(first)
+        .unwrap_or_else(|| panic!("the design page has no `run-cli.yaml` block"))
+        + "```yaml\n".len();
+    let end = start + page[start..].find("```").unwrap();
+    let binding = &page[start..end];
+    assert!(binding.contains("{kind: flag, long: net}"), "{binding}");
+    launch(RUN_MODEL, binding).unwrap();
+}
+
+/// The `ArgumentSource` every `ess` up to 0.98.2 reads a compiled plan with: the closed tagged
+/// enum of `wire.rs` at 0.98.2, with no `flag` kind and no `repeated` key.
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[allow(dead_code)]
+enum OlderArgumentSource {
+    Option {
+        long: String,
+    },
+    Positional {
+        index: usize,
+    },
+    Document {
+        inline: String,
+        file: String,
+        stdin: String,
+    },
+    Protected {
+        file: String,
+        stdin: String,
+        hidden_tty: String,
+    },
+    Trailing {},
+}
+
+/// beyond10x/ess#694 adds `{kind: flag}` and `repeated: true` to a persisted plan without a format
+/// version: a reader of 0.98.2 refuses each by name rather than reading a flag or a repeated option
+/// as something else, and the option without `repeated` it reads as before.
+#[test]
+fn an_older_plan_reader_refuses_a_flag_and_a_repeated_option_by_name() {
+    let text = launch(RUN_MODEL, RUN_BINDING).unwrap().to_canonical_json();
+    let plan: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let arguments = plan["commands"][0]["arguments"].as_array().unwrap();
+    let source = |field: &str| {
+        arguments
+            .iter()
+            .find(|argument| argument["field"] == field)
+            .unwrap_or_else(|| panic!("no argument `{field}`: {text}"))["source"]
+            .clone()
+    };
+    let error = serde_json::from_value::<OlderArgumentSource>(source("net"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown variant `flag`"), "{error}");
+    let error = serde_json::from_value::<OlderArgumentSource>(source("ro"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `repeated`"), "{error}");
+    let unflagged = launch(LAUNCH_MODEL, LAUNCH_BINDING)
+        .unwrap()
+        .to_canonical_json();
+    let unflagged: serde_json::Value = serde_json::from_str(&unflagged).unwrap();
+    for argument in unflagged["commands"][0]["arguments"].as_array().unwrap() {
+        serde_json::from_value::<OlderArgumentSource>(argument["source"].clone())
+            .unwrap_or_else(|error| panic!("{argument}: {error}"));
+    }
+}

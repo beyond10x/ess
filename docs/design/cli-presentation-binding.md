@@ -174,7 +174,8 @@ or interrupted validator keep their own codes. The generated reference names the
 answer. Without the key, the adapter codes are unchanged.
 
 Each input field has exactly one argument mapping. `option` has `long` and consumes
-a value; Boolean values use explicit `true`/`false`. `positional` has a consecutive
+a value; Boolean values use explicit `true`/`false`, unless the field is bound to a
+`flag` (below). `positional` has a consecutive
 one-based `index`. Scalar String/newtype/enum values are text; other values use JSON
 syntax. Requiredness follows Optional in the model. `protected` has `file`, `stdin`
 and `hidden_tty` long flag names, and supports String fields only. The three sources
@@ -258,6 +259,57 @@ commands:
 gained the kind in 0.54.0 without a format change; an older reader refuses it by
 name. Every generated package's `src/wire.rs` and `src/runtime.rs` change with it, so
 `ess generate cli --check` reports drift until the package is regenerated.
+
+The refusal of a trailing source over another type names the idiom: with no `--`, or
+nothing after it, the list is `[]`, so a command with nothing to run declares the field
+`List<String>` and reads `[]` as "nothing to run".
+
+### Flags and repeated options
+
+`{kind: flag, long: <name>}` binds a field to a valueless switch: `--<name>` present is
+`true`, absent is `false`. The field must be a required `Boolean` (a newtype over one
+counts); `Optional<Boolean>` is refused, because absent and `false` would be two
+spellings of one value, and so is every other type. The flag takes no value: in
+`--net true`, `true` is a word a positional must take, or the parse fails
+(`cli_parse`, exit 2).
+
+`{kind: option, long: <name>, repeated: true}` binds a field to an option given once
+per element: `--ro /a --ro /b` is `["/a", "/b"]`, and no occurrence is `[]`. The field
+must be a required `List<T>`; `Optional<List<T>>` is refused for the same reason, and
+so is a field that is not a list. Each occurrence is read by the element rule above:
+text for a String, newtype or enum element, JSON syntax otherwise, so `--ro '["a"]'`
+over `List<String>` is `["[\"a\"]"]`. Without `repeated` an option over a list still
+takes one JSON list and refuses a second occurrence.
+
+```yaml
+# run-cli.yaml, over demo.RunRequest {net: Boolean, ro: List<String>, argv: List<String>}
+format: ess-cli/1
+binary: demo
+about: Run a program
+globals: {config: config, state: state-dir, output: output}
+callables:
+  run:
+    target: {kind: local, owner: demo.cli, action: run}
+    input: demo.RunRequest
+    result: demo.Ran
+commands:
+  - path: [run]
+    callable: run
+    about: Run with the arguments after --
+    arguments:
+      - {field: net, source: {kind: flag, long: net}}
+      - {field: ro, source: {kind: option, long: ro, repeated: true}}
+      - {field: argv, source: {kind: trailing}}
+```
+
+`demo run --net --ro /a --ro /b -- x` hands the handler
+`{"net":true,"ro":["/a","/b"],"argv":["x"]}`, and `demo run` hands
+`{"net":false,"ro":[],"argv":[]}`. As with `trailing`, `ess-cli/1`, `/2` and
+`ess-cli-plan/1`, `/2` gained the kind and the key without a format change
+(beyond10x/ess#694); an older reader refuses both by name. A binding that uses neither
+compiles to the plan bytes it compiled to before. Every generated package's `src/wire.rs`
+and `src/runtime.rs` change with them, so `ess generate cli --check` reports drift until
+the package is regenerated.
 
 ## Runtime contract and process policy
 

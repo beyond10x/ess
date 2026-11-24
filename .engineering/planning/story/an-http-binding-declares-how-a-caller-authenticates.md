@@ -25,7 +25,7 @@ scope:
   path: website/docs/reference/diagnostics.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:36Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -135,6 +135,8 @@ declaration that the OpenAPI projection, the Rust server and the Go server all r
 decision: OAuth 2.0 and OpenID Connect schemes (refused by name until a need names a flow), and the
 ADR's open question of a scheme taken from a composed contract (additive later; nothing here
 precludes it).
+
+Asked again by a ninth report, 2026-11-24; open with the owner.
 
 ## Source
 

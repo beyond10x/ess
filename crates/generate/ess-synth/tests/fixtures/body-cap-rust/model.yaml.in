@@ -52,6 +52,18 @@ commands:
         emits: [parcel.intake.ParcelHeld]
         payload:
           parcel.intake.ParcelHeld: {parcel_id: input.parcel_id, note: input.note}
+  - name: parcel.intake.Attach
+    input:
+      - {name: parcel_id, type: parcel.intake.ParcelId}
+      - {name: note, type: String}
+    outcomes:
+      - name: held
+        creates: parcel.intake.Parcel
+        instance: parcel_id
+        sets: {note: input.note}
+        emits: [parcel.intake.ParcelHeld]
+        payload:
+          parcel.intake.ParcelHeld: {parcel_id: input.parcel_id, note: input.note}
   - name: parcel.intake.Archive
     input:
       - {name: parcel_id, type: parcel.intake.ParcelId}
@@ -79,6 +91,7 @@ components:
         - parcel.intake.Receive
         - parcel.intake.Label
         - parcel.intake.Discard
+        - parcel.intake.Attach
         - parcel.intake.Archive
     publishes: {events: [parcel.intake.ParcelHeld]}
     reached_by: network

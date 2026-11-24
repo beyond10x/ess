@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: story:union-tag-inline-with-fields
 kind: story
-status: draft
+status: archived
 title: A union can carry its tag beside its variant's fields
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
 - depends_on: story:acceptance-runs-as-toolchain-scenarios
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-24T01:56:02Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 

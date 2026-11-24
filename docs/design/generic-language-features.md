@@ -433,9 +433,11 @@ The first cut of G3, `story:aggregate-measures-over-expressions` (beyond10x/ess#
   `ResolvedType.ordered`; both omitted when absent, so a model without them keeps its bytes.
 - **Synthesis.** Every field an expression reads is an input of the pattern with its own ladder,
   and the expected figure is evaluated per row by the shared evaluator before the function, as
-  "Cost" above says. An expression measure that also declares `skip_absent:` or `where:` is
-  refused as `ESS-SYNTH-017` naming it; the absent rows and the contrast arrangement vary one
-  field each and are not extended in this cut. No suite format moves: the scenario's vocabulary is
+  "Cost" above says. An expression measure that also declares `skip_absent:` gains one absent row
+  per field it reads that a created row can lack, each lacking only that field, and one that
+  declares `where:` gets the contrast arrangement over its per-row values (beyond10x/ess#561); a
+  skipping expression none of whose fields a created row can lack is refused as `ESS-SYNTH-017`
+  naming the field. No suite format moves: the scenario's vocabulary is
   unchanged.
 - **Targets.** The interpreted target evaluates the expression per row. Generated Rust and Go view
   queries keep a view with an expression measure an obligation named by its expression, and keep

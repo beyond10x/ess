@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/related_guard_owner_link_beside_owner_guard.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:40:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:40:46Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -31,6 +31,8 @@ A command that refuses an unknown owner (`when_related: {via: input.board_id, ex
 also refuses a related row filed under another owner (`when_related: {via: input.node_id, predicate:
 board_id != input.board_id}`) gets a scenario for its accepting branch: the owner row arranged for
 `input.board_id` is the one the related row is filed under.
+
+beyond10x/ess#801 (2026-11-21, ess 0.96.0) reports this case still present and met by a second specification (41 refusals there), on the model kept at `.engineering/repro/owned-via-compared-with-input/`; it is re-checked on 0.98.0 before the fix.
 
 ## Fit review
 

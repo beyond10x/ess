@@ -160,9 +160,13 @@ Two templates equal but for variable names are one route (`ESS-HTTP-010`).
 Each variable is mapped exactly once in `parameters`, and each mapping names a variable of the path.
 A command's mapped input field leaves the request body. A view's mapped parameter leaves the query
 string; its other parameters stay query parameters exactly as today (`openapi.rs:1770-1815`). A
-mapped source is a scalar a path segment can carry: `String`, `Integer`, an enum, or an unconstrained
-newtype of one of them. It is never `Optional`, `List`, a struct or `Json`, because a path segment is
-always present and holds one value.
+mapped source is a scalar a path segment can carry: `String`, `Integer`, `Boolean`, `Decimal`,
+`Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them
+(beyond10x/ess#755): every scalar with one text spelling, which the servers read as they read a
+`query` value. It is never `Optional`, `List`, a struct, a constrained newtype, `Bytes` (its base64
+text holds `/`), `Binary64` (no one text spelling of a JSON number) or `Json`, because a path
+segment is always present and holds one value. A segment its field's decoder refuses, such as
+`not-a-uuid` for a `Uuid`, is `malformed`.
 
 A view parameter that stays in the query string is named there by its flat `wire:`, as a command's
 field is: the OpenAPI `in: query` parameter, the Rust and Go servers' query readers and the `rows`
@@ -198,10 +202,10 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-006` | a method outside the closed set, or not admitted for that kind of operation | `routes[i].method`, the value, the kind |
 | `ESS-HTTP-007` | a path that breaks the template grammar | `routes[i].path` and the offending segment |
 | `ESS-HTTP-008` | a variable not mapped, mapped twice, reading a source another variable of the route already reads (a request path would give it two values), or a mapping for no variable | `routes[i].parameters.<name>`; for a source read twice, the second variable of the path that reads it |
-| `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry | `routes[i].parameters.<name>`, the source, its type |
+| `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry (any but `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them) | `routes[i].parameters.<name>`, the source, its type |
 | `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
 | `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates") | both operations, a path both match, and the segment where each holds its literal |
-| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` | `routes[i].method`, `routes[i].path` or `routes[i].request.body`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
+| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` or `request.query` | `routes[i].method`, `routes[i].path`, `routes[i].request.body` or `routes[i].request.query`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
 
@@ -324,6 +328,7 @@ routes:
 | `json` (default) | today's body, `application/json` (`openapi.rs:223-225`), less any path-mapped field |
 | `form` | `application/x-www-form-urlencoded`, UTF-8 (RFC 6749 §4.1.3, Appendix B) |
 | `query` | no body; every unmapped input field in the query string. The only encoding a `get` command may use, and one a `delete` command may use |
+| `multipart` | `multipart/form-data` (RFC 7578): one part per input field, a `Bytes` field a file part (beyond10x/ess#754) |
 
 A `form` or `query` field is a scalar, an `Optional` scalar or a `List` of scalars. A `List` repeats
 its key once per element, the rule view parameters already follow (`openapi.rs:1776-1778`). A key a
@@ -333,6 +338,83 @@ parameter no field names (RFC 6749 §3.1, "MUST ignore unrecognized request para
 default, `refuse`, keeps ESS's closed bodies. A key whose percent-decoding fails names no field,
 because every declared name is UTF-8, so it is unknown: ignored with its value under `ignore`, and
 malformed under `refuse`.
+
+`unknown: ignore` is admitted beside `json` too (beyond10x/ess#752,
+`story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`), for a client that
+reads a resource, changes one member and sends the whole object back. One rule holds for all three
+encodings:
+
+- under `refuse`, a key or member no field names, and one the path carries, is malformed;
+- under `ignore`, a key or member no field names is ignored silently, and one the path carries is
+  admitted when its value decodes to the path's value and malformed otherwise: two values for one
+  field, the rule a scalar key given twice already follows.
+
+Only the top level of a `json` body is opened: a struct inside it stays as closed as its
+declaration says (`undeclared_fields`). `unknown: ignore` beside a bare `body: input.<field>` is
+refused (`ESS-HTTP-020`): one field's value holds no member of the input to ignore. The OpenAPI
+document writes `{command}.Input` with `additionalProperties: true` for a route that ignores, and
+its request body says what is ignored and that a member the path carries must equal the path's
+value.
+
+A `multipart` request (`story:a-command-route-takes-a-multipart-request-with-file-parts`,
+beyond10x/ess#754) carries one part per input field the path and the `parts` attributes do not
+carry, named by the field's wire name. A `Bytes` field, or an `Optional` one, is a file part whose
+bytes are raw, never base64; every other field is a text part in the spelling `form` uses, a `List`
+repeating its part. A field without a flat spelling is refused as for `form` (`ESS-HTTP-021`), and
+`unknown` admits a part no field names as it admits a form key. `multipart` on `get` is refused
+(`ESS-HTTP-020`). `parts` states the attributes of a file part, keyed by its `Bytes` input field:
+
+```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request:
+      encoding: multipart
+      parts:
+        file:
+          filename: input.file_name
+          media_types: [text/csv, application/vnd.ms-excel]
+```
+
+- `filename: input.<field>` and `media_type: input.<field>` read the part's filename and its own
+  media type into a `String` input field (a newtype of one, or an `Optional` of either, when the
+  part may lack it). Such a field travels there only: the path, a part or a second attribute
+  carrying it is refused.
+- `media_types` lists the RFC 6838 `type/subtype` names the part may carry, at least one, each
+  once; a part of another media type is malformed. Left out, any.
+- A file part without attributes needs no entry; an entry stating nothing is refused.
+- Compiled IR writes `parts` in field order, each attribute only when stated and `media_types` as
+  written, and leaves `parts` out when there are none, so a binding without them compiles to the
+  bytes it did. No format version moves: an older reader refuses `multipart` by name.
+- A refinement keeps the `parts` of a route it restates, each attribute as written
+  (`ESS-HTTP-012`).
+- The OpenAPI document (`story:openapi-publishes-a-multipart-request-with-file-parts`) writes the
+  request body as `multipart/form-data` holding an object of the parts under their wire names: a
+  file part `{type: string, contentMediaType: application/octet-stream}`, OpenAPI 3.1's raw-bytes
+  form, with no `contentEncoding` (an array of them for a `List`), described with the input fields
+  its attributes read; every other part its field's schema. `media_types` is the part's Encoding
+  Object `contentType`, joined by `, `. The route publishes no `{command}.Input`: that schema's
+  `Bytes` member is base64 and it would hold the attribute fields. `required` lists the parts whose
+  fields are neither `Optional` nor a `List`: a `List` repeats its part once per element, so no
+  part is the empty list, as both servers read it. `unknown: ignore` opens the object.
+- The Rust server (`story:the-generated-rust-server-reads-a-multipart-request`) carries its own
+  RFC 7578 reader, as it carries its own JSON reader, emitted only where a route is `multipart`:
+  the body's boundary from `Content-Type`, a preamble and an epilogue ignored, transport padding
+  after a boundary admitted. A text part is read as a `form` value; a file part's bytes enter the
+  input as the base64 text the `Bytes` decoder reads, its filename from `Content-Disposition` and
+  its media type from `Content-Type` (`text/plain` where it states none, RFC 7578 §4.4), without
+  parameters. `malformed`, naming the part: a `Content-Type` that is not `multipart/form-data`
+  or has no boundary of 1 to 70 characters, a body not closed by its final boundary, a part
+  without a `form-data` name, a file part of a media type outside `media_types` (compared
+  ignoring case), a part that is not a `List` given twice, a part no field names or the path
+  carries under `refuse` (one the path carries must hold the path's value under `ignore`), and a
+  file part without the filename a required input reads. The body is read within the
+  route's request cap, as every body is.
+- The Go server
+  (`story:the-generated-go-server-reads-a-multipart-request-as-the-rust-server-does`) carries the
+  same reader, written in Go rather than taken from `mime/multipart`, so it reads and refuses
+  every request as the Rust server does and answers it with the same bytes. It too is emitted
+  only where a route is `multipart`, and the body it reads is the one its route's cap admitted.
 
 A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
 body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,
@@ -350,9 +432,8 @@ mirrors `response.<field>` on the response side
 
 - The body names one input field of the command that is not `Optional`, by `input.<field>`, and
   the path does not carry it.
-- The path carries every other input field. `ess-http/1` has no per-field query placement beside
-  a JSON body, so a field left in neither place is refused rather than moved to the query string.
-  On an open route that rule waits for the path: a protocol binding may fix the body of a route
+- The path or `request.query` (below) carries every other input field, so a field left in neither
+  place, nor in the body, is refused. On an open route that rule waits for the path: a protocol binding may fix the body of a route
   whose path each server binding chooses, and the server binding, which restates the body
   (`ESS-HTTP-012` for adding, dropping or changing it), is held to the rule when it fills the path
   in.
@@ -367,6 +448,39 @@ mirrors `response.<field>` on the response side
   bytes it compiled to before. No format version: a reader without the key refuses `request.body`
   as an unknown field by name, as stage 1 refused every stage-2 key.
 
+A command route on `post`, `put`, `patch` or `delete` may read chosen input fields from the query
+string beside its body: `request.query`, a list of `input.<field>`
+(`story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body`, beyond10x/ess#754).
+Each listed field is a query parameter under its wire name with the flat spelling `encoding:
+query` reads; every other field stays where the encoding puts it:
+
+```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request: {encoding: json, query: [input.dry_run]}   # POST /reports/rows/import?dry_run=true
+```
+
+- `query` stands beside `encoding: json` (written or not), `form` or `multipart`, and beside a
+  bare `body`, which then needs the path or the query to carry every other field. `ESS-HTTP-020`
+  refuses it, at `routes[i].request.query`, beside `encoding: query`, on a `get` command, or
+  written empty, and refuses an entry that is not `input.<field>` naming an input field, one
+  listed twice, and one the path, the bare `body` or a part of a `multipart` request carries.
+  `ESS-HTTP-021` refuses a listed field without a flat spelling there too.
+- Compiled IR writes `query` in the order written, only when it is declared, so every binding
+  without it compiles to the bytes it compiled to before; a refinement that changes the list is
+  `ESS-HTTP-012`. No format version: a reader without the key refuses it by name.
+- OpenAPI writes each listed field as an `in: query` parameter in the order listed, by the rules of
+  `encoding: query` (required as the field is, a `List` with `style: form` and `explode: true`),
+  and leaves it out of the request body and of `{command}.Input`.
+- The Rust and Go servers
+  (`story:generated-servers-read-chosen-inputs-from-the-query-beside-the-body`) read the listed
+  fields from the query string as `encoding: query` reads it, after the body and the path:
+  a key no listed field names is `malformed` under `refuse` and ignored under `ignore`, a
+  listed key given twice where its field is not a `List` is `malformed`, and so is a body that
+  names a listed field (`body.<wire>: the query carries this field, so the body does not`),
+  whatever `unknown` says. A route without `request.query` keeps the server source it had.
+
 ### Response body per outcome
 
 | `body` | for | wire |
@@ -380,6 +494,26 @@ mirrors `response.<field>` on the response side
 | `rows` (default) | a view | today's `{rows: [...]}` |
 | `single` | a view selected by its source entity's identity (decided for stage 2, answer 7) | the one row, bare; with `empty: {status, body}` answering a view that holds none, `body` being `none` (the default) or `{<member>: {literal: <text>}}` |
 | `array` | a view that is not paged | the rows, a bare JSON array, `[]` when the view holds none |
+| `{<member>: single}` | a view `single` admits | `{"<member>": <the row>}`; `empty` as for `single` |
+| `{<member>: array}` | a view `array` admits | `{"<member>": [<rows>]}`, `{"<member>": []}` when the view holds none |
+| `{<member>: response}` | an outcome `response` admits | `{"<member>": <the response object>}` |
+| `{<member>: response.<field>}` | an outcome `response.<field>` admits | `{"<member>": <the field's value>}` |
+
+A wrapped form (beyond10x/ess#755) holds, under its one named `<member>`, the value its bare form
+answers, and is refused wherever that bare form is (`ESS-HTTP-024`, `-030`, `-031`): on a paged
+view, `single` without identity selection or without `empty`, `response` without `returns: true` or
+under `errors`. An empty `<member>`, an object of two members, a member holding any other word, and
+`encoding: text` beside a wrapped form are refused with `ESS-HTTP-024`; a refinement that changes
+it is `ESS-HTTP-012`. `{<member>: error}` keeps its meaning: the member holds the error's wire name.
+`{rows: array}` on a view that is not paged is `rows`, ESS's own answer, and compiles to the same
+IR; `rows` is an object already, so it is never wrapped. Compiled IR writes the member and the form,
+`{"app": "single"}`, as the binding does, and a binding without a wrapped form compiles to the
+bytes it compiled to before. A body holds one form: fixed members beside the wrapped value
+(`{"success": true, "app": …}`) are not a body. OpenAPI writes the answer as an object whose one
+required member holds the bare form's schema, `additionalProperties: false`; both generated servers
+write `{"<member>": …}` around the bytes the bare form writes, and the empty answer of `single`
+stays as `empty` declares it, unwrapped. A binding without a wrapped form generates the bytes it
+generated before.
 
 A bare body carries no `outcome` and no `published`. A caller of such a route sees the branch only
 through status, body shape and headers, and sees no published event. That is what the protocol
@@ -555,8 +689,8 @@ and its answers.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
-| `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
+| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field neither the path nor `request.query` carries; a `query` beside `encoding: query`, on a `get` command or written empty, an entry that is not `input.<field>` naming an input field, one listed twice, and one the path, the bare `body` or a part carries | `routes[i].request.encoding`, `routes[i].request.unknown`, `routes[i].request.body` or `routes[i].request.query`, and for a field left out, the field |
+| `ESS-HTTP-021` | a `form`, `query` or `multipart` field, or a field `request.query` lists, whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
 | `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
@@ -568,6 +702,7 @@ and its answers.
 | `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, an `empty` status outside `4xx`, or an `empty` body other than `none` and `{<member>: {literal: …}}` | `routes[i]`, or `routes[i].empty.body` |
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 | `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
+| `ESS-HTTP-036` | `parts` beside an encoding other than `multipart`; a `parts` key that is not a `Bytes` input field (or an `Optional` one, or a newtype of either), or an entry stating nothing; a `filename` or `media_type` that is not `input.<field>` naming a `String` input field, or one the path, a part or another attribute carries; an empty `media_types`, an entry that is not an RFC 6838 `type/subtype`, or one entry twice | `routes[i].request.parts`, `….parts.<field>`, `….parts.<field>.filename`, `….media_type` or `….media_types` |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
 missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
@@ -615,8 +750,10 @@ same bytes.
 
 | authored key | values | default, and what the IR omits | unit |
 |---|---|---|---|
-| `routes[].request.encoding` | `json`, `form`, `query` | `json`, omitted | k1 |
+| `routes[].request.encoding` | `json`, `form`, `query`, `multipart` | `json`, omitted | k1 |
 | `routes[].request.unknown` | `refuse`, `ignore` | `refuse`, omitted; `request` itself is omitted when both are defaults | k1 |
+| `routes[].request.parts` | per `Bytes` input field of a `multipart` request: `filename` and `media_type` (`input.<field>`), `media_types` (a list) | absent, omitted; each attribute omitted when absent | beyond10x/ess#754 |
+| `routes[].request.query` | the input fields read from the query string beside the body, `input.<field>` each, off `get` and beside every encoding but `query` | absent, omitted; written in the order listed | beyond10x/ess#754 |
 | `routes[].outcomes.<outcome>` | an object per listed outcome of the command, keyed by its local name | absent: the outcome keeps `outcome_status` and `envelope` | k2 |
 | `routes[].outcomes.<outcome>.status` | an integer; **required** in a listed outcome | always written | k2 |
 | `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `response.<field>`, `none`, `{<member>: error}` | `envelope`, omitted | k2; `response.<field>` 0.69.0 |
@@ -709,8 +846,9 @@ servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
    answer (`http.rs:83-86`), before `malformed`, as today.
 6. The input cannot be read per `request` (not the declared media type, not UTF-8, a scalar key
    twice, an unknown key under `refuse`, a missing required field, a value its type refuses):
-   `refusals.malformed`, else today's `400`. A path variable's value wins over a body or query key
-   for the same field, and that key counts as unknown.
+   `refusals.malformed`, else today's `400`. A body or query key for a field the path carries is
+   malformed under `refuse`; under `ignore` it is admitted when its value decodes to the path's
+   value and malformed otherwise, in all three encodings.
 7. The command runs and takes an outcome: the route's `outcomes.<outcome>` if listed, else its
    `errors` for an outcome with `error`, else `outcome_status` and `envelope`. A view answers `rows`, `array`, or `single` with the row or `empty`.
 8. The realization is unfinished: `refusals.unfinished`, else today's `501`.
@@ -751,7 +889,10 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
   (`crates/generate/ess-synth/tests/http_binding/go.rs`,
   `the_go_and_rust_servers_answer_one_binding_alike`). Both match routes on the path as the
   request line spells it, read a `json` body with one reader (the Rust server's `json::parse`,
-  ported: one document, nesting at most 64, the first of a repeated member), and write a body the
+  ported: one document, nesting at most 64, the first of a repeated member), read a `multipart`
+  body with one reader too (the Rust server's, ported; beyond10x/ess#754, cases in
+  `http_binding/multipart.rs`), join the fields `request.query` lists with the body
+  alike (`http_binding/query_beside_body.rs`), and write a body the
   binding declares with members in declaration order and the Rust server's string escaping. Two
   differences stay: `net/http` refuses a
   request line holding a malformed percent-escape with its own `400` before the surface reads it
@@ -828,6 +969,83 @@ routes:
 | `ESS-HTTP-032` | an `operation_id` outside the grammar; one an earlier route gives; one equal to another operation's qualified name | `routes[i].operation_id`, and both routes for a duplicate |
 | `ESS-HTTP-033` | a `servers` component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; a URL outside the rule, or given twice for one component | `servers.<component>` or `servers.<component>[j].url` |
 
+## Representations of a view's answer
+
+A service may answer one list of rows in two representations on one route, picked by a query
+value: JSON by default, CSV with `?format=csv` (beyond10x/ess#753). The CSV is a second
+representation of the one view's answer, not a second view and not a second operation, so
+`ESS-HTTP-005` and `-010` keep their meaning and OpenAPI publishes one operation with two response
+media types.
+
+```yaml
+routes:
+  - view: demo.reports.Rows
+    method: get
+    path: /reports/rows
+    body: array
+    representations:
+      - query: {format: csv}
+        encoding: {csv: {separator: ";", header: true}}
+        headers:
+          Content-Disposition: {literal: attachment}
+```
+
+- **Selection.** Without the selector parameter the route answers its `body` as before. With it,
+  the value names one representation, and any other value is `malformed`. Every representation of
+  a route is selected by one parameter name, and its values are distinct. The name is not a view
+  parameter's wire name and not a path variable, and name and value are RFC 3986 `unreserved`
+  characters, so no encoding of the query changes them.
+- **`encoding: {csv: {separator, header}}`.** `separator` is `","` (the default), `";"` or
+  `"\t"`; `header` is a Boolean, `true` by default, for a first line of the columns' wire names.
+  One line per row in the order the JSON answer gives, CRLF line ends, the view's fields in
+  declaration order under their wire names, each value in the flat text spelling `form` and
+  `query` use, an absent `Optional` an empty field, and RFC 4180 quoting: a value holding the
+  separator, `"`, CR or LF is quoted, `"` doubled. A text cell (a `String`, an `Optional<String>`
+  or a newtype of one) opening with `=`, `+`, `-`, `@`, a tab or a CR is written behind `'`, before
+  the quoting, so a spreadsheet does not read it as a formula; a number, an enum or a timestamp is
+  written as it is. `Content-Type: text/csv; charset=utf-8`. A view
+  field without a flat spelling (a struct, a union, a `List`, a `Map`, `Json`) is refused, naming
+  the field.
+- **`headers`** takes `{literal: <text>}` values only, under the checks an answer's headers have
+  (`ESS-HTTP-026`); a source or a challenge is refused with that code. A representation's headers
+  are added to the route's.
+- **Where.** A view route answering `rows` or `array`, bare or wrapped. A command route, a `single`
+  view and a paged view are refused: a command's answer has its own `encoding`, and a CSV of one row
+  or of a page has no defined shape. Selection by `Accept` is not offered; it is an unknown key.
+- **Refinement.** A refined route's `representations` added, dropped or changed is `ESS-HTTP-012`
+  at `routes[i].representations`, a default written out or left out counting as that default.
+- **IR.** `Route.representations` follows `limits`, in the order written, each `{query, encoding,
+  headers}` with `separator` and `header` omitted at their defaults and `headers` omitted when
+  empty; the list is omitted when empty, so a binding without it compiles to the bytes it compiled
+  to before. The reader refuses it beside a command or a `single` body, a `query` of other than one
+  parameter, two parameter names or one value twice, a name that is a path variable, a name or
+  value outside `unreserved`, a separator outside the set and a header that is not a literal.
+- **OpenAPI.** One operation: the selector is an optional `in: query` parameter, a `string` whose
+  `enum` holds each value in the order written, described with what each selects and that its
+  absence selects the JSON answer. The `200` response holds `application/json` as before and
+  `text/csv` as `{type: string}` described with that rule for text cells, and carries
+  `x-ess-representations`, one entry per representation in order: `query`, `media_type`, `separator`, `header` and `columns`, the wire
+  names in field order. A representation's header is a response header, never required, whose
+  description names the selector value it applies to. `x-ess-operations`, the name first asked
+  for, is not used: there is one operation.
+- **Servers.** The Rust and Go servers read the selector with the query reader a view's own
+  parameters use, so a percent-encoded value selects as its decoded text, the parameter given twice
+  is `malformed`, and the view's parameters keep their reading beside it. The CSV is written from
+  the rows the JSON answer renders, read back, so the two answers hold the same rows in the same
+  order and the two servers write the same bytes. A route without representations generates the
+  bytes it did.
+- **Targets.** The UI targets refuse `--http`, and the interpreter and emitted runners speak no HTTP, so a comparison of the CSV
+  with the JSON answer waits for stage 3.
+- **Refused: two operations on one method and path** told apart by a query literal, with a second
+  view `RowsCsv` beside `Rows`, as first asked for. OpenAPI's Path Item holds one Operation per
+  method, so two operations cannot be published there, and a second view duplicates the model to
+  carry a wire choice. A `Content-Disposition` filename holding a timestamp cannot be stated: a
+  header is a literal, and no source reads the clock.
+
+| code | refused | names |
+|---|---|---|
+| `ESS-HTTP-035` | `representations` on a command route, a `single` view or a paged view, or empty; a `query` of other than one parameter; a parameter other than the first representation's, or a value given twice; a name that is a view parameter's wire name or a path variable; a name or value that is not `unreserved` characters; a `separator` outside the set; a view field without a flat spelling | `routes[i].representations`, `….representations[j].query`, `….encoding.csv.separator` or `….encoding` |
+
 ## Stage 3: an HTTP conformance target
 
 Today the runner is semantic only. `ConformanceTarget::execute_command` takes a
@@ -870,8 +1088,9 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
 
 - The `http:` key on a command or view in `ess/N`. The binding replaces it.
 - Any key in `ess/N`, `ess-realization` or `ess-transport` that carries a route.
-- Non-JSON response bodies in `ess-http/1`, except one: a `String` response field answered
-  `encoding: text` ("Response body per outcome"). Partial-segment path templates.
+- Non-JSON response bodies in `ess-http/1`, except two: a `String` response field answered
+  `encoding: text` ("Response body per outcome"), and a view's rows as CSV in a representation a
+  query value selects ("Representations of a view's answer"). Partial-segment path templates.
 - `--http` with an artifact that cannot honour it: `ess ui`, the clap, web and TypeScript targets,
   and any `--kind` other than `openapi`. Each refuses it by name rather than ignoring it.
 - Authentication: the binding states a status and a challenge, not how a caller proves who it is.
@@ -920,9 +1139,11 @@ and none can be tightened later without refusing a document that compiled.
    (`ESS-HTTP-024`), because the object would hold that member twice. Rejected: a per-field rename
    map in the binding, a second mapping of names the model already owns, and one that two bindings
    of the same specification could spell differently.
-14. `request.unknown: ignore` is admitted with `form` and `query` only, and `request:` is refused on
-    a view (`ESS-HTTP-020`). A JSON body stays closed, as ESS's bodies are today; RFC 6749 §3.1's
-    "MUST ignore unrecognized request parameters" is about form and query parameters.
+14. `request.unknown: ignore` is admitted with `json`, `form` and `query`, beside no bare `body`,
+    and `request:` is refused on a view (`ESS-HTTP-020`). Taken first with `form` and `query` only,
+    RFC 6749 §3.1's "MUST ignore unrecognized request parameters" being about those, so that a
+    later release could relax it as an addition; beyond10x/ess#752 relaxed it for `json`, with one
+    rule for a key or member the path carries in all three encodings (§ "Request encoding").
 15. A `3xx` status is one of `301`, `302`, `303`, `307` and `308`, each with a `redirect`
     (`ESS-HTTP-023`, `ESS-HTTP-028`). `304` answers a conditional request, which the binding cannot
     state, and `300`, `305` and `306` name no answer an outcome gives.

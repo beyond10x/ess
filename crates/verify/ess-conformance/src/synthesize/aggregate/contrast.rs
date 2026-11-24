@@ -339,6 +339,28 @@ impl Projected {
     }
 }
 
+/// What `aggregate` reads off one row whose fields `value` answers: its input's value, or its
+/// expression evaluated over the fields it reads (ess/36, beyond10x/ess#561); absent where nothing
+/// determines it.
+fn measure_of(
+    plan: &Plan<'_>,
+    aggregate: &ResolvedAggregate,
+    value: impl Fn(&str) -> Option<Node>,
+) -> Node {
+    match (&aggregate.input, &aggregate.expr) {
+        (Some(input), _) => value(&input.name).unwrap_or(Node::Null),
+        (None, Some(measured)) => {
+            let row: BTreeMap<String, Node> = measured
+                .fields()
+                .into_iter()
+                .filter_map(|read| value(&read).map(|held| (read, held)))
+                .collect();
+            crate::aggregate::measured(plan.ir, plan.entity, aggregate, &row).unwrap_or(Node::Null)
+        }
+        (None, None) => Node::Null,
+    }
+}
+
 /// One measure's value over the rows `holds` selects of `rows`, where it has one.
 fn value_over(
     plan: &Plan<'_>,
@@ -357,9 +379,14 @@ fn value_over(
         })
         .map(|(input, _)| input.clone())
         .collect();
-    let kind = aggregate.input.as_ref().map_or(ValueKind::Other, |input| {
-        kind(plan.ir, plan.entity, &input.name)
-    });
+    let kind = match (&aggregate.input, &aggregate.expr) {
+        (Some(input), _) => kind(plan.ir, plan.entity, &input.name),
+        (None, Some(_)) => match crate::aggregate::measure_kind(plan.ir, plan.entity, aggregate) {
+            crate::aggregate::MeasureKind::Plain(kind) => kind,
+            _ => ValueKind::Numeric,
+        },
+        (None, None) => ValueKind::Other,
+    };
     if aggregate.skip_absent {
         evaluate_skipping_absent(aggregate.function, &picked, kind)
     } else {
@@ -474,12 +501,7 @@ fn judge(
         };
         let inputs: Vec<Node> = rows
             .iter()
-            .map(|row| {
-                aggregate
-                    .input
-                    .as_ref()
-                    .map_or(Node::Null, |input| row.value(&input.name))
-            })
+            .map(|row| measure_of(plan, aggregate, |field| Some(row.value(field))))
             .collect();
         let Some(holds) = truths_once(plan, &mut decided, condition, rows, params) else {
             return (false, false);
@@ -819,12 +841,9 @@ pub(super) fn decisive(
         let mut inputs = Vec::new();
         let mut truths = Vec::new();
         for index in members {
-            inputs.push(match &aggregate.input {
-                None => Node::Null,
-                Some(input) => {
-                    held(plan, &arranged[*index], *index, &input.name).unwrap_or(Node::Null)
-                }
-            });
+            inputs.push(measure_of(plan, aggregate, |field| {
+                held(plan, &arranged[*index], *index, field)
+            }));
             truths.push(holds(plan, arranged, *index, field, condition, params)?);
         }
         if truths.iter().any(|held| *held) {

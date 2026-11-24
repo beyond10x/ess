@@ -18,6 +18,7 @@ relations:
 - decomposes: epic:adopter-gaps-synthesis
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/caller_value.rs
@@ -37,7 +38,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:08Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:09Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
@@ -76,6 +77,8 @@ The row-set form `when_related: {entity: example.g.Parent, where: account_id == 
 and `instances: {where: account_id == caller.account_id}` are refused with the same ESS-COMMAND-003.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - `ess specify validate` on the reproduction above at the new source format exits 0; at `ess/36` it
   exits 1 with `unsupported_format_version` naming the new format (no longer ESS-COMMAND-003).

@@ -37,7 +37,7 @@ scope:
   path: crates/verify/ess-conformance/tests/followed_view_scenarios.rs
 - confidence: inferred
   path: docs/design/message-exchanges.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:30Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -71,6 +71,8 @@ What the request also asks, and where it stands:
   about the domain; a view's `consistency: eventual` already says its answer may lag.
 - **`keepalive`**: a framing key of the SSE binding,
   `story:an-event-channel-may-be-bound-to-server-sent-events`.
+
+Since 2026-11-24 (PR-D4, PR-D1) the stream route is spelled as in story:an-event-channel-may-be-bound-to-server-sent-events, with `exchange:` in place of `component:`, and its frames and keepalive are stated in the protocol document the binding names; the route keys `frames:` and `keepalive:` in the acceptance below are superseded.
 
 ## Acceptance
 

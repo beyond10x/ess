@@ -14,6 +14,7 @@ relations:
 - depends_on: story:a-timestamp-newtype-declares-its-wire-encoding
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -27,7 +28,7 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-wire-encodings.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:22Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:23Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
@@ -52,6 +53,8 @@ This story is the model half: the design, the key, validation, IR, diff, and the
 may send.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - `docs/design/value-wire-encodings.md` (the page `story:a-timestamp-newtype-declares-its-wire-encoding`
   writes) gains "Delimited lists": a newtype of `List<String>` (or of a list of a String newtype)

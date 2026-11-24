@@ -1082,6 +1082,543 @@ func boundMethodNotAllowed(allowed []string) response {
 /// The imports [`BOUND`] needs beyond the ones the helpers file always has.
 pub(super) const IMPORTS: [&str; 5] = ["net/url", "sort", "strings", "unicode", "unicode/utf8"];
 
+/// The readers of a route with `unknown: ignore` (beyond10x/ess#752), which follow [`BOUND`] only
+/// in a surface whose binding declares one, so every other bound surface keeps its bytes. They
+/// answer as the Rust server's `http::ignoring` and `http::echoed_keys` do.
+pub(super) const IGNORING: &str = r#"
+// openJSONBody is a `json` body as jsonBody reads it, no member refused: ignoring decides which
+// members are read.
+func openJSONBody(body []byte, required bool) (any, error) {
+	if !utf8.Valid(body) {
+		return nil, fmt.Errorf("the body is not UTF-8")
+	}
+	if !required && len(bytes.TrimSpace(body)) == 0 {
+		return map[string]any{}, nil
+	}
+	value, err := parseJSON(string(body))
+	if err != nil {
+		return nil, fmt.Errorf("the body is not JSON: %s", err)
+	}
+	return decoderValue(value), nil
+}
+
+// ignoring is a `json` request read under `unknown: ignore`: value less every member no field of
+// fields names, at its top level only (a struct inside keeps its own closedness), and less every
+// member the path carries that holds the path's value. A member the path carries that holds
+// another value is malformed. A value that is not an object is the decoder's to refuse.
+func ignoring(value any, fields []string, path []pathMember, at string) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	for _, carried := range path {
+		if member, present := object[carried.wire]; present && !sameValue(member, carried.value) {
+			return nil, echoed(at, carried.wire)
+		}
+	}
+	kept := map[string]any{}
+	for _, field := range fields {
+		if member, present := object[field]; present {
+			kept[field] = member
+		}
+	}
+	return kept, nil
+}
+
+// echoedKeys holds each key of a `form` body or a query string read under `unknown: ignore` that
+// the path carries to the path's value, read as its field reads it: a key whose value does not
+// decode or is not the path's is malformed.
+func echoedKeys(text string, carried []flatField, path []pathMember, at string) error {
+	for _, pair := range strings.Split(text, "&") {
+		if pair == "" {
+			continue
+		}
+		rawKey, rawValue, _ := strings.Cut(pair, "=")
+		key, ok := formDecoded(rawKey)
+		if !ok {
+			continue
+		}
+		for index, field := range carried {
+			if field.wire != key {
+				continue
+			}
+			place := nested(at, key)
+			decoded, ok := formDecoded(rawValue)
+			if !ok {
+				return fmt.Errorf("%s: expected percent-encoded UTF-8 text, found `%s`", place, rawValue)
+			}
+			read, err := flatValue(decoded, field.kind, place)
+			if err != nil {
+				return err
+			}
+			if !sameValue(read, path[index].value) {
+				return echoed(at, key)
+			}
+		}
+	}
+	return nil
+}
+
+// echoed is the refusal of a member or key the path carries with another value.
+func echoed(at string, wire string) error {
+	return fmt.Errorf("%s: the path carries this field with another value", nested(at, wire))
+}
+
+// sameValue is whether a request's member holds what the path's value does: the same text or
+// boolean, or two numbers that denote one integer.
+func sameValue(member any, carried any) bool {
+	switch held := carried.(type) {
+	case string:
+		text, ok := member.(string)
+		return ok && text == held
+	case bool:
+		value, ok := member.(bool)
+		return ok && value == held
+	case json.Number:
+		number, ok := member.(json.Number)
+		if !ok {
+			return false
+		}
+		if number == held {
+			return true
+		}
+		one, err := integerAt(number, "", "")
+		other, otherErr := integerAt(held, "", "")
+		return err == nil && otherErr == nil && one == other
+	}
+	return false
+}
+"#;
+
+/// Whether a route of `binding` declares `unknown: ignore` beside a `json` body or a path variable,
+/// which the surface reads with [`IGNORING`].
+pub(super) fn ignores_unknown(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route.request.as_ref().is_some_and(|request| {
+            request.unknown == ess_http::Unknown::Ignore
+                && (request.encoding == ess_http::Encoding::Json || !route.parameters.is_empty())
+        })
+    })
+}
+
+/// The reader of a `multipart` request (beyond10x/ess#754), which follows [`BOUND`] only in a
+/// surface whose binding has a `multipart` route, so every other bound surface keeps its bytes. It
+/// reads as the Rust server's `http::multipart_object` does, with the same refusals.
+pub(super) const MULTIPART: &str = r#"
+// ---- a `multipart/form-data` request (RFC 7578), served -----------------------------------------
+
+// mediaMultipart is the media type of a `multipart` request body.
+const mediaMultipart = "multipart/form-data"
+
+// partAttribute is the input field a file part's filename or media type is read into.
+type partAttribute struct {
+	wire     string
+	required bool
+}
+
+// partField is one field a `multipart` request carries, by its wire name: a text part, read as a
+// `form` value of kind is, or a file part, whose bytes are read as base64 text, its filename and
+// media type into the input fields filename and mediaType name, of one of mediaTypes or of any
+// where that is empty.
+type partField struct {
+	wire       string
+	kind       flatKind
+	shape      flatShape
+	file       bool
+	filename   *partAttribute
+	mediaType  *partAttribute
+	mediaTypes []string
+}
+
+// sentPart is one part of a `multipart/form-data` body, as sent: its `Content-Disposition` name
+// and filename, if it has one, its media type without parameters (`text/plain` where it states
+// none, RFC 7578 §4.4) and its content.
+type sentPart struct {
+	name      string
+	filename  *string
+	mediaType string
+	content   []byte
+}
+
+// sameASCII is whether two texts are equal but for ASCII case.
+func sameASCII(one string, other string) bool {
+	if len(one) != len(other) {
+		return false
+	}
+	for index := 0; index < len(one); index++ {
+		left, right := one[index], other[index]
+		if 'A' <= left && left <= 'Z' {
+			left += 'a' - 'A'
+		}
+		if 'A' <= right && right <= 'Z' {
+			right += 'a' - 'A'
+		}
+		if left != right {
+			return false
+		}
+	}
+	return true
+}
+
+// unquoted is a header parameter's value: a quoted string unquoted, its \ escapes undone, or the
+// token.
+func unquoted(text string) string {
+	if len(text) < 2 || !strings.HasPrefix(text, "\"") || !strings.HasSuffix(text, "\"") {
+		return text
+	}
+	var out strings.Builder
+	escaped := false
+	for _, character := range text[1 : len(text)-1] {
+		if escaped || character != '\\' {
+			out.WriteRune(character)
+			escaped = false
+		} else {
+			escaped = true
+		}
+	}
+	return out.String()
+}
+
+// parameters is a header value's first item and its name=value parameters, each name with its
+// ASCII capitals lower-cased and every other character as sent (as the Rust server's
+// `to_ascii_lowercase`), split at each ; outside a quoted string.
+func parameters(value string) (string, [][2]string) {
+	items := []string{}
+	var item strings.Builder
+	quoted, escaped := false, false
+	for _, character := range value {
+		switch {
+		case escaped:
+			escaped = false
+		case character == '\\' && quoted:
+			escaped = true
+		case character == '"':
+			quoted = !quoted
+		case character == ';' && !quoted:
+			items = append(items, item.String())
+			item.Reset()
+			continue
+		}
+		item.WriteRune(character)
+	}
+	items = append(items, item.String())
+	pairs := [][2]string{}
+	for _, one := range items[1:] {
+		name, text, ok := strings.Cut(one, "=")
+		if ok {
+			pairs = append(pairs, [2]string{lowerASCII(strings.TrimSpace(name)), unquoted(strings.TrimSpace(text))})
+		}
+	}
+	return strings.TrimSpace(items[0]), pairs
+}
+
+// lowerASCII is text with each ASCII capital lower-cased and every other byte kept: a parameter
+// name is matched by its ASCII spelling only (RFC 7578), never by Unicode case folding.
+func lowerASCII(text string) string {
+	out := []byte(text)
+	for index, one := range out {
+		if 'A' <= one && one <= 'Z' {
+			out[index] = one + ('a' - 'A')
+		}
+	}
+	return string(out)
+}
+
+// multipartBoundary is the boundary of a `multipart/form-data` request, or a refusal where its
+// Content-Type is not `multipart/form-data` or states no boundary of 1 to 70 characters.
+func multipartBoundary(request *http.Request) (string, error) {
+	essence, pairs := parameters(request.Header.Get("Content-Type"))
+	if !sameASCII(essence, mediaMultipart) {
+		return "", fmt.Errorf("the body is not `multipart/form-data`")
+	}
+	for _, pair := range pairs {
+		if pair[0] == "boundary" && len(pair[1]) >= 1 && len(pair[1]) <= 70 {
+			return pair[1], nil
+		}
+	}
+	return "", fmt.Errorf("the body is `multipart/form-data` without a `boundary`")
+}
+
+// sentPartOf is one part read from its header section and content.
+func sentPartOf(head []byte, content []byte) (sentPart, error) {
+	if !utf8.Valid(head) {
+		return sentPart{}, fmt.Errorf("a part's headers are not UTF-8")
+	}
+	var name, filename *string
+	mediaType := "text/plain"
+	for _, line := range strings.Split(string(head), "\r\n") {
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			return sentPart{}, fmt.Errorf("a part's header is not `name: value`: `%s`", line)
+		}
+		key = strings.TrimSpace(key)
+		if sameASCII(key, "content-disposition") {
+			kind, pairs := parameters(value)
+			if !sameASCII(kind, "form-data") {
+				return sentPart{}, fmt.Errorf("a part's disposition is `%s`, not `form-data`", kind)
+			}
+			for _, pair := range pairs {
+				text := pair[1]
+				switch pair[0] {
+				case "name":
+					name = &text
+				case "filename":
+					filename = &text
+				}
+			}
+		} else if sameASCII(key, "content-type") {
+			mediaType, _ = parameters(value)
+		}
+	}
+	if name == nil {
+		return sentPart{}, fmt.Errorf("a part has no `Content-Disposition: form-data` name")
+	}
+	return sentPart{name: *name, filename: filename, mediaType: mediaType, content: content}, nil
+}
+
+// multipartParts is the parts of a `multipart/form-data` body, in the order sent (RFC 2046
+// §5.1.1): what precedes the first boundary and follows the closing one is ignored. A request
+// that is not `multipart/form-data` with a boundary, holds no boundary, is not closed by its final
+// boundary, or holds a part without a `form-data` name is malformed.
+func multipartParts(request *http.Request, body []byte) ([]sentPart, error) {
+	boundary, err := multipartBoundary(request)
+	if err != nil {
+		return nil, err
+	}
+	delimiter := []byte("--" + boundary)
+	closing := append([]byte("\r\n"), delimiter...)
+	unclosed := fmt.Errorf("the body is not closed by its final boundary")
+	at := 0
+	if bytes.HasPrefix(body, delimiter) {
+		at = len(delimiter)
+	} else {
+		start := bytes.Index(body, closing)
+		if start < 0 {
+			return nil, fmt.Errorf("the body holds no `multipart` boundary")
+		}
+		at = start + len(closing)
+	}
+	parts := []sentPart{}
+	for {
+		if bytes.HasPrefix(body[at:], []byte("--")) {
+			return parts, nil
+		}
+		for at < len(body) && (body[at] == ' ' || body[at] == '\t') {
+			at++
+		}
+		if !bytes.HasPrefix(body[at:], []byte("\r\n")) {
+			return nil, unclosed
+		}
+		at += 2
+		head, start := body[at:at], at+2
+		if !bytes.HasPrefix(body[at:], []byte("\r\n")) {
+			end := bytes.Index(body[at:], []byte("\r\n\r\n"))
+			if end < 0 {
+				return nil, unclosed
+			}
+			head, start = body[at:at+end], at+end+4
+		}
+		end := bytes.Index(body[start:], closing)
+		if end < 0 {
+			return nil, unclosed
+		}
+		part, err := sentPartOf(head, body[start:start+end])
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, part)
+		at = start + end + len(closing)
+	}
+}
+
+// multipartObject is a `multipart` body as the object the input's decoder reads: one member per
+// declared field a part names, keyed by its wire name, a list as an array, empty when no part
+// names it, and a file part's filename and media type under the wire names it reads them into. A
+// part the path carries, or no field declares, is unknown: ignored where ignore, and malformed
+// otherwise. A part that is not a list's given twice, a text part that is not UTF-8 or is empty
+// for a field that is not a `String`, a file part of a media type it may not carry and one
+// without the filename a required input field reads are malformed.
+func multipartObject(request *http.Request, body []byte, fields []partField, carried []string, ignore bool, at string) (map[string]any, error) {
+	parts, err := multipartParts(request, body)
+	if err != nil {
+		return nil, err
+	}
+	found := make([][]sentPart, len(fields))
+	for _, part := range parts {
+		place := nested(at, part.name)
+		index := -1
+		for position, field := range fields {
+			if field.wire == part.name {
+				index = position
+				break
+			}
+		}
+		pathCarries := false
+		for _, wire := range carried {
+			if wire == part.name {
+				pathCarries = true
+			}
+		}
+		if index < 0 || pathCarries {
+			if ignore {
+				continue
+			}
+			if pathCarries {
+				return nil, fmt.Errorf("%s: the path carries this field, so it is not a part here", place)
+			}
+			return nil, fmt.Errorf("%s: no field of this request is named so", place)
+		}
+		found[index] = append(found[index], part)
+	}
+	object := map[string]any{}
+	for index, field := range fields {
+		place := nested(at, field.wire)
+		if field.shape != shapeList && len(found[index]) > 1 {
+			return nil, fmt.Errorf("%s: expected one part, found %d", place, len(found[index]))
+		}
+		values := []any{}
+		for _, part := range found[index] {
+			value, err := partValue(part, field, place, object)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, value)
+		}
+		if field.shape == shapeList {
+			object[field.wire] = values
+		} else if len(values) == 1 {
+			object[field.wire] = values[0]
+		}
+	}
+	return object, nil
+}
+
+// partValue is one part's value, a file part's filename and media type set on object.
+func partValue(part sentPart, field partField, place string, object map[string]any) (any, error) {
+	if !field.file {
+		if !utf8.Valid(part.content) {
+			return nil, fmt.Errorf("%s: expected UTF-8 text", place)
+		}
+		return flatValue(string(part.content), field.kind, place)
+	}
+	if len(field.mediaTypes) > 0 {
+		admitted := false
+		spelled := []string{}
+		for _, one := range field.mediaTypes {
+			admitted = admitted || sameASCII(one, part.mediaType)
+			spelled = append(spelled, "`"+one+"`")
+		}
+		if !admitted {
+			return nil, fmt.Errorf("%s: the part's media type is `%s`, not one of %s", place, part.mediaType, strings.Join(spelled, ", "))
+		}
+	}
+	if field.filename != nil {
+		if part.filename != nil {
+			object[field.filename.wire] = *part.filename
+		} else if field.filename.required {
+			return nil, fmt.Errorf("%s: the part has no filename, which input field `%s` requires", place, field.filename.wire)
+		}
+	}
+	if field.mediaType != nil {
+		object[field.mediaType.wire] = part.mediaType
+	}
+	return base64.StdEncoding.EncodeToString(part.content), nil
+}
+"#;
+
+/// What a surface adds where a `multipart` route has a path variable and `unknown: ignore`: a part
+/// the path carries is held to the path's value, as a `form` key is ([`IGNORING`]'s
+/// `echoedKeys`).
+pub(super) const ECHOED_PARTS: &str = r#"
+// echoedParts holds each part of a `multipart` body read under `unknown: ignore` that the path
+// carries to the path's value, read as its field reads it: a part whose text does not decode or is
+// not the path's is malformed.
+func echoedParts(request *http.Request, body []byte, carried []flatField, path []pathMember, at string) error {
+	parts, err := multipartParts(request, body)
+	if err != nil {
+		return err
+	}
+	for _, part := range parts {
+		for index, field := range carried {
+			if field.wire != part.name {
+				continue
+			}
+			place := nested(at, part.name)
+			if !utf8.Valid(part.content) {
+				return fmt.Errorf("%s: expected UTF-8 text", place)
+			}
+			read, err := flatValue(string(part.content), field.kind, place)
+			if err != nil {
+				return err
+			}
+			if !sameValue(read, path[index].value) {
+				return echoed(at, part.name)
+			}
+		}
+	}
+	return nil
+}
+"#;
+
+/// What a surface adds where a route lists `request.query` (beyond10x/ess#754): the join of the
+/// fields read from the query string with the body's, as the Rust server's `http::with_query`.
+pub(super) const QUERIED: &str = r#"
+// withQuery is value with the members the query string carries added (beyond10x/ess#754): a
+// field the route's `request.query` lists is read from the query string alone, and the body
+// naming it is malformed, whether the query carries it or not, checked in the order listed.
+func withQuery(value any, query map[string]any, listed []flatField, at string) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	for _, field := range listed {
+		if _, present := object[field.wire]; present {
+			return nil, fmt.Errorf("%s: the query carries this field, so the body does not", nested(at, field.wire))
+		}
+	}
+	for wire, member := range query {
+		object[wire] = member
+	}
+	return object, nil
+}
+"#;
+
+/// Whether a route of `binding` lists `request.query`, which the surface joins with [`QUERIED`].
+pub(super) fn reads_query_beside_body(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| !request.query.is_empty())
+    })
+}
+
+/// Whether a route of `binding` takes a `multipart` request, which the surface reads with
+/// [`MULTIPART`].
+pub(super) fn reads_multipart(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
+    })
+}
+
+/// Whether a `multipart` route of `binding` has a path variable and `unknown: ignore`, which the
+/// surface reads with [`ECHOED_PARTS`].
+pub(super) fn echoes_parts(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        !route.parameters.is_empty()
+            && route.request.as_ref().is_some_and(|request| {
+                request.encoding == ess_http::Encoding::Multipart
+                    && request.unknown == ess_http::Unknown::Ignore
+            })
+    })
+}
+
 /// The reader of a bare request body (`request: {body: input.<field>}`), which follows [`BOUND`]
 /// only in a surface whose binding declares one, so every other bound surface keeps its bytes.
 pub(super) const BARE_BODY: &str = r#"
@@ -1453,6 +1990,74 @@ fn path_members(ir: &EssIr, route: &http::Route<'_>) -> (String, String) {
     )
 }
 
+/// The path members a bound command route adds to its input, as Go source, and the statements
+/// before that read them. Under `unknown: ignore` (beyond10x/ess#752), on a `json` route or one
+/// with a path variable, what no field names is dropped and what the path carries is held to the
+/// path's value first, as the Rust server reads it; every other route keeps its bytes.
+fn ignoring(
+    ir: &EssIr,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    at: &str,
+    statements: &mut String,
+    members: String,
+) -> String {
+    let request = http::request(route);
+    if request.unknown != ess_http::Unknown::Ignore
+        || (request.encoding != Encoding::Json && http::path_fields(ir, route).is_empty())
+    {
+        return members;
+    }
+    let _ = writeln!(statements, "\t\tcarried := {members}");
+    let _ = match request.encoding {
+        Encoding::Json => write!(
+            statements,
+            "\t\tvalue, err = ignoring(value, []string{{{}}}, carried, {at})\n\t\tif err != nil \
+             {{\n\t\t\treturn nil, err\n\t\t}}\n",
+            command
+                .input
+                .iter()
+                .filter(|field| !http::carried(ir, route).contains(field.name.as_str()))
+                .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Encoding::Multipart => write!(
+            statements,
+            "\t\tif err := echoedParts(request, body, {}, carried, {at}); err != nil \
+             {{\n\t\t\treturn nil, err\n\t\t}}\n",
+            carried_flat_table(ir, route)
+        ),
+        encoding => write!(
+            statements,
+            "\t\tif err := echoedKeys({}, {}, carried, {at}); err != nil {{\n\t\t\treturn nil, \
+             err\n\t\t}}\n",
+            if encoding == Encoding::Query {
+                "request.URL.RawQuery"
+            } else {
+                "string(body)"
+            },
+            carried_flat_table(ir, route)
+        ),
+    };
+    "carried".to_owned()
+}
+
+/// The `[]flatField` literal of the fields the path carries, in path order, each one value.
+fn carried_flat_table(ir: &EssIr, route: &http::Route<'_>) -> String {
+    let rows: Vec<String> = http::path_fields(ir, route)
+        .iter()
+        .map(|(_, field)| {
+            format!(
+                "{{{}, {}, shapeOne}}",
+                go_string(ess_gen::schema::wire_field_name(field)),
+                flat_kind(ir, field)
+            )
+        })
+        .collect();
+    format!("[]flatField{{{}}}", rows.join(", "))
+}
+
 /// A flat request's `[]flatField` literal: every field the path does not carry, in declaration
 /// order.
 fn flat_table(ir: &EssIr, fields: &[ResolvedField], route: &http::Route<'_>) -> String {
@@ -1474,6 +2079,112 @@ fn flat_table(ir: &EssIr, fields: &[ResolvedField], route: &http::Route<'_>) -> 
         })
         .collect();
     format!("[]flatField{{{}}}", rows.join(", "))
+}
+
+/// The closing statements of a bound command route's reader, as Go source: the body joined with
+/// the path's `members`, joined in turn with the fields the route's `request.query` lists, read
+/// from the query string as `encoding: query` reads them (beyond10x/ess#754), as the Rust server
+/// joins them. A route that lists none keeps its bytes.
+fn queried(
+    ir: &EssIr,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    at: &str,
+    members: &str,
+) -> String {
+    let request = http::request(route);
+    if request.query.is_empty() {
+        return format!("\t\treturn withPath(value, {members}, {at})\n");
+    }
+    let rows: Vec<String> = request
+        .query_fields()
+        .filter_map(|name| command.input.iter().find(|field| field.name == name))
+        .map(|field| {
+            let shape = match http::flat(ir, &field.type_ref).map(|(shape, _)| shape) {
+                Some(http::Shape::Optional) => "shapeOptional",
+                Some(http::Shape::List) => "shapeList",
+                Some(http::Shape::One) | None => "shapeOne",
+            };
+            format!(
+                "{{{}, {}, {shape}}}",
+                go_string(ess_gen::schema::wire_field_name(field)),
+                flat_kind(ir, field)
+            )
+        })
+        .collect();
+    format!(
+        "\t\tjoined, err := withPath(value, {members}, {at})\n\t\tif err != nil {{\n\t\t\treturn \
+         nil, err\n\t\t}}\n\t\tlisted := []flatField{{{}}}\n\t\tquery, err := \
+         flatObject(request.URL.RawQuery, listed, nil, {}, \"query\")\n\t\tif err != nil \
+         {{\n\t\t\treturn nil, err\n\t\t}}\n\t\treturn withQuery(joined, query, listed, {at})\n",
+        rows.join(", "),
+        request.unknown == ess_http::Unknown::Ignore
+    )
+}
+
+/// A `multipart` request's `[]partField` literal (beyond10x/ess#754): every input field neither the
+/// path nor a part attribute carries, in declaration order, a `Bytes` field ([`http::file_part`]) a
+/// file part with the wire names its attributes read into, as the Rust server's table states it.
+fn part_table(ir: &EssIr, command: &ResolvedCommand, route: &http::Route<'_>) -> String {
+    let carried = http::carried(ir, route);
+    let read = http::attribute_fields(route.declared);
+    let request = http::request(route);
+    // The input field an attribute reads, as a `*partAttribute` literal.
+    let attribute = |source: Option<&ess_http::Source>| {
+        source
+            .and_then(|source| {
+                command
+                    .input
+                    .iter()
+                    .find(|field| field.name == source.field())
+            })
+            .map_or_else(
+                || "nil".to_owned(),
+                |field| {
+                    format!(
+                        "&partAttribute{{{}, {}}}",
+                        go_string(ess_gen::schema::wire_field_name(field)),
+                        !field.type_ref.is_optional()
+                    )
+                },
+            )
+    };
+    let rows: Vec<String> = command
+        .input
+        .iter()
+        .filter(|field| {
+            !carried.contains(field.name.as_str()) && !read.contains(field.name.as_str())
+        })
+        .map(|field| {
+            let shape = match http::flat(ir, &field.type_ref).map(|(shape, _)| shape) {
+                Some(http::Shape::Optional) => "shapeOptional",
+                Some(http::Shape::List) => "shapeList",
+                Some(http::Shape::One) | None => "shapeOne",
+            };
+            let wire = go_string(ess_gen::schema::wire_field_name(field));
+            if http::file_part(ir, &field.type_ref).is_none() {
+                return format!(
+                    "{{{wire}, {}, {shape}, false, nil, nil, nil}}",
+                    flat_kind(ir, field)
+                );
+            }
+            let declared = request.parts.get(&field.name);
+            let types: Vec<String> = declared
+                .map(|part| part.media_types.iter().map(|it| go_string(it)).collect())
+                .unwrap_or_default();
+            format!(
+                "{{{wire}, flatText, {shape}, true, {}, {}, {}}}",
+                attribute(declared.and_then(|part| part.filename.as_ref())),
+                attribute(declared.and_then(|part| part.media_type.as_ref())),
+                if types.is_empty() {
+                    "nil".to_owned()
+                } else {
+                    format!("[]string{{{}}}", types.join(", "))
+                }
+            )
+        })
+        .collect();
+    format!("[]partField{{{}}}", rows.join(", "))
 }
 
 /// The wire names of the fields the path carries, as a `[]string` literal.
@@ -1529,10 +2240,13 @@ fn command(
     let request = http::request(route);
     let ignore = request.unknown == ess_http::Unknown::Ignore;
     let bare = http::bare_body(command, route.declared);
+    // What the path or the query string (beyond10x/ess#754) carries is not the body's to hold.
+    let mut outside = http::carried(ir, route);
+    outside.extend(http::queried(route.declared));
     let read = match request.encoding {
         Encoding::Json if bare.is_some() => format!(
             "bareBody(body, {}, {}, {})",
-            http::body_required_without(command, &http::carried(ir, route)),
+            http::body_required_without(command, &outside),
             go_string(
                 bare.map(ess_gen::schema::wire_field_name)
                     .unwrap_or_default()
@@ -1542,15 +2256,24 @@ fn command(
                 |members| format!("[]string{{{}}}", members.join(", "))
             )
         ),
+        Encoding::Json if ignore => format!(
+            "openJSONBody(body, {})",
+            http::body_required_without(command, &outside),
+        ),
         Encoding::Json => format!(
             "jsonBody(body, {}, []string{{{}}})",
-            http::body_required_without(command, &http::carried(ir, route)),
+            http::body_required_without(command, &outside),
             command
                 .input
                 .iter()
                 .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
                 .collect::<Vec<_>>()
                 .join(", ")
+        ),
+        Encoding::Multipart => format!(
+            "multipartObject(request, body, {}, {}, {ignore}, \"body\")",
+            part_table(ir, command, route),
+            carried_table(ir, route)
         ),
         Encoding::Form => format!(
             "formObject(request, body, {}, {}, {ignore})",
@@ -1568,7 +2291,9 @@ fn command(
     } else {
         "body"
     });
-    let (statements, members) = path_members(ir, route);
+    let (mut statements, members) = path_members(ir, route);
+    let members = ignoring(ir, route, command, &at, &mut statements, members);
+    let joined = queried(ir, route, command, &at, &members);
     let suffix = refusal_suffix(ir, layout, route);
     let declares = http::declares_answers(route);
     let answer = if declares {
@@ -1582,7 +2307,7 @@ fn command(
          // binding declares.\nfunc serveBound{function}(system *{system}, request *http.Request, \
          body []byte, path []string) response {{\n\tvalue, err := func() (any, error) \
          {{\n\t\tvalue, err := {read}\n\t\tif err != nil {{\n\t\t\treturn nil, \
-         err\n\t\t}}\n{statements}\t\treturn withPath(value, {members}, {at})\n\t}}()\n\tif err \
+         err\n\t\t}}\n{statements}{joined}\t}}()\n\tif err \
          != nil {{\n\t\treturn refusalMalformed{suffix}(err.Error())\n\t}}\n\tinput, err := \
          decodeCommand{function}(value, \"body\")\n\tif err != nil {{\n\t\treturn \
          refusalMalformed{suffix}(err.Error())\n\t}}\n\toutcome, unmet := \
@@ -1631,7 +2356,7 @@ fn outcome_answer(
         .any(|source| matches!(source, AnswerSource::Response(_)))
         || listed
             .iter()
-            .any(|(_, declared)| matches!(declared.body, Body::Response | Body::ResponseField(_)));
+            .any(|(_, declared)| declared.body.reads_response());
     let reads_payload = sources
         .iter()
         .any(|source| matches!(source, AnswerSource::Error(_)))
@@ -1708,6 +2433,34 @@ fn field_answer(
     }
 }
 
+/// A wrapped outcome body's answer (beyond10x/ess#755): the response, or its one `field`, under
+/// the one `member`, written as the bare form writes it.
+fn wrapped_answer(
+    command: &ResolvedCommand,
+    status: u16,
+    member: &str,
+    field: Option<&str>,
+) -> String {
+    let value = match field {
+        None => "reply".to_owned(),
+        Some(field) => format!(
+            "memberOf(reply, {})",
+            go_string(
+                command
+                    .response
+                    .iter()
+                    .find(|declared| declared.name == *field)
+                    .map_or(field, ess_gen::schema::wire_field_name)
+            )
+        ),
+    };
+    format!(
+        "response{{status: {status}, contentType: mediaJSON, body: \
+         bare(jsonObject{{{{name: {}, value: {value}}}}})}}",
+        go_string(member)
+    )
+}
+
 /// One listed outcome's arm of `declared*`: its body, its headers and its redirect, as Go
 /// statements building `answer`.
 fn outcome_arm(
@@ -1726,6 +2479,9 @@ fn outcome_arm(
         }
         Body::Response => {
             format!("response{{status: {status}, contentType: mediaJSON, body: bare(reply)}}")
+        }
+        Body::Wrapped { member, field } => {
+            wrapped_answer(command, status, member, field.as_deref())
         }
         Body::ResponseField(field) => field_answer(command, field, declared, &mut arm),
         Body::None => format!("response{{status: {status}}}"),
@@ -1879,6 +2635,10 @@ fn view(
         route.path,
         view.name,
     );
+    let representations = route
+        .declared
+        .map_or(&[][..], |declared| &declared.representations[..]);
+    out.push_str(&selection(representations, suffix));
     let arguments = if view.params.is_empty() {
         out.push_str("\t_, _ = request, path\n");
         String::new()
@@ -1919,15 +2679,37 @@ fn view(
          len(rows))\n\tfor _, row := range rows {{\n\t\tencoded = append(encoded, \
          encodeView{function}(row))\n\t}}\n"
     );
+    if !representations.is_empty() {
+        out.push_str(&csv_answer(ir, view));
+    }
+    json_answer(out, route);
+}
+
+/// Go code answering a bound view route's encoded rows as JSON: `rows`, `array` or `single`, bare
+/// or under the member a wrapped body names, and a `single` view's empty answer.
+fn json_answer(out: &mut String, route: &http::Route<'_>) {
     let body = route
         .declared
-        .map_or(ess_http::ViewBody::Rows, |declared| declared.body);
+        .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
     let empty = route
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)
         .and_then(|declared| declared.empty.as_ref());
+    // The member a wrapped body names (beyond10x/ess#755): the bare answer goes under it.
+    let member = route
+        .declared
+        .and_then(|declared| declared.body.member.as_deref());
     match (body, empty) {
         (_, Some(empty)) => {
+            let one = member.map_or_else(
+                || "encoded[0]".to_owned(),
+                |member| {
+                    format!(
+                        "jsonObject{{{{name: {}, value: encoded[0]}}}}",
+                        go_string(member)
+                    )
+                },
+            );
             let none = match &empty.body {
                 RefusalBody::None => format!("response{{status: {}}}", empty.status),
                 RefusalBody::Literal { member, text } => format!(
@@ -1940,13 +2722,118 @@ fn view(
             let _ = write!(
                 out,
                 "\tif len(encoded) == 0 {{\n\t\treturn {none}\n\t}}\n\treturn \
-                 response{{status: 200, contentType: mediaJSON, body: bare(encoded[0])}}\n}}\n"
+                 response{{status: 200, contentType: mediaJSON, body: bare({one})}}\n}}\n"
             );
         }
         // The rows, bare: the array `rows` would hold.
-        (ess_http::ViewBody::Array, None) => out.push_str("\treturn rendered(200, encoded)\n}\n"),
+        (ess_http::ViewBody::Array, None) => match member {
+            None => out.push_str("\treturn rendered(200, encoded)\n}\n"),
+            Some(member) => {
+                let _ = write!(
+                    out,
+                    "\treturn rendered(200, map[string]any{{{}: encoded}})\n}}\n",
+                    go_string(member)
+                );
+            }
+        },
         _ => out.push_str("\treturn rendered(200, map[string]any{\"rows\": encoded})\n}\n"),
     }
+}
+
+/// Go code choosing the representation the query selects (beyond10x/ess#753), as the Rust server
+/// does: `chosen`, its `separator`, whether a `header` line comes first, and its `headers`; a value
+/// no representation names, and the parameter given twice, are `malformed`. Written only on a
+/// route that declares representations, so every other package keeps its bytes.
+fn selection(representations: &[ess_http::Representation], suffix: &str) -> String {
+    let Some(first) = representations.first() else {
+        return String::new();
+    };
+    let parameter = &first.query.parameter;
+    let values: Vec<String> = representations
+        .iter()
+        .map(|representation| format!("`{}`", representation.query.value))
+        .collect();
+    let expected = match &values[..] {
+        [only] => only.clone(),
+        several => format!("one of {}", several.join(", ")),
+    };
+    let mut cases = String::new();
+    for representation in representations {
+        let headers: Vec<String> = representation
+            .headers
+            .iter()
+            .filter_map(|(name, header)| match header {
+                Header::Literal(text) => {
+                    Some(format!("{{{}, {}}}", go_string(name), go_string(text)))
+                }
+                Header::Source(_) | Header::Challenge(_) => None,
+            })
+            .collect();
+        let _ = writeln!(
+            cases,
+            "\tcase value == {}:\n\t\tchosen, separator, header, headers = true, {}, {}, \
+             [][2]string{{{}}}",
+            go_string(&representation.query.value),
+            go_string(&representation.encoding.csv.separator.as_char().to_string()),
+            representation.encoding.csv.header,
+            headers.join(", ")
+        );
+    }
+    format!(
+        "\t// The representation the query selects: its separator, whether a header line comes \
+         first, and\n\t// its headers; none chosen answers the JSON body.\n\tselected, err := \
+         queryObject(request.URL.RawQuery, []queryParam{{{{wire: {parameter}, scalar: \
+         queryText}}}}, \"query\")\n\tif err != nil {{\n\t\treturn \
+         refusalMalformed{suffix}(err.Error())\n\t}}\n\tchosen, separator, header := false, \"\", \
+         false\n\tvar headers [][2]string\n\tswitch value, named := selected[{parameter}]; {{\n\tcase \
+         !named:\n{cases}\tdefault:\n\t\treturn refusalMalformed{suffix}({})\n\t}}\n",
+        go_string(&format!("query.{parameter}: expected {expected}")),
+        parameter = go_string(parameter),
+    )
+}
+
+/// Go code answering the encoded rows as CSV when [`selection`] chose a representation, as the
+/// Rust server writes it: the rows the JSON answer renders, read back, the view's fields in
+/// declaration order under their wire names, CRLF line ends, an absent value an empty field, each
+/// value in its flat text spelling, a text cell (a `String`, an `Optional<String>` or a newtype of
+/// one) opening with `=`, `+`, `-`, `@`, a tab or a CR behind `'` so a spreadsheet does not read
+/// it as a formula, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
+fn csv_answer(ir: &EssIr, view: &ResolvedView) -> String {
+    let columns: Vec<String> = view
+        .fields
+        .iter()
+        .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+        .collect();
+    let guarded: Vec<&str> = view
+        .fields
+        .iter()
+        .map(|field| match http::flat(ir, &field.type_ref) {
+            Some((http::Shape::One | http::Shape::Optional, http::Flat::String)) => "true",
+            _ => "false",
+        })
+        .collect();
+    format!(
+        "\tif chosen {{\n\t\tread, _ := parseJSON(rendered(200, encoded).body)\n\t\titems, _ := \
+         read.([]any)\n\t\tcolumns := []string{{{}}}\n\t\tguarded := []bool{{{}}}\n\t\tvar out \
+         strings.Builder\n\t\tfield := \
+         func(text string) {{\n\t\t\tif strings.ContainsAny(text, separator+\"\\\"\\r\\n\") \
+         {{\n\t\t\t\tout.WriteByte('\"')\n\t\t\t\tout.WriteString(strings.ReplaceAll(text, \
+         \"\\\"\", \"\\\"\\\"\"))\n\t\t\t\tout.WriteByte('\"')\n\t\t\t}} else \
+         {{\n\t\t\t\tout.WriteString(text)\n\t\t\t}}\n\t\t}}\n\t\tif header {{\n\t\t\tfor index, \
+         column := range columns {{\n\t\t\t\tif index > 0 {{\n\t\t\t\t\tout.WriteString(separator)\
+         \n\t\t\t\t}}\n\t\t\t\tfield(column)\n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\t\
+         for _, row := range items {{\n\t\t\tfor index, column := range columns {{\n\t\t\t\tif index \
+         > 0 {{\n\t\t\t\t\tout.WriteString(separator)\n\t\t\t\t}}\n\t\t\t\tswitch value := \
+         memberOf(row, column).(type) {{\n\t\t\t\tcase nil:\n\t\t\t\t\tfield(\"\")\n\t\t\t\tcase \
+         string:\n\t\t\t\t\tif guarded[index] && value != \"\" && \
+         strings.ContainsRune(\"=+-@\\t\\r\", rune(value[0])) {{\n\t\t\t\t\t\tvalue = \"'\" + \
+         value\n\t\t\t\t\t}}\n\t\t\t\t\tfield(value)\n\t\t\t\tdefault:\n\t\t\t\t\tfield(bare(value))\
+         \n\t\t\t\t}}\n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\treturn \
+         response{{status: 200, contentType: \"text/csv; charset=utf-8\", body: out.String(), \
+         headers: headers}}\n\t}}\n",
+        columns.join(", "),
+        guarded.join(", ")
+    )
 }
 
 /// The standard refusals of a bound package's declared routes, as its binding answers them

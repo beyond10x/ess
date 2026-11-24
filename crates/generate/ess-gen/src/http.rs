@@ -899,6 +899,52 @@ pub fn request(route: &Route<'_>) -> ess_http::Request {
         .unwrap_or_default()
 }
 
+/// The input fields a `multipart` route's part attributes read (`parts.<field>.filename` and
+/// `….media_type`, beyond10x/ess#754): each travels as an attribute of its file part, never as a
+/// part of its own. Empty for every other route.
+pub fn attribute_fields(declared: Option<&ess_http::Route>) -> std::collections::BTreeSet<&str> {
+    declared
+        .and_then(|route| route.request.as_ref())
+        .into_iter()
+        .flat_map(|request| request.parts.values())
+        .flat_map(|part| [&part.filename, &part.media_type])
+        .flatten()
+        .map(ess_http::Source::field)
+        .collect()
+}
+
+/// The input fields a route's `request.query` reads from the query string beside its body, by
+/// local name (beyond10x/ess#754): none of them travels in the body. Empty for every other route.
+pub fn queried(declared: Option<&ess_http::Route>) -> std::collections::BTreeSet<&str> {
+    declared
+        .and_then(|route| route.request.as_ref())
+        .into_iter()
+        .flat_map(ess_http::Request::query_fields)
+        .collect()
+}
+
+/// How a `multipart` request carries a field of `type_ref` (beyond10x/ess#754): `Some(false)` for
+/// one file part, a `Bytes` value or a newtype of one, `Optional` or not; `Some(true)` for a `List`
+/// of them, one file part per element; `None` for a text part.
+pub fn file_part(ir: &EssIr, type_ref: &ess_compiler::ir::ResolvedTypeRef) -> Option<bool> {
+    use ess_compiler::ir::ResolvedTypeRef;
+    fn bytes(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
+        match type_ref {
+            ResolvedTypeRef::Primitive { name } => *name == ess_domain::types::Primitive::Bytes,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ess_compiler::ir::ResolvedBody::Newtype { of, .. } => bytes(ir, of),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => bytes(ir, of).then_some(false),
+        ResolvedTypeRef::List { of } => bytes(ir, of).then_some(true),
+        _ => bytes(ir, type_ref).then_some(false),
+    }
+}
+
 /// The input field of `command` a bound route takes as its whole request body, bare
 /// (`request: {body: input.<field>}`), its JSON value the body; every other input field is carried
 /// by the path. `None` for a route whose body is the input object, and for a derived route.

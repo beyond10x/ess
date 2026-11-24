@@ -79,6 +79,7 @@ fn typed_model() -> EssIr {
   - {name: catalog.items.ShadeName, kind: newtype, of: catalog.items.Shade}
   - {name: catalog.items.Code, kind: newtype, of: String, alphabet: abc}
   - {name: catalog.items.Amount, kind: newtype, of: Decimal}
+  - {name: catalog.items.AppId, kind: newtype, of: Uuid}
   - name: catalog.items.Pair
     kind: struct
     fields:
@@ -103,6 +104,12 @@ fn typed_model() -> EssIr {
       - {name: code, type: catalog.items.Code}
       - {name: pair, type: catalog.items.Pair}
       - {name: data, type: Json}
+      - {name: app_id, type: catalog.items.AppId}
+      - {name: uuid, type: Uuid}
+      - {name: at, type: Timestamp}
+      - {name: wait, type: Duration}
+      - {name: blob, type: Bytes}
+      - {name: ratio, type: Binary64}
     outcomes:
       - name: tagged
         emits: [catalog.items.ItemTouched]
@@ -723,18 +730,14 @@ fn ess_http_009_a_source_reads_one_field_of_the_right_namespace_and_a_segment_ty
         // Of a type a segment cannot carry.
         ("command: catalog.items.TagItem, method: post", "input.note"),
         ("command: catalog.items.TagItem, method: post", "input.tags"),
-        ("command: catalog.items.TagItem, method: post", "input.flag"),
-        (
-            "command: catalog.items.TagItem, method: post",
-            "input.price",
-        ),
-        (
-            "command: catalog.items.TagItem, method: post",
-            "input.amount",
-        ),
         ("command: catalog.items.TagItem, method: post", "input.code"),
         ("command: catalog.items.TagItem, method: post", "input.pair"),
         ("command: catalog.items.TagItem, method: post", "input.data"),
+        ("command: catalog.items.TagItem, method: post", "input.blob"),
+        (
+            "command: catalog.items.TagItem, method: post",
+            "input.ratio",
+        ),
     ] {
         let routes = format!(
             "routes:\n  - {{{operation}, path: '/x/{{v}}', parameters: {{v: '{source}'}}}}\n"
@@ -752,6 +755,21 @@ fn ess_http_009_a_source_reads_one_field_of_the_right_namespace_and_a_segment_ty
         "routes:\n  - {command: catalog.items.TagItem, method: post, path: '/x/{v}', parameters: {v: input.note}}\n",
     )[0];
     assert!(message.contains("Optional<String>"), "{message}");
+    // The refusal names the admitted set (beyond10x/ess#755).
+    for admitted in [
+        "`String`",
+        "`Integer`",
+        "`Boolean`",
+        "`Decimal`",
+        "`Timestamp`",
+        "`Duration`",
+        "`Uuid`",
+        "enum",
+        "unconstrained newtype",
+    ] {
+        assert!(message.contains(admitted), "{admitted}: {message}");
+    }
+    // Every scalar with one text spelling, and an unconstrained newtype of one (beyond10x/ess#755).
     for field in [
         "item_id",
         "label",
@@ -759,6 +777,13 @@ fn ess_http_009_a_source_reads_one_field_of_the_right_namespace_and_a_segment_ty
         "shade",
         "wrapped",
         "shade_name",
+        "flag",
+        "price",
+        "amount",
+        "app_id",
+        "uuid",
+        "at",
+        "wait",
     ] {
         let routes = format!(
             "routes:\n  - {{command: catalog.items.TagItem, method: post, path: '/x/{{v}}', parameters: {{v: input.{field}}}}}\n"
@@ -1286,6 +1311,8 @@ fn every_code_this_crate_can_emit_is_one_of_the_codes_built_so_far() {
                     | "ESS-HTTP-032"
                     | "ESS-HTTP-033"
                     | "ESS-HTTP-034"
+                    | "ESS-HTTP-035"
+                    | "ESS-HTTP-036"
             ),
             "{code}"
         );

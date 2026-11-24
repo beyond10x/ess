@@ -1256,6 +1256,218 @@ fn a_declared_alphabet_is_one_doc_line_on_the_rust_and_go_wrapper() {
     }
 }
 
+// ---- presence of an absent member (beyond10x/ess#799) --------------------------------------------
+
+/// A bin with an optional `note` whose `presence:` is `PRESENCE`, projected by a view, carried by
+/// the event `BinNoted` and by the struct `BinTag`.
+const PRESENT_BINS: &str = "format: ess/37
+system: depot
+version: v1
+domain: depot.bins
+types:
+  - name: depot.bins.BinId
+    kind: newtype
+    of: String
+  - name: depot.bins.BinTag
+    kind: struct
+    fields:
+      - {name: code, type: String}
+      - {name: note, type: Optional<String>PRESENCE}
+entities:
+  - name: depot.bins.Bin
+    identity: {name: bin_id, type: depot.bins.BinId}
+    fields:
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>PRESENCE}
+      - {name: tag, type: Optional<depot.bins.BinTag>}
+    lifecycle:
+      initial: Stocked
+      states: [Stocked, Noted]
+      terminal: [Noted]
+      transitions:
+        - {name: note, from: [Stocked], to: Noted}
+errors:
+  - name: depot.bins.Duplicate
+  - name: depot.bins.UnknownBin
+  - name: depot.bins.AlreadyNoted
+commands:
+  - name: depot.bins.AddBin
+    input:
+      - {name: bin_id, type: depot.bins.BinId}
+      - {name: label, type: String}
+      - {name: tag, type: Optional<depot.bins.BinTag>}
+    outcomes:
+      - {name: duplicate, existing_instance: true, error: depot.bins.Duplicate}
+      - name: added
+        creates: depot.bins.Bin
+        instance: bin_id
+        sets:
+          label: input.label
+          note: {cleared: true}
+          tag: input.tag
+        emits: [depot.bins.BinAdded]
+        payload:
+          depot.bins.BinAdded: {bin_id: input.bin_id}
+  - name: depot.bins.NoteBin
+    input:
+      - {name: bin_id, type: depot.bins.BinId}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - {name: unknown-bin, unknown_instance: true, error: depot.bins.UnknownBin}
+      - name: noted
+        moves: depot.bins.Bin.note
+        instance: bin_id
+        sets: {note: input.note}
+        emits: [depot.bins.BinNoted]
+        payload:
+          depot.bins.BinNoted: {bin_id: input.bin_id, note: input.note}
+      - {name: already-noted, wrong_state: true, error: depot.bins.AlreadyNoted}
+events:
+  - name: depot.bins.BinAdded
+    fields:
+      - {name: bin_id, type: depot.bins.BinId}
+  - name: depot.bins.BinNoted
+    fields:
+      - {name: bin_id, type: depot.bins.BinId}
+      - {name: note, type: Optional<String>PRESENCE}
+views:
+  - name: depot.bins.Bins
+    source: depot.bins.Bin
+    consistency: read_your_writes
+    fields:
+      - {name: bin_id, type: depot.bins.BinId}
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>}
+components:
+  - component: depot-service
+    owns: {domains: [depot.bins]}
+    accepts: {commands: [depot.bins.AddBin, depot.bins.NoteBin]}
+    publishes: {events: [depot.bins.BinAdded, depot.bins.BinNoted]}
+    reached_by: network
+";
+
+/// The text of the generated function `start` names, from its first line to its closing brace,
+/// in the artifacts `target` writes for `PRESENT_BINS` under `presence` (empty: no policy).
+fn presence_encoder(presence: &str, target: Target, start: &str) -> String {
+    let written = if presence.is_empty() {
+        String::new()
+    } else {
+        format!(", presence: {presence}")
+    };
+    let ir = fixture(&[("bins.yaml", &PRESENT_BINS.replace("PRESENCE", &written))]);
+    let Ok(synthesis) = synthesize_for(&ir, target) else {
+        panic!("{target:?}: the bins have a realizable target")
+    };
+    let found: Vec<String> = synthesis
+        .artifacts
+        .values()
+        .filter_map(|artifact| {
+            let at = artifact.contents.find(start)?;
+            let rest = &artifact.contents[at..];
+            let end = rest.find("\n}\n").expect("the function closes") + 3;
+            Some(rest[..end].to_owned())
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "{target:?}: one `{start}`: {found:?}");
+    found.into_iter().next().unwrap_or_default()
+}
+
+/// The Rust statements writing the member `note` held in `value.note`, and with `null`, `null`
+/// when it holds nothing.
+fn rust_note(null: bool) -> String {
+    let absent = if null {
+        " else {\n        json::member(out, \"note\");\n        out.push_str(\"null\");\n    }"
+    } else {
+        ""
+    };
+    format!(
+        "    if let Some(held0) = &value.note {{\n        json::member(out, \"note\");\n        \
+         json::push_text(out, &*held0);\n    }}{absent}\n"
+    )
+}
+
+#[test]
+fn a_null_when_absent_view_member_is_written_null_by_both_servers() {
+    let rust = presence_encoder(
+        "null_when_absent",
+        Target::Rust,
+        "pub fn encode_view_depot_bins_bins(",
+    );
+    assert!(rust.contains(&rust_note(true)), "{rust}");
+    let go = presence_encoder(
+        "null_when_absent",
+        Target::Go,
+        "func encodeViewDepotBinsBins(",
+    );
+    assert!(
+        go.contains("\t} else {\n\t\tout[\"note\"] = nil\n\t}\n"),
+        "{go}"
+    );
+}
+
+#[test]
+fn other_presences_keep_their_encoder_text() {
+    for presence in ["", "omitted_when_absent", "omitted_or_null"] {
+        let rust = presence_encoder(
+            presence,
+            Target::Rust,
+            "pub fn encode_view_depot_bins_bins(",
+        );
+        assert!(rust.contains(&rust_note(false)), "{presence}: {rust}");
+        assert!(
+            !rust.contains("null") && !rust.contains("else"),
+            "{presence}: {rust}"
+        );
+        let go = presence_encoder(presence, Target::Go, "func encodeViewDepotBinsBins(");
+        assert!(
+            go.contains("\tif value.Note != nil {\n"),
+            "{presence}: {go}"
+        );
+        assert!(
+            !go.contains("nil\n") && !go.contains("else"),
+            "{presence}: {go}"
+        );
+    }
+}
+
+#[test]
+fn a_null_when_absent_event_field_is_written_null() {
+    let rust = presence_encoder(
+        "null_when_absent",
+        Target::Rust,
+        "pub fn encode_event_depot_bins_bin_noted(",
+    );
+    assert!(rust.contains(&rust_note(true)), "{rust}");
+    let go = presence_encoder(
+        "null_when_absent",
+        Target::Go,
+        "func encodeEventDepotBinsBinNoted(",
+    );
+    assert!(
+        go.contains("\t} else {\n\t\tout[\"note\"] = nil\n\t}\n"),
+        "{go}"
+    );
+}
+
+#[test]
+fn a_null_when_absent_struct_field_is_written_null() {
+    let rust = presence_encoder(
+        "null_when_absent",
+        Target::Rust,
+        "pub fn encode_depot_bins_bin_tag(",
+    );
+    assert!(rust.contains(&rust_note(true)), "{rust}");
+    let go = presence_encoder(
+        "null_when_absent",
+        Target::Go,
+        "func encodeDepotBinsBinTag(",
+    );
+    assert!(
+        go.contains("\t} else {\n\t\tout[\"note\"] = nil\n\t}\n"),
+        "{go}"
+    );
+}
+
 /// A component that accepts no command and declares no view holds its behaviours under a name
 /// rustc's `dead_code` lint does not report, so its crate builds with warnings denied
 /// (beyond10x/ess#793); a port with a handler or a query keeps `behaviors` and reads it.

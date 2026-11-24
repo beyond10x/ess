@@ -443,7 +443,7 @@ func encodeGatepassVisitBadge(value visit.Badge) any {
 // decodeGatepassVisitBadge reads `gatepass.visit.Badge` from JSON, or refuses at the path it was reached at.
 func decodeGatepassVisitBadge(value any, at string) (visit.Badge, error) {
 	var out visit.Badge
-	if _, err := objectAt(value, at, "an object"); err != nil {
+	if err := closedAt(value, at, []string{"serial", "printed_at", "signature"}); err != nil {
 		return out, err
 	}
 	member0, at0, err := required(value, at, "serial")
@@ -524,7 +524,7 @@ func encodeGatepassVisitDeposit(value visit.Deposit) any {
 // decodeGatepassVisitDeposit reads `gatepass.visit.Deposit` from JSON, or refuses at the path it was reached at.
 func decodeGatepassVisitDeposit(value any, at string) (visit.Deposit, error) {
 	var out visit.Deposit
-	if _, err := objectAt(value, at, "an object"); err != nil {
+	if err := closedAt(value, at, []string{"amount", "currency"}); err != nil {
 		return out, err
 	}
 	member0, at0, err := required(value, at, "amount")
@@ -592,6 +592,9 @@ func encodeGatepassVisitHost(value visit.Host) any {
 // decodeGatepassVisitHost reads `gatepass.visit.Host` from JSON, or refuses at the path it was reached at.
 func decodeGatepassVisitHost(value any, at string) (visit.Host, error) {
 	var out visit.Host
+	if err := closedAt(value, at, []string{"kind", "value"}); err != nil {
+		return out, err
+	}
 	tagged, tagAt, err := required(value, at, "kind")
 	if err != nil {
 		return out, err
@@ -928,4 +931,29 @@ func decodeCommandGatepassVisitSignOutVisitor(value any, at string) (visit.SignO
 	}
 	out.VisitId = held1
 	return out, nil
+}
+
+// closedAt is the object at this path holding no member but fields: a closed struct or a union
+// branch, as its published schema is. The standard decoder keeps no member order, so of several
+// such members the least by name is the one named, where the Rust server names the first to
+// arrive.
+func closedAt(value any, at string, fields []string) error {
+	object, err := objectAt(value, at, "an object")
+	if err != nil {
+		return err
+	}
+	unnamed, found := "", false
+	for name := range object {
+		named := false
+		for _, field := range fields {
+			named = named || field == name
+		}
+		if !named && (!found || name < unnamed) {
+			unnamed, found = name, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return DecodeError{At: nested(at, unnamed), Expected: "no member: no field is named so", Found: describes(object[unnamed])}
 }

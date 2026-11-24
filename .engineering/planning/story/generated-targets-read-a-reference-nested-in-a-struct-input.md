@@ -31,7 +31,7 @@ scope:
   path: crates/generate/ess-synth/tests/struct_member_address.rs
 - confidence: inferred
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:44:53Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:44:54Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -104,6 +104,8 @@ Entity Runtime refuses the nested `instance:` rather than lowering it: its bindi
 `InstanceBinding::Supplied { input_field }`, one top-level input field the host loads the instance
 from (`crates/generate/ess-entity-runtime/src/lib.rs`, `supplied_identity`), which is what
 `AmbiguousInstanceBinding` already says is missing.
+
+2026-11-23: the feature opens `ess/38`; `ess/37`, released in 0.93.0, keeps its meaning (the operator's decision on the question which format carries the new reading of `{missing: input.<path>}`).
 
 ## Source
 

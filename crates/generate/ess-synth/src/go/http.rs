@@ -154,6 +154,28 @@ pub(super) fn server_package(
     artifacts
 }
 
+/// The readers of a bound request a route of `binding` needs beyond [`bound::BOUND`], each only
+/// where a route needs it, so every other surface keeps its bytes: a bare body, `unknown: ignore`,
+/// a `multipart` request and the fields `request.query` lists.
+fn request_readers(helpers: &mut String, emit: &Emit<'_>, binding: &http::Binding) {
+    if bound::reads_a_bare_body(binding) {
+        helpers.push_str(bound::BARE_BODY);
+    }
+    if bound::ignores_unknown(binding) {
+        helpers.push_str(bound::IGNORING);
+    }
+    if bound::reads_multipart(binding) {
+        emit.import("encoding/base64");
+        helpers.push_str(bound::MULTIPART);
+    }
+    if bound::echoes_parts(binding) {
+        helpers.push_str(bound::ECHOED_PARTS);
+    }
+    if bound::reads_query_beside_body(binding) {
+        helpers.push_str(bound::QUERIED);
+    }
+}
+
 /// The package's own file: what an answer is, how a body is read, and the two media types.
 ///
 /// One file for the package rather than one per served component, because Go would refuse the
@@ -220,9 +242,7 @@ fn helpers_file(
         if capped {
             helpers.push_str(bound::CAPPED);
         }
-        if bound::reads_a_bare_body(binding) {
-            helpers.push_str(bound::BARE_BODY);
-        }
+        request_readers(&mut helpers, &emit, binding);
         let checks_grant = served(ir, refusals).into_iter().any(|component| {
             http::bound_routes(ir, component, Some(binding))
                 .iter()
@@ -612,6 +632,9 @@ fn wire_file(
             &emit.primitive_ctor(Primitive::Binary64),
         ));
     }
+    if body.contains("closedAt(value, at, ") {
+        body.push_str(CLOSED_AT);
+    }
     emit.file_at(format!("{}/{WIRE}.go", package.dir), provenance, "", &body)
 }
 
@@ -657,6 +680,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, memb
                     &field.type_ref,
                     &mut slot,
                     members,
+                    null_when_absent(field),
                 );
             }
             out.push_str("\treturn out\n");
@@ -697,6 +721,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, memb
                         payload,
                         &mut slot,
                         members,
+                        false,
                     );
                 }
                 out.push_str("\t\treturn out\n");
@@ -736,11 +761,23 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             }
         }
         ResolvedBody::Struct { fields, .. } => {
-            let _ = writeln!(
-                out,
-                "\tif _, err := objectAt(value, at, \"an object\"); err != nil {{\n\t\treturn out, \
-                 err\n\t}}"
-            );
+            // Closed unless the struct declares `undeclared_fields: ignored` (`ess/24`), as the
+            // Rust server's decoder and the published schema are at every place it is reached.
+            if emit.ir.undeclared_fields(&declared.name).is_ignored() {
+                let _ = writeln!(
+                    out,
+                    "\tif _, err := objectAt(value, at, \"an object\"); err != nil {{\n\t\treturn \
+                     out, err\n\t}}"
+                );
+            } else {
+                closure(
+                    out,
+                    &fields
+                        .iter()
+                        .map(ess_gen::schema::wire_field_name)
+                        .collect::<Vec<_>>(),
+                );
+            }
             let mut slot = 0;
             for field in fields {
                 decode_member(
@@ -803,6 +840,9 @@ fn union_decoder(
     let labels: Vec<String> = variants.keys().cloned().collect();
     let expected = go_string(&variant_list(&labels));
     let tag_text = go_string(tag);
+    // Each branch's published object is closed: its tag, and its content where it has one, as the
+    // Rust server's decoder reads it.
+    closure(out, &[tag, content]);
     let _ = writeln!(
         out,
         "\ttagged, tagAt, err := required(value, at, {tag_text})\n\tif err != nil {{\n\t\t\
@@ -853,6 +893,20 @@ fn unit_variant_decoder(
          {}{{}}, nil",
         go_string(&format!("no `{content}`: `{label}` carries nothing")),
         emit.reference_variant(union, label)
+    );
+}
+
+/// The check that the value is an object holding no member but `wires`, refused at its path.
+fn closure(out: &mut String, wires: &[&str]) {
+    let wires = wires
+        .iter()
+        .map(|wire| go_string(wire))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(
+        out,
+        "\tif err := closedAt(value, at, []string{{{wires}}}); err != nil {{\n\t\treturn out, \
+         err\n\t}}"
     );
 }
 
@@ -934,6 +988,7 @@ fn record_encoder(
             &field.type_ref,
             &mut slot,
             members,
+            null_when_absent(field),
         );
     }
     out.push_str("\treturn out\n}\n");
@@ -978,7 +1033,9 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
 
 // ---- the two walkers ---------------------------------------------------------------------------
 
-/// One member of an object being written — or nothing at all where an optional value is absent.
+/// One member of an object being written — or, where an optional value is absent, nothing at all,
+/// or the key and `null` where the field is declared `presence: null_when_absent`
+/// (`null_when_absent`, beyond10x/ess#799).
 #[allow(clippy::too_many_arguments)]
 fn encode_member(
     out: &mut String,
@@ -989,6 +1046,7 @@ fn encode_member(
     type_ref: &ResolvedTypeRef,
     slot: &mut usize,
     members: Members,
+    null_when_absent: bool,
 ) {
     if let ResolvedTypeRef::Optional { of } = type_ref {
         let held = format!("held{}", next(slot));
@@ -997,11 +1055,21 @@ fn encode_member(
         let inner = format!("{indent}\t");
         let expression = encode_into(out, layout, &inner, &held, of, slot);
         let _ = writeln!(out, "{indent}\t{}", members.set(wire, &expression));
+        if null_when_absent {
+            let _ = writeln!(out, "{indent}}} else {{");
+            let _ = writeln!(out, "{indent}\t{}", members.set(wire, "nil"));
+        }
         let _ = writeln!(out, "{indent}}}");
         return;
     }
     let expression = encode_into(out, layout, indent, source, type_ref, slot);
     let _ = writeln!(out, "{indent}{}", members.set(wire, &expression));
+}
+
+/// Whether `field` is declared `presence: null_when_absent`: its key is written with `null` when it
+/// holds nothing, as the published schema requires it (beyond10x/ess#799).
+fn null_when_absent(field: &ResolvedField) -> bool {
+    field.naming.presence == Some(ess_domain::types::Presence::NullWhenAbsent)
 }
 
 /// Emits whatever statements one value needs and returns the expression that is its JSON.
@@ -1018,9 +1086,9 @@ fn encode_into(
         ResolvedTypeRef::Declared { name } => {
             format!("encode{}({source})", ident(layout, name.name()))
         }
-        // An absent optional inside a list or a map is `null`, which is the one place this
-        // rendering differs from an absent *member*: a member is omitted, because that is what the
-        // published contract's `required` list says, and a hole in an array has no such spelling.
+        // An absent optional inside a list or a map is `null`, where an absent *member* is omitted
+        // unless declared `null_when_absent`, because that is what the published contract's
+        // `required` list says, and a hole in an array has no such spelling.
         ResolvedTypeRef::Optional { of } => {
             let target = format!("held{}", next(slot));
             let _ = writeln!(out, "{indent}var {target} any");
@@ -1536,6 +1604,13 @@ fn handlers(
             }
         }
         if declared {
+            if route
+                .declared
+                .is_some_and(|declared| !declared.representations.is_empty())
+            {
+                // A CSV representation's writer quotes with `strings` (beyond10x/ess#753).
+                emit.import("strings");
+            }
             bound::handler(
                 body,
                 ir,
@@ -2334,6 +2409,35 @@ const SERVER_DOC: &str = "// Package server is the HTTP surface of every compone
                           null.\n";
 
 /// The fixed helpers the generated codecs call.
+/// The reader of a closed struct or union branch, which follows the decoders only in a wire file
+/// that has one, so every other wire file keeps its bytes.
+const CLOSED_AT: &str = r#"
+// closedAt is the object at this path holding no member but fields: a closed struct or a union
+// branch, as its published schema is. The standard decoder keeps no member order, so of several
+// such members the least by name is the one named, where the Rust server names the first to
+// arrive.
+func closedAt(value any, at string, fields []string) error {
+	object, err := objectAt(value, at, "an object")
+	if err != nil {
+		return err
+	}
+	unnamed, found := "", false
+	for name := range object {
+		named := false
+		for _, field := range fields {
+			named = named || field == name
+		}
+		if !named && (!found || name < unnamed) {
+			unnamed, found = name, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return DecodeError{At: nested(at, unnamed), Expected: "no member: no field is named so", Found: describes(object[unnamed])}
+}
+"#;
+
 const WIRE_HELPERS: &str = r#"
 // DecodeError is a refusal at one path, with what the declaration says belongs there and what
 // arrived instead.

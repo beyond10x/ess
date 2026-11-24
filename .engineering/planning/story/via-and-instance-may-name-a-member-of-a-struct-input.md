@@ -43,7 +43,7 @@ scope:
   path: docs/design/expression-family-source22.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:49:03Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:49:05Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
@@ -164,7 +164,7 @@ confidence: medium
    payment's state through `request.payment_id`. A message API, `Reply(message: {thread_id, text})`,
    addressing the thread.
 6. **Cost.**
-   - One source format, the next one open (`ess/37` if no other decision allocates it first). An
+   - One source format, the next one open (`ess/38` if no other decision allocates it first). An
      earlier draft of this story named `ess/31` and then `ess/33`, both shipped without it.
    - No new keyword and no new diagnostic code.
    - An IR change to carry a path in `ResolvedRelatedVia::Input` and in the instance source, left
@@ -178,11 +178,13 @@ confidence: medium
 ## Decisions
 
 accept, redesigned. `via:`, `all:` elements, `instance:`, `each: {in:}` and `{missing:}` accept the
-`input.<path>` that `sets:` accepts, a `List<Id>` member included, at `ess/37`. The
+`input.<path>` that `sets:` accepts, a `List<Id>` member included, at `ess/38`. The
 request named `via:` alone; the closing rule widens it to the whole row. Follow-ups:
 
 - `story:synthesis-witnesses-a-row-addressed-through-a-struct-input-member`
 - `story:generated-targets-read-a-reference-nested-in-a-struct-input`
+
+2026-11-23: the feature opens `ess/38`; `ess/37`, released in 0.93.0, keeps its meaning (the operator's decision on the question which format carries the new reading of `{missing: input.<path>}`).
 
 ## Source
 

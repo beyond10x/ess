@@ -270,6 +270,10 @@ pub(crate) struct Node {
     /// How bytes are carried.
     #[serde(rename = "contentEncoding", skip_serializing_if = "Option::is_none")]
     pub(crate) content_encoding: Option<&'static str>,
+    /// The media type of raw bytes a string stands for: a file part of a `multipart` request
+    /// (`OpenAPI` 3.1, beyond10x/ess#754), whose bytes are carried as they are.
+    #[serde(rename = "contentMediaType", skip_serializing_if = "Option::is_none")]
+    pub(crate) content_media_type: Option<&'static str>,
     /// The smallest number this node accepts, from an invariant on the field (beyond10x/ess#394,
     /// beyond10x/ess#687).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -442,7 +446,7 @@ impl Properties {
     }
 
     /// The property published under `name`, to add a keyword to it.
-    fn get_mut(&mut self, name: &str) -> Option<&mut Node> {
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Node> {
         self.0
             .iter_mut()
             .find(|(declared, _)| declared == name)
@@ -675,6 +679,26 @@ pub(crate) fn primitive(primitive: Primitive) -> Node {
             content_encoding: Some("base64"),
             ..Node::default()
         },
+    }
+}
+
+/// The schema of a file part of a `multipart` request (beyond10x/ess#754): a string standing for raw
+/// bytes, `contentMediaType` `application/octet-stream` and no `contentEncoding` (`OpenAPI`
+/// 3.1), or, for a `list`, an array of them.
+pub(crate) fn file_part(list: bool) -> Node {
+    let file = Node {
+        kind: Some("string"),
+        content_media_type: Some("application/octet-stream"),
+        ..Node::default()
+    };
+    if list {
+        Node {
+            kind: Some("array"),
+            items: Some(Box::new(file)),
+            ..Node::default()
+        }
+    } else {
+        file
     }
 }
 
@@ -1743,7 +1767,8 @@ pub(crate) struct Message<'a> {
     /// The authored examples of a command's input, by input name; `None` for every other message.
     pub(crate) examples: Option<&'a BTreeMap<String, ess_primitives::node::Node>>,
     /// What a reader does with a field it does not declare: `ignored` only for a command response
-    /// whose command declares it (`ess/24`), `refused` for every other message.
+    /// whose command declares it (`ess/24`) and a command input its route reads with
+    /// `unknown: ignore` (beyond10x/ess#752), `refused` for every other message.
     pub(crate) undeclared_fields: UndeclaredFields,
     /// What must hold of every value, as the entity declares it (beyond10x/ess#688). Empty for
     /// everything but an entity, for the reason `relations` is: a command input, an event or a

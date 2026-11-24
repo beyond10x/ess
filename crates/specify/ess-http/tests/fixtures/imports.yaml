@@ -1,0 +1,77 @@
+# The fixture `tests/multipart.rs` binds: a command taking an uploaded file with its filename beside
+# plain fields, one taking an optional photo with its name and media type, one whose input has
+# a struct no part can carry, and one taking a list of files.
+format: ess/22
+system: demo
+version: v1
+domain: demo.imports
+types:
+  - {name: demo.imports.Format, kind: enum, variants: [csv, xlsx]}
+  - {name: demo.imports.FileName, kind: newtype, of: String}
+  - name: demo.imports.Row
+    kind: struct
+    fields:
+      - {name: text, type: String}
+events:
+  - name: demo.imports.Imported
+    fields:
+      - {name: format, type: demo.imports.Format}
+  - name: demo.imports.Attached
+    fields:
+      - {name: report_id, type: String}
+commands:
+  - name: demo.imports.ImportRows
+    input:
+      - {name: file, type: Bytes}
+      - {name: file_name, type: String}
+      - {name: format, type: demo.imports.Format}
+      - {name: dry_run, type: Boolean}
+    outcomes:
+      - name: imported
+        emits: [demo.imports.Imported]
+        payload:
+          demo.imports.Imported: {format: input.format}
+  - name: demo.imports.AttachPhoto
+    input:
+      - {name: report_id, type: String}
+      - {name: photo, type: Optional<Bytes>}
+      - {name: photo_name, type: Optional<demo.imports.FileName>}
+      - {name: photo_type, type: Optional<String>}
+      - {name: caption, type: String}
+      - {name: tags, type: List<String>}
+      - {name: count, type: Integer}
+    outcomes:
+      - name: attached
+        emits: [demo.imports.Attached]
+        payload:
+          demo.imports.Attached: {report_id: input.report_id}
+  - name: demo.imports.AttachFiles
+    input:
+      - {name: report_id, type: String}
+      - {name: files, type: List<Bytes>}
+    outcomes:
+      - name: attached
+        emits: [demo.imports.Attached]
+        payload:
+          demo.imports.Attached: {report_id: input.report_id}
+  - name: demo.imports.ShapeRows
+    input:
+      - {name: report_id, type: String}
+      - {name: file, type: Bytes}
+      - {name: row, type: demo.imports.Row}
+    outcomes:
+      - name: shaped
+        emits: [demo.imports.Attached]
+        payload:
+          demo.imports.Attached: {report_id: input.report_id}
+components:
+  - component: imports
+    reached_by: network
+    owns: {domains: [demo.imports]}
+    accepts:
+      commands:
+        - demo.imports.ImportRows
+        - demo.imports.AttachPhoto
+        - demo.imports.AttachFiles
+        - demo.imports.ShapeRows
+    publishes: {events: [demo.imports.Imported, demo.imports.Attached]}

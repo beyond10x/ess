@@ -2619,10 +2619,32 @@ struct Plan<'p> {
     /// Whether an attempt found no arrangement ranking a head above the rows its selector already
     /// selected (beyond10x/ess#618).
     crowded: std::cell::Cell<bool>,
+    /// What the selectors arranged so far left, one level per selector, for the counts and the
+    /// refuted `forall` of the attempt that arranged them ([`Plan::arrange`]).
+    levels: std::cell::RefCell<Vec<Level>>,
 }
 
 /// What one attempt of [`Plan::arrange`] arranges: the steps, the rows and the witness gaps.
 type Attempt = (Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>);
+
+/// What [`Plan::arrange`] left after one selector: the count and the refuted `forall` it was
+/// arranged for, what the next selector starts from, or the index of the selector whose rows could
+/// not be arranged, and how many beside searches arranging it cut.
+struct Level {
+    key: (usize, Option<usize>),
+    left: Result<Left, usize>,
+    cuts: usize,
+}
+
+/// The state [`Plan::arrange`] carries from one selector to the next.
+#[derive(Clone)]
+struct Left {
+    steps: Vec<ScenarioStep>,
+    taken: BTreeSet<InstanceName>,
+    arranged: Vec<Arrangement>,
+    gaps: Vec<RefusalCause>,
+    failing: Vec<(usize, Vec<related_rows::Test>, Predicate)>,
+}
 
 /// How [`Plan::new`] closes a predicate over the input and subject, and the values the send
 /// supplies.
@@ -2719,6 +2741,7 @@ impl<'p> Plan<'p> {
                 .map(|selection| head_order(outcome, selection))
                 .collect(),
             crowded: std::cell::Cell::new(false),
+            levels: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -2759,99 +2782,58 @@ impl<'p> Plan<'p> {
         before: &[ScenarioStep],
         supplied: &BTreeMap<String, ScenarioValue>,
     ) -> Result<Attempt, usize> {
-        let mut taken = captured(before);
-        let mut gaps: Vec<RefusalCause> = Vec::new();
-        let mut steps = before.to_vec();
-        let mut arranged: Vec<Arrangement> = Vec::new();
-        let mut failing: Vec<(usize, Vec<related_rows::Test>, Predicate)> = Vec::new();
-        for (at, selection) in self.selections.iter().enumerate() {
-            // A selector reading values this branch does not publish is another branch's to read.
-            if !publishes(self.outcome, selection) {
-                continue;
-            }
-            // Its published operands, as the rows arranged so far supply them (ess/27,
-            // beyond10x/ess#549): the selectors supplying them come first.
-            let filters = self.resolved(ir, supplied, &steps);
-            if reads_published(&filters[at], &selection.reads) {
-                return Err(at);
-            }
-            // A selector testing each candidate's related rows (ess/27, beyond10x/ess#551) selects
-            // its candidates by the rest of its `where:`, and the related rows are arranged after.
-            let tests = related_rows::tests(&filters[at]).map_err(|()| at)?;
-            let own = related_rows::stripped(&filters[at]);
-            let others: Vec<Predicate> = self
-                .selections
-                .iter()
-                .zip(&filters)
-                .enumerate()
-                .filter(|(other, (sibling, _))| {
-                    *other != at
-                        && sibling.entity == selection.entity
-                        && publishes(self.outcome, sibling)
-                })
-                .map(|(_, (_, filter))| related_rows::stripped(filter))
-                .collect();
-            let (under, subject) = self.owner(at);
-            let rows = arrange_rows(
-                ir,
-                &selection.entity,
-                &own,
-                &self.foralls[at],
-                (
-                    counts[at],
-                    violate.filter(|(of, _)| *of == at).map(|(_, index)| index),
-                ),
-                &self.copied[at],
-                Siblings {
-                    filters: &others,
-                    arranged: &arranged,
-                },
-                &mut Head {
-                    order_by: self.heads[at],
-                    gaps: &mut gaps,
-                    crowded: &self.crowded,
-                },
-                actors,
-                &mut taken,
-                (&steps, under, self.links[at].as_ref(), subject),
+        // The selectors an earlier attempt arranged for the same counts and refuted `forall`, from
+        // the first, left what they left then: what a selector arranges reads only what the
+        // selectors before it left, its own count and a `violate` naming it, and `before`,
+        // `supplied` and `actors` are the same for every attempt of this plan. The next attempt
+        // differs from the last in the counts of its later selectors only, so the earlier ones are
+        // not arranged again. The beside searches they cut count as cut again, as a search
+        // answered from memory counts them ([`super::made`]).
+        let key = |at: usize| {
+            (
+                counts[at],
+                violate.filter(|(of, _)| *of == at).map(|(_, index)| index),
             )
-            .ok_or(at)?;
-            for row in &rows {
-                steps.extend(row.steps.iter().cloned());
-            }
-            let related = if tests.is_empty() {
-                Vec::new()
-            } else {
-                let mut context = self.context(ir, supplied, actors, (&mut taken, &mut steps));
-                let related = related_rows::for_selected(
-                    &mut context,
-                    &tests,
-                    &selection.entity,
-                    &own,
-                    &rows,
-                )
-                .ok_or(at)?;
-                failing.push((at, tests, own));
-                related
-            };
-            arranged.extend(rows);
-            arranged.extend(related);
-            if let Some(order_by) = self.heads[at].filter(|_| counts[at] >= 2) {
-                if !selection.reads.is_empty() {
-                    let decoys = self.cross_decoys(
-                        ir,
-                        (at, order_by),
-                        supplied,
-                        (&filters[at], &others),
-                        actors,
-                        &mut taken,
-                        (&mut steps, &arranged),
-                        &mut gaps,
-                    );
-                    arranged.extend(decoys);
-                }
-            }
+        };
+        let mut levels = self.levels.borrow_mut();
+        let kept = levels
+            .iter()
+            .enumerate()
+            .take_while(|(at, level)| level.key == key(*at))
+            .count();
+        levels.truncate(kept);
+        super::related_guard::add_cuts(levels.iter().map(|level| level.cuts).sum());
+        let mut left = match levels.last().map(|level| &level.left) {
+            Some(Err(at)) => return Err(*at),
+            Some(Ok(left)) => left.clone(),
+            None => Left {
+                steps: before.to_vec(),
+                taken: captured(before),
+                arranged: Vec::new(),
+                gaps: Vec::new(),
+                failing: Vec::new(),
+            },
+        };
+        for at in kept..self.selections.len() {
+            SELECTORS.with(|count| count.set(count.get() + 1));
+            let cut = super::related_guard::cuts();
+            let made =
+                self.arrange_selector(ir, at, (counts, violate), actors, supplied, &mut left);
+            levels.push(Level {
+                key: key(at),
+                left: made.map(|()| left.clone()),
+                cuts: super::related_guard::cuts().saturating_sub(cut),
+            });
+            made?;
         }
+        drop(levels);
+        let Left {
+            mut steps,
+            mut taken,
+            mut arranged,
+            mut gaps,
+            failing,
+        } = left;
         // Last, so that no row arranged for another selector makes it pass: one candidate per test
         // failing it, above the head where the branch reads one.
         for (at, tests, own) in failing {
@@ -2865,6 +2847,109 @@ impl<'p> Plan<'p> {
             arranged.extend(made);
         }
         Ok((steps, arranged, gaps))
+    }
+
+    /// Selector `at`'s rows arranged after what `left` holds, as [`Self::arrange`] arranges them,
+    /// and added to it; the selector's index where they cannot be arranged.
+    fn arrange_selector(
+        &self,
+        ir: &EssIr,
+        at: usize,
+        (counts, violate): (&[usize], Option<(usize, usize)>),
+        actors: &BTreeMap<QualifiedName, ActorRef>,
+        supplied: &BTreeMap<String, ScenarioValue>,
+        left: &mut Left,
+    ) -> Result<(), usize> {
+        let Left {
+            steps,
+            taken,
+            arranged,
+            gaps,
+            failing,
+        } = left;
+        let selection = self.selections[at];
+        // A selector reading values this branch does not publish is another branch's to read.
+        if !publishes(self.outcome, selection) {
+            return Ok(());
+        }
+        // Its published operands, as the rows arranged so far supply them (ess/27,
+        // beyond10x/ess#549): the selectors supplying them come first.
+        let filters = self.resolved(ir, supplied, steps);
+        if reads_published(&filters[at], &selection.reads) {
+            return Err(at);
+        }
+        // A selector testing each candidate's related rows (ess/27, beyond10x/ess#551) selects
+        // its candidates by the rest of its `where:`, and the related rows are arranged after.
+        let tests = related_rows::tests(&filters[at]).map_err(|()| at)?;
+        let own = related_rows::stripped(&filters[at]);
+        let others: Vec<Predicate> = self
+            .selections
+            .iter()
+            .zip(&filters)
+            .enumerate()
+            .filter(|(other, (sibling, _))| {
+                *other != at
+                    && sibling.entity == selection.entity
+                    && publishes(self.outcome, sibling)
+            })
+            .map(|(_, (_, filter))| related_rows::stripped(filter))
+            .collect();
+        let (under, subject) = self.owner(at);
+        let rows = arrange_rows(
+            ir,
+            &selection.entity,
+            &own,
+            &self.foralls[at],
+            (
+                counts[at],
+                violate.filter(|(of, _)| *of == at).map(|(_, index)| index),
+            ),
+            &self.copied[at],
+            Siblings {
+                filters: &others,
+                arranged: &*arranged,
+            },
+            &mut Head {
+                order_by: self.heads[at],
+                gaps: &mut *gaps,
+                crowded: &self.crowded,
+            },
+            actors,
+            &mut *taken,
+            (&*steps, under, self.links[at].as_ref(), subject),
+        )
+        .ok_or(at)?;
+        for row in &rows {
+            steps.extend(row.steps.iter().cloned());
+        }
+        let related = if tests.is_empty() {
+            Vec::new()
+        } else {
+            let mut context = self.context(ir, supplied, actors, (&mut *taken, &mut *steps));
+            let related =
+                related_rows::for_selected(&mut context, &tests, &selection.entity, &own, &rows)
+                    .ok_or(at)?;
+            failing.push((at, tests, own));
+            related
+        };
+        arranged.extend(rows);
+        arranged.extend(related);
+        if let Some(order_by) = self.heads[at].filter(|_| counts[at] >= 2) {
+            if !selection.reads.is_empty() {
+                let decoys = self.cross_decoys(
+                    ir,
+                    (at, order_by),
+                    supplied,
+                    (&filters[at], &others),
+                    actors,
+                    &mut *taken,
+                    (&mut *steps, &*arranged),
+                    &mut *gaps,
+                );
+                arranged.extend(decoys);
+            }
+        }
+        Ok(())
     }
 
     /// What arranging related rows for this branch reads (ess/27, beyond10x/ess#551).
@@ -3230,12 +3315,34 @@ pub(super) type Prepared = (Setup, BTreeMap<String, Node>, Vec<RefusalCause>);
 /// Where that fails too, a refusal for want of an arrangement names the creator's guard that
 /// refused instead: the one refusing a missing row where no such row could be arranged, and
 /// otherwise the ones over its stored fields that the arranged row does not refute.
-pub(super) fn prepare(
-    models: &super::caller::InvocationModels<'_>,
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
+///
+/// Prepared once per model, branch, actors and context while the model is remembered, and shared
+/// by every later request ([`super::prepare_memo`]).
+pub(super) fn prepare(preparing: &Preparing<'_>) -> super::prepare_memo::Shared {
+    super::prepare_memo::prepare(preparing, || prepared(preparing))
+}
+
+/// What [`prepare`] reads: the model it arranges on, the branch and the actors. Every request
+/// names the arrangement model only, the one model of
+/// [`InvocationModels`](super::caller::InvocationModels) a preparation reads; a field added here
+/// is a part of the memory's key ([`super::prepare_memo`]).
+pub(super) struct Preparing<'p> {
+    pub(super) arrangement: &'p EssIr,
+    pub(super) command: &'p ResolvedCommand,
+    pub(super) outcome: &'p ResolvedOutcome,
+    pub(super) actors: &'p BTreeMap<QualifiedName, ActorRef>,
+}
+
+/// [`prepare`], made afresh.
+fn prepared(
+    &Preparing {
+        arrangement,
+        command,
+        outcome,
+        actors,
+    }: &Preparing<'_>,
 ) -> Result<Prepared, RefusalCause> {
+    let models = &super::caller::InvocationModels::plain(arrangement);
     // Beside rows the input names (ess/32, beyond10x/ess#554) the rows are created naming those
     // rows first, so a refusal over them is witnessed beside rows the row set selects wherever
     // the precedence order lets them stand.
@@ -5057,4 +5164,28 @@ pub(super) fn taken_tried() -> u64 {
 /// Adds `more` to the count of [`TRIED`] on this thread.
 pub(super) fn add_tried(more: u64) {
     TRIED.with(|it| it.set(it.get() + more));
+}
+
+thread_local! {
+    /// How many selectors [`Plan::arrange`] has arranged on this thread, rather than taken from what
+    /// an earlier attempt of the same branch arranged for the same counts.
+    static SELECTORS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many selectors [`Plan::arrange`] arranged on this thread while it
+/// ran, rather than taking them from what an earlier attempt arranged.
+pub(super) fn selectors_counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = SELECTORS.with(std::cell::Cell::get);
+    let out = run();
+    (out, SELECTORS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`SELECTORS`] on this thread.
+pub(super) fn taken_selectors() -> u64 {
+    SELECTORS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`SELECTORS`] on this thread.
+pub(super) fn add_selectors(more: u64) {
+    SELECTORS.with(|it| it.set(it.get() + more));
 }

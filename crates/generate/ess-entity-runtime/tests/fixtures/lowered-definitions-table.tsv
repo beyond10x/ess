@@ -1,4 +1,4 @@
-#	models=489	lines=670
+#	models=491	lines=674
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -111,10 +111,14 @@ crates/specify/ess-http/tests/fixtures/board.yaml	components=1
 crates/specify/ess-http/tests/fixtures/board.yaml	board-service	REFUSED	25221d0c0e8281a61d8601a45525222d7cabb462afee62cfded50726800be425:1058
 crates/specify/ess-http/tests/fixtures/catalog.yaml	components=1
 crates/specify/ess-http/tests/fixtures/catalog.yaml	items-service	REFUSED	734b68eeaf4515a0f0d77fded5286b8ae5996506adfce054b60302b66ce2a3f2:346
+crates/specify/ess-http/tests/fixtures/imports.yaml	components=1
+crates/specify/ess-http/tests/fixtures/imports.yaml	imports	REFUSED	e87df8266049548c2e79b47d4947b82882e29782bf1ffb6bf5868b4db3108e3e:1391
 crates/specify/ess-http/tests/fixtures/notes.yaml	components=1
 crates/specify/ess-http/tests/fixtures/notes.yaml	notes-service	REFUSED	bd51861fb27f21797e44878ca4388d9b040687e5df037d3ec52fcd75a3a45a2c:648
 crates/specify/ess-http/tests/fixtures/orders.yaml	components=1
 crates/specify/ess-http/tests/fixtures/orders.yaml	orders-service	REFUSED	6c23ef3d644c6df120455d5300c571da61bd0329294b8a5880c0216f35ed2431:346
+crates/specify/ess-http/tests/fixtures/reports.yaml	components=1
+crates/specify/ess-http/tests/fixtures/reports.yaml	reports	REFUSED	6b64ba127cc511333df78da04bae400b0b5403a95878b9d6382909ccb812dead:342
 crates/specify/ess-http/tests/fixtures/tasks.yaml	components=1
 crates/specify/ess-http/tests/fixtures/tasks.yaml	tasks-service	REFUSED	5736df7b175793f25e5270c290dcb9b75c580b37c060f1f5f9f00ae676cb3f72:690
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE

@@ -497,6 +497,39 @@ fn expect(
     Ok(())
 }
 
+/// What `path`, a filter path reading `member` through `reference`, reads of a referenced row
+/// holding `value` there: bound at the member's declared type, as a row's own fields are bound, so a
+/// `Boolean` is a boolean and not its spelling, and every conjunct of a filter through one
+/// reference is decided on what the row holds (beyond10x/ess#564). A member with no declared field,
+/// `state`, keeps its scalar reading.
+fn typed_fact(
+    ir: &EssIr,
+    reference: &ResolvedViewReference,
+    path: &FactPath,
+    member: &str,
+    value: &Node,
+) -> Vec<(FactPath, FactValue)> {
+    let declared = ir.entity(&reference.entity).observable_fields();
+    let one = BTreeMap::from([(member.to_owned(), value.clone())]);
+    if let Ok(bound) = crate::input::bind(ir, &declared, &one, crate::input::Completeness::Partial)
+    {
+        let typed: Vec<(FactPath, FactValue)> = bound
+            .iter()
+            .filter_map(|(read, fact)| {
+                FactPath::new(format!("{}.{read}", reference.via))
+                    .ok()
+                    .map(|read| (read, fact.clone()))
+            })
+            .collect();
+        if !typed.is_empty() {
+            return typed;
+        }
+    }
+    super::fact_value(value)
+        .map(|fact| vec![(path.clone(), fact)])
+        .unwrap_or_default()
+}
+
 /// Whether `view`'s filter shows `pointed`'s row: read over the row's state, what its arrangement
 /// determined, and what its referenced row holds; a path through an absent reference reads nothing,
 /// and a filter left unknown by that alone shows no row.
@@ -521,9 +554,7 @@ fn shows(
             continue;
         };
         if let Some(ScenarioValue::Literal { value }) = held(ir, &reference.entity, far, &member) {
-            if let Some(fact) = super::fact_value(&value) {
-                navigated.push((path.clone(), fact));
-            }
+            navigated.extend(typed_fact(ir, reference, path, &member, &value));
         }
     }
     match super::row_truth_with(

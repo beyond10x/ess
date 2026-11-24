@@ -204,6 +204,7 @@ mod model_memo;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
+mod prepare_memo;
 mod provided;
 mod reference_integrity;
 mod referenced_input;
@@ -3430,6 +3431,15 @@ pub fn row_set_arrangements_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
     row_set::counting(run)
 }
 
+/// What `run` returns, and how many selectors the row-set strategy arranged rows for while it ran,
+/// on every thread the synthesis used, rather than taking them from the attempt before, which
+/// arranged the same counts for them: the work a test bounds where a wall-clock bound would depend
+/// on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_selectors_arranged<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    row_set::selectors_counting(run)
+}
+
 /// What `run` returns, and how many times a creating branch's rows were arranged on this thread
 /// while it ran rather than answered from what the synthesis made before: the work a test bounds
 /// where a wall-clock bound would depend on the machine (beyond10x/ess#633). Not part of the suite.
@@ -3607,6 +3617,33 @@ pub fn wrapped_runs_made<R>(run: impl FnOnce() -> R) -> (R, u64, u64) {
 #[doc(hidden)]
 pub fn wrapped_runs_unkept<R>(run: impl FnOnce() -> R) -> R {
     run_memo::unkept(run)
+}
+
+/// The preparations of row-set branches a run asked for on one thread ([`row_set_preparations`]).
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Preparations {
+    /// How many preparations were asked for.
+    pub asked: u64,
+    /// How many of them were made rather than answered from memory.
+    pub made: u64,
+    /// The distinct keys of the ones made: what each read, `|`-separated.
+    pub keys: BTreeSet<String>,
+}
+
+/// What `run` returns, and the preparations of row-set branches it asked for on this thread: the
+/// work a test bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_preparations<R>(run: impl FnOnce() -> R) -> (R, Preparations) {
+    let (out, asked, made, keys) = prepare_memo::counting(run);
+    (out, Preparations { asked, made, keys })
+}
+
+/// What `run` returns with every preparation of a row-set branch made afresh, for a test comparing
+/// the suite with the one made from memory. Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_preparations_unkept<R>(run: impl FnOnce() -> R) -> R {
+    prepare_memo::unkept(run)
 }
 
 /// What `run` returns, and how many stored fields of arranged rows were bound to facts on this
@@ -3896,6 +3933,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _orderings = crate::now_offset::remember(ir);
     let _kept = model_memo::keep(ir);
     let _created = created_memo::remember(ir);
+    let _prepared = prepare_memo::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
@@ -4739,6 +4777,7 @@ fn outcome_scenario_noting(
     let format = models.arrangement.format();
     if row_set::routes(format, command, outcome) && !row_set::beside_named(format, command, outcome)
     {
+        steps.extend(complement_sends(models, command, outcome, actors, &run));
         return Some((
             id,
             ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -4766,6 +4805,11 @@ fn outcome_scenario_noting(
             source.extend(depends);
         }
     }
+    // beyond10x/ess#554: forced once more beside each row a sibling refusal requiring a selected
+    // row arranges, so a target reading that row first fails.
+    let (more, depends) = before_row_beside_related(models, command, outcome, actors);
+    steps.extend(more);
+    source.extend(depends);
     // ess/25 (#534): step 2 is read in declaration order, so the external refusal is forced once
     // more for each input refusal declared after it, on an input that refusal's guard selects: a
     // target asking the provider only after every input refusal answers the later refusal there.
@@ -5779,14 +5823,21 @@ fn run_as(
             return Err(row_set::unarranged());
         }
         let beside_named = row_set::beside_named(ir.format(), command, outcome);
-        match row_set::prepare(models, command, outcome, actors) {
+        let prepared = row_set::prepare(&row_set::Preparing {
+            arrangement: models.arrangement,
+            command,
+            outcome,
+            actors,
+        });
+        match &*prepared {
             Ok((setup, input, gaps)) => {
+                // The preparation is shared: this family arranges on its own copy.
                 let (mut setup, input) =
-                    beside_addressed_row(ir, command, outcome, actors, &input, setup)?;
+                    beside_addressed_row(ir, command, outcome, actors, input, setup.clone())?;
                 if beside_named {
                     row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
                 }
-                row_gaps = gaps;
+                row_gaps.clone_from(gaps);
                 (setup, input)
             }
             // A refusal carrying a `when:` beside its named row that no send beside the row set
@@ -5809,7 +5860,7 @@ fn run_as(
                     None,
                 )?
             }
-            Err(refused) => return Err(refused),
+            Err(refused) => return Err(refused.clone()),
         }
     } else if related {
         match witness {
@@ -8020,6 +8071,9 @@ fn replay_condition(
 /// instance to arrange — the new row is the scenario's own doing — but it may still have an
 /// **owner** to arrange, because a row of an owned entity cannot exist without the row it belongs
 /// to. See [`arrange_owner`].
+///
+/// `Clone`, so a caller of a shared preparation ([`row_set::prepare`]) arranges on its own copy.
+#[derive(Clone)]
 struct Setup {
     /// The steps that bring the instance into the state the branch needs.
     steps: Vec<ScenarioStep>,
@@ -9210,21 +9264,22 @@ fn with_listed(
 /// of `widget-2` was sent as a generated placeholder, and an implementation needing a member the
 /// example carries refused a create the specification says how to build.
 ///
-/// An input takes the plain instance's value where all of these hold, and keeps its own
-/// otherwise:
+/// An input takes the plain instance's value, leaf by leaf, where all of these hold, and keeps its
+/// own otherwise:
 ///
 /// - it declares an `example:` and no fixture input;
-/// - it is not the creating branch's identity input, and no branch decision of the creating
-///   command reads it: an input guard, an `input.` operand of a guard over stored rows, a related
-///   row's reference ([`decision_inputs`]);
+/// - it is not the creating branch's identity input, and no stored-row guard's `input.` operand
+///   or related row's reference reads it ([`decision_inputs`]);
 /// - it was sent as the further instance's own witness, not a value a scenario arranged;
-/// - no field the branch copies it into is the identity, read by a view over the entity (filter,
-///   order, grouping, aggregate input, computed field or reference), where further rows are told
-///   apart, ranked or counted, or read by any command's branch decision over a stored row of the
-///   entity (a uniqueness check's row selection, a related-row or subject predicate,
-///   [`decided_by`]): a search may have chosen that value to take or pass over such a branch, and
-///   the plain value could take the other side;
-/// - the plain value keeps the branch ([`keeps_branch`]).
+/// - a leaf an input guard reads by value keeps the further witness's value; one it reads only
+///   through `defined(…)` takes the example's (beyond10x/ess#736 widened per leaf);
+/// - a leaf the branch copies into a field that is the identity, read by a view over the entity
+///   (filter, order, grouping, aggregate input, computed field or reference), where further rows
+///   are told apart, ranked or counted, or read by any command's branch decision over a stored row
+///   of the entity (a uniqueness check's row selection, a related-row or subject predicate,
+///   [`decided_by`]) keeps the further witness's value: a search may have chosen that value to
+///   take or pass over such a branch, and the plain value could take the other side;
+/// - the value so made keeps the branch ([`keeps_branch`]).
 ///
 /// What the branch's `sets:` leave is read again from the input sent.
 fn exampled(
@@ -9258,20 +9313,30 @@ fn exampled(
         return;
     };
     let identity = existence::identity_input(creator.outcome);
-    let mut guarded: BTreeSet<&str> = input_guards(command)
+    // The leaves a decision tells apart: an input guard reading one by value, and a field the
+    // branch copies one into that something reads ([`told_apart`]); a stored-row guard's input
+    // operand or a related row's reference reads the whole input ([`decision_inputs`]).
+    let mut kept: Vec<String> = input_guards(command)
         .into_iter()
-        .flat_map(Predicate::fact_paths)
-        .map(FactPath::namespace)
+        .flat_map(read_by_value)
+        .map(guard_input_path)
         .collect();
-    guarded.extend(decision_inputs(command));
-    let told = told_apart(ir, entity, creator.outcome);
+    kept.extend(told_apart(ir, entity, creator.outcome));
+    let decided = decision_inputs(command);
     let mut swapped: BTreeSet<&str> = BTreeSet::new();
     for field in command.examples.keys() {
         let field = field.as_str();
+        let under = |leaf: &&String| {
+            leaf.as_str() == field
+                || leaf
+                    .strip_prefix(field)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        let leaves: Vec<&String> = kept.iter().filter(under).collect();
         if command.fixture_inputs.contains_key(field)
             || identity == Some(field)
-            || guarded.contains(field)
-            || told.contains(field)
+            || decided.contains(field)
+            || leaves.iter().any(|leaf| leaf.as_str() == field)
         {
             continue;
         }
@@ -9283,6 +9348,18 @@ fn exampled(
         {
             continue;
         }
+        // The example, with each leaf a decision tells apart kept as the further witness has it.
+        let mut mixed = BTreeMap::from([(field.to_owned(), example.clone())]);
+        for leaf in &leaves {
+            set_at(
+                &mut mixed,
+                leaf,
+                ess_compiler::ir::read_input(&own, leaf).cloned(),
+            );
+        }
+        let Some(value) = mixed.remove(field).filter(|value| value != placeholder) else {
+            continue;
+        };
         let literals: BTreeMap<String, Node> = input
             .iter()
             .filter_map(|(name, value)| match value {
@@ -9290,10 +9367,10 @@ fn exampled(
                 _ => None,
             })
             .collect();
-        if !keeps_branch(ir, command, &literals, field, example) {
+        if !keeps_branch(ir, command, &literals, field, &value) {
             continue;
         }
-        input.insert(field.to_owned(), ScenarioValue::literal(example.clone()));
+        input.insert(field.to_owned(), ScenarioValue::literal(value));
         swapped.insert(field);
     }
     if swapped.is_empty() {
@@ -9318,15 +9395,11 @@ fn exampled(
     }
 }
 
-/// The inputs a creating branch copies into a field that tells its rows apart: the identity, a
-/// field a view over `entity` reads in its filter, order, grouping, aggregate input, computed
-/// fields or references, or a field some command's branch decision reads of a stored row
-/// ([`decided_by`]).
-fn told_apart<'o>(
-    ir: &EssIr,
-    entity: &EntityHandle,
-    outcome: &'o ResolvedOutcome,
-) -> BTreeSet<&'o str> {
+/// The input paths a creating branch copies into a field that tells its rows apart, dotted from
+/// the input field (`layout.style`, or `layout` for the whole input): the identity, a field a view
+/// over `entity` reads in its filter, order, grouping, aggregate input, computed fields or
+/// references, or a field some command's branch decision reads of a stored row ([`decided_by`]).
+fn told_apart(ir: &EssIr, entity: &EntityHandle, outcome: &ResolvedOutcome) -> BTreeSet<String> {
     let identity = &ir.entity(entity).identity.name;
     let views: Vec<&ResolvedView> = ir
         .views()
@@ -9371,16 +9444,21 @@ fn told_apart<'o>(
     told
 }
 
-/// Each input a `sets:` value reads, by its root field: copied, defaulted, computed or carried in
-/// a member of a struct.
-fn inputs_read<'o>(value: &'o ResolvedPayloadValue, found: &mut BTreeSet<&'o str>) {
+/// Each input path a `sets:` value reads, dotted from the input field: copied, defaulted,
+/// computed or carried in a member of a struct.
+fn inputs_read(value: &ResolvedPayloadValue, found: &mut BTreeSet<String>) {
     match value {
         ResolvedPayloadValue::InputField { field, .. }
         | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
-            found.insert(field.split('.').next().unwrap_or(field));
+            found.insert(field.clone());
         }
         ResolvedPayloadValue::Expression { expr, .. } => {
-            found.extend(expr.reads().into_iter().filter_map(input_root));
+            found.extend(
+                expr.reads()
+                    .into_iter()
+                    .filter(|path| input_root(path).is_some())
+                    .map(guard_input_path),
+            );
         }
         ResolvedPayloadValue::Struct { fields } => {
             for field in fields {
@@ -9399,6 +9477,90 @@ fn input_root(path: &FactPath) -> Option<&str> {
         }
         _ => None,
     }
+}
+
+/// The paths a guard reads by value: every fact path but those it reads only through
+/// `defined(…)`, which a value with the leaf present decides as any other such value does.
+fn read_by_value(predicate: &Predicate) -> Vec<&FactPath> {
+    match predicate {
+        Predicate::Defined(_) => Vec::new(),
+        Predicate::All(children) | Predicate::Any(children) => {
+            children.iter().flat_map(read_by_value).collect()
+        }
+        Predicate::Not(inner) => read_by_value(inner),
+        other => other.fact_paths(),
+    }
+}
+
+/// The input path a guard's fact path reads, dotted from the input field (`layout.note`), with or
+/// without the `input.` namespace written before it.
+fn guard_input_path(path: &FactPath) -> String {
+    match path.segments() {
+        [root, rest @ ..]
+            if root == ess_domain::command::subject_fact::INPUT_NAMESPACE && !rest.is_empty() =>
+        {
+            rest.join(".")
+        }
+        segments => segments.join("."),
+    }
+}
+
+/// The values the input field `field` may move to where it holds the `example:` its input
+/// declares and must differ from what a row holds: first the members the example leaves out
+/// moved, then one member of the example (a scalar before a newtype, never a list or a mapping, in
+/// declaration order), then `further` whole, as before. A field without an example, or one that
+/// is no mapping, moves to `further` alone.
+pub(super) fn fewest_moved(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    field: &str,
+    further: &Node,
+) -> Vec<Node> {
+    let whole = vec![further.clone()];
+    let (Some(Node::Map(example)), Some(Node::Map(sent)), Node::Map(moved)) =
+        (command.examples.get(field), input.get(field), further)
+    else {
+        return whole;
+    };
+    let mut out = Vec::new();
+    let mut unexampled = sent.clone();
+    for name in sent.keys().filter(|name| !example.contains_key(*name)) {
+        if let Some(value) = moved.get(name) {
+            unexampled.insert(name.clone(), value.clone());
+        }
+    }
+    if unexampled != *sent {
+        out.push(Node::Map(unexampled));
+    } else if let Some(members) =
+        input_type(ir, command, field).and_then(|type_ref| struct_members(ir, type_ref))
+    {
+        let rank = |member: &ess_compiler::ir::ResolvedField| match member.type_ref.required() {
+            ResolvedTypeRef::Primitive { .. } => Some(0),
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { .. } => Some(1),
+                _ => None,
+            },
+            _ => None,
+        };
+        let mut ranked: Vec<(usize, &ess_compiler::ir::ResolvedField)> = members
+            .iter()
+            .filter_map(|member| rank(member).map(|rank| (rank, member)))
+            .collect();
+        ranked.sort_by_key(|(rank, _)| *rank);
+        for (_, member) in ranked {
+            let (Some(from), Some(to)) = (sent.get(&member.name), moved.get(&member.name)) else {
+                continue;
+            };
+            if from != to {
+                let mut one = sent.clone();
+                one.insert(member.name.clone(), to.clone());
+                out.push(Node::Map(one));
+            }
+        }
+    }
+    out.extend(whole);
+    out
 }
 
 /// Every guard over stored rows that decides a branch of `command`, with the entity whose stored
@@ -13339,6 +13501,92 @@ fn arranged_as(
     }
 }
 
+/// The further invocations of an external refusal answered before the row (`before_row: true`,
+/// ess/25) beside a present related row (beyond10x/ess#554): for each sibling refusal requiring a
+/// selected row (`when_related: {entity, where, exists: true}`), that refusal's own arrangement, the
+/// provider forced, and its input sent, requiring the external refusal and its error. A target that
+/// reads the row before it asks the provider answers the sibling and fails. A command with no such
+/// sibling keeps its suite's bytes.
+fn before_row_beside_related(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let ir = models.arrangement;
+    let mut out = (Vec::new(), BTreeSet::new());
+    if !outcome.before_row
+        || outcome.error.is_none()
+        || outcome.test_strategy != TestStrategy::InjectFault
+    {
+        return out;
+    }
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    for sibling in command.outcomes.iter().filter(|sibling| {
+        sibling.error.is_some()
+            && matches!(
+                sibling.condition,
+                ResolvedCondition::RelatedSet {
+                    test: ess_compiler::ir::ResolvedRowSetTest::Exists(true),
+                    input: None,
+                    ..
+                }
+            )
+    }) {
+        let prepared = row_set::prepare(&row_set::Preparing {
+            arrangement: models.arrangement,
+            command,
+            outcome: sibling,
+            actors,
+        });
+        let Ok((setup, input, _)) = &*prepared else {
+            continue;
+        };
+        // The preparation is shared: these steps are marked on their own copy.
+        let mut setup = setup.clone();
+        if !reaches_before_row(ir, command, outcome, input, None).unwrap_or(false) {
+            continue;
+        }
+        let supplied: BTreeMap<String, ScenarioValue> = input
+            .iter()
+            .map(|(field, value)| {
+                let sent = setup.bound.get(field).map_or_else(
+                    || ScenarioValue::literal(value.clone()),
+                    |instance| ScenarioValue::instance(instance.clone()),
+                );
+                (field.clone(), sent)
+            })
+            .collect();
+        let expected = outcome
+            .error
+            .as_ref()
+            .map(|error| expect_error(ir, outcome, error, &supplied, &BTreeMap::new()));
+        let mut act = vec![
+            ScenarioStep::ConfigureExternalOutcome {
+                force: outcome_ref.clone(),
+                times: None,
+            },
+            ScenarioStep::ExecuteCommand {
+                caller: BTreeMap::new(),
+                command: command_ref.clone(),
+                actor: actors.get(&command.name).cloned(),
+                input: supplied,
+            },
+            ScenarioStep::ExpectOutcome {
+                outcome: outcome_ref.clone(),
+            },
+        ];
+        act.extend(expected);
+        models.mark(caller::InvocationPhase::Arrange, &mut setup.steps);
+        models.mark(caller::InvocationPhase::Act, &mut act);
+        out.0.extend(setup.steps);
+        out.0.extend(act);
+        out.1.extend(setup.source);
+    }
+    out
+}
+
 /// The input field an external refusal answered before the row (`before_row: true`, ess/25,
 /// beyond10x/ess#534) names the addressed row through: the field the first sibling acting on a
 /// supplied instance takes it from. `None` where no branch of the command addresses one.
@@ -14692,27 +14940,30 @@ fn freshened(
         if already.is_none() || ess_compiler::ir::read_input(&input, field) != already.as_ref() {
             continue;
         }
-        for nth in 1..=FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+        'witnesses: for nth in 1..=FRESH_WITNESSES {
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|further| ess_compiler::ir::read_input(&further, field).cloned())
             else {
                 continue;
             };
-            if Some(&moved) == already.as_ref() || equals_a_sibling(command, &input, field, &moved)
-            {
-                continue;
-            }
-            let mut next = input.clone();
-            if !set_at(&mut next, field, Some(moved)) {
-                continue;
-            }
-            if admitted(ir, command, &next)
-                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
-            {
-                input = next;
-                break;
+            for moved in fewest_moved(ir, command, &input, field, &further) {
+                if Some(&moved) == already.as_ref()
+                    || equals_a_sibling(command, &input, field, &moved)
+                {
+                    continue;
+                }
+                let mut next = input.clone();
+                if !set_at(&mut next, field, Some(moved)) {
+                    continue;
+                }
+                if admitted(ir, command, &next)
+                    && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+                {
+                    input = next;
+                    break 'witnesses;
+                }
             }
         }
     }
@@ -14853,24 +15104,27 @@ fn unread_apart(
         {
             continue;
         }
-        for nth in 1..=FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+        'witnesses: for nth in 1..=FRESH_WITNESSES {
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|mut further| further.remove(&field.name))
             else {
                 continue;
             };
-            if stored.contains(&moved) || equals_a_sibling(command, &input, &field.name, &moved) {
-                continue;
-            }
-            let mut next = input.clone();
-            next.insert(field.name.clone(), moved);
-            if admitted(ir, command, &next)
-                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
-            {
-                input = next;
-                break;
+            for moved in fewest_moved(ir, command, &input, &field.name, &further) {
+                if stored.contains(&moved) || equals_a_sibling(command, &input, &field.name, &moved)
+                {
+                    continue;
+                }
+                let mut next = input.clone();
+                next.insert(field.name.clone(), moved);
+                if admitted(ir, command, &next)
+                    && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+                {
+                    input = next;
+                    break 'witnesses;
+                }
             }
         }
     }
@@ -15083,26 +15337,28 @@ fn moved_apart(
 ) -> Option<BTreeMap<String, Node>> {
     for moving in moving {
         for nth in 1..=FRESH_WITNESSES {
-            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+            let Some(further) = candidates(ir, command, &[], Distinction::further(nth))
                 .ok()
                 .and_then(|inputs| inputs.into_iter().next())
                 .and_then(|mut further| further.remove(moving))
             else {
                 continue;
             };
-            if input.get(moving) == Some(&moved) {
-                continue;
-            }
-            let mut next = input.clone();
-            next.insert(moving.to_owned(), moved);
-            if pinned
-                .iter()
-                .any(|(first, second)| next.get(*first) == next.get(*second))
-            {
-                continue;
-            }
-            if admitted(ir, command, &next) && keeps(&next) {
-                return Some(next);
+            for moved in fewest_moved(ir, command, input, moving, &further) {
+                if input.get(moving) == Some(&moved) {
+                    continue;
+                }
+                let mut next = input.clone();
+                next.insert(moving.to_owned(), moved);
+                if pinned
+                    .iter()
+                    .any(|(first, second)| next.get(*first) == next.get(*second))
+                {
+                    continue;
+                }
+                if admitted(ir, command, &next) && keeps(&next) {
+                    return Some(next);
+                }
             }
         }
     }
@@ -17900,6 +18156,16 @@ fn unknown_reached<'c>(
             Err(cause) => last = Some(cause),
         }
     }
+    // Where no acting branch is reached so, and each is selected by stored fields of the addressed
+    // row: the input alone decides, since that row's existence answers before any stored field is
+    // read (beyond10x/ess#554).
+    if reached.is_none() && subject_fact::uses(command) && !related_guard::uses(command) {
+        reached = acting.iter().find_map(|outcome| {
+            subject_fact::unknown_input(ir, command, outcome)
+                .ok()
+                .map(|input| (*outcome, input))
+        });
+    }
     reached.ok_or_else(|| {
         last.unwrap_or(RefusalCause::StrategyWithoutGuard {
             strategy: declared.test_strategy,
@@ -20066,6 +20332,126 @@ fn boundary_inputs(
             }
         }
         _ => {}
+    }
+    rows
+}
+
+/// The further invocations of a row-set refusal's own scenario at [`complement_rows`]: each sends
+/// the scenario's input with the sibling's guard satisfied, on the rows the scenario arranged, and
+/// requires the refusal and its error. A field the scenario sends as an arranged instance keeps it.
+fn complement_sends(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    run: &Run,
+) -> Vec<ScenarioStep> {
+    let ir = models.arrangement;
+    let primary: BTreeMap<String, Node> = run
+        .input
+        .iter()
+        .filter_map(|(field, value)| Some((field.clone(), value.as_literal()?.clone())))
+        .collect();
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let mut steps = Vec::new();
+    for row in complement_rows(ir, command, outcome, &primary) {
+        if row == primary || !admitted(ir, command, &row) {
+            continue;
+        }
+        let mut supplied = run.input.clone();
+        for (field, value) in &row {
+            let moved = match run.input.get(field) {
+                None => true,
+                Some(sent) => sent.as_literal().is_some_and(|sent| sent != value),
+            };
+            if moved {
+                supplied.insert(field.clone(), ScenarioValue::literal(value.clone()));
+            }
+        }
+        for field in primary.keys().filter(|field| !row.contains_key(*field)) {
+            supplied.remove(field);
+        }
+        let expected = outcome
+            .error
+            .as_ref()
+            .map(|error| expect_error(ir, outcome, error, &supplied, &BTreeMap::new()));
+        steps.push(ScenarioStep::ExecuteCommand {
+            caller: BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied,
+        });
+        steps.push(ScenarioStep::ExpectOutcome {
+            outcome: outcome_ref.clone(),
+        });
+        steps.extend(expected);
+    }
+    models.mark(caller::InvocationPhase::Act, &mut steps);
+    steps
+}
+
+/// The inputs a refusal requiring some selected row (`when_related: {entity, where, exists: true}`)
+/// is sent again at, one per sibling refusal narrowed to the rows it does not take: a sibling
+/// testing `exists: false` over the same entity and `where:` beside a `when:` guard
+/// (beyond10x/ess#554). Each satisfies the sibling's guard and keeps every input the selection
+/// reads as `primary` sends it, so the row the scenario arranged is still selected and the refusal
+/// declared first still answers; a target that reads the guard before the row answers the sibling
+/// and fails. A sibling without that narrowing adds nothing: the order rule refuses it below the
+/// refusal wherever the two hold together.
+fn complement_rows(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    primary: &BTreeMap<String, Node>,
+) -> Vec<BTreeMap<String, Node>> {
+    let ResolvedCondition::RelatedSet {
+        selection,
+        test: ess_compiler::ir::ResolvedRowSetTest::Exists(true),
+        input: None,
+    } = &outcome.condition
+    else {
+        return Vec::new();
+    };
+    if outcome.error.is_none() {
+        return Vec::new();
+    }
+    let read: Vec<&str> = selection
+        .filter
+        .fact_paths()
+        .into_iter()
+        .filter_map(|path| match path.segments() {
+            [root, field] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+                Some(field.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut rows = Vec::new();
+    for sibling in &command.outcomes {
+        let ResolvedCondition::RelatedSet {
+            selection: theirs,
+            test: ess_compiler::ir::ResolvedRowSetTest::Exists(false),
+            input: Some(guard),
+        } = &sibling.condition
+        else {
+            continue;
+        };
+        if sibling.error.is_none() || theirs != selection {
+            continue;
+        }
+        let Ok(found) = candidates(ir, command, &[guard], Distinction::PLAIN) else {
+            continue;
+        };
+        let sent = found.into_iter().find_map(|mut candidate| {
+            for field in &read {
+                set_at(&mut candidate, field, primary.get(*field).cloned());
+            }
+            let holds = flatten(ir, command, &candidate)
+                .is_ok_and(|facts| facts.decide(guard) == Decision::Satisfied);
+            holds.then_some(candidate)
+        });
+        rows.extend(sent);
     }
     rows
 }

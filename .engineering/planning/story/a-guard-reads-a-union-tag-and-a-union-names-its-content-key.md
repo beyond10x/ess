@@ -18,6 +18,7 @@ relations:
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -39,7 +40,7 @@ scope:
   path: docs/design/union-variant-guards-and-content-key.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:34:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:34:16Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
@@ -83,7 +84,11 @@ With `content: config` beside `tag: type`: ``domains/g.yaml: unknown field `cont
 This story writes the design and admits both in the source language. Synthesis, the targets and the
 projections follow in the stories named under Decisions.
 
+Format, 2026-11-24: `ess/37` shipped in 0.93.0 without this story, so `content:` and the union guard land in the one format of the union's wire layout together with the flat `layout:` of story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object (`ess/38`, X1 answered, D77); that story and story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares are derived from this family and add only the flat value of the encoding selector this story's design page records.
+
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - A design page `docs/design/union-variant-guards-and-content-key.md` exists, and grid O in
   `docs/design/language-grids.md` gains a union column (`==`, `!=`, `in`, `not in` over variant

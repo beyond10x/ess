@@ -18,6 +18,7 @@ relations:
 - decomposes: epic:adopter-gaps-domain-language
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -33,7 +34,7 @@ scope:
   path: docs/design/cross-record-and-stored-field-guards.md
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:44Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:46Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":1}}}
@@ -75,6 +76,8 @@ Decided by `architecture-decision-record:a-compound-key-is-a-uniqueness-constrai
 (accepted 2026-10-23): a compound key is first a uniqueness constraint beside a one-field identity.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - At the new source format, an entity may declare `unique: [account_id, app_id]` over stored
   fields, and `ess specify validate` exits 0. Each of these is refused by name: a name that is no
