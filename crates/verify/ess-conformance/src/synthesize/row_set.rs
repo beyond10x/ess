@@ -196,6 +196,79 @@ pub(super) fn beside_named(
         && super::related_guard::named_refusal(outcome)
 }
 
+/// The refusal that answers a second row of `entity` under one owner, where every creator filing a
+/// row under its owner through `via` declares, before its creating branch, one that refuses when a
+/// row of `entity` under the owner it names exists (`when_related: {entity, where: <via> ==
+/// input.<field>, exists: true}`, beyond10x/ess#795); the first creator's, `None` where a creator
+/// declares none.
+pub(super) fn answers_second(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    via: &str,
+) -> Option<ess_compiler::refs::OutcomeRef> {
+    let drivers = ir.drivers_of(entity);
+    let mut answers = drivers
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter_map(|driver| {
+            let field = driver
+                .outcome
+                .sets
+                .iter()
+                .find_map(|set| match &set.value {
+                    ResolvedPayloadValue::InputField { field, .. } if set.target == via => {
+                        Some(field)
+                    }
+                    _ => None,
+                })?;
+            Some((driver, field))
+        })
+        .map(|(driver, field)| {
+            driver
+                .command
+                .outcomes
+                .iter()
+                .take_while(|branch| branch.name != driver.outcome.name)
+                .find(|branch| {
+                    branch.error.is_some()
+                        && matches!(&branch.condition, ResolvedCondition::RelatedSet {
+                            selection,
+                            test: ess_compiler::ir::ResolvedRowSetTest::Exists(true),
+                            input: None,
+                        } if selection.entity == *entity && links(&selection.filter, via, field))
+                })
+                .map(|branch| {
+                    ess_compiler::refs::OutcomeRef::new(
+                        ess_compiler::refs::CommandRef::new(driver.command.name.clone()),
+                        branch.name.clone(),
+                    )
+                })
+        });
+    let first = answers.next()??;
+    answers.all(|answer| answer.is_some()).then_some(first)
+}
+
+/// Whether `filter` holds the conjunct `<via> == input.<field>`, either way round.
+fn links(filter: &Predicate, via: &str, field: &str) -> bool {
+    let mut conjuncts: Vec<&Predicate> = Vec::new();
+    conjoined(filter, &mut conjuncts);
+    conjuncts.into_iter().any(|conjunct| {
+        let Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq,
+            right: Operand::Fact(right),
+            ..
+        } = conjunct
+        else {
+            return false;
+        };
+        let pair = |row: &FactPath, sent: &FactPath| {
+            matches!(row.segments(), [named] if named == via) && input_field(sent) == Some(field)
+        };
+        pair(left, right) || pair(right, left)
+    })
+}
+
 /// The scenario [`prepare`] arranged for a [`beside_named`] refusal, with the overlaps the related
 /// row's own scenario sends first ([`super::related_guard::overlaps`]): the same input with another
 /// named row, or none, on which the precedence order still answers `outcome`. Kept only where the
