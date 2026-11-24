@@ -160,9 +160,13 @@ Two templates equal but for variable names are one route (`ESS-HTTP-010`).
 Each variable is mapped exactly once in `parameters`, and each mapping names a variable of the path.
 A command's mapped input field leaves the request body. A view's mapped parameter leaves the query
 string; its other parameters stay query parameters exactly as today (`openapi.rs:1770-1815`). A
-mapped source is a scalar a path segment can carry: `String`, `Integer`, an enum, or an unconstrained
-newtype of one of them. It is never `Optional`, `List`, a struct or `Json`, because a path segment is
-always present and holds one value.
+mapped source is a scalar a path segment can carry: `String`, `Integer`, `Boolean`, `Decimal`,
+`Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them
+(beyond10x/ess#755): every scalar with one text spelling, which the servers read as they read a
+`query` value. It is never `Optional`, `List`, a struct, a constrained newtype, `Bytes` (its base64
+text holds `/`), `Binary64` (no one text spelling of a JSON number) or `Json`, because a path
+segment is always present and holds one value. A segment its field's decoder refuses, such as
+`not-a-uuid` for a `Uuid`, is `malformed`.
 
 A view parameter that stays in the query string is named there by its flat `wire:`, as a command's
 field is: the OpenAPI `in: query` parameter, the Rust and Go servers' query readers and the `rows`
@@ -198,7 +202,7 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-006` | a method outside the closed set, or not admitted for that kind of operation | `routes[i].method`, the value, the kind |
 | `ESS-HTTP-007` | a path that breaks the template grammar | `routes[i].path` and the offending segment |
 | `ESS-HTTP-008` | a variable not mapped, mapped twice, reading a source another variable of the route already reads (a request path would give it two values), or a mapping for no variable | `routes[i].parameters.<name>`; for a source read twice, the second variable of the path that reads it |
-| `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry | `routes[i].parameters.<name>`, the source, its type |
+| `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry (any but `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them) | `routes[i].parameters.<name>`, the source, its type |
 | `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
 | `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates") | both operations, a path both match, and the segment where each holds its literal |
 | `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` | `routes[i].method`, `routes[i].path` or `routes[i].request.body`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |

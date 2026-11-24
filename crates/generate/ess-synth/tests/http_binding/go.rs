@@ -1768,3 +1768,6 @@ mod adversary_w089_u2_pass1;
 
 #[path = "wrapped_answers.rs"]
 mod wrapped_answers;
+
+#[path = "uuid_segments.rs"]
+mod uuid_segments;

@@ -1493,3 +1493,38 @@ fn a_binding_without_a_wrapped_form_keeps_its_document() {
         "array"
     );
 }
+
+/// An identity that is a `Uuid` addresses its resource in the path (beyond10x/ess#755): the path
+/// parameter is the field's schema, a reference to the newtype, which says `format: uuid`.
+#[test]
+fn a_uuid_identity_is_a_path_parameter_of_its_own_schema() {
+    let text = ORDERS.replace(
+        "  - {name: catalog.orders.OrderId, kind: newtype, of: String}\n",
+        "  - {name: catalog.orders.OrderId, kind: newtype, of: Uuid}\n",
+    );
+    assert_ne!(text, ORDERS, "the fixture moved");
+    let ir = model_of("orders.yaml", &text);
+    let document = bound_document(&ir, binding(&ir, ORDERS_ROUTES), "orders-service");
+    for (path, method) in [
+        ("/api/orders/{order_id}/note", "post"),
+        ("/orders/{order_id}", "get"),
+    ] {
+        let parameters = document["paths"][path][method]["parameters"]
+            .as_array()
+            .expect("parameters");
+        let carried: Vec<&Value> = parameters
+            .iter()
+            .filter(|parameter| parameter["in"] == "path")
+            .collect();
+        assert_eq!(carried.len(), 1, "{path}: {parameters:?}");
+        assert_eq!(carried[0]["name"], "order_id", "{path}");
+        assert_eq!(
+            carried[0]["schema"],
+            json!({"$ref": "#/components/schemas/catalog.orders.OrderId"}),
+            "{path}"
+        );
+    }
+    let id = &document["components"]["schemas"]["catalog.orders.OrderId"];
+    assert_eq!(id["type"], "string", "{id}");
+    assert_eq!(id["format"], "uuid", "{id}");
+}

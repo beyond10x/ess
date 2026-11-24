@@ -41,8 +41,10 @@ routes:
   `delete`, or to `get` when its path carries every input field.
 - `path` is a template: it starts with `/`, and a variable is a whole segment, `{name}`.
 - `parameters` maps every variable to the one value it carries: `input.<field>` of a command,
-  `param.<name>` of a view. That field is a `String`, an `Integer`, an enum or an unconstrained
-  newtype of one of them, because a path segment is always present and holds one value.
+  `param.<name>` of a view. That field is a `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`,
+  `Duration` or `Uuid`, an enum, or an unconstrained newtype of one of them, because a path segment
+  is always present and holds one value with one text spelling. `Bytes`, `Binary64` and `Json` are
+  refused, and so are `Optional`, `List`, a struct and a constrained newtype.
 
 Check a binding against the specification, or write its compiled form:
 

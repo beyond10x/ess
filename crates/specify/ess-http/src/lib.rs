@@ -4896,8 +4896,9 @@ fn sources(
                 at,
                 format!(
                     "`{text}` has type `{}`, which a path segment cannot carry: a segment is \
-                     always present and holds one `String`, `Integer`, enum, or unconstrained \
-                     newtype of one of them",
+                     always present and holds one `String`, `Integer`, `Boolean`, `Decimal`, \
+                     `Timestamp`, `Duration`, `Uuid`, enum, or unconstrained newtype of one of \
+                     them",
                     field.type_ref
                 ),
             );
@@ -7518,14 +7519,23 @@ fn selects_identity(filter: &Predicate, identity: &str) -> bool {
     }
 }
 
-/// Whether a value of `type_ref` fits one path segment: always present and one value, so `String`,
-/// `Integer`, an enum, or an unconstrained newtype of one of them, and never `Optional`, `List`,
-/// `Map`, a struct, a union or another primitive.
+/// Whether a value of `type_ref` fits one path segment: always present and one value with one
+/// text spelling, so `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an
+/// enum, or an unconstrained newtype of one of them (beyond10x/ess#755), and never `Optional`,
+/// `List`, `Map`, a struct, a union, `Bytes` (its base64 text holds `/`), `Binary64` (no one text
+/// spelling of a JSON number) or `Json`.
 fn segment_type(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
     match type_ref {
-        ResolvedTypeRef::Primitive { name } => {
-            matches!(name, Primitive::String | Primitive::Integer)
-        }
+        ResolvedTypeRef::Primitive { name } => matches!(
+            name,
+            Primitive::String
+                | Primitive::Integer
+                | Primitive::Boolean
+                | Primitive::Decimal
+                | Primitive::Timestamp
+                | Primitive::Duration
+                | Primitive::Uuid
+        ),
         ResolvedTypeRef::Declared { name } => {
             let declared = ir.named_type(name);
             match &declared.body {
