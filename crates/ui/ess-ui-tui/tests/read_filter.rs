@@ -319,3 +319,67 @@ fn dynamic_menu_keeps_matching_rows_and_refuses_invalid_predicates() {
         assert!(!screen.contains("Beta"), "{screen}");
     }
 }
+
+/// A read that records the params of every request it is asked.
+struct Recorded(Rc<std::cell::RefCell<Vec<BTreeMap<String, Value>>>>);
+impl DataAdapter for Recorded {
+    fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
+        self.0.borrow_mut().push(request.params.clone());
+        Ok(ReadResult {
+            rows: Vec::new(),
+            total: None,
+        })
+    }
+    fn run(&mut self, _: &str, _: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
+        panic!("unexpected command")
+    }
+    fn load_state(&self, _: &str) -> Option<Value> {
+        None
+    }
+    fn store_state(&mut self, _: &str, _: Value) {}
+}
+
+/// `{value, when}` sends a param only while `when` holds: with the toggle off the read carries
+/// `q` alone, not `only_open: false` (beyond10x/ess#723).
+#[test]
+fn a_conditional_param_is_left_out_while_its_condition_is_false() {
+    for (open_only, expected) in [(false, "{q: a}"), (true, "{q: a, only_open: true}")] {
+        let source = format!(
+            r"format: ess-ui/1
+app: filters
+model: t
+placement_profile: fat
+shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}
+navigation: {{home: p, sections: [{{name: all, pages: [p]}}]}}
+pages:
+  p:
+    kind: detail_page
+    title: Orders
+    state:
+      search: {{type: string, class: page_state, default: a}}
+      open_only: {{type: boolean, class: page_state, default: {open_only}}}
+    sections:
+      - name: list
+        component: collection
+        reads: {{view: t.Orders, params: {{q: state.search, only_open: {{value: true, when: state.open_only}}}}}}
+        columns: [id]
+"
+        );
+        let requests = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let state = Scratch::new("ess-read-conditional-param");
+        let mut app = App::with_adapter(
+            ess_ui::load_str(&source).unwrap_or_else(|error| panic!("{error}")),
+            Box::new(Recorded(requests.clone())),
+            vec![],
+            Options::new(state.0.clone()),
+        )
+        .unwrap();
+        app.advance(Duration::from_secs(1));
+        let expected: BTreeMap<String, Value> = ess_yaml::from_str(expected).unwrap();
+        assert_eq!(
+            requests.borrow().last(),
+            Some(&expected),
+            "open_only {open_only}"
+        );
+    }
+}

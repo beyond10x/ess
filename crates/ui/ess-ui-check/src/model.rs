@@ -95,6 +95,9 @@ pub struct Model {
     commands: BTreeSet<String>,
     /// Each command's input fields by qualified name, as [`View::fields`] holds a row's.
     pub(crate) inputs: BTreeMap<String, Fields>,
+    /// Each command's inputs a call must carry, by qualified name: every input not `Optional`,
+    /// under its name and its wire name.
+    pub(crate) required_inputs: BTreeMap<String, BTreeSet<String>>,
     events: BTreeSet<String>,
     /// Every declared actor by qualified name, with the qualified names of the commands it may
     /// invoke.
@@ -261,7 +264,25 @@ fn actor_reads(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
         .collect()
 }
 
+/// Each command's inputs that are not `Optional`, under their names and wire names.
+fn required_inputs(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
+    ir.commands()
+        .iter()
+        .map(|(name, command)| {
+            let required = command
+                .input
+                .iter()
+                .filter(|field| !matches!(field.type_ref, ResolvedTypeRef::Optional { .. }))
+                .flat_map(|field| std::iter::once(&field.name).chain(&field.naming.wire))
+                .cloned()
+                .collect();
+            (name.to_string(), required)
+        })
+        .collect()
+}
+
 impl Model {
+    #[allow(clippy::too_many_lines)] // one field per index of the model
     fn index(ir: &EssIr) -> Self {
         let actor_reads = actor_reads(ir);
         let readable = ir
@@ -318,6 +339,7 @@ impl Model {
                 .iter()
                 .map(|(name, command)| (name.to_string(), fields_of(ir, &command.input)))
                 .collect(),
+            required_inputs: required_inputs(ir),
             events: ir.events().keys().map(ToString::to_string).collect(),
             actors: ir
                 .actors()
@@ -466,8 +488,8 @@ impl Model {
                         self.anonymous_read(sink, &named.at, &qualified);
                     }
                     self.page_actor_reads(document, &page_actors, sink, &named.at, &qualified);
-                    if let Some(params) = bound_params(document, &named.node, bound) {
-                        read_params(sink, &named.at, &qualified, view, params);
+                    if let Some((params, when)) = bound_params(document, &named.node, bound) {
+                        read_params(sink, &named.at, &qualified, view, params, when);
                     }
                 }
             }
@@ -1002,6 +1024,9 @@ fn enum_values(
     }
 }
 
+/// A read's params and the condition each param written `{value, when}` is sent under.
+type ParamsAndWhen<'a> = (&'a BTreeMap<String, Expr>, &'a BTreeMap<String, Expr>);
+
 /// No parameter at all: what a read with no `params:` slot binds.
 static NONE: BTreeMap<String, Expr> = BTreeMap::new();
 
@@ -1014,11 +1039,11 @@ fn bound_params<'a>(
     document: &'a Document,
     node: &NodePath,
     bound: Bound<'a>,
-) -> Option<&'a BTreeMap<String, Expr>> {
+) -> Option<ParamsAndWhen<'a>> {
     match bound {
-        Bound::Read(read) => Some(read.params),
-        Bound::Nothing | Bound::Export(None) => Some(&NONE),
-        Bound::Export(Some(ExportParams::Map(params))) => Some(params),
+        Bound::Read(read) => Some((read.params, read.when)),
+        Bound::Nothing | Bound::Export(None) => Some((&NONE, &NONE)),
+        Bound::Export(Some(ExportParams::Map(params))) => Some((params, &NONE)),
         Bound::Export(Some(ExportParams::Expression(expr))) => {
             let section = expr
                 .0
@@ -1031,7 +1056,7 @@ fn bound_params<'a>(
             let Body::Composite(composite) = &section.body else {
                 return None;
             };
-            composite_reads(composite).map(|(_, reads)| &reads.params)
+            composite_reads(composite).map(|(_, reads)| (&*reads.params, reads.params.conditions()))
         }
         Bound::Elsewhere => None,
     }
@@ -1054,6 +1079,7 @@ fn read_params(
     qualified: &str,
     view: &View,
     bound: &BTreeMap<String, Expr>,
+    when: &BTreeMap<String, Expr>,
 ) {
     let declared: Vec<&str> = view
         .params
@@ -1079,7 +1105,18 @@ fn read_params(
         }
     }
     for param in view.params.iter().filter(|param| param.required) {
-        if !bound.contains_key(&param.name) {
+        if when.contains_key(&param.name) {
+            sink.push(
+                "read_params",
+                at,
+                format!(
+                    "view `{qualified}` requires the parameter `{}`, which this read sends only \
+                     under its `when`: the served surface cannot answer the read that leaves it \
+                     out",
+                    param.name
+                ),
+            );
+        } else if !bound.contains_key(&param.name) {
             sink.push(
                 "read_params",
                 at,
@@ -1166,6 +1203,8 @@ impl<'a> Bound<'a> {
 #[derive(Clone, Copy)]
 struct Read<'a> {
     params: &'a BTreeMap<String, Expr>,
+    /// The condition each param written `{value, when}` is sent under.
+    when: &'a BTreeMap<String, Expr>,
     paging: Option<&'a Paging>,
 }
 
@@ -1173,6 +1212,7 @@ impl<'a> Read<'a> {
     fn of(reads: &'a Reads) -> Self {
         Self {
             params: &reads.params,
+            when: reads.params.conditions(),
             paging: reads.paging.as_ref(),
         }
     }
@@ -1206,6 +1246,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                 for view in shell.preload.iter().flat_map(|preload| &preload.views) {
                     let read = Read {
                         params: &view.params,
+                        when: &NONE,
                         paging: None,
                     };
                     push(

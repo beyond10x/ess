@@ -62,13 +62,30 @@ fn navigate(navigate: &ess_ui::Navigate) -> String {
         ("to", Some(ts::string(&navigate.to))),
         (
             "params",
-            (!navigate.params.is_empty()).then(|| exprs(&navigate.params)),
+            (!navigate.params.is_empty()).then(|| sent_exprs(&navigate.params)),
         ),
     ])
 }
 
 fn strings<'a>(values: impl IntoIterator<Item = &'a String>) -> String {
     ts::array(values.into_iter().map(|value| ts::string(value)))
+}
+
+/// A map of values the UI sends, as the runtime's `Sent` reads it: each entry its `literal`, or
+/// `{ value, when }` where it is sent only while `when` holds (beyond10x/ess#723).
+fn sent<V>(values: &ess_ui::Sent<V>, literal: impl Fn(&V) -> String) -> String {
+    ts::object(values.iter().map(|(name, value)| {
+        let value = literal(value);
+        let value = match values.when(name) {
+            Some(when) => ts::object([("value", Some(value)), ("when", Some(ts::string(&when.0)))]),
+            None => value,
+        };
+        (name.as_str(), Some(value))
+    }))
+}
+
+fn sent_exprs(values: &ess_ui::Sent<ess_ui::Expr>) -> String {
+    sent(values, |value| ts::string(&value.0))
 }
 
 fn exprs<'a>(values: impl IntoIterator<Item = (&'a String, &'a ess_ui::Expr)>) -> String {
@@ -724,6 +741,7 @@ impl<'d> Gen<'d> {
             };
             for read in reads {
                 exprs.extend(read.params.values().map(|param| param.0.clone()));
+                exprs.extend(read.params.conditions().values().map(|when| when.0.clone()));
                 exprs.extend(read.filter.as_ref().map(|filter| filter.0.clone()));
             }
         }
@@ -762,7 +780,7 @@ impl<'d> Gen<'d> {
             ("filter", expr(reads.filter.as_ref())),
             (
                 "params",
-                (!reads.params.is_empty()).then(|| exprs(&reads.params)),
+                (!reads.params.is_empty()).then(|| sent_exprs(&reads.params)),
             ),
             (
                 "paging",
@@ -877,15 +895,12 @@ impl<'d> Gen<'d> {
             (
                 "bind",
                 (!action.bind.is_empty()).then(|| {
-                    ts::object(action.bind.iter().map(|(name, value)| {
-                        let value = match value {
-                            ess_ui::BindValue::One(value) => ts::string(&value.0),
-                            ess_ui::BindValue::List(items) => {
-                                ts::array(items.iter().map(|item| ts::string(&item.0)))
-                            }
-                        };
-                        (name.as_str(), Some(value))
-                    }))
+                    sent(&action.bind, |value| match value {
+                        ess_ui::BindValue::One(value) => ts::string(&value.0),
+                        ess_ui::BindValue::List(items) => {
+                            ts::array(items.iter().map(|item| ts::string(&item.0)))
+                        }
+                    })
                 }),
             ),
             ("opens", quoted(action.opens.as_ref())),
@@ -1940,7 +1955,7 @@ impl<'d> Gen<'d> {
                         ("page", Some(ts::string(&navigate.to))),
                         (
                             "params",
-                            (!navigate.params.is_empty()).then(|| exprs(&navigate.params)),
+                            (!navigate.params.is_empty()).then(|| sent_exprs(&navigate.params)),
                         ),
                     ])
                 });
@@ -2052,11 +2067,22 @@ impl<'d> Gen<'d> {
                 .params
                 .iter()
                 .map(|(key, value)| {
-                    format!(
+                    let passed = format!(
                         "{}: {evaluate}({}, __opener)",
                         ts::key(key),
                         ts::string(&value.0)
-                    )
+                    );
+                    // A param written `{value, when}` is passed only while `when` holds.
+                    match overlay.params.when(key) {
+                        Some(when) => {
+                            let truthy = self.import("runtime/expr", "truthy");
+                            format!(
+                                "...({truthy}({evaluate}({}, __opener)) ? {{ {passed} }} : {{}})",
+                                ts::string(&when.0)
+                            )
+                        }
+                        None => passed,
+                    }
                 })
                 .collect();
             lines.push(format!(

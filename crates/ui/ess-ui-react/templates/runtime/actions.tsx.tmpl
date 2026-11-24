@@ -5,7 +5,7 @@ import { useUiPath } from "./core";
 import { hrefFor } from "../routes";
 import { ScopeLayer, useScope, type Opener, type Scope } from "./core";
 import { dataAdapter, invalidate } from "./data";
-import { evaluate, holds, truthy } from "./expr";
+import { evaluate, holds, sent, truthy, type Sent } from "./expr";
 import { isObject } from "./json";
 //+bound
 import { CommandRefused } from "./data";
@@ -20,9 +20,9 @@ export interface ActionSpec {
   as?: "button" | "icon" | "toggle" | "choice" | "menu_item" | "link";
   does?: string;
   /** Each input to the expression it is sent as, or to a list of them sent as one list. */
-  bind?: Record<string, string | string[]>;
+  bind?: Record<string, Sent<string | string[]>>;
   opens?: string;
-  navigate?: { to: string; params?: Record<string, string> };
+  navigate?: { to: string; params?: Record<string, Sent<string>> };
   /** `params`: one expression (`same_as(<section>)`), or each param's expression. */
   export?: { reads: string; as: string; params?: string | Record<string, string> };
   upload?: { accept: string[]; does: string };
@@ -150,7 +150,7 @@ export async function runCommand(
 
 function bound(action: Pick<ActionSpec, "bind">, values: Record<string, unknown>): Record<string, unknown> {
   const input: Record<string, unknown> = {};
-  for (const [name, expr] of Object.entries(action.bind ?? {})) {
+  for (const [name, expr] of sent(action.bind, values)) {
     input[name] = Array.isArray(expr) ? expr.map((item) => evaluate(item, values)) : evaluate(expr, values);
   }
   return input;
@@ -197,7 +197,7 @@ export async function runAction(
     scope.open(action.opens, isObject(row) ? { ...row } : undefined);
   } else if (action.navigate) {
     const params: Record<string, unknown> = {};
-    for (const [name, expr] of Object.entries(action.navigate.params ?? {})) {
+    for (const [name, expr] of sent(action.navigate.params, values)) {
       params[name] = evaluate(expr, values);
     }
     scope.navigate(hrefFor(action.navigate.to, params));

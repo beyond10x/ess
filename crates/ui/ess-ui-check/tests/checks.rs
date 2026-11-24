@@ -2118,6 +2118,65 @@ fn a_read_binding_an_undeclared_view_param_is_an_error() {
     trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
 }
 
+/// A param written `{value, when}` is sent only while `when` holds (beyond10x/ess#723): both
+/// expressions are checked as a bare one is, any other key is refused by path, and a parameter
+/// the view requires may not be left out.
+#[test]
+fn a_conditional_read_param_is_checked_and_never_leaves_out_a_required_one() {
+    let report = param_report(
+        "{view: stock.Labelled, params: {wanted: params.q, hint: {value: params.q, when: params.q}}}",
+    );
+    for check in ["read_params", "expr_paths", "document_loads"] {
+        assert!(tripped(&report, check).is_empty(), "{:#?}", report.findings);
+    }
+    let report =
+        param_report("{view: stock.Labelled, params: {wanted: {value: params.q, when: params.q}}}");
+    let finding = trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
+    assert!(finding.message.contains("`wanted`"), "{finding:?}");
+    assert!(finding.message.contains("`when`"), "{finding:?}");
+    let report = param_report(
+        "{view: stock.Labelled, params: {wanted: params.q, hint: {value: params.q, when: params.nope}}}",
+    );
+    assert!(
+        tripped(&report, "expr_paths")
+            .iter()
+            .any(|finding| finding.message.contains("nope")),
+        "{:#?}",
+        report.findings
+    );
+    let report = param_report(
+        "{view: stock.Labelled, params: {wanted: params.q, hint: {value: params.q, when: params.q, unless: params.q}}}",
+    );
+    assert!(
+        tripped(&report, "document_loads")
+            .iter()
+            .any(
+                |finding| finding.path.starts_with("pages/p/sections/labelled")
+                    && finding.message.contains("unless")
+            ),
+        "{:#?}",
+        report.findings
+    );
+}
+
+/// A `bind` entry written `{value, when}` may not leave out a command input that is required.
+#[test]
+fn a_conditional_bind_never_leaves_out_a_required_input() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, sections: [\
+          {name: summary, component: collection, reads: stock.Items, columns: [label], \
+           row_actions: [{name: add, does: stock.AddItem, bind: {label: {value: row.label, when: row.label}}}]}]}}",
+        QUIET,
+    );
+    let finding = trips_in(
+        &report,
+        "field_in_model",
+        "pages/p/sections/summary/row_actions/add",
+    );
+    assert!(finding.message.contains("`label`"), "{finding:?}");
+    assert!(finding.message.contains("`when`"), "{finding:?}");
+}
+
 #[test]
 fn an_unbound_required_view_param_is_an_error() {
     let report = param_report("{view: stock.Labelled, params: {hint: params.q}}");

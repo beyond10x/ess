@@ -139,6 +139,26 @@ to selection state (`write_selection`, `app.rs`); both drop the ids no longer ke
 **Exports.** `export: {params: same_as(<section>)}` copies the section's params, not its filter.
 The download holds rows the section does not show. `filter_export` warns.
 
+## A param left out
+
+A filter the server reads is a param, and an optional one is off by being absent: an API that
+reads a present `only_open=false` as a filter answers differently from one given no param
+(beyond10x/ess#723). A read param, an overlay or navigation param and a `bind` entry may be
+written `{value: <expr>, when: <expr>}`; the entry is sent only while `when` is truthy and left out
+otherwise, never sent as `null` or `false`:
+
+```yaml
+reads: {view: example.order.Orders, params: {q: state.search, only_open: {value: true, when: state.open_only}}}
+```
+
+Both renderers send `q` alone while `state.open_only` is false, and `q` with `only_open=true`
+while it is true; the two are different reads, since a read's key is its sent params. `value` may
+be a list where a bind takes one. `ess ui check` checks both expressions as it checks a bare one,
+refuses any other key of the mapping, and with `--model` refuses `when` on a param the view
+requires (`read_params`) and on a required command input (`field_in_model`). A value a command
+spells differently from the view that offers it is not mapped here: the view publishes the field
+in the command's spelling and the action binds it.
+
 ## Size
 
 A client filter is fine where the view's rows are few by the shape of the domain: one partner's

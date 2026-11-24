@@ -1163,7 +1163,7 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | `kind` | one of: `drawer` \| `dialog` \| `fullscreen` \| `popover` | yes |   | presentation hint; a TUI uses a full-screen pane |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes, unless the node is a [HostSlot](#hostslot) |   | what the overlay renders |
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
-| `params` | map of `name` → `expr` |   |   | values passed by the opener |
+| `params` | map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) |   |   | values passed by the opener; `{value, when}` passes one only while `when` is truthy |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
 | `visible` | `expr` |   |   | shows the overlay only when true |
 | `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
@@ -1885,7 +1885,7 @@ Prefer `to` (a page of this app); `href` is for external addresses.
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `text` | `expr` | yes |   | link text |
-| `to` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to open |
+| `to` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) \} |   |   | page to open; `{value, when}` passes a param only while `when` is truthy |
 | `href` | `expr` |   |   | external address |
 
 **Exactly one of**
@@ -2051,7 +2051,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
 | `fixture` | `string` |   |   | fixture file answering the placeholder: in `fixtures.dir` when the document declares one (a path that starts with that directory names the same file), else relative to the document |
 | `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
-| `params` | map of `name` → `expr` |   |   | view params bound to state |
+| `params` | map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) |   |   | view params bound to state; `{value, when}` sends one only while `when` is truthy and leaves it out otherwise |
 | `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. `<a> contains <b>` keeps a row whose `<a>`, read as text, holds every whitespace-separated word of `<b>` in any case, and every row while `<b>` has none; a filter bar search bound to `<b>` is then drawn. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `pager` | record \{ `page`: optional `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the sizes offered and, with `paging: server`, the params of this read that carry the page (required) and the page size; with `paging: client`, `sizes` alone; only on a collection's `reads`; sizes default: `[25, 50, 100]` |
@@ -2120,9 +2120,9 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 |---|---|---|---|---|
 | `name` | `name` |   |   | node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name |
 | `does` | name of an ESS `command` |   |   | ESS command to run |
-| `bind` | map of `name` → (one of: `expr` \| list of `expr`) |   |   | command input from row, selection or state; a list of expressions is sent as one list input |
+| `bind` | map of `name` → (one of: `expr` \| list of `expr` \| record \{ `value`: (one of: `expr` \| list of `expr`), `when`: `expr` \}) |   |   | command input from row, selection or state; a list of expressions is sent as one list input; `{value, when}` sends one only while `when` is truthy and leaves it out otherwise |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
-| `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
+| `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) \} |   |   | page to go to; `{value, when}` passes a param only while `when` is truthy |
 | `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
 | `upload` | record \{ `accept`: list of `string`, `does`: name of an ESS `command` \} |   |   | file picker feeding a command |
 | `copy` | `expr` |   |   | value copied to the clipboard |

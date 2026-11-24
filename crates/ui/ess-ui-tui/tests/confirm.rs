@@ -229,3 +229,28 @@ fn the_terminal_hides_offers_and_sends_as_every_expression_form_reads() {
         app.render_text(120, 30)
     );
 }
+
+/// A `bind` entry written `{value, when}` is sent only while `when` holds, and left out (not sent
+/// as null) otherwise (beyond10x/ess#723).
+#[test]
+fn a_conditional_bind_entry_is_left_out_while_its_condition_is_false() {
+    let document = DOCUMENT.replace(
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+        "          - {name: tag, does: things.Tag, bind: {thing: row.id, name: {value: row.name, when: row.name == Bolt}}, label: Tag}\n",
+    );
+    let (mut app, adapter) = open_with("conditional-bind", &document);
+    app.keys("t");
+    app.keys("jt");
+    assert_eq!(
+        sent(&adapter),
+        vec![
+            ("things.Tag".to_owned(), input(&[("thing", "th-1")])),
+            (
+                "things.Tag".to_owned(),
+                input(&[("thing", "th-2"), ("name", "Bolt")])
+            ),
+        ],
+        "{}",
+        app.render_text(120, 30)
+    );
+}

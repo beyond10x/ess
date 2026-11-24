@@ -88,6 +88,99 @@ impl<'de> Deserialize<'de> for BindValue {
     }
 }
 
+/// Values the UI sends by name: a read's params, an overlay's or a navigation's params, or an
+/// action's `bind`. Each is written bare, or as `{value, when}` to be sent only while `when` is
+/// truthy and left out (not sent as `null` or `false`) otherwise (beyond10x/ess#723). It reads as
+/// the map of values; [`Sent::when`] names an entry's condition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sent<V> {
+    values: BTreeMap<String, V>,
+    when: BTreeMap<String, Expr>,
+}
+
+impl<V> Default for Sent<V> {
+    fn default() -> Self {
+        Self {
+            values: BTreeMap::new(),
+            when: BTreeMap::new(),
+        }
+    }
+}
+
+impl<V> Sent<V> {
+    /// The condition entry `name` is sent under, when it is written `{value, when}`.
+    pub fn when(&self, name: &str) -> Option<&Expr> {
+        self.when.get(name)
+    }
+
+    /// Every entry's condition, by name.
+    pub fn conditions(&self) -> &BTreeMap<String, Expr> {
+        &self.when
+    }
+}
+
+impl<V> std::ops::Deref for Sent<V> {
+    type Target = BTreeMap<String, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl<'a, V> IntoIterator for &'a Sent<V> {
+    type Item = (&'a String, &'a V);
+    type IntoIter = std::collections::btree_map::Iter<'a, String, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
+impl<V> FromIterator<(String, V)> for Sent<V> {
+    fn from_iter<I: IntoIterator<Item = (String, V)>>(entries: I) -> Self {
+        Self {
+            values: entries.into_iter().collect(),
+            when: BTreeMap::new(),
+        }
+    }
+}
+
+impl<'de, V: serde::de::DeserializeOwned> Deserialize<'de> for Sent<V> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut sent = Self::default();
+        for (name, value) in BTreeMap::<String, Value>::deserialize(deserializer)? {
+            let value = match value {
+                Value::Mapping(mut entry) => {
+                    if let Some(key) = entry
+                        .keys()
+                        .map(|key| key.as_str().unwrap_or_default())
+                        .find(|key| !matches!(*key, "value" | "when"))
+                    {
+                        return Err(D::Error::custom(format!(
+                            "`{name}`: a value written as a mapping takes `value` and `when`, \
+                             not `{key}`"
+                        )));
+                    }
+                    let (Some(value), Some(when)) = (entry.remove("value"), entry.remove("when"))
+                    else {
+                        return Err(D::Error::custom(format!(
+                            "`{name}`: a value written as a mapping takes both `value` and `when`"
+                        )));
+                    };
+                    let when = Expr::of(when)
+                        .map_err(|error| D::Error::custom(format!("`{name}.when`: {error}")))?;
+                    sent.when.insert(name.clone(), when);
+                    value
+                }
+                value => value,
+            };
+            let value = ess_yaml::from_value(value).map_err(D::Error::custom)?;
+            sent.values.insert(name, value);
+        }
+        Ok(sent)
+    }
+}
+
 /// The schema's `unmapped_marker`: `UNMAPPED: <reason>`, accepted by any field whatever its
 /// declared type. Every enum of this model carries it as its `Unmapped` variant; a validator
 /// reports it as a warning and a renderer treats the field as absent.
@@ -1900,7 +1993,7 @@ pub struct Overlay {
     /// Overlay title; a confirm shows it as its question.
     pub title: Option<String>,
     /// Values passed by the opener.
-    pub params: BTreeMap<String, Expr>,
+    pub params: Sent<Expr>,
     /// Overlay-local state, degrades and unmapped notes.
     pub common: NodeCommon,
     /// The overlay this one was copied from, kept for traceability.
@@ -1915,7 +2008,7 @@ struct OverlayFrame {
     kind: OverlayKind,
     title: Option<String>,
     #[serde(default)]
-    params: BTreeMap<String, Expr>,
+    params: Sent<Expr>,
     #[serde(default)]
     state: BTreeMap<String, State>,
     visible: Option<Expr>,
@@ -2956,7 +3049,7 @@ pub struct Reads {
     pub key: Option<String>,
     /// View params bound to state.
     #[serde(default)]
-    pub params: BTreeMap<String, Expr>,
+    pub params: Sent<Expr>,
     /// Who pages.
     pub paging: Option<Paging>,
     /// The sizes a reader may choose, and on a server read the params that carry its page and
@@ -3058,7 +3151,7 @@ pub struct Action {
     pub does: Option<String>,
     /// Command input from row, selection or state; a list value is sent as one list.
     #[serde(default)]
-    pub bind: BTreeMap<String, BindValue>,
+    pub bind: Sent<BindValue>,
     /// Overlay to open.
     pub opens: Option<String>,
     /// Page to go to.
@@ -3126,7 +3219,7 @@ pub struct Navigate {
     pub to: String,
     /// Its params.
     #[serde(default)]
-    pub params: BTreeMap<String, Expr>,
+    pub params: Sent<Expr>,
 }
 
 /// Download a view.

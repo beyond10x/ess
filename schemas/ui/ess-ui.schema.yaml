@@ -755,7 +755,7 @@ constructs:
       kind:      {type: {enum: [drawer, dialog, fullscreen, popover]}, required: true, note: presentation hint; a TUI uses a full-screen pane}
       component: {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: {unless: HostSlot}, note: what the overlay renders}
       title:     {type: string, note: "overlay title; a confirm shows it as its question"}
-      params:    {type: {map: {key: name, value: expr}}, note: values passed by the opener}
+      params:    {type: {map: {key: name, value: {one_of: [expr, {record: {value: expr, when: expr}}]}}}, note: "values passed by the opener; `{value, when}` passes one only while `when` is truthy"}
       state:     {type: {map: {key: name, value: State}}, note: overlay-local state}
       visible:   {type: expr, note: shows the overlay only when true}
       degrades:  {type: Degrades, note: fallbacks for renderers lacking a capability}
@@ -1164,7 +1164,7 @@ constructs:
     exactly_one_of: [to, href]
     fields:
       text:  {type: expr, required: true, note: link text}
-      to:    {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to open}
+      to:    {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: {one_of: [expr, {record: {value: expr, when: expr}}]}}}}}}, note: "page to open; `{value, when}` passes a param only while `when` is truthy"}
       href:  {type: expr, note: external address}
     example: {name: open, primitive: link, text: Open, to: {to: partners.detail, params: {id: args.partner.id}}}
 
@@ -1283,7 +1283,7 @@ constructs:
       placeholder: {type: name, note: a view name not yet bound to the model}
       fixture:     {type: string, note: "fixture file answering the placeholder: in `fixtures.dir` when the document declares one (a path that starts with that directory names the same file), else relative to the document"}
       key:         {type: name, note: "the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id`"}
-      params:      {type: {map: {key: name, value: expr}}, note: view params bound to state}
+      params:      {type: {map: {key: name, value: {one_of: [expr, {record: {value: expr, when: expr}}]}}}, note: "view params bound to state; `{value, when}` sends one only while `when` is truthy and leaves it out otherwise"}
       filter:      {type: expr, note: "Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. `<a> contains <b>` keeps a row whose `<a>`, read as text, holds every whitespace-separated word of `<b>` in any case, and every row while `<b>` has none; a filter bar search bound to `<b>` is then drawn."}
       paging:      {type: {enum: [server, client, cursor, append, none]}, default: none, note: who pages}
       pager:       {type: {record: {page: {optional: name}, size: {optional: name}, sizes: {optional: {list: integer}}}}, sizes_default: [25, 50, 100], note: "the sizes offered and, with `paging: server`, the params of this read that carry the page (required) and the page size; with `paging: client`, `sizes` alone; only on a collection's `reads`"}
@@ -1311,9 +1311,9 @@ constructs:
     fields:
       name:       {type: name, note: "node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name"}
       does:       {type: {ref: command}, note: ESS command to run}
-      bind:       {type: {map: {key: name, value: {one_of: [expr, {list: expr}]}}}, note: "command input from row, selection or state; a list of expressions is sent as one list input"}
+      bind:       {type: {map: {key: name, value: {one_of: [expr, {list: expr}, {record: {value: {one_of: [expr, {list: expr}]}, when: expr}}]}}}, note: "command input from row, selection or state; a list of expressions is sent as one list input; `{value, when}` sends one only while `when` is truthy and leaves it out otherwise"}
       opens:      {type: {ref: overlay}, note: overlay to open}
-      navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
+      navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: {one_of: [expr, {record: {value: expr, when: expr}}]}}}}}}, note: "page to go to; `{value, when}` passes a param only while `when` is truthy"}
       export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: {one_of: [{map: {key: name, value: expr}}, expr]}}}}, note: "download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>`"}
       upload:     {type: {record: {accept: {list: string}, does: {ref: command}}}, note: file picker feeding a command}
       copy:       {type: expr, note: value copied to the clipboard}

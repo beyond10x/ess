@@ -1148,6 +1148,13 @@ impl App {
         }
     }
 
+    /// Whether the entry `name` of `sent` is sent in `ctx`: a bare one always, one written
+    /// `{value, when}` only while `when` is truthy (beyond10x/ess#723).
+    pub(crate) fn sends<V>(&self, sent: &ess_ui::Sent<V>, name: &str, ctx: &Ctx<'_>) -> bool {
+        sent.when(name)
+            .is_none_or(|when| self.eval(&when.0, ctx).is_some_and(|value| truthy(&value)))
+    }
+
     /// A `visible` condition: absent or outside the fixture grammar means shown.
     pub(crate) fn visible(&self, condition: Option<&str>, ctx: &Ctx<'_>) -> bool {
         condition
@@ -1234,6 +1241,9 @@ impl App {
     pub(crate) fn request(&self, reads: &Reads, ctx: &Ctx<'_>) -> ReadRequest {
         let mut params = BTreeMap::new();
         for (name, value) in &reads.params {
+            if !self.sends(&reads.params, name, ctx) {
+                continue;
+            }
             if let Some(value) = self.eval(&value.0, ctx) {
                 if !value.is_null() {
                     params.insert(name.clone(), value);
@@ -4160,6 +4170,7 @@ impl App {
 
     /// Runs an action. Its command's refusal, if it sent one that was not done, is returned for
     /// the caller to show where the user acted.
+    #[allow(clippy::too_many_lines)] // navigate, overlay, command, export, copy and state, in order
     pub(crate) fn run_action(
         &mut self,
         action: &Action,
@@ -4215,6 +4226,7 @@ impl App {
             let params = navigate
                 .params
                 .iter()
+                .filter(|(name, _)| self.sends(&navigate.params, name, &ctx))
                 .filter_map(|(name, value)| {
                     self.eval(&value.0, &ctx).map(|value| (name.clone(), value))
                 })
@@ -4230,6 +4242,7 @@ impl App {
             let input = action
                 .bind
                 .iter()
+                .filter(|(name, _)| self.sends(&action.bind, name, &ctx))
                 .filter_map(|(name, value)| {
                     let value = match value {
                         ess_ui::BindValue::One(value) => self.eval(&value.0, &ctx)?,
@@ -4396,6 +4409,7 @@ impl App {
                 overlay
                     .params
                     .iter()
+                    .filter(|(key, _)| self.sends(&overlay.params, key, &ctx))
                     .filter_map(|(key, value)| {
                         self.eval(&value.0, &ctx).map(|value| (key.clone(), value))
                     })

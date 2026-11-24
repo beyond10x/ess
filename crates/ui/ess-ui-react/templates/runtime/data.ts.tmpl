@@ -14,7 +14,7 @@ import { fixtures, type FixtureView } from "../fixtures";
 //+effects
 import type { CommandEffect, EffectFilter } from "../fixtures";
 //-effects
-import { evaluate, keeps } from "./expr";
+import { evaluate, keeps, sent, type Sent } from "./expr";
 import { getPath, isObject, stableKey, type Json, type JsonObject } from "./json";
 //+bound
 import { classify, type Answer } from "./answer";
@@ -24,7 +24,7 @@ import { classify, type Answer } from "./answer";
 export interface ReadSpec {
   view: string;
   filter?: string;
-  params?: Record<string, string>;
+  params?: Record<string, Sent<string>>;
   paging?: string;
   debounce?: number;
   refresh?: string;
@@ -956,7 +956,7 @@ export function evaluateParams(
   values: Record<string, unknown>,
 ): Record<string, unknown> {
   const params: Record<string, unknown> = {};
-  for (const [name, expr] of Object.entries(spec?.params ?? {})) {
+  for (const [name, expr] of sent(spec?.params, values)) {
     params[name] = evaluate(expr, values);
   }
   return params;
