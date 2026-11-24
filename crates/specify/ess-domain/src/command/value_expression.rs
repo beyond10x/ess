@@ -838,6 +838,13 @@ fn ambiguous(
             ));
         }
     };
+    // A deleting outcome reads no field of the row it deletes, so no field of it can carry the
+    // relation (beyond10x/ess#796).
+    let deleting = context
+        .outcome
+        .subject
+        .as_ref()
+        .is_some_and(|subject| subject.effect == Effect::Deletes);
     let hint = match (via, context.subject) {
         (RelatedVia::Subject(name), Some((subject, _))) => format!(
             "say which: declare `relations: [{{name: …, kind: references, target: <entity>, \
@@ -845,6 +852,11 @@ fn ambiguous(
              `owns` relation on it with `via: {name}`",
             subject.name, subject.name
         ),
+        (RelatedVia::Input(_), Some(_)) if deleting => {
+            "a `deletes:` outcome reads no field of the row it deletes, so give the entities \
+             distinct identity types instead"
+                .to_owned()
+        }
         (RelatedVia::Input(name), Some((subject, existing))) => {
             let setter = context
                 .outcome
@@ -1292,6 +1304,8 @@ fn existing_subject_field<'a>(
                 "a `deletes:` outcome does not read the row it deletes as its subject",
                 if what != "`{subject: …}`" {
                     "name the row through an input field instead: `via: input.<field>`".to_owned()
+                } else if field != entity.identity.name && entity.field(field).is_none() {
+                    format!("`{field}` is not a field of `{}`", entity.name)
                 } else if field != entity.identity.name
                     && context.command.input_field(&subject.instance).is_some()
                 {

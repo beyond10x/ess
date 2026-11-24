@@ -402,3 +402,58 @@ fn a_related_read_through_a_subject_field_on_a_deleting_outcome_names_deletes() 
     assert!(error.message.contains("`deletes:`"), "{error:#?}");
     assert!(!error.message.contains("`creates:`"), "{error:#?}");
 }
+
+/// Review of the #796 fix: the story's scope names the sibling hint of `related_via` too. An
+/// input that two entities are identified by, read on a `deletes:` outcome, is refused with a hint
+/// that says the outcome is a `creates:` branch and tells the author to set a field from the
+/// input, which a deleting outcome cannot do.
+#[test]
+fn an_ambiguous_input_read_on_a_deleting_outcome_does_not_call_it_creates() {
+    let body = deleting(
+        "{related: {via: input.shelf_id, field: label}}",
+        "{related: {via: input.aisle, field: title}}",
+    )
+    .replace(
+        "entities:\n",
+        "entities:
+  - name: depot.racks.Dock
+    identity: {name: dock_id, type: depot.racks.AisleId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+",
+    )
+    .replace(
+        "      - {name: shelf_id, type: Uuid}\n    outcomes:",
+        "      - {name: shelf_id, type: Uuid}\n      - {name: aisle, type: depot.racks.AisleId}\n    outcomes:",
+    );
+    let errors = refusals(&body);
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{REMOVED}.aisle"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert!(error.message.contains("the identity of"), "{error:#?}");
+    let hint = error.hint.as_deref().unwrap_or_default();
+    assert!(!hint.contains("`creates:`"), "{error:#?}");
+}
+
+/// A subject read of a field the entity does not have, on a `deletes:` outcome, is refused naming
+/// the unknown field, and its hint proposes no `{related: …}` read of that same field.
+#[test]
+fn an_unknown_subject_field_on_a_deleting_outcome_is_named_and_not_proposed() {
+    let errors = refusals(&deleting(
+        "{subject: nope}",
+        "{related: {via: input.shelf_id, field: label}}",
+    ));
+    let error = errors
+        .iter()
+        .find(|error| error.location == format!("{REMOVED}.label"))
+        .unwrap_or_else(|| panic!("{errors:#?}"));
+    assert!(error.message.contains("`deletes:`"), "{error:#?}");
+    let hint = error.hint.as_deref().unwrap_or_default();
+    assert!(!hint.contains("field: nope"), "{error:#?}");
+    assert!(
+        hint.contains("`nope` is not a field of `depot.racks.Shelf`"),
+        "{error:#?}"
+    );
+}
