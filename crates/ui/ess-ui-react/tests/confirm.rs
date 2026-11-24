@@ -32,6 +32,7 @@ pages:
         row_actions:
           - {name: remove, does: things.Remove, bind: {thing: row.id}, confirm: {title: Remove thing}}
           - {name: drop, does: things.Drop, bind: {thing: row.id}, confirm: ask}
+          - {name: tag, does: things.Tag, bind: {things: [row.id, row.title]}}
     overlays:
       ask: {kind: dialog, component: confirm, title: Drop thing}
 ";
@@ -113,6 +114,15 @@ async function confirmed(action) {
     await confirmed({ "data-ui-path": path, name: "drop", does: "things.Drop", bind: { thing: "row.id" }, confirmOpens: "ask" }),
     [["things.Drop", { thing: "th-2" }]],
   );
+  // A `bind` value written as a list sends one list of the values its expressions read
+  // (beyond10x/ess#723).
+  assert.deepStrictEqual(
+    await confirmed({
+      "data-ui-path": path, name: "remove", does: "things.Remove", bind: { things: ["row.id", "'x'"] },
+      confirm: jsx(ConfirmView, { "data-ui-path": `${path}/confirm/overlay` }),
+    }),
+    [["things.Remove", { things: ["th-2", "x"] }]],
+  );
 })().catch((error) => { console.error(error); process.exit(1); });
 "#;
 
@@ -120,4 +130,13 @@ async function confirmed(action) {
 fn confirming_runs_the_action_once_whether_or_not_the_confirm_declares_does() {
     let project = project("runs");
     node(&project, "confirm", SCRIPT);
+    // The generated page hands the listed `bind` value over as a list.
+    let page = std::fs::read_dir(project.join("src/pages"))
+        .expect("the pages are generated")
+        .map(|entry| std::fs::read_to_string(entry.expect("an entry").path()).expect("a page"))
+        .collect::<String>();
+    assert!(
+        page.contains(r#"bind: { things: ["row.id", "row.title"] }"#),
+        "{page}"
+    );
 }

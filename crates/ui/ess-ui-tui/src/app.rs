@@ -1090,7 +1090,30 @@ impl App {
     // ── evaluation ──────────────────────────────────────────────────────────────────────────
 
     pub(crate) fn eval(&self, text: &str, ctx: &Ctx<'_>) -> Option<Value> {
+        // `and`, `or`, `not`, comparisons, `in` and parentheses mean what they mean in React: a
+        // boolean form of the one grammar `ess_ui::filter` holds, reading at least one path from
+        // a root, is judged by it (beyond10x/ess#723). Anything else, literal text included, is
+        // read as before.
+        if let Some(predicate) = ess_ui::filter::parse(text).filter(|predicate| {
+            let paths = predicate.paths();
+            predicate.boolean()
+                && !paths.is_empty()
+                && paths
+                    .iter()
+                    .all(|path| expr::ROOTS.contains(&path[0].as_str()))
+        }) {
+            return Some(predicate.evaluate(&|path| self.expr_path(ctx, path)));
+        }
         expr::eval(text, &Scope { app: self, ctx })
+    }
+
+    /// The value of a whole path, resolved as [`expr::eval`] resolves one.
+    fn expr_path(&self, ctx: &Ctx<'_>, path: &[String]) -> Value {
+        let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
+        match (Scope { app: self, ctx }).resolve(&path[0], &segments) {
+            Resolved::Whole(value) => value,
+            Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
+        }
     }
 
     /// The value of a filter-grammar path, resolved as `keeps` resolves it.
@@ -4180,7 +4203,17 @@ impl App {
                 .bind
                 .iter()
                 .filter_map(|(name, value)| {
-                    self.eval(&value.0, &ctx).map(|value| (name.clone(), value))
+                    let value = match value {
+                        ess_ui::BindValue::One(value) => self.eval(&value.0, &ctx)?,
+                        // A list sends one list input; an item outside the grammar is null.
+                        ess_ui::BindValue::List(items) => Value::Sequence(
+                            items
+                                .iter()
+                                .map(|item| self.eval(&item.0, &ctx).unwrap_or(Value::Null))
+                                .collect(),
+                        ),
+                    };
+                    Some((name.clone(), value))
                 })
                 .collect();
             // Nothing else the action does follows a command that was not done.

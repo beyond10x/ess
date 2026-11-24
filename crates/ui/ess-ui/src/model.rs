@@ -37,15 +37,53 @@ pub const PRIMITIVE_KINDS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Expr(pub String);
 
-impl<'de> Deserialize<'de> for Expr {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match Value::deserialize(deserializer)? {
+impl Expr {
+    fn of(value: Value) -> Result<Self, String> {
+        match value {
             Value::String(text) => Ok(Self(text)),
             Value::Number(number) => Ok(Self(number.to_string())),
             Value::Bool(flag) => Ok(Self(flag.to_string())),
-            other => Err(D::Error::custom(format!(
-                "an expression is a scalar, not {other:?}"
-            ))),
+            other => Err(format!("an expression is a scalar, not {other:?}")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Expr {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::of(Value::deserialize(deserializer)?).map_err(D::Error::custom)
+    }
+}
+
+/// A `bind` value: one expression, or a list of them sent as one list input
+/// (beyond10x/ess#723). A list is a bind value only; anywhere else an expression is a scalar.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BindValue {
+    /// One expression, sent as its value.
+    One(Expr),
+    /// Expressions sent as one list of their values, in order.
+    List(Vec<Expr>),
+}
+
+impl BindValue {
+    /// Every expression the value holds, in order.
+    pub fn exprs(&self) -> &[Expr] {
+        match self {
+            Self::One(expr) => std::slice::from_ref(expr),
+            Self::List(items) => items,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BindValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match Value::deserialize(deserializer)? {
+            Value::Sequence(items) => items
+                .into_iter()
+                .map(Expr::of)
+                .collect::<Result<_, _>>()
+                .map(Self::List)
+                .map_err(D::Error::custom),
+            other => Expr::of(other).map(Self::One).map_err(D::Error::custom),
         }
     }
 }
@@ -3018,9 +3056,9 @@ pub struct Action {
     pub name: String,
     /// ESS command to run.
     pub does: Option<String>,
-    /// Command input from row, selection or state.
+    /// Command input from row, selection or state; a list value is sent as one list.
     #[serde(default)]
-    pub bind: BTreeMap<String, Expr>,
+    pub bind: BTreeMap<String, BindValue>,
     /// Overlay to open.
     pub opens: Option<String>,
     /// Page to go to.

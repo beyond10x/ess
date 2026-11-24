@@ -199,6 +199,18 @@ unchecked invalid predicate drops the row. The eligible callers of
 `passes` (`app.rs`) applies the filter after `only_if`; `lifecycle` (`app.rs`) counts kept
 rows; the dynamic menu (`app.rs`) applies its `filter` as React does.
 
+**One grammar for every expression (beyond10x/ess#723).** The terminal reads a display,
+`visible` or `checked` expression with the same parser: a boolean form of `ess_ui::filter`
+(`not`, a comparison, `in`, `and`, `or`, parentheses) that reads at least one path from a root
+is judged by it, so `state.a == on and state.b == off` means in the terminal what it means in
+React (`App::eval`, `crates/ui/ess-ui-tui/src/app.rs`). Each position keeps its failure rule: a
+row filter fails closed, a `visible` outside the grammar means shown, and a string that reads no
+path stays literal text (`Terms and conditions`). A `bind` value may be a YAML list of
+expressions, sent as one list input of their values (`ess_ui::BindValue`); a list anywhere else
+an expression is expected is refused by path. The `loads.<field>` root, the first row an action's
+`loads` read answers, is accepted in the story and not built yet: no renderer reads an action's
+`loads`.
+
 ## Format and version
 
 **Additive within `ess-ui/1`.** The key is optional, and every document that loads today loads to

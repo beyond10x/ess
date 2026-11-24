@@ -258,3 +258,34 @@ fn a_nested_export_param_named_action_is_refused_with_the_params_message() {
     );
     assert_eq!(action.message(), other.message());
 }
+
+/// A `bind` value may be a list of expressions, sent as one list input; a list anywhere else an
+/// expression is expected is still refused by path
+/// (story:both-renderers-read-one-binding-expression-grammar, beyond10x/ess#723).
+#[test]
+fn a_bind_value_may_be_a_list_and_no_other_expression_may() {
+    let listed = document(
+        "other",
+        ", bulk_actions: [{name: tag, label: Tag, does: desk.TagFiles, \
+         bind: {ids: [selection.id, row.id], note: row.name}}]",
+    );
+    let document_loaded = load_str(&listed).unwrap_or_else(|error| panic!("{error}\n{listed}"));
+    let text = format!("{document_loaded:?}");
+    assert!(
+        text.contains("List([Expr(\"selection.id\"), Expr(\"row.id\")])"),
+        "the list is kept as a list: {text}"
+    );
+    let copied = document(
+        "other",
+        ", bulk_actions: [{name: tag, label: Tag, copy: [row.id]}]",
+    );
+    let error = refused(&copied);
+    assert!(
+        error
+            .path()
+            .to_string()
+            .starts_with("pages/files/sections/list/bulk_actions/tag"),
+        "{error}"
+    );
+    assert!(error.message().contains("scalar"), "{error}");
+}

@@ -74,8 +74,12 @@ fn scratch(test: &str) -> PathBuf {
 }
 
 fn open(test: &str) -> (App, Rc<RefCell<FixtureAdapter>>) {
+    open_with(test, DOCUMENT)
+}
+
+fn open_with(test: &str, yaml: &str) -> (App, Rc<RefCell<FixtureAdapter>>) {
     let dir = scratch(test);
-    let document = ess_ui::load_str(DOCUMENT).expect("the document loads");
+    let document = ess_ui::load_str(yaml).expect("the document loads");
     let (adapter, scripts) = FixtureAdapter::load(&document, &dir, None).expect("fixtures load");
     let adapter = Rc::new(RefCell::new(adapter));
     let mut app = App::with_adapter(
@@ -144,5 +148,32 @@ fn a_confirm_overlay_without_does_runs_the_action_that_opened_it() {
         sent(&adapter),
         vec![("things.Drop".to_owned(), BTreeMap::new())],
         "the opener's command runs on confirm"
+    );
+}
+
+/// A `bind` value written as a list sends one list input of the values its expressions read
+/// (story:both-renderers-read-one-binding-expression-grammar, beyond10x/ess#723).
+#[test]
+fn a_listed_bind_value_is_sent_as_one_list() {
+    let text = DOCUMENT.replace(
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n          \
+         - {name: tag, does: things.Tag, bind: {things: [row.id, row.name]}, label: Tag}\n",
+    );
+    assert_ne!(text, DOCUMENT, "the document changed");
+    let (mut app, adapter) = open_with("listed", &text);
+    app.keys("jt");
+    let listed = Value::Sequence(vec![
+        Value::String("th-2".to_owned()),
+        Value::String("Bolt".to_owned()),
+    ]);
+    assert_eq!(
+        sent(&adapter),
+        vec![(
+            "things.Tag".to_owned(),
+            BTreeMap::from([("things".to_owned(), listed)])
+        )],
+        "{}",
+        app.render_text(100, 30)
     );
 }

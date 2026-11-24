@@ -4,7 +4,7 @@
 use ess_yaml::Value;
 
 use crate::filter::{self, Operator, Predicate};
-use crate::model::{Action, ActionAs, Expr};
+use crate::model::{Action, ActionAs, BindValue, Expr};
 
 /// Where a toggle's state expression comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,10 +63,10 @@ pub fn toggle_state(action: &Action) -> Option<ToggleState> {
         });
     }
     action.does.as_ref()?;
-    let mut flipped = action
-        .bind
-        .iter()
-        .filter_map(|(input, value)| negated(&value.0).map(|state| (input, state)));
+    let mut flipped = action.bind.iter().filter_map(|(input, value)| match value {
+        BindValue::One(value) => negated(&value.0).map(|state| (input, state)),
+        BindValue::List(_) => None,
+    });
     let (input, state) = flipped.next()?;
     if flipped.next().is_some() {
         return None;

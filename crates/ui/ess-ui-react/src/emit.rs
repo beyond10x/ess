@@ -876,7 +876,17 @@ impl<'d> Gen<'d> {
             ("does", quoted(action.does.as_ref())),
             (
                 "bind",
-                (!action.bind.is_empty()).then(|| exprs(&action.bind)),
+                (!action.bind.is_empty()).then(|| {
+                    ts::object(action.bind.iter().map(|(name, value)| {
+                        let value = match value {
+                            ess_ui::BindValue::One(value) => ts::string(&value.0),
+                            ess_ui::BindValue::List(items) => {
+                                ts::array(items.iter().map(|item| ts::string(&item.0)))
+                            }
+                        };
+                        (name.as_str(), Some(value))
+                    }))
+                }),
             ),
             ("opens", quoted(action.opens.as_ref())),
             ("navigate", navigate),

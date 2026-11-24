@@ -69,7 +69,8 @@ expressions:
     - {form: "widget.<field>",           note: the widget row inside a board}
     - {form: "same_as(<section>)",       note: the params of another section's read}
     - {form: "matches(params)",          note: true when a live row satisfies the section's read params}
-    - {form: "operators",                note: "==, !=, in [..], not, and, or, literals"}
+    - {form: "operators",                note: "==, !=, in [..], not, and, or, parentheses, literals; React and the terminal read them with one grammar"}
+    - {form: "[<expr>, ...]",            note: "a list of expressions, as a `bind` value only: sent as one list input of their values"}
 
 unmapped_marker:
   summary: How a retrofit marks a value it could not determine.
@@ -1310,7 +1311,7 @@ constructs:
     fields:
       name:       {type: name, note: "node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name"}
       does:       {type: {ref: command}, note: ESS command to run}
-      bind:       {type: {map: {key: name, value: expr}}, note: "command input from row, selection or state"}
+      bind:       {type: {map: {key: name, value: {one_of: [expr, {list: expr}]}}}, note: "command input from row, selection or state; a list of expressions is sent as one list input"}
       opens:      {type: {ref: overlay}, note: overlay to open}
       navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
       export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: {one_of: [{map: {key: name, value: expr}}, expr]}}}}, note: "download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>`"}

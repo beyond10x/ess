@@ -19,7 +19,8 @@ export interface ActionSpec {
   label?: string;
   as?: "button" | "icon" | "toggle" | "choice" | "menu_item" | "link";
   does?: string;
-  bind?: Record<string, string>;
+  /** Each input to the expression it is sent as, or to a list of them sent as one list. */
+  bind?: Record<string, string | string[]>;
   opens?: string;
   navigate?: { to: string; params?: Record<string, string> };
   /** `params`: one expression (`same_as(<section>)`), or each param's expression. */
@@ -150,7 +151,7 @@ export async function runCommand(
 function bound(action: Pick<ActionSpec, "bind">, values: Record<string, unknown>): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   for (const [name, expr] of Object.entries(action.bind ?? {})) {
-    input[name] = evaluate(expr, values);
+    input[name] = Array.isArray(expr) ? expr.map((item) => evaluate(item, values)) : evaluate(expr, values);
   }
   return input;
 }

@@ -194,17 +194,19 @@ fn fnv(text: &str) -> u64 {
 /// is re-pinned with it; no other file of the pins above changes. Moved again after the review of
 /// the shell's overlays: `core.tsx` lets a registry inside another be the outer one, forgets a
 /// page's sections when its frame goes, and reports the title's record apart from the row
-/// (`titleRow`); only the whole-project digest moves.
+/// (`titleRow`); only the whole-project digest moves. `actions.tsx` and the whole-project digest
+/// re-pinned for story:both-renderers-read-one-binding-expression-grammar: a `bind` value may be a
+/// list of expressions, sent as one list (`bound`, `ActionSpec.bind`, beyond10x/ess#723).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
-    ("src/runtime/actions.tsx", 0xdbb3_5348_126e_75bb),
+    ("src/runtime/actions.tsx", 0x5dbd_c91e_107b_7e7f),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
     ("src/runtime/data.ts", 0x5284_0c01_17d1_fa7f),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xae0b_aa82_8ebf_670e;
+const PLAIN_PROJECT: u64 = 0x8e93_820f_173e_0e4a;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

@@ -71,7 +71,8 @@ Expressions connect a node to state and data. They are short paths plus a few op
 | `widget.<field>` | the widget row inside a board |
 | `same_as(<section>)` | the params of another section's read |
 | `matches(params)` | true when a live row satisfies the section's read params |
-| `operators` | ==, !=, in \[..\], not, and, or, literals |
+| `operators` | ==, !=, in \[..\], not, and, or, parentheses, literals; React and the terminal read them with one grammar |
+| `[<expr>, ...]` | a list of expressions, as a `bind` value only: sent as one list input of their values |
 
 ### Short forms
 
@@ -2119,7 +2120,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 |---|---|---|---|---|
 | `name` | `name` |   |   | node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name |
 | `does` | name of an ESS `command` |   |   | ESS command to run |
-| `bind` | map of `name` → `expr` |   |   | command input from row, selection or state |
+| `bind` | map of `name` → (one of: `expr` \| list of `expr`) |   |   | command input from row, selection or state; a list of expressions is sent as one list input |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
 | `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
 | `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
