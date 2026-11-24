@@ -28,6 +28,8 @@ lifted into a document), then a fourth report of four findings (a service contra
 - Third list (an application's own generator): five findings on `ess` 0.98.0, items 1 to 5 below.
 - Fifth list (a page lifted into a document): two findings on `ess` 0.98.0.
 - Fourth report (a service contract): four findings, below.
+- Sixth list (items G12 to G15): G14 (P0, a performance defect, diagnosed apart, its story
+  follows), G15 (P1), G12 and G13 (P2), below.
 - P2: first report items 9 to 17.
 
 ## First group to build
@@ -178,6 +180,35 @@ Four findings. Finding 1 is a defect being reproduced for a patch release after 
   `story:an-http-binding-may-declare-that-an-accepted-command-or-a-served-view-has-no-route`
   (existing, draft); this report is a second need for it.
 
+### Sixth list (items G12 to G15) (filed)
+
+Four items from one downstream application on 0.98.0. The letters G12 to G15 are this list's own;
+they are not the second report's G-items and not the first report's items 12 to 15.
+
+- G14, P0: a performance defect. Diagnosed apart; its story follows and is not filed here.
+- G15, P1: fixtures are not typed against the model. `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` (L, about 560;
+  `ess ui check --model` finds a fixture row or a script payload whose value contradicts the
+  declared type, SX-D1 to SX-D2) and `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures` (M, about 350; `ess ui test
+  --model` refuses a mistyped document fixture and fails a test with mistyped own fixtures,
+  SX-D3). No format version. Siblings under one feature, kept apart: `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches`
+  and `story:a-per-value-channel-script-that-names-no-session-is-reported` (item 7). The draft
+  `story:board-widget-kinds-reads-every-fixture-answer` has its acceptance 1 covered by the single
+  fixture reader.
+- G12, P2: no expression reads a product of list counts. Three units, all `ess/39`, which is
+  format: decided before acceptance: `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` (L, about 580; arithmetic over
+  several facts as a command guard operand and `xs.count` in every expression; after
+  `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` (L, about 450; synthesis witnesses both sides
+  of the comparison) and `story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go` (M, about 380; each target keeps the command
+  an obligation named by it or evaluates it). SX-D4 to SX-D6. The count-product idiom of the first
+  report's "coverage over the product of two stored lists" is covered; the quantifier form stays
+  with the quantifier design of first report item 9 (SX-D4 B). `story:a-guard-compares-two-keyed-lists-element-by-element-and-the-reference-shows-a-dominance-refusal-that-the` shares
+  the guard positions and is not covered.
+- G13, P2: a system actor cannot carry the attribute a caller-recorded field needs.
+  `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` (S, about 120; the refusal names the system actor and the idiom, the
+  reference states who is a system actor), SX-D7. It is derived from
+  `story:a-system-issued-creating-command-is-witnessed` (active), which covers the report's second
+  sentence (`ESS-SYNTH-023` on a creating command).
+
 ### Store issues found
 
 Found while assessing the fourth report; no existing story was changed for them.
@@ -281,9 +312,16 @@ Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in
 The stream finding waits on the existing exchange stories (`story:an-exchange-is-declared-in-the-specification`,
 `story:asyncapi-and-openapi-project-an-exchange`, both active and unbuilt).
 
+Sixth list: `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
+`CHECKS` list and schema check list; not a hard dependency, the later story rebases), then
+`story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures`; `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` any time; `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` once
+`ess/39` is open (`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, one opener only), then `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` and
+`story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go` side by side.
+
 ## Format
 
-Stories that name `ess/38` or `ess/39`: `story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
+Stories that name `ess/38` or `ess/39`: `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the`, `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of`,
+`story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go`,`story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
 `story:a-when-related-predicate-reads-the-addressed-row-as-subject-field-and-subject-state-so-one-branch-is-selected`, `story:a-branch-that-creates-its-subject-declares-affects-over-rows-that-existed-before-the-outcome-validated-and`, `story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its`,
 `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, `story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted`, `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`, `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command`, `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object`,
 and, under SL-D8 option B, `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`. `ess-diff/24` carries the diff kinds of
@@ -496,6 +534,33 @@ Fourth report (a service contract):
 - AC-D6 (finding 4): may two crossed route templates both be bound. A: a route declares
   `precedes:` and both servers dispatch in that order; B: decline; C: admit a pair whose variable
   types cannot hold each other's literal. Default A.
+
+Sixth list (items G12, G13, G15):
+
+- SX-D1 (G15): how severe is a fixture value that contradicts the model. A: every finding an
+  error; B: every finding a warning; C: shape findings (kind, unknown or missing member, enum
+  value, union tag) errors, an identity's `prefix` or `alphabet` a warning. Default C.
+- SX-D2 (G15): where the types come from. A: the compiled IR's field types as plain data
+  (`RowTypes`) walked by one `ess-ui` function; B: the served route's response schema from the
+  bound OpenAPI document, validated with `schema-contract`. Default A.
+- SX-D3 (G15): what `ess ui test --model` does with a mistyped fixture. A: a document fixture
+  error refuses the run, a test's own fixture error fails that test at setup (`test.fixme` in the
+  Playwright spec), warnings print; B: every error fails each test it reaches at setup; C: print
+  and run everything. Default A.
+- SX-D4 (G12): what the item opens. A: arithmetic over several facts as a command guard operand
+  and `xs.count` in every expression (three units, about 1,400 lines, `ess/39`); B: the coverage
+  quantifier "for every pair of two lists a row exists", with the quantifier work of item 9; C:
+  A now, B later; D: decline, the application keeps the `external:` cause. Default A.
+- SX-D5 (G12): in which guard positions. A: `when:`, `when_subject:` and the `when_related:`
+  predicate, other positions refused by name; B: every predicate position; C: `when:` only.
+  Default A.
+- SX-D6 (G12): how an expression spells a list's length. A: `xs.count`, and the design page's
+  `count(xs)` is amended; B: `count(xs)`, with `.count` guard-only; C: both. Default A.
+- SX-D7 (G13): may a command record a caller attribute when a system actor is granted it. A: a
+  system actor declares constant attributes (`ess/39`); B: the caller read names a fallback value
+  (`ess/39`); C: decline, with the documented idiom (an automated actor with an identity is a
+  caller with `attributes:`, not `system: true`) and a refusal that names both. Default C. A and
+  B touch who is recorded as having done something, an audit and authority boundary.
 
 ## Accepted
 
