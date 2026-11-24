@@ -318,6 +318,51 @@ fn with_http_both_route_tables_carry_the_bindings_paths_methods_and_parameters()
     }
 }
 
+/// The shelf's routes with answers declared other than ESS's own: a view as a bare array, one as
+/// an array under `items`, and a command's outcome as `204` with no body (beyond10x/ess#723).
+const SHELF_DECLARED: &str = "routes:\n  \
+    - command: shelf.items.AddItem\n    method: post\n    path: /items\n    \
+      outcomes:\n      added: {status: 204, body: none}\n  \
+    - {command: shelf.items.AddStamp, method: post, path: /stamps}\n  \
+    - {view: shelf.items.AllItems, method: get, path: /items, body: array}\n  \
+    - {view: shelf.items.AllStamps, method: get, path: /stamps, body: {items: array}}\n";
+
+#[test]
+fn with_http_both_route_tables_carry_the_bindings_declared_answers() {
+    let dir = scratch("declared");
+    let http = SHELF.binding(&dir, "declared.yaml", SHELF_DECLARED);
+    for target in ["tui", "react"] {
+        let (output, out) = generate(&dir, target, SHELF, &SHELF.document(), Some(&http));
+        assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+        let table = table(target, &out);
+        let served = &table["components"]["shelf-service"];
+        assert_eq!(served["views"]["shelf.items.AllItems"]["answer"], "array");
+        assert_eq!(
+            served["views"]["shelf.items.AllItems"].get("member"),
+            None,
+            "{target}"
+        );
+        assert_eq!(
+            (
+                &served["views"]["shelf.items.AllStamps"]["answer"],
+                &served["views"]["shelf.items.AllStamps"]["member"]
+            ),
+            (&json!("array"), &json!("items")),
+            "{target}"
+        );
+        assert_eq!(
+            served["commands"]["shelf.items.AddItem"]["answers"],
+            json!([{"status": 204, "outcome": "added", "body": "none"}]),
+            "{target}"
+        );
+        assert_eq!(
+            served["commands"]["shelf.items.AddStamp"].get("answers"),
+            None,
+            "{target}: an outcome at ESS's envelope carries no answer"
+        );
+    }
+}
+
 /// The routes ESS derives for the shelf, restated as a binding.
 const SHELF_DERIVED: &str = "routes:\n  \
     - {view: shelf.items.AllItems, method: get, path: /items/views/AllItems}\n  \

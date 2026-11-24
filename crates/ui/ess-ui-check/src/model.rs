@@ -67,8 +67,9 @@ use ess_gen::http::{self, Served};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate};
 use ess_ui::binding::{
-    Binding, CommandEffect, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, FixtureEffects,
-    ModelEnums, QueryParam, RowChange, RowFilter, SetValue, ViewRoute, ViewShape,
+    Binding, CommandEffect, CommandRoute, DeclaredAnswer, DeclaredError, EnumLookup, EnumVariant,
+    ErrorRoute, FixtureEffects, ModelEnums, QueryParam, RowChange, RowFilter, SetValue, ViewRoute,
+    ViewShape,
 };
 use ess_ui::{
     Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, HostSlot,
@@ -1826,8 +1827,8 @@ fn moved(ir: &EssIr, route: &http::Route<'_>, default: http::Method) -> Moved {
 }
 
 /// Why a route of `http` cannot be what a generated UI calls: the binding routes none, serves a
-/// command on `get` with an input field its path does not carry, or reads a command's input as
-/// anything but a JSON body.
+/// command on `get` with an input field its path does not carry, answers a command's outcome with
+/// a redirect, or reads a command's input as anything but a JSON body.
 fn unbound(
     ir: &EssIr,
     bound: HttpBinding<'_>,
@@ -1865,6 +1866,24 @@ fn unbound(
                  must carry every input field",
                 bound.path.display(),
                 left.join(", ")
+            ));
+        }
+    }
+    // Every other declared answer form reaches the route table (`declared_answers`); a redirect
+    // is one no generated UI reads, since `fetch` follows it to a page that is no answer.
+    if let (Served::Command(handle), Some(declared)) = (route.serves, route.declared) {
+        let redirected = ir.command(handle).outcomes.iter().find(|outcome| {
+            declared
+                .answer(outcome.name.as_str(), outcome.error.is_some())
+                .is_some_and(|listed| listed.redirect.is_some())
+        });
+        if let Some(outcome) = redirected {
+            return Some(format!(
+                "command `{qualified}` answers its outcome `{}` with a redirect in the binding {}: \
+                 a generated UI follows no redirect; answer that outcome with a body or a status \
+                 alone",
+                outcome.name,
+                bound.path.display()
             ));
         }
     }
@@ -1919,6 +1938,10 @@ impl Surface {
                             path_aliases: off.path_aliases,
                             body,
                             body_alias,
+                            answers: route
+                                .declared
+                                .map(|declared| declared_answers(ir, command, declared))
+                                .unwrap_or_default(),
                         };
                         surface
                             .commands
@@ -1948,12 +1971,16 @@ impl Surface {
                             }
                         }
                         let off = moved(ir, &route, http::Method::Get);
+                        let (answer, member, empty) = view_answer(route.declared);
                         let route = ViewRoute {
                             path: route.path,
                             params,
                             identity: None,
                             method: off.method,
                             path_params: off.path_params,
+                            answer,
+                            member,
+                            empty,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
                         surface.unservable.insert(handle.to_string(), unservable);
@@ -1969,6 +1996,77 @@ impl Surface {
         }
         surface
     }
+}
+
+/// How a view route's rows are answered, as the route table carries it (beyond10x/ess#723): the
+/// form where it is not `rows`, the member a wrapped form is answered under, and a `single` view's
+/// empty status. All `None` for a derived route and the default form.
+fn view_answer(
+    declared: Option<&ess_gen::ess_http::Route>,
+) -> (Option<String>, Option<String>, Option<u16>) {
+    use ess_gen::ess_http::ViewBody;
+    let Some(route) = declared else {
+        return (None, None, None);
+    };
+    let form = match route.body.form {
+        ViewBody::Rows => None,
+        ViewBody::Array => Some("array".to_owned()),
+        ViewBody::Single => Some("single".to_owned()),
+    };
+    (
+        form,
+        route.body.member.clone(),
+        route.empty.as_ref().map(|empty| empty.status),
+    )
+}
+
+/// Each outcome `route` answers other than with ESS's envelope, in the order the command declares
+/// them, as the route table carries it (beyond10x/ess#723). Every body form is carried: an
+/// exhaustive match, so a form `ess-http/1` adds fails to compile here until a UI reads it.
+fn declared_answers(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    route: &ess_gen::ess_http::Route,
+) -> Vec<DeclaredAnswer> {
+    use ess_gen::ess_http::{Body, ResponseEncoding};
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| {
+            let listed = route.answer(outcome.name.as_str(), outcome.error.is_some())?;
+            let (body, member) = match &listed.body {
+                Body::Envelope => return None,
+                Body::None => ("none".to_owned(), None),
+                Body::Response => ("response".to_owned(), None),
+                Body::ResponseField(field) => (format!("response.{field}"), None),
+                Body::Wrapped { member, field } => (
+                    field.as_ref().map_or_else(
+                        || "response".to_owned(),
+                        |field| format!("response.{field}"),
+                    ),
+                    Some(member.clone()),
+                ),
+                Body::Error { member } => ("error".to_owned(), Some(member.clone())),
+            };
+            // An outcome that refuses names its error whatever its body, so a UI never reads it as
+            // accepted; only an `error` body carries the wire name to tell two apart.
+            let error = outcome.error.as_ref().map(|handle| {
+                let declared = ir.error(handle);
+                DeclaredError {
+                    wire: declared.naming.wire_or(&declared.name).to_owned(),
+                    code: declared.wire_code(),
+                }
+            });
+            Some(DeclaredAnswer {
+                status: listed.status,
+                outcome: outcome.name.to_string(),
+                body,
+                member,
+                error,
+                text: listed.encoding == ResponseEncoding::Text,
+            })
+        })
+        .collect()
 }
 
 /// Fields by name and by wire name, each with the wire variants of its enum, if it is one.

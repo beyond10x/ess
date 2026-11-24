@@ -602,3 +602,83 @@ fn bound_with_model(text: &str, sources: &[(String, String)]) -> Binding {
     let document = ess_ui::load_str(text).unwrap_or_else(|error| panic!("{error}"));
     binding(&document, sources).unwrap_or_else(|error| panic!("{error}"))
 }
+
+/// The answers an `ess-http/1` binding declares reach the route table (beyond10x/ess#723): a view
+/// answered as an array under `items`, a command's outcome as `204` with no body; and a command
+/// whose outcome is a redirect is refused, since a generated UI follows none.
+#[test]
+fn a_bindings_declared_answers_reach_the_route_table() {
+    use ess_ui::binding::DeclaredAnswer;
+    let sources = shop_with_components(&[]);
+    let ir = compile_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let routed = |added: &str| {
+        let declared = format!(
+            "type: ess-http/1\nspecification:\n  system: shop\n  version: v1\n  source_digest: \
+             sha256:{}\nroutes:\n  - {{view: shop.stock.Items, method: get, path: /items, \
+             body: {{items: array}}}}\n  - command: shop.stock.AddItem\n    method: post\n    \
+             path: /items\n    outcomes:\n      added: {added}\n",
+            ir.source_digest()
+        );
+        let spec = ess_gen::ess_http::HttpSpec::from_yaml(&declared).expect("parses");
+        let compiled = ess_gen::ess_http::compile(&spec, &ir, &http::derived(&ir))
+            .unwrap_or_else(|refused| panic!("compiles: {refused}"));
+        http::Binding::new(compiled).expect("every route has a path")
+    };
+    let text = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: summary, reads: stock.Items}, \
+          {name: add, component: form, does: stock.AddItem, fields: [label]}]}",
+    );
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+
+    let plain = routed("{status: 204, body: none}");
+    let over = ess_ui_check::HttpBinding {
+        path: Path::new("shop-http.yaml"),
+        binding: &plain,
+    };
+    let bound = ess_ui_check::binding_over(&document, &sources, Some(over))
+        .unwrap_or_else(|error| panic!("the declared answers bind: {error}"));
+    let served = &bound.components["shop-service"];
+    let items = &served.views["shop.stock.Items"];
+    assert_eq!(
+        (
+            items.answer.as_deref(),
+            items.member.as_deref(),
+            items.empty
+        ),
+        (Some("array"), Some("items"), None)
+    );
+    assert_eq!(
+        served.commands["shop.stock.AddItem"].answers,
+        [DeclaredAnswer {
+            status: 204,
+            outcome: "added".to_owned(),
+            body: "none".to_owned(),
+            member: None,
+            error: None,
+            text: false,
+        }]
+    );
+    assert!(bound.routed(), "declared answers make a routed binding");
+
+    let redirected =
+        routed("{status: 303, body: none, redirect: {location: input.label, mode: query}}");
+    let over = ess_ui_check::HttpBinding {
+        path: Path::new("shop-http.yaml"),
+        binding: &redirected,
+    };
+    let Err(BindingError::Refused(refusals)) =
+        ess_ui_check::binding_over(&document, &sources, Some(over))
+    else {
+        panic!("a redirect answer is refused");
+    };
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.message.contains("redirect")
+                && refusal.message.contains("`added`")
+                && refusal.message.contains("shop-http.yaml")),
+        "{refusals:#?}"
+    );
+}

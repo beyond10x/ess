@@ -415,6 +415,12 @@ export interface ViewRoute {
   method?: string;
   /** Each path variable to the parameter whose value it carries, which then leaves the query. */
   path_params?: Record<string, string>;
+  /** How the rows are answered, where not `{rows: [...]}`: a JSON array, or one row. */
+  answer?: "array" | "single";
+  /** The one member that answer is under, where the binding wraps it. */
+  member?: string;
+  /** The status a `single` view answers when it holds no row: read as no rows. */
+  empty?: number;
 //-routed
 }
 
@@ -443,8 +449,27 @@ export interface CommandRoute {
   body?: string;
   /** That field's model name, where it is renamed on the wire. */
   body_alias?: string;
+  /** Each outcome the binding answers other than with ESS's envelope. */
+  answers?: DeclaredAnswer[];
 //-routed
 }
+//+routed
+
+/**
+ * One outcome a route answers other than with ESS's envelope (`ess_ui::binding::DeclaredAnswer`):
+ * its status, its body form (`none`, `response`, `response.<field>`, `error`), the member that
+ * form is under or that carries an error's wire name, the error it refuses with, and whether it is
+ * plain text.
+ */
+export interface DeclaredAnswer {
+  status: number;
+  outcome: string;
+  body: string;
+  member?: string;
+  error?: { wire: string; code: string };
+  text?: boolean;
+}
+//-routed
 
 /** One declared error: the status its branch answers with and what it is shown as. */
 export interface ErrorRoute {
@@ -468,16 +493,55 @@ export class CommandRefused extends DataError {
 }
 
 let authorization: string | undefined;
+let renewal: (() => Promise<string | undefined>) | undefined;
+let renewing: Promise<string | undefined> | undefined;
 
 /**
- * Sets the `Authorization` header every request carries, as configured; never derived. How the
- * server authenticates it is the realization's. `undefined` sends none.
+ * Sets the `Authorization` header every request carries, as configured; never derived, for
+ * example `Bearer <token>`. How the server authenticates it is the realization's. `undefined`
+ * sends none.
+ *
+ * `renew`, where given, is asked for a new value when a read, a download or a command is answered
+ * `401` (beyond10x/ess#723): the request is sent once more with the value it returns. Requests
+ * answered `401` at once share one `renew` call; a second `401`, an `undefined` value or a
+ * rejected `renew` leaves the `401` the answer.
  */
-export function setAuthorization(value: string | undefined): void {
+export function setAuthorization(value: string | undefined, renew?: () => Promise<string | undefined>): void {
+  renewal = renew;
   if (authorization === value) return;
   authorization = value;
   sourceVersion++;
   invalidate();
+}
+
+/** Whether `renew` gave a new value, asked once for every request answered `401` meanwhile. */
+async function renewed(): Promise<boolean> {
+  const renew = renewal;
+  if (renew === undefined) {
+    return false;
+  }
+  if (renewing === undefined) {
+    renewing = renew()
+      .catch(() => undefined)
+      .finally(() => {
+        renewing = undefined;
+      });
+  }
+  const value = await renewing;
+  if (value === undefined) {
+    return false;
+  }
+  authorization = value;
+  return true;
+}
+
+/** `fetch`, sent once more with a renewed `Authorization` when answered `401` and renewal gives one. */
+async function fetched(url: string, init: () => RequestInit): Promise<Response> {
+  const response = await fetch(url, init());
+  if (response.status === 401 && (await renewed())) {
+    return fetch(url, init());
+  }
+  return response;
 }
 
 /**
@@ -578,6 +642,63 @@ function bodiless(method: string): boolean {
   return method === "GET" || method === "HEAD";
 }
 
+/**
+ * `classify`, with the answers a route declares first: a port of
+ * `ess_ui::binding::classify_declared` (beyond10x/ess#723).
+ */
+export function classifyDeclared(status: number, body: string, declared: DeclaredAnswer[]): Answer {
+  const at = declared.filter((answer) => answer.status === status);
+  if (at.length === 0) {
+    return classify(status, body);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    parsed = undefined;
+  }
+  if (isObject(parsed)) {
+    for (const answer of at) {
+      if (answer.body !== "error" || answer.member === undefined || answer.error === undefined) {
+        continue;
+      }
+      if (parsed[answer.member] === answer.error.wire) {
+        const payload = Object.fromEntries(Object.entries(parsed).filter(([name]) => name !== answer.member));
+        return Object.keys(payload).length === 0
+          ? { answer: "refused", error: answer.error.code }
+          : { answer: "refused", error: answer.error.code, payload: payload as Json };
+      }
+    }
+  }
+  if (at.some((answer) => answer.error === undefined)) {
+    return { answer: "accepted" };
+  }
+  const codes = [...new Set(at.filter((answer) => answer.body !== "error").map((answer) => answer.error?.code))];
+  return codes.length === 1 && codes[0] !== undefined
+    ? { answer: "refused", error: codes[0] }
+    : classify(status, body);
+}
+
+/**
+ * The value an accepted answer resolves with, read as the route declares the outcome at `status`:
+ * `{}` for no body, the text for `encoding: text`, the value under the declared member, else the
+ * parsed body.
+ */
+function acceptedValue(status: number, text: string, declared: DeclaredAnswer[]): Json {
+  const form = declared.find((answer) => answer.status === status && answer.error === undefined);
+  if (form === undefined) {
+    return JSON.parse(text) as Json;
+  }
+  if (form.body === "none") {
+    return {};
+  }
+  if (form.text === true) {
+    return text;
+  }
+  const body = JSON.parse(text) as Json;
+  return form.member === undefined ? body : isObject(body) ? (body[form.member] ?? null) : null;
+}
+
 //-routed
 /**
  * The adapter for the served surface `binding` describes: a read is `GET <base><path>` with its
@@ -609,25 +730,43 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
     }
     const search = query.toString();
 //+unrouted
-    const response = await fetch(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, {
+    const response = await fetched(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, () => ({
 //-unrouted
 //+routed
-    const response = await fetch(`${base(found.component)}${path}${search ? `?${search}` : ""}`, {
+    const response = await fetched(`${base(found.component)}${path}${search ? `?${search}` : ""}`, () => ({
       method: found.route.method ?? "GET",
 //-routed
       headers: headers(false),
       signal: request.signal,
-    });
+    }));
     return response;
   }
   return {
     async read(request) {
       const response = await viewResponse(request);
       const text = await response.text();
+//+routed
+      const route = served(binding, "views", request.view)?.route;
+      if (route?.empty !== undefined && response.status === route.empty) {
+        return { rows: [] };
+      }
+//-routed
       if (response.status < 200 || response.status >= 300) {
         throw new DataError(`${response.status} ${request.view}`, response.status);
       }
       const body = JSON.parse(text) as Json;
+//+routed
+      if (route?.answer !== undefined) {
+        const value = route.member === undefined ? body : isObject(body) ? body[route.member] : undefined;
+        if (route.answer === "single") {
+          return { rows: value === undefined || value === null ? [] : [value] };
+        }
+        if (!Array.isArray(value)) {
+          throw new DataError(`${request.view}: the answer is not the array its route declares`, response.status);
+        }
+        return { rows: value };
+      }
+//-routed
       if (isObject(body) && Array.isArray(body.rows)) {
         return { rows: body.rows, total: typeof body.total === "number" ? body.total : undefined };
       }
@@ -661,28 +800,37 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
       let text = "";
       try {
 //+unrouted
-        const response = await fetch(`${base(found.component)}${found.route.path}`, {
+        const response = await fetched(`${base(found.component)}${found.route.path}`, () => ({
           method: "POST",
           headers: headers(true),
           body: JSON.stringify(input),
-        });
+        }));
 //-unrouted
 //+routed
-        const response = await fetch(`${base(found.component)}${path}`, {
+        const response = await fetched(`${base(found.component)}${path}`, () => ({
           method,
           headers: headers(body !== undefined),
           body,
-        });
+        }));
 //-routed
         status = response.status;
         text = await response.text();
       } catch {
         // No answer at all: classified as a transport failure below.
       }
+//+unrouted
       const answer = classify(status, text);
       if (answer.answer === "accepted") {
         return JSON.parse(text) as Json;
       }
+//-unrouted
+//+routed
+      const declared = found.route.answers ?? [];
+      const answer = classifyDeclared(status, text, declared);
+      if (answer.answer === "accepted") {
+        return acceptedValue(status, text, declared);
+      }
+//-routed
       throw new CommandRefused(command, status, answer, shown(answer, found.route));
     },
     loadState(store) {

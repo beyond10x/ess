@@ -48,18 +48,24 @@ impl Binding {
             .find_map(|served| served.views.get(qualified))
     }
 
-    /// Whether any route leaves the derived surface's method, carries a path parameter or takes
-    /// one input field as its bare body: what an `ess-http/1` binding moves (beyond10x/ess#713,
-    /// #748). A renderer that reads only paths needs nothing more when this is `false`.
+    /// Whether any route leaves the derived surface's method, carries a path parameter, takes
+    /// one input field as its bare body or answers other than the derived surface does: what an
+    /// `ess-http/1` binding moves (beyond10x/ess#713, #748, #723). A renderer that reads only paths
+    /// needs nothing more when this is `false`.
     pub fn routed(&self) -> bool {
         self.components.values().any(|served| {
-            served
-                .views
-                .values()
-                .any(|route| route.method.is_some() || !route.path_params.is_empty())
-                || served.commands.values().any(|route| {
-                    route.method.is_some() || !route.path_params.is_empty() || route.body.is_some()
-                })
+            served.views.values().any(|route| {
+                route.method.is_some()
+                    || !route.path_params.is_empty()
+                    || route.answer.is_some()
+                    || route.member.is_some()
+                    || route.empty.is_some()
+            }) || served.commands.values().any(|route| {
+                route.method.is_some()
+                    || !route.path_params.is_empty()
+                    || route.body.is_some()
+                    || !route.answers.is_empty()
+            })
         })
     }
 }
@@ -291,6 +297,53 @@ pub struct ViewRoute {
     /// value it carries; a carried parameter leaves the query. Absent from the JSON when empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub path_params: BTreeMap<String, String>,
+    /// How the view's rows are answered, where an `ess-http/1` binding declares other than
+    /// `{rows: [...]}` (beyond10x/ess#723): `array` for the rows as a JSON array, `single` for one
+    /// row. Absent from the JSON at the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<String>,
+    /// The one member [`Self::answer`]'s value is answered under, where the binding wraps it
+    /// (`{<member>: array}`, `{<member>: single}`). Absent from the JSON otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
+    /// The status a `single` view answers when it holds no row (`empty.status`), read as no
+    /// rows. Absent from the JSON otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty: Option<u16>,
+}
+
+/// One outcome a command's route answers other than with ESS's envelope, as an `ess-http/1`
+/// binding declares it (beyond10x/ess#723).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeclaredAnswer {
+    /// The status it is answered with.
+    pub status: u16,
+    /// The outcome, by name.
+    pub outcome: String,
+    /// `none`, `response`, `response.<field>` or `error`.
+    pub body: String,
+    /// The one member the body's value is answered under (`{<member>: response}`), or, for
+    /// `error`, the member that carries the error's wire name. Absent from the JSON otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
+    /// For an outcome that refuses: its error's wire name, which an `error` body's
+    /// [`Self::member`] carries, and the code ([`CommandRoute::errors`], [`Answer::Refused`]) it
+    /// stands for. Absent from the JSON for an outcome that refuses nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<DeclaredError>,
+    /// Whether the body is the field's value as `text/plain` (`encoding: text`). Absent from the
+    /// JSON when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub text: bool,
+}
+
+/// The error an `error` [`DeclaredAnswer`] names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeclaredError {
+    /// The value the body's member carries: the error's wire name.
+    pub wire: String,
+    /// The error's code in [`CommandRoute::errors`].
+    pub code: String,
 }
 
 /// One view parameter, carried as a query parameter.
@@ -344,6 +397,10 @@ pub struct CommandRoute {
     /// Every declared error the command can answer, by its wire code (the `error` member of a
     /// [`Answer::Refused`]).
     pub errors: BTreeMap<String, ErrorRoute>,
+    /// Each outcome an `ess-http/1` binding answers other than with ESS's envelope, in the order
+    /// the command declares them (beyond10x/ess#723). Absent from the JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answers: Vec<DeclaredAnswer>,
 }
 
 /// One declared error a command can answer.
@@ -409,14 +466,23 @@ pub enum Answer {
 /// - `outcome` without `error`, under a `2xx`: [`Answer::Accepted`].
 /// - `outcome` with a string `error`, under anything but a `2xx`: [`Answer::Refused`].
 /// - `refused` and `actor` (a string or `null`) under `403`: [`Answer::NotGranted`].
+/// - any other answer under `401`, whatever its body: [`Answer::NotGranted`] with no actor; the
+///   call carried no credential the route accepts (beyond10x/ess#723, #681).
 /// - `refused` and a boolean `committed` under `501`: [`Answer::Unfinished`].
 /// - any other string `refused`: [`Answer::Malformed`].
 /// - anything else: [`Answer::Transport`].
 pub fn classify(status: u16, body: &str) -> Answer {
     let Ok(serde_json::Value::Object(members)) = serde_json::from_str::<serde_json::Value>(body)
     else {
-        return Answer::Transport;
+        return if status == UNAUTHENTICATED {
+            Answer::NotGranted { actor: None }
+        } else {
+            Answer::Transport
+        };
     };
+    if status == UNAUTHENTICATED && !members.contains_key("outcome") {
+        return Answer::NotGranted { actor: None };
+    }
     let success = (200..300).contains(&status);
     if let Some(outcome) = members.get("outcome") {
         if !outcome.is_string() {
@@ -448,5 +514,59 @@ pub fn classify(status: u16, body: &str) -> Answer {
         _ => Answer::Malformed {
             refused: refused.clone(),
         },
+    }
+}
+
+/// The status of a call without a credential its route accepts (RFC 9110 §15.5.2).
+const UNAUTHENTICATED: u16 = 401;
+
+/// [`classify`], with the answers `declared` for the route first (beyond10x/ess#723). At a status
+/// a declared answer has:
+///
+/// - an `error` body whose member carries a declared error's wire name is [`Answer::Refused`]
+///   with that error's code and the body's other members as its payload;
+/// - else, where an outcome that refuses nothing is declared there, [`Answer::Accepted`];
+/// - else, where exactly one error is declared there in another body form, [`Answer::Refused`]
+///   with its code.
+///
+/// Everything else is read as [`classify`] reads it.
+pub fn classify_declared(status: u16, body: &str, declared: &[DeclaredAnswer]) -> Answer {
+    let at: Vec<&DeclaredAnswer> = declared
+        .iter()
+        .filter(|answer| answer.status == status)
+        .collect();
+    if at.is_empty() {
+        return classify(status, body);
+    }
+    if let Ok(serde_json::Value::Object(members)) = serde_json::from_str(body) {
+        for answer in at.iter().filter(|answer| answer.body == "error") {
+            let (Some(member), Some(error)) = (&answer.member, &answer.error) else {
+                continue;
+            };
+            if members.get(member).and_then(serde_json::Value::as_str) == Some(&error.wire) {
+                let mut payload = members.clone();
+                payload.remove(member);
+                return Answer::Refused {
+                    error: error.code.clone(),
+                    payload: (!payload.is_empty()).then_some(serde_json::Value::Object(payload)),
+                };
+            }
+        }
+    }
+    if at.iter().any(|answer| answer.error.is_none()) {
+        return Answer::Accepted;
+    }
+    let mut codes: Vec<&str> = at
+        .iter()
+        .filter(|answer| answer.body != "error")
+        .filter_map(|answer| answer.error.as_ref().map(|error| error.code.as_str()))
+        .collect();
+    codes.dedup();
+    match codes.as_slice() {
+        [code] => Answer::Refused {
+            error: (*code).to_owned(),
+            payload: None,
+        },
+        _ => classify(status, body),
     }
 }
