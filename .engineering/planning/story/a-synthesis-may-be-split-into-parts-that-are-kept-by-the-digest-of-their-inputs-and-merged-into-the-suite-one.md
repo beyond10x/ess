@@ -14,7 +14,7 @@ relations:
 - informed_by: story:a-committed-suite-is-checked-against-the-inputs-of-synthesis-without-synthesizing
 - informed_by: story:the-outcome-loop-of-a-whole-caller-reading-runs-on-several-threads-and-writes-the-suite-one-thread-writes
 - informed_by: story:a-run-with-component-says-what-it-covers-in-text-and-in-json
-revision: 3
+revision: 4
 ---
 ## Summary
 
@@ -47,6 +47,8 @@ What exists:
   any part cheaper than the whole depends on `scoping_reproduces` (a model with a one-time-response marking or a read-granted view with
   parameters synthesizes the whole and reads it down, `synthesize.rs` 4240) and on the extension of a part's scope to commands that share
   a subject where the model has actors (`scope_of`). A per-part profile is missing.
+
+Measurement from the reporter (ESS 0.97.4, one node, five `--component` parts run at once): the five parts hold 0, 13, 207, 416 and 41 scenarios and took 35.9, 36.6, 45.2, 517.7 and 524.5 s; the whole suite on one core took 377 to 561 s over several runs; the union of the parts holds 677 of 827 ids, none twice; 150 ids are in no part; the parts list 306 distinct ids as `outside:`, of which 156 are held by another part and 150 by none; a part's time does not follow its scenario count (41 scenarios 524.5 s, 207 scenarios 45.2 s).
 
 ## Fit review
 
