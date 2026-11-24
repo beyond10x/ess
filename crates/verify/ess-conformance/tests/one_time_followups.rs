@@ -12,6 +12,8 @@ use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 const CALLER_GUARD: &str = include_str!("fixtures/one-time-followup/caller-guard.yaml");
 const UNKNOWN_FIRST: &str = include_str!("fixtures/one-time-followup/unknown-first.yaml");
 const WRONG_STATE_FIRST: &str = include_str!("fixtures/one-time-followup/wrong-state-first.yaml");
+const UNREACHABLE_SUBJECT_GUARD: &str =
+    include_str!("fixtures/one-time-followup/unreachable-subject-guard.yaml");
 
 const ORIGIN: &str = "devices.api.PairDevice/disclosure/paired/pairing_code";
 
@@ -420,4 +422,45 @@ fn a_synthesized_suite_never_fails_its_own_admission() {
     if let Err(error) = synthesis.suite.to_canonical_json() {
         panic!("{error}");
     }
+}
+
+/// A refusal guarded on a stored field that no declared command writes to the value it needs,
+/// beside a refusal over a list of references: every crate is stored `Loose`, so `sealed` is
+/// reached by no command sequence. Its own scenario is refused naming the stored field, and so is
+/// its disclosure cell; no scenario expects it, and the model's own interpreted target passes every
+/// scenario the suite holds.
+#[test]
+fn a_followup_no_command_sequence_reaches_is_refused_in_its_disclosure_cell() {
+    let ir = model(UNREACHABLE_SUBJECT_GUARD);
+    let synthesis = ess_conformance::synthesize(&ir);
+    let ordinary: ScenarioId = "depot.yard.RelabelCrate/outcome/sealed".parse().unwrap();
+    let disclosed: ScenarioId = "depot.yard.IssuePass/disclosure/issued/code/command/\
+                                 depot.yard.RelabelCrate/sealed/as/actor/depot.yard.Clerk"
+        .parse()
+        .unwrap();
+    let expecting: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .filter(|(_, scenario)| {
+            expected_branches(scenario, "depot.yard.RelabelCrate").contains(&"sealed".to_owned())
+        })
+        .map(|(id, _)| id.to_string())
+        .collect();
+    assert_eq!(expecting, Vec::<String>::new());
+    for id in [&ordinary, &disclosed] {
+        let refused: Vec<String> = synthesis
+            .refusals
+            .iter()
+            .filter(|refusal| refusal.scenario.as_ref() == Some(id))
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            refused
+                .iter()
+                .any(|text| text.contains("`depot.yard.Crate` stored mode selecting this branch")),
+            "{id} is not refused naming the stored field no command writes: {refused:#?}"
+        );
+    }
+    assert_all_pass(&ir, &synthesis);
 }
