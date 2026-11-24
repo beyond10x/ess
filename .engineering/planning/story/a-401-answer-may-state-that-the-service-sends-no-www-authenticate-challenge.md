@@ -9,7 +9,9 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+- derived_from: story:an-http-binding-declares-how-a-caller-authenticates
+- depends_on: story:an-http-binding-declares-how-a-caller-authenticates
+revision: 2
 ---
 ## Need
 
@@ -27,7 +29,7 @@ challenge:
 
 A specification of the real service therefore either states a header the service does not send,
 and the stage-3 HTTP target and the generated OpenAPI then claim it, or it leaves the route
-derived. Third report, finding 3 (second half).
+derived. Fourth report (a service contract), finding 3, second half.
 
 Minimal reproduction (written fresh; not run): command `demo.docs.ReadDocument` with an outcome
 `not-authenticated` (`error: demo.docs.NotAuthenticated`).
@@ -61,8 +63,11 @@ refused, so the RFC default holds unless a binding opts out by name.
 - Refused, `ESS-HTTP-027` widened: `none` under any header but `WWW-Authenticate`; `none` on a
   status other than `401`; `none` beside a challenge. The refusal of a bare `401` names `none` as
   the explicit way out.
-- When `story:an-http-binding-declares-how-a-caller-authenticates` has landed, its
-  `refusals.unauthenticated` takes the same `none`.
+- The `refusals.unauthenticated` standard refusal of
+  `story:an-http-binding-declares-how-a-caller-authenticates` takes the same `none`, top-level and
+  per route. A route whose required schemes carry no challenge (`api_key`, `mutual_tls`) may then
+  answer its unauthenticated refusal `401` with `none`, and that story's refusal of such a route
+  without an override names `none` beside a challenge as the way out.
 - `ess generate --kind openapi --http` writes no `WWW-Authenticate` header object for that response,
   and adds the description sentence. A binding without `none` keeps its bytes.
 - The generated Rust and Go servers answer that `401` with no `WWW-Authenticate` header
@@ -89,7 +94,7 @@ refused, so the RFC default holds unless a binding opts out by name.
 
 ## Decisions
 
-**AC-D4**, default A (admit the declared exception). Options and costs are in `DECISIONS.md`.
+**AC-D4**, default A (admit the declared exception). Options and costs are in the gap page's open decisions (`.engineering/waves/gap-reports-2026-11-24.md`, AC-D4).
 
 ## Scope
 
@@ -101,9 +106,12 @@ refused, so the RFC default holds unless a binding opts out by name.
 
 ## Depends on
 
-Nothing. The `refusals.unauthenticated` clause follows the authentication story if that story lands
-later.
+`story:an-http-binding-declares-how-a-caller-authenticates` (active, beyond10x/ess#681). That story
+owns `ESS-HTTP-027`'s challenge rule for `refusals.unauthenticated` and widens the same check in
+`crates/specify/ess-http/src/lib.rs`; this story adds the one exception to it and lands after it.
+It is derived from that story: the authentication surface is that story's, and this one only
+admits a declared absence of the challenge.
 
 ## Source
 
-A downstream application, third report, finding 3 (ESS 0.98.0).
+A downstream application, fourth report (a service contract), finding 3 (ESS 0.98.0).

@@ -39,7 +39,7 @@ scope:
   path: docs/design/minted-value-sources.md
 - confidence: cited
   path: docs/design/typed-response-outcome-payloads.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:18Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:20Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":2}}}
@@ -84,6 +84,8 @@ obligation. The interpreter, the suite and synthesis follow in
 `story:the-interpreter-answers-the-response-value-an-outcome-stores`,
 `story:synthesis-witnesses-a-guard-over-a-stored-response-value` and
 `story:the-go-and-typescript-runtimes-resolve-a-responded-value`.
+
+The fit review of story:a-later-event-of-a-creating-outcome-carries-the-minted-identity decides this need together with beyond10x/ess#823 and beyond10x/ess#816 item 5 (one generated value feeding several places of one outcome), in one design.
 
 ## Acceptance
 

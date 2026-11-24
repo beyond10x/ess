@@ -10,9 +10,8 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:navigation-reaches-any-depth-in-guards
-- depends_on: story:navigation-reaches-any-depth-in-guards
 - depends_on: story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -30,7 +29,8 @@ This is the accepted, still open `story:navigation-reaches-any-depth-in-guards` 
 released in 0.93.0 without it, and it depends on
 `story:navigation-reaches-any-depth-in-view-filters-and-guards` (active, not started). This unit and
 `g13-guard-chain-synthesis` are its implementation units, re-targeted to the open format; the
-parent's acceptance is theirs, split in two.
+parent's acceptance is theirs, split in two. The parent is an umbrella from 2026-11-24: it is not
+built itself, so no unit waits on it, and nothing reaches the view-navigation story through it.
 
 Minimal reproduction (the parent's, renamed generically; not run here). `demo.ship.AddStop(route_id)`
 creates a `Stop`; `Route.plan_id` references `Plan`, whose lifecycle is `Draft -> Frozen`:
@@ -114,8 +114,9 @@ step 4; Rust and Go owed by name; Entity Runtime refusal kept by decision). Addi
 
 ## Decisions
 
-**Accept as proposed** (the parent's decision). Open: `P2A-D6` (format) and `P2A-D7` (drop the
-parent's dependency on the view story and land as these two units; default A).
+**Accept as proposed** (the parent's decision). Open: `P2A-D6` (format). `P2A-D7` is applied on
+its default A: the parent's dependency on the view story is dropped, and the parent is delivered as
+these two units.
 
 ## Scope
 
@@ -142,7 +143,8 @@ parent's dependency on the view story and land as these two units; default A).
 
 ## Depends on
 
-- `story:navigation-reaches-any-depth-in-guards` (parent, active; this unit is derived from it).
+- Derived from `story:navigation-reaches-any-depth-in-guards` (parent, active, an umbrella); no
+  dependency on it.
 - `story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing`
   (s2, shared files).
 

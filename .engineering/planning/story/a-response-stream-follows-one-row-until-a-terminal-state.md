@@ -14,7 +14,7 @@ relations:
 - informed_by: architecture-decision-record:transport-and-idl-compile-targets
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 - decomposes: epic:messages-are-exchanged-independent-of-the-wire
-revision: 2
+revision: 3
 ---
 **Blocked on `architecture-decision-record:transport-and-idl-compile-targets`. Not to be implemented
 before that record is accepted.** The ADR names a streamed answer as the one model-level question
@@ -28,6 +28,8 @@ orchestrator relayed on 2026-10-22 (ESS 0.67.0, a2a main 3a18050).
 - **G5** (a2a wave-1 gaps list, line 14): a response stream keyed by one row. After a command or
   subscription, the caller receives every event about that row (broadcast to every subscriber of
   the row) and the stream closes when the row reaches a terminal state. No construct.
+
+Since 2026-11-24 story:an-event-channel-may-be-bound-to-server-sent-events binds the events a component publishes and no longer depends on this story (PR-D4); a row-followed stream over SSE binds with `exchange:` in place of `component:` once the exchange layer and this story have landed.
 
 ## Where it lives
 

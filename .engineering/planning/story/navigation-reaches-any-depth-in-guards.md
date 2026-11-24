@@ -11,7 +11,6 @@ refs:
   reference: beyond10x/ess#564
 relations:
 - decomposes: epic:zero-open-issues-2026-11
-- depends_on: story:navigation-reaches-any-depth-in-view-filters-and-guards
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
 scope:
@@ -29,7 +28,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:45:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:45:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -64,6 +63,8 @@ $ ess specify validate --path f-guard-two-hops
 system.yaml: invalid type: sequence, expected a string
 exit 1
 ```
+
+Since 2026-11-24 this story is an umbrella and is not built itself: story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its builds validation, the refusals, precedence step 4, the IR, the interpreter and the below-format refusal, and story:synthesis-witnesses-a-when-related-chain-with-a-decoy-at-each-step-and-a-missing-middle-row-and-generated-rust builds synthesis with decoys, the Rust and Go obligation and the Entity Runtime refusal; it closes when both have landed, its `ess/37` lines are superseded by the format of P2A-D6, and it no longer waits for the view-navigation story (P2A-D7 A).
 
 ## Acceptance
 

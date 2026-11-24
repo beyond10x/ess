@@ -35,7 +35,7 @@ scope:
   path: docs/design/generic-language-features.md
 - confidence: cited
   path: docs/design/input-guard-overlap-precedence.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:19Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:20Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
@@ -83,6 +83,8 @@ It validates and synthesizes 3 scenarios, but every scenario sends `payload_vali
 `malformed`'s, which sends no stored session; the overlap (a stored session, `payload_valid: false`)
 is never sent. `ess verify conform mutate --target interpreted`: 4 mutants, 3 killed, 1 stillborn;
 no mutant drops the `exists: false` conjunct. A target that checks the payload first passes.
+
+beyond10x/ess#816 items 1 and 2 (2026-11-23) ask the same order question for an authentication refusal, an `external:` refusal before the input guards and `before_row` in an outcome group; this story's narrowing does not reach an `external:` refusal, so the fit review of #816 decides whether they join this story or get one of their own.
 
 ## Acceptance
 

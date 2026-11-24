@@ -112,8 +112,12 @@ answers the critics' 76 findings and the recheck's 8.
 ### P1, second report (filed)
 
 - G1: a view route answers its rows under a named member, and views of one component may share a
-  route. `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their` (M, about 480), `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` (M, about 420),
-  `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` (S, about 220).
+  route. The member body is the existing `story:an-answer-may-be-wrapped-in-one-named-member` and
+  `story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member` (active,
+  beyond10x/ess#755), spelled `{<member>: array}`. The shared route, each unit derived from the
+  active story it extends: `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their` (M, about 300; its title now names the shared
+  route), `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` (M, about 300), `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` (S, about 100; its title
+  now names the shared route).
 - G2: a decimal literal sets or publishes a binary64 field. `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share` (M, about 450).
 - G3 (a gap, not a defect): a number with no declared format is drawn as written in every
   renderer; the story removes a documented difference between the renderers.
@@ -123,8 +127,13 @@ answers the critics' 76 findings and the recheck's 8.
 - G5: a structured value reads as one line (defect), a tagged union declares a flat layout, the
   generated codecs follow it, and a bound document reads the union as its variant and content in
   the layout its model declares. `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` (S, about 150),
-  `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` (M, about 480; after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`),
-  `story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares` (M, about 560), `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` (M, about 450; its title is the
+  `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` (M, about 400) and `story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares` (M, about 450): the flat
+  value of the union's encoding selector, derived from the existing
+  `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key`,
+  `story:projections-use-a-unions-declared-content-key` and
+  `story:generated-codecs-and-the-suite-use-a-unions-declared-content-key` (active,
+  beyond10x/ess#637), one key family `layout: adjacent | flat` with `content:`, in one format.
+  `story:union-tag-inline-with-fields` (draft) is archived as covered. `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` (M, about 450; its title is the
   revised one, its artifact name is the earlier one).
 - G6: a time, date or timestamp field declares UTC or the reader's local zone.
   `story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone` (M, about 420).
@@ -143,14 +152,14 @@ answers the critics' 76 findings and the recheck's 8.
 - F18: an event stream that no command opens. After the owner's note of 2026-11-24 (section
   below) the existing `story:an-event-channel-may-be-bound-to-server-sent-events` (revised) binds
   the events one component publishes, and carries it (PR-D4). `story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their` (draft) is
-  merged into that story: its withdrawal is proposed and the draft is left in the store.
+  merged into that story and archived as fully covered.
   `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames` (M, about 320) depends on the revised SSE story and reads frame naming
   from the compiled binding.
 
 ### P1, third list (an application's own generator) (filed)
 
-`sp1` is being fixed as patch release 0.98.1; `sp3` may ride the same patch; `sp3` and `sp4` are
-defects of the React runtime.
+`sp1` and `sp3` ride patch release 0.98.1; `sp4` takes the next free patch after 0.98.2; `sp3`
+and `sp4` are defects of the React runtime.
 
 - Item 1 (defect): a live insert of a key the section already holds shows one row, in both
   renderers. `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-row-in-both-renderers` (S, about 150; hotfix 0.98.1).
@@ -158,9 +167,9 @@ defects of the React runtime.
   or the field that matches its row. `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (M, about 300). Beside
   `story:a-per-value-channel-script-that-names-no-session-is-reported` (`informed_by`, no order).
 - Item 3 (defect): a looping fixture script repeats at its last entry's offset in the browser too.
-  `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` (S, about 100; hotfix-sized).
+  `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` (S, about 100; rides patch 0.98.1, its terminal pin case still open).
 - Item 4 (defect): in the browser, a live event that arrives before the section's read has
-  answered is applied once it answers. `story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` (S to M, about 150; after item 1).
+  answered is applied once it answers. `story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` (S to M, about 150; after item 1, in the next free patch after 0.98.2).
 - Item 5: a terminal test checks what a host slot is handed. `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters` (M, about
   350); after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` and `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path`.
 
@@ -200,7 +209,9 @@ Four findings. Finding 1 is a defect being reproduced for a patch release after 
 - Finding 3, header-borne inputs: `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` (three units, about 1,000 lines; credential
   headers refused, AC-D3). When a resume is designed, the stream story's `Last-Event-ID` is a
   header of the stream's request message.
-- Finding 3, the `401` challenge: `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` (S, about 250).
+- Finding 3, the `401` challenge: `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` (S, about 250; derived from and after
+  `story:an-http-binding-declares-how-a-caller-authenticates`, whose `refusals.unauthenticated` it
+  extends).
 - Finding 4, a `2xx` on an unreadable request: `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` (S, about 250).
 - Finding 4, plain-text error bodies: `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (two units, about 750).
 - Finding 4, unknown JSON fields ignored: existing
@@ -311,9 +322,10 @@ they need. The units are `gap-p1` drafts. No format version: every addition is o
   members) and `story:an-ess-http-1-binding-names-the-protocol-document-its-routes-read-by-its-compiled-digest` (S, about 300; `ess-http/1` top-level
   `protocol: sha256:` plus `--protocol`).
 - Left as it is: the commandless-stream draft (`story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their`), merged into the revised SSE
-  story. Its withdrawal is proposed in the owner's note's map, and no text was added to it.
-  `story:a-response-stream-follows-one-row-until-a-terminal-state` has one sentence that goes stale
-  (the SSE story binds published events only); it is not edited. The exchange stories, the
+  story and archived as fully covered.
+  `story:a-response-stream-follows-one-row-until-a-terminal-state` has one sentence that went stale
+  (the SSE story binds published events only); a line added to its Need says so, and one to
+  `story:a-view-answer-may-be-followed-as-it-changes` says the same of its route keys. The exchange stories, the
   authentication story and the protocol-timer story are unchanged.
 - Not written: a receiver-side close trigger in `ess-protospec/1`, and the exchange-opened SSE
   stream (written when the exchange layer lands).
@@ -402,7 +414,9 @@ Found while assessing the fourth report; no existing story was changed for them.
   about 450), `story:synthesis-witnesses-a-creating-branch-s-affects-entries-with-no-selected-row-with-selected-rows-and-decoys-and` (M, about 450), `story:generated-rust-and-go-behaviour-applies-a-pinned-affects-entry-beside-a-creation-in-the-same-transaction-and` (M,
   about 400).
 - Item 13: a guard that reaches a row several relations away. Parent:
-  `story:navigation-reaches-any-depth-in-guards` (existing, active). `story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its` (L,
+  `story:navigation-reaches-any-depth-in-guards` (existing, active), an umbrella built only by
+  these two units; neither unit depends on it, and it no longer depends on the view-navigation
+  story (P2A-D7 A). `story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its` (L,
   about 600), `story:synthesis-witnesses-a-when-related-chain-with-a-decoy-at-each-step-and-a-missing-middle-row-and-generated-rust` (M, about 500).
 - Item 14: a comparison across the elements of two keyed lists. `story:a-guard-compares-two-keyed-lists-element-by-element-and-the-reference-shows-a-dominance-refusal-that-the` (S, about
   250; idiom plus pin), `story:synthesis-witnesses-a-comparison-of-two-keyed-lists-so-a-target-that-matches-elements-by-position-drops-the` (L, about 550); it lands after the existing
@@ -452,17 +466,27 @@ Second report, six lanes built side by side, one after another within a lane:
   (same function).
 - Filter and host lane: `story:one-search-reads-several-fields-each-word-found-in-any-of-them-documented-and-pinned-in-every-renderer`, then `story:one-host-component-stands-in-many-slots-that-receive-the-same-thing-each-slot-identified-by-its-node-path` (after the active
   reused-template story).
-- HTTP lane: `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their`, then `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` beside `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares`, then
-  `story:an-http-route-streams-a-component-s-events-with-no-command-opening-it-and-frames-named-by-a-member-of-their` (after the active SSE story), then `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames`;
-  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` shares `binding.rs` with `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` and merges after it.
+- HTTP lane: `story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their` (after the active
+  `story:an-answer-may-be-wrapped-in-one-named-member`), then `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows` (after the
+  active `story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member`) beside
+  `story:a-generated-ui-reads-a-view-s-rows-from-the-member-its-route-declares` (after the active `story:a-generated-ui-reads-the-answers-its-http-binding-declares`),
+  then `story:a-generated-ui-s-live-channel-connects-to-the-stream-route-its-binding-declares-and-reads-its-frames` (after the revised SSE story);
+  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` shares `binding.rs` with the active
+  `story:a-generated-ui-reads-the-answers-its-http-binding-declares` and merges after it.
 - Literal lane: `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`.
 - Lifecycle lane: `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command` (after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), then `story:synthesis-reaches-every-state-of-a-provided-entity-through-its-provider-and-never-drives-a-move-the-deployment`.
-- Union wire lane: `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` (after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`), then `story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares`;
-  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` waits for `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` under SL-D13 A.
+- Union wire lane: `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object` (after the active
+  `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key` and
+  `story:projections-use-a-unions-declared-content-key`, and after `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`; the format is
+  decided in the format triage, D57, before acceptance), then `story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares` (after the
+  active `story:generated-codecs-and-the-suite-use-a-unions-declared-content-key`);
+  `story:a-tagged-union-value-reads-as-its-variant-and-its-content-when-the-document-is-bound-to-its-model` waits for `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object`.
 
-Third list: `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-row-in-both-renderers` (patch 0.98.1, in progress); then `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` and
-`story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` as one patch release 0.98.2 in two commits (`sp4` needs 0.98.1: a held
-event re-applied after the answer must not duplicate a row; both edit `runtime/live.ts.tmpl`);
+Third list: `story:a-live-insert-of-a-key-the-section-already-holds-shows-one-row-in-both-renderers` (patch 0.98.1, in progress); `story:a-looping-fixture-script-repeats-at-its-last-entry-s-offset-in-the-browser-too-as-in-the-terminal-and-the-test` rides the same
+patch 0.98.1 (its change is in the `hotfix/0.98.1` tree); and
+`story:in-the-browser-a-live-event-that-arrives-before-the-section-s-read-has-answered-is-applied-once-it-answers-as` follows in the next free patch after 0.98.2, which carries the fourth
+report's finding 1 (`sp4` needs 0.98.1: a held event re-applied after the answer must not duplicate
+a row; it edits `runtime/live.ts.tmpl` after `sp3`);
 `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` after or beside the item-7 story (same check list); `story:a-terminal-test-checks-what-a-host-slot-is-handed-its-resolved-reads-its-commands-and-the-page-s-parameters`
 after SP-D5 and after `story:a-test-opens-one-section-overlay-or-widget-of-a-document-alone-at-a-given-terminal-width-and-the-terminal` (same `spec.rs` and parity table).
 
@@ -473,11 +497,12 @@ the active `story:an-action-names-its-icon`; `story:a-ui-test-asserts-that-an-ac
 
 Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` first (a defect, patch release after
 0.98.1); `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` before `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (shared body checks in
-`lib.rs`); `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` after the authentication story; `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` and
-`story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares` have no dependency; `story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply` and
+`lib.rs`); `story:an-http-route-may-read-an-input-field-or-a-view-parameter-from-a-request-header` after the authentication story; `story:a-401-answer-may-state-that-the-service-sends-no-www-authenticate-challenge` after the
+authentication story (one `ESS-HTTP-027` check); `story:two-crossed-route-templates-may-be-served-in-an-order-the-binding-declares` is archived;
+`story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply` and
 `story:a-broker-binding-carries-an-exchange` both open `ess-transport/3`, so one after the other.
-The stream finding waits on the existing exchange stories (`story:an-exchange-is-declared-in-the-specification`,
-`story:asyncapi-and-openapi-project-an-exchange`, both active and unbuilt).
+The stream finding is carried by the revised SSE story, which no longer waits on the exchange
+stories (PR-D4).
 
 Sixth list: G14 first, as P0: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`, then `story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` (one file, one
 after another); `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` is not scheduled (PF-D4). `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
@@ -537,7 +562,12 @@ free number when it lands). The other stories add no version.
 Stories that name `ess/38` or `ess/39`: `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the`, `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of`,
 `story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go`,`story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields`, `story:a-guard-over-the-rows-a-list-of-references-names-shares-a-command-with-other-related-guards-its-missing-row`,
 `story:a-when-related-predicate-reads-the-addressed-row-as-subject-field-and-subject-state-so-one-branch-is-selected`, `story:a-branch-that-creates-its-subject-declares-affects-over-rows-that-existed-before-the-outcome-validated-and`, `story:at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its`,
-`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, `story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted`, `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`, `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command`, `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object`,
+`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, `story:a-command-guard-compares-a-value-with-the-digest-of-several-named-inputs-hex-sha256-tuple-and-the-interpreted`, `story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by`, `story:an-entity-whose-rows-the-deployment-provides-declares-lifecycle-moves-the-deployment-makes-with-no-command`, `story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object`
+together with the active `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key`,
+`story:projections-use-a-unions-declared-content-key` and
+`story:generated-codecs-and-the-suite-use-a-unions-declared-content-key` (written for `ess/37`,
+which shipped without them; one format for the union's wire layout, decided in the format triage,
+D57, before acceptance),
 and, under SL-D8 option B, `story:a-decimal-literal-sets-or-publishes-a-binary64-field-read-by-one-grammar-the-validator-and-every-target-share`. `ess-diff/24` carries the diff kinds of
 `story:ess-verify-diff-reports-an-entity-s-readers-declared-removed-widened-or-narrowed-at-ess-diff-24`. For all of them: format: decided before acceptance (one source format per
 design decision, `docs/design/generic-language-features.md` § Policy, 2).
@@ -643,9 +673,13 @@ P1 (second report):
   default; C: also IANA names. Default A.
 - SL-D6 (G10): how a duration from two instants and the clock is spelled. A: `since: <field>` on an
   `as: duration` field; B: `now()` arithmetic in every expression; C: decline. Default A.
-- SL-D7 (G1): how much `ess-http/1` takes for rows inside a larger answer. A: `body: {<member>:
-  rows}` plus one route shared by views, three units; B: the member body only; C: decline. Default
-  A.
+- SL-D7 (G1, reworded 2026-11-24): may views of one component share one route by their members? A:
+  yes, the three shared-route units; C: decline. The member body itself, `{<member>: array}`, is
+  the active `story:an-answer-may-be-wrapped-in-one-named-member` (the former B). Default A.
+- DD-X3 (G1, the shared route; SECURITY: waits for the owner): what a caller granted only some
+  views of a shared route gets. A: the route's not-granted refusal; B: the object with only the
+  granted members; C: refuse at validation a shared route whose views have different grants.
+  Default A, written into `story:the-generated-rust-and-go-servers-answer-a-route-shared-by-several-views-with-one-object-of-their-rows`.
 - SL-D8 (G2): which formats admit a `Binary64` literal. A: every format that has `Binary64`, by the
   `Decimal` precedent; B: only the format `story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38` opens. Default A.
 - SL-D9 (G9): settled, declined as styling. Open half: A: decline a truncation contract too; B: a
@@ -657,13 +691,11 @@ P1 (second report):
 - SL-D12 (F18; superseded by PR-D4): how `ess-http/1` takes an event stream no command opens. A: widen the active SSE
   story with a commandless `stream:` and a UI unit; B: wait for the exchange layer; C: decline.
   Default A.
-- SL-D13 (G5): where the flat union layout is declared. A: on the union in the specification,
-  `layout: flat` from `ess/39`, every target reads it and the UI binding carries it; B: a key in
-  the `ess-http/1` binding; C: the UI reads any object with the tag member and no `value` member
-  as flat; D: decline. Default A.
-- SL-D14 (G5): how the flat layout is spelled. A: `layout: adjacent | flat`, `adjacent` the
-  default; B: `tag_inline: true`; C: `wire: flat`, refused because `wire:` names an enum variant's
-  spelling. Default A.
+- SL-D13 and SL-D14 (G5): settled by reading, 2026-11-24. The layout is declared on the union, as
+  the active `story:a-guard-reads-a-union-tag-and-a-union-names-its-content-key` places the
+  encoding selector, and spelled `layout: adjacent | flat`, because the selector also carries the
+  keyed-by-variant encoding of `story:a-union-may-be-encoded-as-an-object-keyed-by-its-variant`.
+  The format is decided in the format triage (D57) before acceptance.
 
 P1 (third list):
 
@@ -696,6 +728,8 @@ P2A (items 9 to 13):
   first after its release opens `ess/39`; B: all in `ess/39`; C: one format per feature. Default A.
 - P2A-D7 (item 13): A: re-target the existing story to that format, drop its dependency on the
   view-navigation story, land it as the two units; B: keep the dependency; C: decline. Default A.
+  Applied on its default 2026-11-24: the units do not depend on the parent, and the parent does
+  not depend on the view-navigation story.
 
 P2B (items 14 to 17):
 
