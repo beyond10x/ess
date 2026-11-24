@@ -30,8 +30,8 @@ lifted into a document), then a fourth report of four findings (a service contra
 - Fourth report (a service contract): four findings, below.
 - Seventh report (a command that only reads one row): three attempts, ranked with the fourth
   report, below.
-- Sixth list (items G12 to G15): G14 (P0, a performance defect, diagnosed apart, its story
-  follows), G15 (P1), G12 and G13 (P2), below.
+- Sixth list (items G12 to G15): G14 (P0, validation and synthesis time, three stories), G15 (P1),
+  G12 and G13 (P2), below.
 - P2: first report items 9 to 17.
 
 ## First group to build
@@ -210,7 +210,14 @@ Four findings. Finding 1 is a defect being reproduced for a patch release after 
 Four items from one downstream application on 0.98.0. The letters G12 to G15 are this list's own;
 they are not the second report's G-items and not the first report's items 12 to 15.
 
-- G14, P0: a performance defect. Diagnosed apart; its story follows and is not filed here.
+- G14, P0: validation and synthesis time. The number of tries grows with the number of row-set
+  guards of one command, and each try builds every row again. Three stories, in this order:
+  `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per` (S, about 200; the arrangement of a selector's rows is built once
+  per distinct prefix of counts, with an output-identical result and a work counter),
+  `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` (L; a combination of counts that provably cannot take the branch
+  is not arranged, after a design page, with an exact fallback; after `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`)
+  and `story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` (M; a branch the row-set strategy prepares is prepared once per model,
+  branch, actors and arrangement context; after the other two).
 - G15, P1: fixtures are not typed against the model. `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` (L, about 560;
   `ess ui check --model` finds a fixture row or a script payload whose value contradicts the
   declared type, SX-D1 to SX-D2) and `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures` (M, about 350; `ess ui test
@@ -361,7 +368,8 @@ Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in
 The stream finding waits on the existing exchange stories (`story:an-exchange-is-declared-in-the-specification`,
 `story:asyncapi-and-openapi-project-an-exchange`, both active and unbuilt).
 
-Sixth list: `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
+Sixth list: G14 first, as P0: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`, then `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and`, then
+`story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` (one file, one after another). `story:with-model-ess-ui-check-refuses-a-fixture-row-or-a-script-payload-whose-value-contradicts-the-type-the-model` after `g07-session-script` and `story:ess-ui-check-model-warns-when-a-live-event-lacks-a-field-the-section-it-feeds-shows-or-the-field-that-matches` (same
 `CHECKS` list and schema check list; not a hard dependency, the later story rebases), then
 `story:ess-ui-test-model-refuses-to-start-on-mistyped-document-fixtures-and-fails-a-test-whose-own-fixtures`; `story:a-command-that-records-its-caller-and-is-granted-to-a-system-actor-is-refused-naming-that-actor-as-the-system` any time; `story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the` once
 `ess/39` is open (`story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38`, one opener only), then `story:synthesis-witnesses-a-command-guard-that-compares-a-fact-with-an-expression-of-several-facts-on-both-sides-of` and
@@ -670,6 +678,10 @@ active. The thirteen P0 units, by round:
 
 The three P0 follow-ups (`story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own`, `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`,
 `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`) stay drafts.
+
+Accepted 2026-11-24 by the coordinator under the owner's delegation: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`,
+an output-identical change with a measured work counter. `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` and
+`story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` wait for their check.
 
 ## Not accepted yet
 
