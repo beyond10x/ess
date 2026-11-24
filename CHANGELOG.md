@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` witnesses a row-set guard that selects rows by a literal identity and by membership in an input list, such as `code == "classics"` beside `exists: {in: input.genres, as: g, that: code == g}`, where every branch of the command was refused `ESS-SYNTH-001` as selecting rows by no equality with the input. From `ess/23` such a membership counts as that equality with each element sent, and a branch that needs the literal's row is sent a list holding it. Suites without such a selector keep their bytes.
+- A command with a refusal over a list of references and a `when_subject:` refusal on a stored field that no command writes to the value it needs got a scenario expecting that refusal on a row the creating command stored, and so did each one-time disclosure cell that sends it; the scenario failed on every target. Synthesis now arranges such a refusal on a row that holds its guard, and refuses it and its disclosure cells (`ESS-SYNTH-003`) naming the stored field where no row does.
+
+
+## [0.99.0] — 2026-11-24
+
 ### Added
 
 - An `ess-http/1` view route answering `rows` or `array` may declare `representations: [{query: {<parameter>: <value>}, encoding: {csv: {separator, header}}, headers}]`: the same rows as CSV when the query holds that value, `separator` `","` (the default), `";"` or a tab, `header` `true` by default, and literal headers only (`ESS-HTTP-026`). `ess specify http compile` writes them into `ess-http-ir/1` in the order written, each default omitted, and a binding without them keeps its compiled bytes. The new code `ESS-HTTP-035` refuses them on a command, a `single` view or a paged view, an empty list, a `query` of other than one parameter, two parameter names or one value twice, a view parameter or path variable as the parameter, a name or value outside RFC 3986 `unreserved`, another separator and a view field without a flat spelling; a refinement that changes them is `ESS-HTTP-012`. In the `ess-http` library `Route` has a new field `representations` and `RouteSpec` a new field `representations` (beyond10x/ess#753).
@@ -44,7 +52,6 @@
 
 ### Fixed
 
-- `ess verify conform synthesize` witnesses a row-set guard that selects rows by a literal identity and by membership in an input list, such as `code == "classics"` beside `exists: {in: input.genres, as: g, that: code == g}`, where every branch of the command was refused `ESS-SYNTH-001` as selecting rows by no equality with the input. From `ess/23` such a membership counts as that equality with each element sent, and a branch that needs the literal's row is sent a list holding it. Suites without such a selector keep their bytes.
 - Synthesis witnesses a scenario that needs a related row with chosen field values, a grant whose `name` is `mail` or whose `mode` is `denied` for instance, where the row's creating branch reads several related rows through its input: the setup run is arranged as that branch's own scenario with the chosen values sent, where the scenario was refused (`ESS-SYNTH-003`). The `any:` legs of a refusal over such a row and the scenarios that need it in a later state are witnessed. Suites where the strict search already found the run keep their bytes.
 - **Breaking:** the server `ess generate synthesize --target go` refuses a request body holding a member no declaration names at any depth, in a list element, a struct within a struct or beside a union's tag, as the Rust server and the published schema do, answering `400` with the member's path such as `body.tag.label.extra`; it refused one only at the body's first level. A struct declaring `undeclared_fields: ignored` admits one, and the server source of every model with a struct or a union changes.
 - The servers `ess generate synthesize --target rust` and `--target go` write `null` for an absent member declared `presence: null_when_absent`, in view rows and every other record, as the published schema requires, where they left it out (beyond10x/ess#799).
@@ -63,7 +70,6 @@
 - Validation and synthesis of a command with several row-set guards no longer arrange the rows of its earlier selectors again for every combination of row counts they try.
 - Synthesis prepares each branch a row-set guard decides once per arrangement context, where it prepared it again for every scenario family and driver that asked.
 - A synthesized suite for a command that two actors with attributes are both granted, and that creates its identity, expected the first run's identity in the swapped second run: an event or error payload that copies the identity into a struct member the scenario does not set whole (asserted as `data.id`) held the first run's value while the run sent a fresh one, so the suite failed against a correct implementation. The swapped run now expects the identity it sends in that member, at any depth.
-- A command with a refusal over a list of references and a `when_subject:` refusal on a stored field that no command writes to the value it needs got a scenario expecting that refusal on a row the creating command stored, and so did each one-time disclosure cell that sends it; the scenario failed on every target. Synthesis now arranges such a refusal on a row that holds its guard, and refuses it and its disclosure cells (`ESS-SYNTH-003`) naming the stored field where no row does.
 
 ## [0.98.2] — 2026-11-24
 
