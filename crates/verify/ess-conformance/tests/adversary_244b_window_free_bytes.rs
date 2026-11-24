@@ -234,6 +234,13 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie, which synthesizes a tie for the
 /// view's second sort key. This probe is `#[ignore]`d, so nothing caught the entry then. IR,
 /// refusals and mutants are unchanged.
+///
+/// beyond10x/ess#799 (`61b4c8a82d`): a view member written absent is claimed as null only where
+/// the view field is `null_when_absent`, so `defined-over-optional-aggregates`, `input-value-paths`
+/// and `related-values-chained` shrink by that claim. beyond10x/ess#554 (`d0a3edcb69`): an unknown
+/// identity beside stored-field branches is synthesized, so `now-stored-rows` gains one scenario
+/// and loses its refusal. Each suite and refusal digest equals the row those commits re-pinned in
+/// `synthesis-suite-bytes-table.tsv`; an entry above superseded here keeps its IR and mutants.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -465,7 +472,7 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml",
-        "ir=fad93168fa11c42db418:30720 suite=7548062c85b64cffd671:140160 refusals=b0abbc30c3882c8c5037:423 mutants=4bb20b47d0340b004585:3915",
+        "ir=fad93168fa11c42db418:30720 suite=ca0cbb96a093aeaf003f:142971 refusals=e3b0c44298fc1c149afb:0 mutants=4bb20b47d0340b004585:3915",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml",
@@ -485,7 +492,7 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml",
-        "ir=ab75682e9e4308374158:20260 suite=a35d1b135cca44237fc3:28283 refusals=e3b0c44298fc1c149afb:0 mutants=b12923907f4ed6a4f456:421",
+        "ir=ab75682e9e4308374158:20260 suite=89d9c8883632bca85253:28171 refusals=e3b0c44298fc1c149afb:0 mutants=b12923907f4ed6a4f456:421",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/structured-instances.yaml",
@@ -629,11 +636,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml",
-        "ir=87f2f3fecded4ab0adad:12829 suite=7dcf5451e1c6fa4e5f7f:41371 refusals=e3b0c44298fc1c149afb:0 mutants=faffdab4696bb8d31dad:326",
+        "ir=87f2f3fecded4ab0adad:12829 suite=fc17d29a01e773221a25:41153 refusals=e3b0c44298fc1c149afb:0 mutants=faffdab4696bb8d31dad:326",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml@ess22",
-        "ir=87f2f3fecded4ab0adad:12829 suite=7dcf5451e1c6fa4e5f7f:41371 refusals=e3b0c44298fc1c149afb:0 mutants=faffdab4696bb8d31dad:326",
+        "ir=87f2f3fecded4ab0adad:12829 suite=fc17d29a01e773221a25:41153 refusals=e3b0c44298fc1c149afb:0 mutants=faffdab4696bb8d31dad:326",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml",
@@ -822,6 +829,10 @@ const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml@ess22",
         "ir=89aef022ceb3ea975291:18163 suite=e3dc8349a75207ae991f:74606 refusals=2d9c159e5cb844ca6a21:446 mutants=977c456c95b8b3e3b5cf:1205",
+    ),
+    (
+        "crates/specify/ess-compiler/tests/fixtures/input-value-paths.yaml",
+        "ir=a392ba275f9c329272b4:18240 suite=80aa30efae609e5cde4a:13018 refusals=e3b0c44298fc1c149afb:0 mutants=045026600ff3ec89bf17:496",
     ),
 ];
 
