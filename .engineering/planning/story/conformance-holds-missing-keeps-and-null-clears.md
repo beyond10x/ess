@@ -14,6 +14,7 @@ relations:
 - depends_on: story:an-input-keeps-missing-and-null-apart
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
@@ -27,7 +28,7 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/keep_on_missing.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:25Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:28Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
@@ -42,6 +43,8 @@ as absent (`crates/verify/ess-conformance/src/input.rs:1789`), and a suite never
 `triage/678/repro/run.txt`).
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 All tests below are in `cargo test -p ess-conformance --locked --test keep_on_missing` (new file),
 each on the reproduction (`EditNote` with `sets: {summary: {input: summary, missing: unchanged}}`,

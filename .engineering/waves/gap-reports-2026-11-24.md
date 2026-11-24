@@ -392,47 +392,64 @@ amended draft.
 ### Open issues, 2026-11-24 (filed)
 
 Hotfix wave on the released line: #796, #793, #798, #809, #794 (one tree, serial). Every other open
-issue: one pull request, serial, after a relevance triage. #794 is not accepted: its check asks
-for a revision first (below).
+issue: one pull request, serial, after a relevance triage. The one pull request has one new source
+format, `ess/38`, opened by the unit already in work for #640 (D77).
 
-Twelve new stories (tag `issues-2026-11-24`, each with its issue as a `github` ref) and one
-amendment. Issue, story, size, status:
+Fourteen stories (tag `issues-2026-11-24`, each with its issue as a `github` ref) and two
+amendments. After the plan check of the same day the texts were revised and the units below
+accepted. Issue, story, size, status:
 
 - #796, `story:a-subject-read-on-a-deletes-outcome-is-refused-with-a-message-that-names-deletes-and-the-related-value-read`, S, accepted
-  (active). Message text only; no committed byte moves.
+  (active). Message text only; no committed byte moves. Hotfix wave.
 - #793, `story:the-generated-rust-port-of-a-component-that-accepts-no-command-and-declares-no-view-builds-with-warnings`, S,
-  accepted (active).
+  accepted (active). Hotfix wave.
 - #798, an amendment of the active `story:obligation-contracts-state-what-the-suite-checks` (S
-  added; its body now holds the amendment, no status move), rides that story.
-- #794, `story:synthesis-sends-the-steps-that-arrange-a-held-state-and-the-refusal-step-itself-as-a-caller-whose-attribute`, M, draft.
-- #795, `story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing`, M, draft.
+  added; its body holds the revised amendment, no status move). Hotfix wave.
+- #794, `story:synthesis-sends-the-steps-that-arrange-a-held-state-and-the-refusal-step-itself-as-a-caller-whose-attribute`, M, accepted
+  (active). Hotfix wave by the owner's order, not by content.
+- #795, `story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing`, M, accepted
+  (active). The one pull request.
 - #809, #804 and #816 item 4: the feature
   `story:the-witness-search-and-the-interpreter-s-minting-choose-values-that-satisfy-every-declared-constraint-at-once` (umbrella, draft, not built
-  itself, not accepted), with three units derived from it:
+  itself, not accepted), with two units derived from it:
   `story:a-text-input-that-a-guard-reads-whose-type-s-invariant-refuses-its-base-witness-gets-candidates-of-the-lengths` (#809, S-M, accepted,
-  active), `story:an-exists-false-branch-beneath-several-input-refusals-is-sent-an-input-that-refutes-every-one-of-them-at-once` (#804, S,
-  draft) and `story:the-interpreted-target-mints-a-generated-true-value-of-a-text-newtype-whose-invariant-fixes-its-length-so` (#816 item 4, S,
-  draft, after the #809 unit). #734 and #726 are active stories, unchanged; the feature records
-  what they cover.
+  active; hotfix wave) and
+  `story:an-exists-false-branch-beneath-several-input-refusals-is-sent-an-input-that-refutes-every-one-of-them-at-once` (#804, S, accepted,
+  active; the one pull request). #816 item 4 is now an amendment of the active
+  `story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes` (S added, retitled; one
+  builder for `witness::fields`, after the #809 unit); the draft
+  `story:the-interpreted-target-mints-a-generated-true-value-of-a-text-newtype-whose-invariant-fixes-its-length-so` is archived as covered by
+  that amendment. #734 and #726 are active stories, unchanged; the feature records what they
+  cover.
 - #799, `story:a-view-member-an-outcome-clears-is-claimed-by-the-suite-and-published-by-the-interpreted-target-in-the-member` (suite and
-  interpreter, M, draft) and
+  interpreter, M, accepted, active; breaking for stored suites that claim `null`) and
   `story:the-generated-rust-and-go-servers-write-null-for-an-absent-member-declared-null-when-absent-in-view-rows-and` (servers, S-M,
-  draft); independent of each other.
-- #822, `story:a-related-value-source-that-selects-its-row-with-where-may-read-the-row-s-lifecycle-state-with-field-state-as`, M, draft; format: decided in
-  the format triage (D57) before acceptance (DF-D5); parent `epic:generic-row-queries`.
-- #819, `story:synthesis-reads-a-view-whose-filter-orders-a-minted-timestamp-against-now-by-observing-the-minted-value-and`, L, draft; format: decided
-  in the format triage (D57) before acceptance (DF-D6).
+  accepted, active); independent of each other, both in the one pull request unless a hotfix is
+  ordered for the servers.
+- #822, in two parts, both draft and accepted with the format batch:
+  `story:a-related-value-source-that-selects-its-row-with-where-may-read-the-row-s-lifecycle-state-with-field-state-as` (part 1: validation, compiler, IR
+  and an arm in every consumer; L-; format `ess/38`, DF-D5 A and D77; parent
+  `epic:generic-row-queries`; it starts after the unit that opens `ess/38`, a relation owed to that
+  unit's id) and
+  `story:the-interpreted-target-reads-and-synthesized-suites-expect-the-lifecycle-state-of-a-row-a-related-value-source` (part 2, M, after part
+  1).
+- #819, in two parts, both draft and accepted with the format batch:
+  `story:a-conformance-suite-s-view-read-may-hold-the-target-s-clock-at-an-instant-set-from-an-observed-value-and-every` (part 1: suite step, runners, interpreter; M; a
+  suite format, DF-D6 A and D77, at the suite pair the one pull request opens once) and
+  `story:synthesis-reads-a-view-whose-filter-orders-a-minted-timestamp-against-now-by-observing-the-minted-value-and` (part 2: synthesis; M; after part
+  1 and after the active `story:state-param-binds-from-post-command-state` and
+  `story:synthesis-arranges-the-related-rows-a-guard-or-read-needs`).
 
-Build order of the units: d796, d793, the #798 amendment with its story, d795, d794, d809 then
-d816 with d804 beside them, the two d799 units, d822 after the story that opens `ess/38`, d819.
-Pairs on one file: `synthesize.rs` (d795, d794, d799, d822, d819, in that order),
-`related_guard.rs` (d795 then d804; the active related-row story rewrites the same `unclaimed` and
-the second to land rebases), `witness.rs` (d809 then d816). Every unit that edits a source of the
-synthesis suite re-stamps `synthesis-sources.digest` in its own change.
+Build order of the one pull request: d795, d804, the two d799 units, the #816 amendment with its
+story, d822 part 1, d822 part 2, d819 part 1, d819 part 2. Pairs on one file: `synthesize.rs`
+(d794 first, then d795, d799, d822 part 2, d819 part 2), `related_guard.rs` (d795 then d804; the
+active related-row story rewrites the same `unclaimed` and the second to land rebases),
+`witness.rs` (d809, then the #816 amendment). Every unit that edits a source of the synthesis suite
+re-stamps `synthesis-sources.digest` in its own change, and the second to land on a tree re-runs
+the stamp command after rebasing.
 
-The check of 2026-11-24 found these texts in need of revision, filed as they are, the fix of each
-text to follow: d794, the #798 amendment, d799 (suite and interpreter) and d816. d819 and d822 are
-draft-only until their formats are decided.
+The `ess-ui-tui` navigation accessor the exploration design page names is now a line in the scope of
+`story:a-program-lists-the-ess-ui-test-1-steps-a-ui-state-offers-applies-one-and-forks-the-state-through-ess-ui-test`.
 
 ### Store issues found
 
@@ -974,7 +991,7 @@ default is fail-closed. AC-D3, AC-D4, AC-D5 and PR-D1 to PR-D9 stay open.
   Default A.
 
 Open issues (defects). DF-D1 to DF-D4 are taken on their defaults, 2026-11-24; DF-D5 and DF-D6
-read "decided in the format triage (D57) before acceptance".
+are taken as A by the format ruling D77, 2026-11-24.
 
 - DF-D1 (#796): is `{subject: ...}` admitted on a `deletes:` outcome. A: not in this unit; the
   refusal names `deletes:` and its hint points at `{related: {via: input.<id>, field: ...}}`; B:
@@ -988,9 +1005,12 @@ read "decided in the format triage (D57) before acceptance".
   suite drops the `null` claim and adds no claim of absence; B: a new suite major with a per-field
   presence. Default A. Taken: A.
 - DF-D5 (#822): which source format admits `field: state` in a `where:`-selected related value.
-  Decided in the format triage (D57) before acceptance.
-- DF-D6 (#819): how a view ordering a minted `Timestamp` against `now` is read. Decided in the
-  format triage (D57) before acceptance.
+  A: the open format `ess/38`; B: the next format after it; C: no format. Taken: A (D77: the one
+  pull request has one new source format, `ess/38`, opened by the unit already in work for #640).
+- DF-D6 (#819): how a view ordering a minted `Timestamp` against `now` is read. A: suite-side, a
+  held read clock around an observed minted value, a new suite version and no source format; B: a
+  source spelling; C: keep the refusal. Taken: A (D77: at the suite pair the one pull request opens
+  once).
 
 ## Accepted
 
@@ -999,8 +1019,16 @@ delegation, on the owner's order of 03:10 CET to fix the top five issues as one 
 `story:a-subject-read-on-a-deletes-outcome-is-refused-with-a-message-that-names-deletes-and-the-related-value-read`,
 `story:the-generated-rust-port-of-a-component-that-accepts-no-command-and-declares-no-view-builds-with-warnings` and
 `story:a-text-input-that-a-guard-reads-whose-type-s-invariant-refuses-its-base-witness-gets-candidates-of-the-lengths`; #798 rides its already
-active story. `story:synthesis-sends-the-steps-that-arrange-a-held-state-and-the-refusal-step-itself-as-a-caller-whose-attribute` stays a
-draft: its check asks for a revision.
+active story.
+
+Accepted 2026-11-24 after the plan check and the revision of the texts (decision D78 of the
+coordinator, under the owner's delegation, on the owner's order of 03:10 CET that every open issue is
+delivered in one pull request): `story:synthesis-sends-the-steps-that-arrange-a-held-state-and-the-refusal-step-itself-as-a-caller-whose-attribute`,
+`story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing`,
+`story:an-exists-false-branch-beneath-several-input-refusals-is-sent-an-input-that-refutes-every-one-of-them-at-once`,
+`story:the-generated-rust-and-go-servers-write-null-for-an-absent-member-declared-null-when-absent-in-view-rows-and` and
+`story:a-view-member-an-outcome-clears-is-claimed-by-the-suite-and-published-by-the-interpreted-target-in-the-member`. The two parts of
+#822 and the two parts of #819 are accepted with the format batch.
 
 Accepted 2026-11-24 by the coordinator under the operator's delegation, each with the defaults of
 its decisions as written; moved draft, proposed, active:

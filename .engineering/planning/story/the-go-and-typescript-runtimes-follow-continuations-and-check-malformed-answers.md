@@ -14,6 +14,7 @@ relations:
 - depends_on: story:conformance-follows-a-views-continuation-to-its-last-page
 - depends_on: story:a-value-outside-its-declared-type-is-answered-malformed
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/go/mod.rs
@@ -27,7 +28,7 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/go_runtime.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:29Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:31Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -43,6 +44,8 @@ page and a `malformed` answer. A runtime that does not know them refuses the sui
 Go or TypeScript implementation cannot be held to continuation paging or to malformed refusals.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - `ess verify conform synthesize --target go` and `--target typescript` on the reproduction model of
   `story:a-view-answer-takes-its-protocols-list-shape` write packages whose `go test` and

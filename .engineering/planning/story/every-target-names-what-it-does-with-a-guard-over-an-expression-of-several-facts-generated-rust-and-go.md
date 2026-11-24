@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-target-names-what-it-does-with-a-guard-over-an-expression-of-several-facts-generated-rust-and-go
 kind: story
-status: draft
+status: active
 title: 'Every target names what it does with a guard over an expression of several facts: generated Rust and Go behaviour keep the command an obligation named by it, the Go and TypeScript runtimes evaluate it, and Entity Runtime lowering refuses it by name'
 tags:
 - gap-p2
@@ -10,7 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:at-ess-39-a-command-guard-compares-a-fact-with-an-expression-of-several-facts-and-every-expression-reads-the
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:52:01Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-24T03:52:01Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 
@@ -51,6 +55,8 @@ Sixth list, item G12 (rank P2), the targets' half.
 
 ## Acceptance
 
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
+
 - First: in `crates/generate/ess-synth/tests/`, the reproduction of `sx12-guard-arithmetic`
   generated for Rust and Go. Before (with the domain unit landed): the generator either fails on
   the new `Derived` arm or emits code that ignores it. After: `Admit` is listed as an obligation
@@ -88,6 +94,8 @@ Verdict: **accept**, the targets' half of `sx12-guard-arithmetic` (sixth list, i
 ## Decisions
 
 - None of its own.
+
+- FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
 
 ## Scope
 

@@ -18,6 +18,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:an-expression-measure-that-skips-absent-rows-is-witnessed
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/generate/ess-synth/src/view_query.rs
@@ -43,7 +44,7 @@ scope:
   path: docs/design/generic-language-features.md
 - confidence: inferred
   path: docs/design/language-grids.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
@@ -77,6 +78,8 @@ exit 1
 ```
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 At the next source format (`ess/37`), with `Window` rows A (`services: [api, web]`,
 `duration_s: 60`) and B (`services: [web]`, `duration_s: 30`):

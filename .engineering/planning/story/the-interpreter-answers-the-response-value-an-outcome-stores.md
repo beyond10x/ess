@@ -13,6 +13,7 @@ relations:
 - decomposes: epic:zero-open-issues-2026-11
 - depends_on: story:stored-field-equals-returned-response-value
 - serves: vision:O2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret/execute.rs
@@ -22,7 +23,7 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/response.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/interpreted_response_values.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:45Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:46Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -46,6 +47,8 @@ field once and use that one value for the reply, every payload field and every s
 read it.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - On the reproduction of `story:stored-field-equals-returned-response-value` at the new format,
   `ess verify conform run --target interpreted --report-format 2` passes `example.order.Place/outcome/placed`,

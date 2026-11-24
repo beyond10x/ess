@@ -12,7 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - derived_from: story:the-witness-search-and-the-interpreter-s-minting-choose-values-that-satisfy-every-declared-constraint-at-once
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T02:13:03Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T02:13:06Z", actor: "human:timo", revision: 3}
@@ -52,8 +52,8 @@ refused[ESS-SYNTH-003]: … no candidate of the 1 tried satisfies `(defined(pick
 2 selected scenario(s), 0 authored source(s), 3 refusal occurrence(s)
 ```
 
-With `example: Z` on the input `pick` only (`repro/809/example/`): `5 selected scenario(s), 0
-authored source(s), 0 refusal occurrence(s)`.
+With `example: Z` on the input `pick` only, a model of its own run with `--path repro/809-example`:
+`5 selected scenario(s), 0 authored source(s), 0 refusal occurrence(s)`.
 
 ## Outcome
 
@@ -84,32 +84,37 @@ Paths under `crates/verify/ess-conformance/src/witness.rs`.
    slot of the sent `layout` carries, and no ESS-SYNTH-003.
 2. The same with the invariant written `value.count <= 1` and `value.utf8_bytes == 1` (the issue's
    table rows 4 and 5).
-3. The same with `pick` declared `Code` instead of `Optional<Code>` (inferred to fail today; if it
-   passes today, the test still pins it).
-4. The two ESS-SYNTH-013 refusals of the reproduction fall away with the scenarios the creating
+3. The same with `pick` declared `Code` instead of `Optional<Code>` (red today: the plan check ran
+   it on 0.98.0, "no candidate of the 0 tried").
+4. A guard that compares the leaf with a literal the type admits keeps that literal among the
+   candidates tried (the guard-derived ladder is extended, not replaced).
+5. The two ESS-SYNTH-013 refusals of the reproduction fall away with the scenarios the creating
    branch's route gains, as they do with `example: Z`; if one stays, the report names it.
-5. Synthesis time of the reproduction is measured before and after (the issue reports 12 s growing
+6. Synthesis time of the reproduction is measured before and after (the issue reports 12 s growing
    to 38 s on a large model with `example:`); a jump on the reproduction is fixed in this unit.
-6. The byte pins under Gate keep every row; a moved row names #809 beside its re-pin.
+7. The byte pins under Gate keep every row; a moved row names #809 beside its re-pin.
 
 ## Scope
 
 - `crates/verify/ess-conformance/src/witness.rs`, `invariant_ladders` (5288-5292): do not skip a
-  path that already has a ladder when its base fails `admits_base` (6701); add the invariant's
-  length ladders and filter out of the existing ladder the values the type refuses. Or, in
-  `search_with` after line 1045, resize that leaf's ladder against its invariants. One of the two,
-  smallest first.
+  path that already has a ladder when its base fails `admits_base` (6701). For such a path EXTEND
+  the existing ladder, never replace it: today the function ends a path with `ladders.insert(…)`
+  (5313-5318) and `text_length_ladder` appends, so dropping the skip alone would overwrite the
+  guard-derived ladder (the `equality_copies` one). Append the invariant's alternatives and length
+  ladders after the existing choices, and drop from the ladder only the values the type refuses.
+  `search_with` is not changed.
 
 ## Owned files
 
-- `crates/verify/ess-conformance/src/witness.rs` (`invariant_ladders`, and `search_with` only if the
-  second form is taken)
+- `crates/verify/ess-conformance/src/witness.rs` (`invariant_ladders`)
 - `crates/verify/ess-conformance/tests/string_guards_beside_invariant_input.rs` (new `#[test]`s)
+- `crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest` (rewritten by the stamp
+  command under Gate)
 - `CHANGELOG.md`
 
 ## Not yours
 
-- `witness::fields` and minting (`d816-a-generated-value-of-a-length-constrained-newtype-is-minted`).
+- `witness::fields` and minting: `story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes`, with the d816 amendment (`d816-a-generated-value-of-a-length-constrained-newtype-is-minted`).
 - The ESS-SYNTH-013 message for an input-only invariant: active
   `story:an-input-only-type-invariant-is-checked-by-a-refused-input`.
 - The list-fill block of `search_with` (1134-1167): draft
@@ -122,6 +127,7 @@ In `crates/verify/ess-conformance/tests/string_guards_beside_invariant_input.rs`
 
 - `a_guard_read_optional_code_of_one_letter_is_witnessed` (acceptance 1).
 - `a_guard_read_code_under_a_byte_or_upper_bound_invariant_is_witnessed` (acceptance 2, 3).
+- `a_literal_the_guard_compares_with_stays_a_candidate` (acceptance 4).
 
 Each synthesizes one small model: under 5 s expected (bound 60 s per test, 120 s per step). Time
 them; one over 5 s is named in the report.
@@ -140,12 +146,18 @@ One `--test` at a time; no build-pool job over 10 minutes.
   `--test synthesis_suite_bytes_table_cli_read`, `--test adversary_related_values_all_bytes`,
   `--test external_beside_held_guard`; `ess-synth` `--test served_codec_names`, `--test go`;
   `ess-openapi` `--test adversary_ess_issues_2_u6`; `ess-compiler` `--test
-  string_alphabet_and_length`; `ess-cli` `--test tutorial_page`; `task test-slow` for the byte
-  comparison of `synthesis_suite_bytes_table`.
+  string_alphabet_and_length`; `ess-cli` `--test tutorial_page`
+- the sources stamp, rewritten in this change:
+  `SYNTHESIS_SOURCES_STAMP_WRITE="$PWD/crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest" cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table the_synthesis_sources_digest_matches_the_committed_stamp`;
+  re-run after every rebase, never merge the stamp by hand
+- the byte comparison, once per unit, its measured time named in the report:
+  `SLOT_TIMEOUT=30m cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table -- --ignored every_repository_model_keeps_its_synthesized_bytes`
+- `task test-xtask` (the unit edits `CHANGELOG.md`)
 
 ## Depends on
 
-Nothing. Lands before d816 (same file).
+Nothing. Lands before the d816 amendment of
+`story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes` (same file).
 
 ## Changelog
 

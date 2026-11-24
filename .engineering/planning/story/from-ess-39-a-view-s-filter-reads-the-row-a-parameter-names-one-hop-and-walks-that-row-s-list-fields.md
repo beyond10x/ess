@@ -3,13 +3,14 @@ format: aep.planning-md/3
 id: story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields
 kind: story
 status: draft
-title: From ess/39 a view's filter reads the row a parameter names, one hop, and walks that row's list fields
+title: From ess/38 a view's filter reads the row a parameter names, one hop, and walks that row's list fields
 tags:
 - gap-p1
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 5
 ---
 ## Need
 
@@ -71,6 +72,8 @@ source stays one entity and the view's rows are a subset of the source's rows: n
 page records the decision; validation and the interpreted target implement it.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - First: `docs/design/view-parameter-rows.example/` holds the reproduction above (validated by a
   test in `crates/verify/ess-conformance/tests/`, as `read_api_view_idioms.rs` holds its example).
@@ -158,10 +161,12 @@ application's report of 2026-11-24.
 **Accept, redesigned.** What changed from the request: no view "over a list field"; the source
 entity stays, the list is walked in its filter through the row the parameter names.
 
-- **P1-D6. How a view reaches the row a parameter names.** (A) `param.<p>.<field>`, a parameter
+- **P1-D6 (open, with the owner as AQ5). How a view reaches the row a parameter names.** (A) `param.<p>.<field>`, a parameter
   typed as an identity is a reference, one hop, with list quantifiers over its fields. (B) The
   `ess/27` rows quantifier admitted in view filters, tied to a parameter. (C) Decline: the
   application keeps the list unmapped. **Recommended: (A).**
+
+- FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
 
 ## Scope
 

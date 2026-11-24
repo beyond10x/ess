@@ -25,7 +25,7 @@ scope:
   path: crates/verify/ess-diff/tests/exchanges.rs
 - confidence: inferred
   path: docs/design/message-exchanges.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:55Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:56Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -84,6 +84,8 @@ Shared surfaces: no format row and no byte-pin row; it proposes its `CHANGELOG.m
 
 **accept as proposed**, part of ADR `messages-are-exchanged-independent-of-the-wire`
 (accepted 2026-10-28).
+
+- DIFF (decided: A, 2026-11-24): a new `ess verify diff` change kind is written at `ess-diff/24`, which no released reader holds a kind for, so no delta version opens.
 
 ## Source
 

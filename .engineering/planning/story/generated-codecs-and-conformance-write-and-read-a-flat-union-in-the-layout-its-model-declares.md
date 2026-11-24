@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-codecs-and-conformance-write-and-read-a-flat-union-in-the-layout-its-model-declares
 kind: story
-status: draft
+status: active
 title: Generated codecs and conformance write and read a flat union in the layout its model declares
 tags:
 - gap-p1
@@ -12,7 +12,11 @@ relations:
 - depends_on: story:a-tagged-union-declares-that-its-tag-sits-beside-its-variant-s-members-in-one-flat-object
 - derived_from: story:generated-codecs-and-the-suite-use-a-unions-declared-content-key
 - depends_on: story:generated-codecs-and-the-suite-use-a-unions-declared-content-key
-revision: 4
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:25:18Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-24T03:25:19Z", actor: "human:timo", revision: 7}
 ---
 ## Need
 
@@ -43,6 +47,8 @@ story opens, so the suite format moves once for the union's wire layout. A model
 union generates the same bytes in every target.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - Red first, in `crates/generate/ess-synth/tests/`: a generated Rust server and a generated Go
   server over the `sl05-union-flat-wire` reproduction decode `{"kind": "parcel", "name": "north"}`

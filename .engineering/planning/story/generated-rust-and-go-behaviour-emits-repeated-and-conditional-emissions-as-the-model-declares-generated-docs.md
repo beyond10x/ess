@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:at-the-new-format-an-outcome-may-emit-one-event-several-times-in-order-each-with-its-own-payload-and-an
 - depends_on: story:synthesis-and-the-interpreter-witness-every-emission-of-an-outcome-in-order-and-both-sides-of-a-conditional
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -93,7 +93,7 @@ As `ae9a`. Question 4, targets: every target handles the construct or refuses it
 
 ## Decisions
 
-**AE-D11**, default A.
+**AE-D11** (open, with the owner as AQ4).
 
 ## Size
 

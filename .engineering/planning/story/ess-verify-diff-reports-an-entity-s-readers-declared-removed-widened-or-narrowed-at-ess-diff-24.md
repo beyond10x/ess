@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:an-entity-names-the-commands-whose-decisions-may-read-it-readers-and-validation-refuses-every-other-read-by
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -59,7 +59,7 @@ Tree `bcfc51555`. Report item 16, third part. See `g16-entity-readers` § Fit re
 
 **Accept, redesigned** (`P2B-D3` (a)). Open question:
 
-- **D1. Is widening breaking?** (a) Widening and removing are breaking: the claim weakens. (b)
+- **D1 (decided: a, 2026-11-24). Is widening breaking?** (a) Widening and removing are breaking: the claim weakens. (b)
   Every change is reported as compatible, because it is the model's own property. **Recommended:
   (a).** A consumer that relied on the claim loses it.
 

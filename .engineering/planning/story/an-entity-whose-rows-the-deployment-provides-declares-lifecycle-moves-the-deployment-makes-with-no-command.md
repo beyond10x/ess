@@ -9,8 +9,8 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-- depends_on: story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 3
 ---
 ## Need
 
@@ -72,6 +72,8 @@ apart. Below `ess/39`, and on an entity without `provided: true`, `missing_causa
 
 ## Acceptance
 
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
+
 - Red first, in `crates/specify/ess-domain/tests/provided_rows.rs`: the reproduction at
   `format: ess/39` validates. It fails before the change. At `ess/37` and `ess/38` it is refused
   with today's message, and the hint adds "or mark the entity `provided: true` at ess/39, if the
@@ -115,7 +117,7 @@ Tree `bcfc51555`, read-only. Second report, G13.
 
 **Accept, redesigned.** The existing `provided` marker carries the moves.
 
-- **SL-D11. How does a specification declare moves only the deployment makes?** (A) Through
+- **SL-D11 (open, with the owner as AQ3). How does a specification declare moves only the deployment makes?** (A) Through
   `provided: true`: its uncaused transitions are the deployment's, from `ess/39`. (B) Decline with
   the idiom: commands granted to a `system: true` actor, with their events, and a `missing_causation`
   hint naming it. (C) The requester's `recorded_by: owner` on the lifecycle or a transition, from

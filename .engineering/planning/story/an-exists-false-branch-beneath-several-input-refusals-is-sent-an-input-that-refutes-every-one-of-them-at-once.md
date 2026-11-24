@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-exists-false-branch-beneath-several-input-refusals-is-sent-an-input-that-refutes-every-one-of-them-at-once
 kind: story
-status: draft
+status: active
 title: 'An `exists: false` branch beneath several input refusals is sent an input that refutes every one of them at once, whatever the inputs are named.'
 tags:
 - issues-2026-11-24
@@ -12,7 +12,10 @@ refs:
 relations:
 - serves: vision:O2
 - derived_from: story:the-witness-search-and-the-interpreter-s-minting-choose-values-that-satisfy-every-declared-constraint-at-once
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T02:31:09Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T02:31:10Z", actor: "human:timo", revision: 4}
 ---
 # d804: a missing-row branch is sent an input outside every input refusal
 
@@ -49,8 +52,8 @@ refused: refusal[ESS-SYNTH-003]: outcome depot.slips.PostSlip/unknown-bin has no
 8 scenario(s) (0 authored), 1 refusal(s), written to suite.json
 ```
 
-`repro/804/from/` (input, field and view member `writer` renamed `from`): `9 scenario(s) (0
-authored), 0 refusal(s)`.
+`ess verify conform synthesize --path repro/804-from --out …` (input, field and view member
+`writer` renamed `from`): `9 scenario(s) (0 authored), 0 refusal(s)`.
 
 ## Outcome
 
@@ -74,7 +77,8 @@ refusals and a `bin_id` no row carries, and the result is the same under any nam
 1. Red today: synthesizing `repro/804/` writes `depot.slips.PostSlip/outcome/unknown-bin` whose
    input refutes all four refusals and names a `bin_id` no row carries; no refusal.
 2. The same model with `writer` renamed `from`, `zz_writer` and `a_writer` gives the same scenario
-   set (the result does not depend on the name).
+   ids and 0 refusals in each naming (the result does not depend on the name; scenario bodies spell
+   the field and are not compared).
 3. The suite of the reproduction passes on the interpreted target.
 4. Under DF-D2 A, every model whose `unknown-*` branch is witnessed today keeps its suite bytes: the
    byte pins under Gate keep every row.
@@ -91,6 +95,8 @@ refusals and a `bin_id` no row carries, and the result is the same under any nam
 - `crates/verify/ess-conformance/src/synthesize/related_guard.rs` (`unclaimed`) under A, or
   `crates/verify/ess-conformance/src/witness.rs` (`Directed::goals`) under B
 - `crates/verify/ess-conformance/tests/missing_related_row_beside_input_refusal.rs` (new `#[test]`s)
+- `crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest` (rewritten by the stamp
+  command under Gate)
 - `CHANGELOG.md`
 
 ## Not yours
@@ -121,14 +127,21 @@ One `--test` at a time; no build-pool job over 10 minutes.
 - `task fmt-check`
 - `cargo clippy -p ess-conformance --all-targets --locked -- -D warnings`
 - `cargo test -p ess-conformance --locked --test missing_related_row_beside_input_refusal`, and the
-  in-crate `unclaimed_refusal_tests` (`src/synthesize.rs:23114`) with `--lib unclaimed_refusal`
+  in-crate `unclaimed_refusal_tests` (`src/synthesize.rs:23114`) with
+  `SLOT_TIMEOUT=30m cargo test -p ess-conformance --locked --lib unclaimed_refusal` (the library's
+  test binary compiles all of `synthesize.rs`)
 - `cargo test -p ess-cli --locked`
 - byte pins: `ess-conformance` `--test synthesis_suite_bytes_table`,
   `--test synthesis_suite_bytes_table_cli_read`, `--test adversary_related_values_all_bytes`,
   `--test external_beside_held_guard`; `ess-synth` `--test served_codec_names`, `--test go`;
   `ess-openapi` `--test adversary_ess_issues_2_u6`; `ess-compiler` `--test
-  string_alphabet_and_length`; `ess-cli` `--test tutorial_page`; `task test-slow` for the byte
-  comparison of `synthesis_suite_bytes_table`.
+  string_alphabet_and_length`; `ess-cli` `--test tutorial_page`
+- the sources stamp, rewritten in this change:
+  `SYNTHESIS_SOURCES_STAMP_WRITE="$PWD/crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest" cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table the_synthesis_sources_digest_matches_the_committed_stamp`;
+  re-run after every rebase, never merge the stamp by hand
+- the byte comparison, once per unit, its measured time named in the report:
+  `SLOT_TIMEOUT=30m cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table -- --ignored every_repository_model_keeps_its_synthesized_bytes`
+- `task test-xtask` (the unit edits `CHANGELOG.md`)
 
 ## Depends on
 

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:from-ess-39-a-view-s-filter-reads-the-row-a-parameter-names-one-hop-and-walks-that-row-s-list-fields
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -66,7 +66,7 @@ Tree `bcfc51555`, read-only. Covers report item 8 with `g08-view-param-row`.
 
 ## Decisions
 
-- None beyond P1-D6 (`g08-view-param-row`).
+- None beyond P1-D6 (`g08-view-param-row`; open, with the owner as AQ5).
 
 ## Scope
 

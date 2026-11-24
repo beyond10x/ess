@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -95,9 +95,9 @@ Tree `bcfc51555`. Received 2026-11-24 from a downstream application, report item
 
 Part of `P2B-D3` (a) and (c). Open questions:
 
-- **D1. Do binding flows count as reads?** (a) Yes, as kind `binding`. (b) No. **Recommended:
+- **D1 (open, with the owner as AQ2). Do binding flows count as reads?** (a) Yes, as kind `binding`. (b) No. **Recommended:
   (a).** The binding is in the model and carries the entity's events into the command's input.
-- **D2. JSON output?** (a) Not now: text only. (b) A versioned `--format json`. **Recommended:
+- **D2 (decided: a, 2026-11-24). JSON output?** (a) Not now: text only. (b) A versioned `--format json`. **Recommended:
   (a).** (b) is a new published format with a schema and a golden file, worth it only when a tool
   asks for it. It becomes needed if the operator takes `P2B-D3` (c).
 

@@ -9,8 +9,8 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-- depends_on: story:the-specification-format-ess-39-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess-38
-revision: 1
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
+revision: 3
 ---
 ## Need
 
@@ -42,7 +42,7 @@ What ESS has, read at `bcfc51555`:
 Minimal reproduction, written fresh and not run:
 
 ```yaml
-format: ess/39
+format: ess/38
 # …
 commands:
   - name: demo.cache.Request
@@ -78,6 +78,8 @@ Entity Runtime refuses it by name, as for every function of the family. `{expr: 
 both functions through the shared function set.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - Red first: `crates/specify/ess-domain/tests/digest_of_inputs.rs` validates the reproduction at
   `ess/39` (exit 0). The same text at `ess/38` is refused as `unsupported_format_version` naming
@@ -146,17 +148,17 @@ Tree `bcfc51555`. Received 2026-11-24 from a downstream application, report item
 
 **Accept, redesigned** (`P2B-D2` (a)). Open questions:
 
-- **D1 (`P2B-D2`). May ESS compute a digest of several named inputs?** (a) Yes: extend the
+- **D1 (`P2B-D2`; open, with the owner as AQ1). May ESS compute a digest of several named inputs?** (a) Yes: extend the
   `ess/27` family (this story and `g15-digest-witness`). (b) No computation: state the dependency
   with identity plus `unique:` (`story:an-identity-may-be-a-composite-of-fields`, active). (c)
   Decline: the application keeps its identity, its refusals and its own determinism tests.
   **Recommended: (a).** (b) lands anyway through its own story and complements (a).
-- **D2. The encoding.** (a) A presence tag, then a length-prefixed canonical wire text per fact.
+- **D2 (open, with the owner as AQ1). The encoding.** (a) A presence tag, then a length-prefixed canonical wire text per fact.
   (b) RFC 8785 canonical JSON of an array. (c) Concatenation with a separator. **Recommended:
   (a).**
-- **D3. The text form.** (a) Add `hex(x)` beside `base64url(x)`. (b) `base64url` only.
+- **D3 (decided: a, 2026-11-24). The text form.** (a) Add `hex(x)` beside `base64url(x)`. (b) `base64url` only.
   **Recommended: (a).** `sha256:<hex>` is the common shape of a content address.
-- **D4. A key newtype with `prefix:`.** A newtype's prefix is part of its value. (a) First cut:
+- **D4 (decided: a, 2026-11-24). A key newtype with `prefix:`.** A newtype's prefix is part of its value. (a) First cut:
   the guard compares a String value, and an author whose key carries a prefix declares the digest
   part as its own field. (b) String concatenation with a literal (`"sha256:" + hex(…)`), which
   opens String `+` in grid O, a G1 decision of its own. **Recommended: (a).**

@@ -3,7 +3,7 @@ format: aep.planning-md/3
 id: story:when-subject-beside-a-row-set-validates-under-the-g2-format
 kind: story
 status: active
-title: when_subject, when_subject_state, when_state_changes and input_absent beside a row set validate at ess/37, ordered by one precedence rule
+title: when_subject, when_subject_state, when_state_changes and input_absent beside a row set validate at ess/38, ordered by one precedence rule
 summary: ESS-COMMAND-009 refuses when_subject beside a row set at every format; the G2 record lifts it in its own format.
 tags:
 - downstream
@@ -21,6 +21,7 @@ relations:
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:navigation-reaches-any-depth-in-view-filters-and-guards
 - serves: vision:O2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/precedence.rs
@@ -32,7 +33,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:49:15Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:49:19Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
@@ -116,6 +117,8 @@ help: guard the command on the row set alone, or move the other guard to a comma
 exit 1
 ```
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 The source format is `ess/37`, the epic's one open format; "below it" means `ess/36`.
 

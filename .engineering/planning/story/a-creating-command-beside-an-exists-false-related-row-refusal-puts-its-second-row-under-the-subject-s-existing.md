@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing
 kind: story
-status: draft
+status: active
 title: 'A creating command beside an `exists: false` related-row refusal puts its second row under the subject''s existing related row, so the ordered view''s order is checked and no ESS-SYNTH-014 names a scenario the suite holds.'
 tags:
 - issues-2026-11-24
@@ -11,7 +11,10 @@ refs:
   reference: beyond10x/ess#795
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T02:31:06Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-24T02:31:07Z", actor: "human:timo", revision: 4}
 ---
 # d795: an order check beside a missing-related-row refusal is witnessed
 
@@ -20,7 +23,11 @@ Fixed suite bytes of committed models: none expected. The four rows of
 `tests/fixtures/synthesis-suite-bytes-table.tsv` holding both `exists: false` and `order_by:`
 (`coalesce-selector`, `nested-ordered-heads`, `ordered-related-head`, `related-rows-quantifier`)
 order a related head selection, not a view; no model under `examples/` or `generated/` has the
-shape. Inferred from reading, not from a run; the byte pins below decide.
+shape. `docs/design/read-api-view-idioms.example` is the one repository system holding both
+`exists: false` (`joined.yaml:82`) and an ordered view (`latest.yaml:60`); run on 0.98.0
+(`repro/795-idioms/`): 18 scenarios, 4 refusals (ESS-SYNTH-025 once, ESS-SYNTH-017 three times),
+none ESS-SYNTH-014, so its row of `synthesis-suite-bytes-table.tsv` (line 466) is not expected to
+move. The byte pins below decide.
 Patch-release candidate: no (synthesis changes the suite of every model with the shape, and the
 refusal text changes).
 
@@ -89,19 +96,26 @@ Paths under `crates/verify/ess-conformance/src/`.
    `depot.shelf.PlaceItem/outcome/placed` sends two `PlaceItem` with one `shelf_id` instance and
    expects `ShelfItems` with `counts` and `ranked`.
 2. That suite passes on the interpreted target (all scenarios passed).
-3. A model where the second row truly cannot be arranged (the issue's model with `PlaceItem`
-   creating at most one item per shelf, e.g. an `exists: true` refusal over an item of the shelf)
-   gets ESS-SYNTH-014 whose head reads "has a scenario `…/outcome/placed` without its order of
-   `depot.shelf.ShelfItems`" and whose reason does not say "no declared move reaches it".
-4. A bound guarded field whose row exists in the scenario is reused by `drive`; a bound field whose
-   row does not exist is still refused (`unarranged`), so `exists: false` is never sent at a
-   row that is there.
+3. A model where the second row truly cannot be arranged: the reproduction with a branch
+   `shelf-full` (`when_related: {entity: depot.shelf.Item, where: shelf_id == input.shelf_id,
+   exists: true}`, an error) declared before `placed`. It gets ESS-SYNTH-014 whose first line is
+   ``refused: refusal[ESS-SYNTH-014]: outcome depot.shelf.PlaceItem/placed has a scenario `depot.shelf.PlaceItem/outcome/placed` without its order of `depot.shelf.ShelfItems` ``
+   and whose reason line is
+   `` `depot.shelf.ShelfItems` declares an order and this scenario can put 1 row(s) in it: a second `depot.shelf.Item` under one `shelf_id` is answered by `shelf-full` of `depot.shelf.PlaceItem` ``;
+   it does not say "no declared move reaches it".
+4. A bound guarded field counts as held when `known` (the steps `drive` receives) holds the step
+   that created the row `bound[field]` names; such a row is reused. A bound field whose row no
+   step of `known` created is still refused (`unarranged`), so `exists: false` is never sent at a
+   row that is there. No new thread-local state (`every_static_of_the_crate_is_classified` stays
+   green). The `bound.contains_key(field)` stop at `related_guard.rs:2672` keeps its meaning for
+   the several-rows and subject cases.
 5. The byte pins listed under Gate keep every row; a row that moves names #795 beside its re-pin.
 
 ## Scope
 
-- `crates/verify/ess-conformance/src/synthesize/related_guard.rs`, `drive` (`:2652-2672`): reuse a
-  bound row that the scenario's arrangement holds (not only one on the `HELD` stack).
+- `crates/verify/ess-conformance/src/synthesize/related_guard.rs`, `drive` (`:2652-2672`): besides
+  `subject_fact::held` (the `HELD` stack), treat `bound[field]` as held when a step of `known`
+  created that row; no new thread-local state.
 - `crates/verify/ess-conformance/src/synthesize.rs`:
   - `arrange_ranked` (`:12345`, `:12383`): record `OrderUnwitnessed` with `Refusal::beside`;
   - `impl Display for Refusal` (`:863`): an arm for a standing 014;
@@ -113,6 +127,8 @@ Paths under `crates/verify/ess-conformance/src/`.
 - `crates/verify/ess-conformance/src/synthesize/related_guard.rs`
 - `crates/verify/ess-conformance/src/synthesize.rs` (the functions above only)
 - `crates/verify/ess-conformance/tests/view_filter_identity.rs` (new `#[test]`s)
+- `crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest` (rewritten by the stamp
+  command under Gate)
 - `CHANGELOG.md`
 
 ## Not yours
@@ -151,8 +167,13 @@ single `ess-conformance` test build needs it).
   `--test synthesis_suite_bytes_table_cli_read`, `--test adversary_related_values_all_bytes`,
   `--test external_beside_held_guard`; `ess-synth` `--test served_codec_names`, `--test go`;
   `ess-openapi` `--test adversary_ess_issues_2_u6`; `ess-compiler` `--test
-  string_alphabet_and_length`; `ess-cli` `--test tutorial_page`. The byte comparison of
-  `synthesis_suite_bytes_table` runs in the `slow` lane (`task test-slow`); run it there too.
+  string_alphabet_and_length`; `ess-cli` `--test tutorial_page`
+- the sources stamp, rewritten in this change:
+  `SYNTHESIS_SOURCES_STAMP_WRITE="$PWD/crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest" cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table the_synthesis_sources_digest_matches_the_committed_stamp`;
+  re-run after every rebase, never merge the stamp by hand
+- the byte comparison, once per unit, its measured time named in the report:
+  `SLOT_TIMEOUT=30m cargo test -p ess-conformance --locked --test synthesis_suite_bytes_table -- --ignored every_repository_model_keeps_its_synthesized_bytes`
+- `task test-xtask` (the unit edits `CHANGELOG.md`)
 
 ## Depends on
 

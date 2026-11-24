@@ -13,7 +13,7 @@ refs:
   reference: beyond10x/ess#809
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 # Generic feature: the witness search satisfies every declared constraint
 
@@ -24,7 +24,7 @@ functions:
 |---|---|---|---|
 | `d809-a-guard-read-text-input-gets-a-candidate-its-invariant-admits` | #809 | `witness.rs`, `invariant_ladders` (5282-5328) | S-M |
 | `d804-a-missing-row-branch-is-sent-an-input-outside-every-input-refusal` | #804 | `synthesize/related_guard.rs`, `unclaimed` (5392-5448) | S |
-| `d816-a-generated-value-of-a-length-constrained-newtype-is-minted` | #816 item 4 | `witness.rs`, `fields` (1203-1229), read by `interpret/values.rs::mint` (60-93) | S |
+| `d816-a-generated-value-of-a-length-constrained-newtype-is-minted`: an amendment of the active `story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes`, not a unit | #816 item 4 | the mint site that story picks (`interpret/values.rs::mint` 60-93 → `witness.rs`, `fields` 1203-1229, or `response.rs` `text_choice`) | S added |
 
 Already covered by active stories, not repeated here:
 
@@ -60,9 +60,12 @@ written (#809). One adopter lost 54 of 113 scenarios (#809); another 40 of 123 (
 
 ## Order
 
-The three units touch different functions and can be built side by side. d809 and d816 both live
-in `witness.rs` (lines 5282 and 1203, far apart; both may call `invariant_ladders`): d809 lands
-first, d816 reuses its ladder if d809 widened it. d804 touches `related_guard.rs` near the active
+d809 is in the hotfix wave the owner ordered on 2026-11-24 (03:10 CET); d804 and the d816
+amendment go into the one pull request of every other open issue. d816 is
+folded into `story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes`, so
+`witness::fields` has one builder: that story's implementor, who picks the mint site once and
+covers the positive text rules and the length rules there. d809 (`invariant_ladders`, 5282) lands
+first; the story with the amendment reuses its ladder (`fields`, 1203, same file, far apart). d804 touches `related_guard.rs` near the active
 story `synthesis-arranges-the-rows-a-when-related-guard-names-through-a-member-of-a-struct-input-and-the-interpreted`,
 which rewrites the `insert` at `unclaimed:5418`: whichever lands second rebases.
 
@@ -87,5 +90,6 @@ which rewrites the `insert` at `unclaimed:5418`: whichever lands second rebases.
 
 ## Decisions
 
-- Decision: accept as proposed (three defects), redesigned into one feature with three units.
+- Decision: accept as proposed (three defects), redesigned into one feature: two units (d809,
+  d804) and one amendment of an active story (d816).
 - DF-D2 (in `DECISIONS.md`) decides the reach of d804's fix.

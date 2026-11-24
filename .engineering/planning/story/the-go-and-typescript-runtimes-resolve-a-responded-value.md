@@ -14,6 +14,7 @@ relations:
 - depends_on: story:synthesis-witnesses-a-guard-over-a-stored-response-value
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - serves: vision:O2
+- depends_on: story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/go/mod.rs
@@ -29,7 +30,7 @@ scope:
   path: crates/verify/ess-conformance/tests/stored_response_values_go.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/stored_response_values_typescript.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:32Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:33Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -45,6 +46,8 @@ pair by major until they resolve the value, so a Go or TypeScript implementation
 stores a returned value cannot run its suite.
 
 ## Acceptance
+
+Suite pair (D77, 2026-11-24): this story's suite vocabulary is written at `ess-conformance/66` (ordinary) and `/67` (coverage), opened by story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet; where this text names `ess-conformance/64` and `/65`, "the new suite pair", "the next suite pair" or a pair "after `/63`" as the pair this story writes, read `/66` and `/67` (`/64` and `/65` opened in 0.93.0 and are written since 0.95.0).
 
 - Both runtimes admit the pair and resolve `Responded {field}` from the retained capture, refusing
   it under a lower major before any target effect.

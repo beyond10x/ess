@@ -14,6 +14,7 @@ relations:
 - depends_on: story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs
 - depends_on: story:text-functions-compute-values
 - serves: vision:O2
+- depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
 scope:
 - confidence: inferred
   path: crates/generate/ess-entity-runtime/tests/expression_values.rs
@@ -35,7 +36,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:24Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":3}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:25Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
@@ -62,6 +63,8 @@ and `repeat`, and on story:ess-37-and-conformance-64-65-are-open-for-the-epics-c
 opens `ess/37`.
 
 ## Acceptance
+
+Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess; where this text names `ess/37`, `ess/39`, "the new format", "the next source format" or a format still to be decided as the format of this construct, read `ess/38`, and where it names `ess/36` as the format below it, read `ess/37` (`ess/37` shipped empty in 0.93.0); a reproduction model keeps the format it declares.
 
 - `cargo test -p ess-conformance --locked --test conditional_value` passes, asserting that under
   `format: ess/37` `ess specify validate` exits 0 on a model with the mask
