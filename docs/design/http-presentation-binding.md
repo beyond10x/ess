@@ -328,6 +328,7 @@ routes:
 | `json` (default) | today's body, `application/json` (`openapi.rs:223-225`), less any path-mapped field |
 | `form` | `application/x-www-form-urlencoded`, UTF-8 (RFC 6749 §4.1.3, Appendix B) |
 | `query` | no body; every unmapped input field in the query string. The only encoding a `get` command may use, and one a `delete` command may use |
+| `multipart` | `multipart/form-data` (RFC 7578): one part per input field, a `Bytes` field a file part (beyond10x/ess#754) |
 
 A `form` or `query` field is a scalar, an `Optional` scalar or a `List` of scalars. A `List` repeats
 its key once per element, the rule view parameters already follow (`openapi.rs:1776-1778`). A key a
@@ -354,6 +355,39 @@ refused (`ESS-HTTP-020`): one field's value holds no member of the input to igno
 document writes `{command}.Input` with `additionalProperties: true` for a route that ignores, and
 its request body says what is ignored and that a member the path carries must equal the path's
 value.
+
+A `multipart` request (`story:a-command-route-takes-a-multipart-request-with-file-parts`,
+beyond10x/ess#754) carries one part per input field the path and the `parts` attributes do not
+carry, named by the field's wire name. A `Bytes` field, or an `Optional` one, is a file part whose
+bytes are raw, never base64; every other field is a text part in the spelling `form` uses, a `List`
+repeating its part. A field without a flat spelling is refused as for `form` (`ESS-HTTP-021`), and
+`unknown` admits a part no field names as it admits a form key. `multipart` on `get` is refused
+(`ESS-HTTP-020`). `parts` states the attributes of a file part, keyed by its `Bytes` input field:
+
+```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request:
+      encoding: multipart
+      parts:
+        file:
+          filename: input.file_name
+          media_types: [text/csv, application/vnd.ms-excel]
+```
+
+- `filename: input.<field>` and `media_type: input.<field>` read the part's filename and its own
+  media type into a `String` input field (a newtype of one, or an `Optional` of either, when the
+  part may lack it). Such a field travels there only: the path, a part or a second attribute
+  carrying it is refused.
+- `media_types` lists the RFC 6838 `type/subtype` names the part may carry, at least one, each
+  once; a part of another media type is malformed. Left out, any.
+- A file part without attributes needs no entry; an entry stating nothing is refused.
+- Compiled IR writes `parts` in field order, each attribute only when stated and `media_types` as
+  written, and leaves `parts` out when there are none, so a binding without them compiles to the
+  bytes it did. No format version moves: an older reader refuses `multipart` by name.
+- A refinement keeps the `parts` of a route it restates, each attribute as written
+  (`ESS-HTTP-012`).
 
 A `json` request may take one input field as its whole body, bare: `request: {encoding: json,
 body: input.<field>}` (`encoding` may be left out). The field's JSON value is the body: a list,
@@ -596,8 +630,8 @@ and its answers.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
-| `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
+| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field the path does not carry | `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`, and for a field left out, the field |
+| `ESS-HTTP-021` | a `form`, `query` or `multipart` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
 | `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
@@ -609,6 +643,7 @@ and its answers.
 | `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, an `empty` status outside `4xx`, or an `empty` body other than `none` and `{<member>: {literal: …}}` | `routes[i]`, or `routes[i].empty.body` |
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 | `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
+| `ESS-HTTP-036` | `parts` beside an encoding other than `multipart`; a `parts` key that is not a `Bytes` input field (or an `Optional` one, or a newtype of either), or an entry stating nothing; a `filename` or `media_type` that is not `input.<field>` naming a `String` input field, or one the path, a part or another attribute carries; an empty `media_types`, an entry that is not an RFC 6838 `type/subtype`, or one entry twice | `routes[i].request.parts`, `….parts.<field>`, `….parts.<field>.filename`, `….media_type` or `….media_types` |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
 missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
@@ -656,8 +691,9 @@ same bytes.
 
 | authored key | values | default, and what the IR omits | unit |
 |---|---|---|---|
-| `routes[].request.encoding` | `json`, `form`, `query` | `json`, omitted | k1 |
+| `routes[].request.encoding` | `json`, `form`, `query`, `multipart` | `json`, omitted | k1 |
 | `routes[].request.unknown` | `refuse`, `ignore` | `refuse`, omitted; `request` itself is omitted when both are defaults | k1 |
+| `routes[].request.parts` | per `Bytes` input field of a `multipart` request: `filename` and `media_type` (`input.<field>`), `media_types` (a list) | absent, omitted; each attribute omitted when absent | beyond10x/ess#754 |
 | `routes[].outcomes.<outcome>` | an object per listed outcome of the command, keyed by its local name | absent: the outcome keeps `outcome_status` and `envelope` | k2 |
 | `routes[].outcomes.<outcome>.status` | an integer; **required** in a listed outcome | always written | k2 |
 | `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `response.<field>`, `none`, `{<member>: error}` | `envelope`, omitted | k2; `response.<field>` 0.69.0 |

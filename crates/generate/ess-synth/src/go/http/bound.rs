@@ -1725,7 +1725,8 @@ fn command(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        Encoding::Form => format!(
+        // `Binding::new` refuses a `multipart` request, which this server does not read yet.
+        Encoding::Form | Encoding::Multipart => format!(
             "formObject(request, body, {}, {}, {ignore})",
             flat_table(ir, &command.input, route),
             carried_table(ir, route)

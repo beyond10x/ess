@@ -64,6 +64,7 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-033",
     "ESS-HTTP-034",
     "ESS-HTTP-035",
+    "ESS-HTTP-036",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -181,11 +182,15 @@ pub enum Encoding {
     /// No body: every input field the path does not map is in the query string. The only
     /// encoding a command on `get` may use, and one a command on `delete` may use too.
     Query,
+    /// A `multipart/form-data` body (RFC 7578): one part per input field the path does not map, a
+    /// `Bytes` field a file part, its bytes raw, every other field a text part spelled as `form`
+    /// spells it (beyond10x/ess#754).
+    Multipart,
 }
 
 impl Encoding {
     /// Every encoding, in the order the format lists them.
-    pub const ALL: [Self; 3] = [Self::Json, Self::Form, Self::Query];
+    pub const ALL: [Self; 4] = [Self::Json, Self::Form, Self::Query, Self::Multipart];
 
     /// The encoding as a binding spells it.
     pub fn as_str(self) -> &'static str {
@@ -193,6 +198,7 @@ impl Encoding {
             Self::Json => "json",
             Self::Form => "form",
             Self::Query => "query",
+            Self::Multipart => "multipart",
         }
     }
 
@@ -277,7 +283,7 @@ impl fmt::Display for Unknown {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestSpec {
-    /// `json`, `form` or `query`; absent, `json`.
+    /// `json`, `form`, `query` or `multipart`; absent, `json`.
     #[serde(default)]
     pub encoding: Option<String>,
     /// `refuse` or `ignore`; absent, `refuse`.
@@ -287,6 +293,94 @@ pub struct RequestSpec {
     /// body; absent, the body is the input object.
     #[serde(default)]
     pub body: Option<String>,
+    /// The attributes of a `multipart` request's file parts, by the `Bytes` input field each part
+    /// carries (beyond10x/ess#754); held to their rules by [`compile`] (`ESS-HTTP-036`).
+    #[serde(default)]
+    pub parts: Option<BTreeMap<String, PartSpec>>,
+}
+
+/// One file part's attributes, as written: what reads its filename and its media type into the
+/// input, and the media types it may carry. Each source is read as text, so that one outside its
+/// rules is refused with a code and a path (`ESS-HTTP-036`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartSpec {
+    /// `input.<field>`: the `String` input field the part's filename is read into.
+    #[serde(default)]
+    pub filename: Option<String>,
+    /// `input.<field>`: the `String` input field the part's media type is read into.
+    #[serde(default)]
+    pub media_type: Option<String>,
+    /// The media types the part may carry, RFC 6838 `type/subtype`; another is malformed.
+    #[serde(default)]
+    pub media_types: Option<Vec<String>>,
+}
+
+/// One file part of a compiled `multipart` request: what reads its filename and media type into
+/// the input, and the media types it may carry, each omitted when the binding states none.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Part {
+    /// The `String` input field the part's filename is read into.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "part_source"
+    )]
+    pub filename: Option<Source>,
+    /// The `String` input field the part's media type is read into.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "part_source"
+    )]
+    pub media_type: Option<Source>,
+    /// The media types the part may carry, in the order written; empty, any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_types: Vec<String>,
+}
+
+/// Reads a compiled part attribute's source, which names a command's input field.
+fn part_source<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Source>, D::Error> {
+    match <Source as serde::Deserialize>::deserialize(deserializer)? {
+        source @ Source::Input(_) => Ok(Some(source)),
+        source @ Source::Param(_) => Err(serde::de::Error::custom(format!(
+            "a part's `filename` or `media_type` is `{source}`; it reads into one input field of \
+             a command, `input.<field>`"
+        ))),
+    }
+}
+
+/// Reads a compiled request's `parts`, refusing them written empty: compiled IR omits them.
+fn written_parts<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Part>, D::Error> {
+    let parts = <BTreeMap<String, Part> as serde::Deserialize>::deserialize(deserializer)?;
+    if parts.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`request.parts` is written empty, which compiled IR omits",
+        ));
+    }
+    Ok(parts)
+}
+
+/// Whether `text` is an RFC 6838 media type without parameters, `type/subtype`: each name 1 to 127
+/// characters, starting with a letter or a digit, of letters, digits and ``!#$&-^_.+``.
+pub fn is_media_type(text: &str) -> bool {
+    let name = |part: &str| {
+        (1..=127).contains(&part.len())
+            && part
+                .bytes()
+                .next()
+                .is_some_and(|first| first.is_ascii_alphanumeric())
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$&-^_.+".contains(&byte))
+    };
+    text.split_once('/')
+        .is_some_and(|(kind, subtype)| name(kind) && name(subtype))
 }
 
 /// A compiled route's `request`. Each key whose value is its default is omitted from the IR, and
@@ -311,6 +405,14 @@ pub struct Request {
         deserialize_with = "omitted_default"
     )]
     pub encoding: Encoding,
+    /// The attributes of a `multipart` request's file parts, by the `Bytes` input field each part
+    /// carries, in name order; empty, and omitted, when the binding states none.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "written_parts"
+    )]
+    pub parts: BTreeMap<String, Part>,
     /// What a request parameter no field names does.
     #[serde(
         default,
@@ -3494,7 +3596,7 @@ fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), 
     }
     let admitted = match request.encoding {
         Encoding::Query => matches!(route.method, Method::Get | Method::Delete),
-        Encoding::Json | Encoding::Form => route.method != Method::Get,
+        Encoding::Json | Encoding::Form | Encoding::Multipart => route.method != Method::Get,
     };
     if !admitted {
         return Err(format!(
@@ -3508,6 +3610,57 @@ fn request_invariants(route: &Route, request: &Request, at: &str) -> Result<(), 
             "`{at}.request.unknown` is `ignore` beside a bare `body`, which holds no member of the \
              input to ignore"
         ));
+    }
+    parts_invariants(route, request, at)
+}
+
+/// The invariants of a compiled request's `parts` (see [`HttpIr::from_json`]): beside `multipart`
+/// only; each part stating something; no attribute reading the path's field, a part's field or
+/// one another attribute reads; `media_types` distinct RFC 6838 `type/subtype` names.
+fn parts_invariants(route: &Route, request: &Request, at: &str) -> Result<(), String> {
+    if request.parts.is_empty() {
+        return Ok(());
+    }
+    if request.encoding != Encoding::Multipart {
+        return Err(format!(
+            "`{at}.request.parts` is beside `{}`; parts are a `multipart` request's",
+            request.encoding
+        ));
+    }
+    let mut read: Vec<&Source> = Vec::new();
+    for (key, part) in &request.parts {
+        let here = format!("{at}.request.parts.{key}");
+        if *part == Part::default() {
+            return Err(format!("`{here}` states nothing, which compiled IR omits"));
+        }
+        for (attribute, source) in [
+            ("filename", &part.filename),
+            ("media_type", &part.media_type),
+        ] {
+            let Some(source) = source else {
+                continue;
+            };
+            let carrier = if route.parameters.values().any(|carried| carried == source) {
+                Some("which the path carries")
+            } else if request.parts.contains_key(source.field()) {
+                Some("which is a part")
+            } else if read.contains(&source) {
+                Some("which another attribute reads")
+            } else {
+                None
+            };
+            if let Some(carrier) = carrier {
+                return Err(format!("`{here}.{attribute}` is `{source}`, {carrier}"));
+            }
+            read.push(source);
+        }
+        // An empty list is one left out, which admits any media type.
+        if part.media_types.is_empty() {
+            continue;
+        }
+        if let Some(rule) = media_types_rule(&part.media_types) {
+            return Err(format!("`{here}.media_types`: {rule}"));
+        }
     }
     Ok(())
 }
@@ -3636,8 +3789,8 @@ impl Refusals {
 /// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
-/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field the path does not carry |
+/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
 /// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
@@ -3652,6 +3805,7 @@ impl Refusals {
 /// | `ESS-HTTP-033` | at `servers.<component>`: a component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; at `servers.<component>[j].url`: a URL that is neither absolute `http://` or `https://` with a host nor `/`-rooted, one holding whitespace, `{`, `}`, `?`, `#` or userinfo, or one given twice for the component |
 /// | `ESS-HTTP-034` | at `limits.request_bytes` or `routes[i].limits.request_bytes`: a request size outside 1 to 16777216 bytes; at `routes[i].limits`: a limit on a route that reads no request body (a view, a `get` command or a `request: {encoding: query}` command) |
 /// | `ESS-HTTP-035` | at `routes[i].representations`: `representations` on a command route, on a `single` view or on a paged view, or an empty list; at `routes[i].representations[j].query`: a `query` holding other than exactly one parameter, a parameter other than the first representation's, a value an earlier representation has, a parameter name that is a view parameter's wire name or a path variable or is not RFC 3986 `unreserved` characters, or a value that is empty or not `unreserved` characters; at `routes[i].representations[j].encoding.csv.separator`: a separator other than `","`, `";"` and `"\t"`; at `routes[i].representations[j].encoding`: a view field whose type has no flat spelling (a struct, a union, a `List`, a `Map`, `Json`), naming the field (beyond10x/ess#753) |
+/// | `ESS-HTTP-036` | at `routes[i].request.parts`: `parts` beside an encoding other than `multipart`; at `routes[i].request.parts.<field>`: a key naming no input field, or one whose type is not `Bytes` (a newtype of it, or an `Optional` of either), or a part stating nothing; at `routes[i].request.parts.<field>.filename` or `….media_type`: a source that is not `input.<field>` naming a `String` input field (a newtype of it, or an `Optional` of either), or one the path carries, that is a part, or that another attribute reads; at `routes[i].request.parts.<field>.media_types`: an empty list, an entry that is not an RFC 6838 `type/subtype`, or one entry twice (beyond10x/ess#754) |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -3682,7 +3836,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -4329,20 +4483,7 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
                 );
             }
         }
-        let fixed_request = written_request(fixed);
-        for ((key, new), (_, old)) in written_request(route).into_iter().zip(fixed_request) {
-            if new != old {
-                refusals.refuse(
-                    "ESS-HTTP-012",
-                    format!("routes[{index}].request.{key}"),
-                    format!(
-                        "{operation} has `request.{key}` `{new}` here, and the refined binding \
-                         fixes `{old}` at `routes[{at}]`; a refinement restates the request of \
-                         every route it restates"
-                    ),
-                );
-            }
-        }
+        request_changes(route, fixed, &operation, [index, at], refusals);
         answer_changes(route, fixed, &operation, index, at, refusals);
         representation_changes(route, fixed, &operation, [index, at], refusals);
         refusal_changes(
@@ -4750,6 +4891,50 @@ fn extras_changes(
                  restates",
                 shown(new),
                 shown(old)
+            ),
+        );
+    }
+}
+
+/// Refuses (`ESS-HTTP-012`) a `request` key of `route`, at `routes[index]`, written otherwise than
+/// the refined binding's `fixed` route at `routes[at]` writes it: a default written out or left out
+/// counts as that default, and `parts` are compared attribute by attribute.
+fn request_changes(
+    route: &RouteSpec,
+    fixed: &RouteSpec,
+    operation: &Operation,
+    [index, at]: [usize; 2],
+    refusals: &mut Refusals,
+) {
+    let fixed_request = written_request(fixed);
+    for ((key, new), (_, old)) in written_request(route).into_iter().zip(fixed_request) {
+        if new != old {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].request.{key}"),
+                format!(
+                    "{operation} has `request.{key}` `{new}` here, and the refined binding fixes \
+                     `{old}` at `routes[{at}]`; a refinement restates the request of every route \
+                     it restates"
+                ),
+            );
+        }
+    }
+    let parts = |route: &RouteSpec| {
+        route
+            .request
+            .as_ref()
+            .and_then(|request| request.parts.clone())
+            .unwrap_or_default()
+    };
+    if parts(route) != parts(fixed) {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].request.parts"),
+            format!(
+                "{operation} states other `request.parts` here than the refined binding fixes at \
+                 `routes[{at}]`; a refinement restates the parts of every route it restates, each \
+                 attribute as written"
             ),
         );
     }
@@ -5293,9 +5478,10 @@ fn carried(
         _ => Ok(None),
     };
     let flat = match (target, checked.encoding) {
-        (Some(target), Some(encoding @ (Encoding::Form | Encoding::Query))) => {
-            flat_input(target, encoding, mapped, path, refusals)
-        }
+        (
+            Some(target),
+            Some(encoding @ (Encoding::Form | Encoding::Query | Encoding::Multipart)),
+        ) => flat_input(target, encoding, mapped, path, refusals),
         _ => true,
     };
     let unmapped = match (target, method, checked.encoding) {
@@ -5304,14 +5490,215 @@ fn carried(
         }
         _ => false,
     };
-    match bare {
-        Ok(_) if checked.refused || !flat || unmapped => Err(Refused),
-        Err(Refused) => Err(Refused),
-        Ok(None) => Ok(checked.request),
-        Ok(Some(body)) => Ok(Some(Request {
-            body: Some(body),
+    let parts = match (
+        target,
+        spec.request
+            .as_ref()
+            .and_then(|written| written.parts.as_ref()),
+    ) {
+        (Some(target), Some(written)) => {
+            file_parts(written, target, checked.encoding, mapped, path, refusals)
+        }
+        (None, Some(_)) => Err(Refused),
+        (_, None) => Ok(BTreeMap::new()),
+    };
+    match (bare, parts) {
+        (Ok(_), Ok(_)) if checked.refused || !flat || unmapped => Err(Refused),
+        (Err(Refused), _) | (_, Err(Refused)) => Err(Refused),
+        (Ok(None), Ok(parts)) if parts.is_empty() => Ok(checked.request),
+        (Ok(body), Ok(parts)) => Ok(Some(Request {
+            body,
+            parts,
             ..checked.request.unwrap_or_default()
         })),
+    }
+}
+
+/// A `multipart` request's `parts` (`ESS-HTTP-036`), compiled: only beside `multipart`; each key an
+/// input field of type `Bytes` (a newtype of it, or an `Optional` of either) stating at least one
+/// attribute; `filename` and `media_type` each `input.<field>` naming a `String` input field (a
+/// newtype of it, or an `Optional` of either) that neither the path, a part nor another attribute
+/// carries; `media_types` distinct RFC 6838 `type/subtype` names, at least one.
+fn file_parts(
+    written: &BTreeMap<String, PartSpec>,
+    target: &Target<'_>,
+    encoding: Option<Encoding>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Result<BTreeMap<String, Part>, Refused> {
+    match encoding {
+        Some(Encoding::Multipart) => {}
+        Some(other) => {
+            refusals.refuse(
+                "ESS-HTTP-036",
+                format!("{path}.request.parts"),
+                format!(
+                    "`parts` states the attributes of a `multipart` request's file parts, and this \
+                     request is encoded `{other}`"
+                ),
+            );
+            return Err(Refused);
+        }
+        // The encoding was refused by its own key, which leaves the parts unchecked.
+        None => return Err(Refused),
+    }
+    let mut compiled = BTreeMap::new();
+    let mut read: Vec<&str> = Vec::new();
+    let mut refused = false;
+    for (key, spec) in written {
+        let at = format!("{path}.request.parts.{key}");
+        let field = target.fields.iter().find(|field| field.name == *key);
+        let rule = match field {
+            None => Some(format!(
+                "`{key}` names no input field: a part's attributes are keyed by the `Bytes` input \
+                 field the part carries"
+            )),
+            Some(field) if !of_primitive(&field.type_ref, Primitive::Bytes, target.ir) => {
+                Some(format!(
+                    "input field `{key}` has type `{}`, and a file part carries a `Bytes` input \
+                     field (a newtype of it, or an `Optional` of either)",
+                    field.type_ref
+                ))
+            }
+            Some(_) if spec == &PartSpec::default() => Some(format!(
+                "`{key}` states nothing: a part's entry states a `filename`, a `media_type` or \
+                 `media_types`, and a file part without one needs no entry"
+            )),
+            Some(_) => None,
+        };
+        if let Some(rule) = rule {
+            refusals.refuse("ESS-HTTP-036", at, rule);
+            refused = true;
+            continue;
+        }
+        let mut part = Part::default();
+        for (attribute, text, slot) in [
+            ("filename", &spec.filename, &mut part.filename),
+            ("media_type", &spec.media_type, &mut part.media_type),
+        ] {
+            let Some(text) = text else {
+                continue;
+            };
+            match attribute_source(text, target, written, mapped, &read) {
+                Ok((source, field)) => {
+                    read.push(field);
+                    *slot = Some(source);
+                }
+                Err(rule) => {
+                    refusals.refuse(
+                        "ESS-HTTP-036",
+                        format!("{at}.{attribute}"),
+                        format!("a part's `{attribute}` {rule}"),
+                    );
+                    refused = true;
+                }
+            }
+        }
+        if let Some(types) = &spec.media_types {
+            match media_types_rule(types) {
+                Some(rule) => {
+                    refusals.refuse("ESS-HTTP-036", format!("{at}.media_types"), rule);
+                    refused = true;
+                }
+                None => part.media_types.clone_from(types),
+            }
+        }
+        compiled.insert(key.clone(), part);
+    }
+    if refused {
+        Err(Refused)
+    } else {
+        Ok(compiled)
+    }
+}
+
+/// The input field a part attribute's source `text` reads into, with its name, or why it may not:
+/// it is `input.<field>` naming a `String` input field that neither the path, a part nor an
+/// attribute already `read` carries.
+fn attribute_source<'a>(
+    text: &str,
+    target: &Target<'a>,
+    parts: &BTreeMap<String, PartSpec>,
+    mapped: &[String],
+    read: &[&str],
+) -> Result<(Source, &'a str), String> {
+    let source = Source::parse(text)
+        .filter(|source| matches!(source, Source::Input(_)))
+        .ok_or_else(|| {
+            format!(
+                "is `{text}`, which is not `input.<field>`: it is read into one input field of \
+                 the command"
+            )
+        })?;
+    let field = target
+        .fields
+        .iter()
+        .find(|field| field.name == source.field())
+        .ok_or_else(|| format!("is `{text}`, which names no input field of the command"))?;
+    if !of_primitive(&field.type_ref, Primitive::String, target.ir) {
+        return Err(format!(
+            "is `{text}`, of type `{}`: it is read into a `String` input field (a newtype of it, \
+             or an `Optional` of either)",
+            field.type_ref
+        ));
+    }
+    let carrier = if mapped.contains(&format!("input.{}", field.name)) {
+        Some("the path carries it")
+    } else if parts.contains_key(&field.name) {
+        Some("it is a part")
+    } else if read.contains(&field.name.as_str()) {
+        Some("another attribute reads it, so it would be read twice")
+    } else {
+        None
+    };
+    match carrier {
+        Some(carrier) => Err(format!(
+            "is `{text}`, and {carrier}: an input field travels in one place"
+        )),
+        None => Ok((source, field.name.as_str())),
+    }
+}
+
+/// Why a part's `media_types` is refused, if it is: empty, an entry that is not an RFC 6838
+/// `type/subtype`, or one entry twice.
+fn media_types_rule(types: &[String]) -> Option<String> {
+    if types.is_empty() {
+        return Some(
+            "`media_types` is empty: it lists the media types the part may carry, at least one, \
+             and is left out to admit any"
+                .to_owned(),
+        );
+    }
+    if let Some(bad) = types.iter().find(|text| !is_media_type(text)) {
+        return Some(format!(
+            "`{bad}` is not an RFC 6838 media type `type/subtype`, such as `text/csv`"
+        ));
+    }
+    types
+        .iter()
+        .enumerate()
+        .find(|(index, text)| types[..*index].contains(text))
+        .map(|(_, text)| format!("`media_types` names `{text}` twice"))
+}
+
+/// Whether `type_ref` is the primitive `wanted`, a newtype of it, or an `Optional` of either.
+fn of_primitive(type_ref: &ResolvedTypeRef, wanted: Primitive, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => of_primitive_value(of, wanted, ir),
+        _ => of_primitive_value(type_ref, wanted, ir),
+    }
+}
+
+/// Whether `type_ref` is the primitive `wanted` or a newtype of it, however deep.
+fn of_primitive_value(type_ref: &ResolvedTypeRef, wanted: Primitive, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => *name == wanted,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => of_primitive_value(of, wanted, ir),
+            _ => false,
+        },
+        _ => false,
     }
 }
 
@@ -5411,6 +5798,28 @@ struct Checked {
     body: Option<String>,
 }
 
+/// Why `encoding` is refused on a command route on `method` (`ESS-HTTP-020`), if it is: a body
+/// encoding `written` on `get`, or `query` on a method other than `get` and `delete`.
+fn encoding_rule(method: Option<Method>, encoding: Encoding, written: bool) -> Option<String> {
+    match (method, encoding) {
+        (Some(Method::Get), Encoding::Json | Encoding::Form | Encoding::Multipart) if written => {
+            Some(format!(
+                "`{encoding}` carries the input in a body, and `get` carries none; a command on \
+                 `get` is encoded `query`, or leaves `encoding` out and maps every input field to \
+                 the path"
+            ))
+        }
+        (Some(method), Encoding::Query) if !matches!(method, Method::Get | Method::Delete) => {
+            Some(format!(
+                "`query` carries the input in the query string, the encoding of a command on \
+                 `get` or `delete` only; a command on `{method}` is encoded `json`, `form` or \
+                 `multipart`"
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
 /// the set that the method admits when one is written (`query` on `get` or `delete` only, and on
 /// `get` nothing else written), an `unknown` of the set, `ignore` beside no bare `body`,
@@ -5444,8 +5853,8 @@ fn request(
                     "ESS-HTTP-020",
                     format!("{path}.request.encoding"),
                     format!(
-                        "`{text}` is not an encoding; a request is encoded `json`, `form` or \
-                         `query`"
+                        "`{text}` is not an encoding; a request is encoded `json`, `form`, `query` \
+                         or `multipart`"
                     ),
                 );
                 refused = true;
@@ -5454,21 +5863,8 @@ fn request(
         }
     };
     let encoding = parsed.filter(|&encoding| {
-        let rule = match (method, encoding) {
-            (Some(Method::Get), Encoding::Json | Encoding::Form) if written.encoding.is_some() => {
-                format!(
-                    "`{encoding}` carries the input in a body, and `get` carries none; a command \
-                     on `get` is encoded `query`, or leaves `encoding` out and maps every input \
-                     field to the path"
-                )
-            }
-            (Some(method), Encoding::Query) if !matches!(method, Method::Get | Method::Delete) => {
-                format!(
-                    "`query` carries the input in the query string, the encoding of a command on \
-                     `get` or `delete` only; a command on `{method}` is encoded `json` or `form`"
-                )
-            }
-            _ => return true,
+        let Some(rule) = encoding_rule(method, encoding, written.encoding.is_some()) else {
+            return true;
         };
         refusals.refuse("ESS-HTTP-020", format!("{path}.request.encoding"), rule);
         refused = true;
@@ -5512,6 +5908,7 @@ fn request(
         (false, Some(encoding), Some(unknown)) => Some(Request {
             body: None,
             encoding,
+            parts: BTreeMap::new(),
             unknown,
         })
         .filter(|request| *request != Request::default()),
@@ -5606,8 +6003,8 @@ fn flat_input(
             format!("{path}.request.encoding"),
             format!(
                 "input field `{}` has type `{}`, which has no flat spelling in a `{encoding}` \
-                 request: a `form` or `query` field is a scalar, an `Optional` scalar or a `List` \
-                 of scalars, a scalar being a primitive other than `Json`, an enum, or a newtype \
+                 request: a `form`, `query` or `multipart` field is a scalar, an `Optional` \
+                 scalar or a `List` of scalars, a scalar being a primitive other than `Json`, an enum, or a newtype \
                  of a scalar",
                 field.name, field.type_ref
             ),

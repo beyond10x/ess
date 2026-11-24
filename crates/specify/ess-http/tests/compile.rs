@@ -1312,6 +1312,7 @@ fn every_code_this_crate_can_emit_is_one_of_the_codes_built_so_far() {
                     | "ESS-HTTP-033"
                     | "ESS-HTTP-034"
                     | "ESS-HTTP-035"
+                    | "ESS-HTTP-036"
             ),
             "{code}"
         );

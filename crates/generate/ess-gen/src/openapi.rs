@@ -1397,7 +1397,8 @@ fn request_body(
         }
     };
     let (description, content) = match request.encoding {
-        ess_http::Encoding::Form => (
+        // `Binding::new` refuses a `multipart` request, which this document does not publish yet.
+        ess_http::Encoding::Form | ess_http::Encoding::Multipart => (
             format!(
                 "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, \
                  each field under its wire name, a list repeating its key once per element.{}",

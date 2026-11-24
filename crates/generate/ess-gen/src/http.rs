@@ -388,7 +388,8 @@ impl Binding {
     /// not a route anything can be sent to, so a document publishing it would have to invent a
     /// path; the server binding that refines it fills the path in (decided for stage 1, answer 1).
     /// A method a route is never served on (`head`, `options`, `trace`) is refused the same way,
-    /// though compiled IR cannot hold one (`ESS-HTTP-006`).
+    /// though compiled IR cannot hold one (`ESS-HTTP-006`), and so is a route taking a `multipart`
+    /// request, which neither the published document nor a server reads yet.
     pub fn new(http: ess_http::HttpIr) -> Result<Self, Unprojectable> {
         let refused: Vec<(ess_http::Operation, Reason)> = http
             .routes()
@@ -398,6 +399,12 @@ impl Binding {
                     Some((route.operation.clone(), Reason::Open))
                 } else if Method::of(route.method).is_none() {
                     Some((route.operation.clone(), Reason::Method(route.method)))
+                } else if route
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| request.encoding == ess_http::Encoding::Multipart)
+                {
+                    Some((route.operation.clone(), Reason::Multipart))
                 } else {
                     None
                 }
@@ -491,6 +498,8 @@ pub enum Reason {
     Method(ess_http::Method),
     /// Its template matches this path, which a served surface answers about itself.
     Reserved(&'static str),
+    /// It takes a `multipart` request, which no projection reads yet (beyond10x/ess#754).
+    Multipart,
 }
 
 /// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
@@ -518,6 +527,10 @@ impl std::fmt::Display for Unprojectable {
                     formatter,
                     "{operation} has a path a request for `{path}` would match, and a served \
                      surface answers `{path}` itself; route it elsewhere"
+                )?,
+                Reason::Multipart => write!(
+                    formatter,
+                    "{operation} takes a `multipart` request, which no projection reads yet"
                 )?,
             }
         }

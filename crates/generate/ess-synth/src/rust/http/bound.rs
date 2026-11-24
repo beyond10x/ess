@@ -1144,7 +1144,8 @@ fn command(
             "http::json_body(&request.body, {})?",
             http::body_required_without(command, &http::carried(ir, route))
         ),
-        Encoding::Form => format!(
+        // `Binding::new` refuses a `multipart` request, which this server does not read yet.
+        Encoding::Form | Encoding::Multipart => format!(
             "{{\n            if !http::content_type_is(request, http::FORM) {{\n                \
              return Err(\"the body is not `application/x-www-form-urlencoded`\".to_owned());\n            \
              }}\n            http::flat_object(http::body_text(&request.body)?, {}, {}, {ignore}, \

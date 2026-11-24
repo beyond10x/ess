@@ -173,6 +173,23 @@ The document follows those keys on the routes that use them:
     parameters: {shelf_id: input.shelf_id}
     request: {unknown: ignore}        # {"shelf_id": "s-1", "label": "A", "updated_at": "…"}
   ```
+- `encoding: multipart` takes a `multipart/form-data` upload: one part per input field the path
+  does not carry, a `Bytes` field a file part holding the raw bytes, every other field a text part
+  spelled as `form` spells it. `parts` reads a file part's `filename` and `media_type` into
+  `String` input fields and lists the `media_types` it may carry. A `get` command takes no
+  `multipart`, and the OpenAPI document and the generated servers do not read it yet:
+
+  ```yaml
+  - command: demo.reports.ImportRows
+    method: post
+    path: /reports/rows/import
+    request:
+      encoding: multipart
+      parts:
+        file:
+          filename: input.file_name
+          media_types: [text/csv, application/vnd.ms-excel]
+  ```
 - A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
   `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response
