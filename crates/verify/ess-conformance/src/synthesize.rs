@@ -17033,6 +17033,45 @@ fn wrong_state_scenario(
     }
 }
 
+/// The input refusal of `attempt`'s command that holds for the row `steps` captured as
+/// `instance`, sent in place of the identity `input` holds: read as the acting caller, and, where
+/// the arranging steps send the same command, as the arranging caller too. `None` where none holds
+/// or the row's identity is no literal the steps send (beyond10x/ess#794).
+fn acting_refusal<'a>(
+    models: &caller::InvocationModels<'a>,
+    attempt: &Driver<'_>,
+    input: &BTreeMap<String, Node>,
+    steps: &[ScenarioStep],
+    instance: &InstanceName,
+) -> Option<&'a Predicate> {
+    let ResolvedInstance::Supplied { field } = &attempt.outcome.subject.as_ref()?.instance else {
+        return None;
+    };
+    let identity = related_guard::created_identity(models.arrangement, steps, instance)?;
+    let mut sent = input.clone();
+    if !set_at(&mut sent, &field.name, Some(identity)) {
+        return None;
+    }
+    let sent_here = CommandRef::new(attempt.command.name.clone());
+    let arranged = steps.iter().any(|step| {
+        matches!(step, ScenarioStep::ExecuteCommand { command, .. } if *command == sent_here)
+    });
+    let mut readings = vec![models.acting];
+    if arranged {
+        readings.push(models.arrangement);
+    }
+    readings.into_iter().find_map(|ir| {
+        let command = ir.commands().get(&attempt.command.name)?;
+        let facts = flatten(ir, command, &sent).ok()?;
+        command
+            .outcomes
+            .iter()
+            .filter(|outcome| outcome.error.is_some())
+            .filter_map(when)
+            .find(|guard| facts.decide(guard).is_satisfied())
+    })
+}
+
 /// Adds a scenario, or records the collision as a refusal rather than losing one of the two.
 pub(crate) fn insert(
     suite: &mut ConformanceSuite,
@@ -17154,6 +17193,23 @@ fn refused_here(
         steps.extend(rows);
         listed_source = from;
         supplied.insert(field, ScenarioValue::List { items });
+    }
+    // The refusal step is sent as the acting caller, whose reading of an input guard over a caller
+    // attribute may differ from the arranging caller's: an input refusal it holds for the row
+    // named would answer first (beyond10x/ess#794).
+    if let Some(guard) = acting_refusal(models, attempt, &input, &steps, &arrangement.instance) {
+        refusals.push(Refusal::about(
+            id,
+            RefusalCause::GuardUnsatisfiable {
+                predicate: format!(
+                    "`{guard}` refuted for the row the refusal step names, as the caller it is \
+                     sent as"
+                ),
+                tried: 1,
+                cut: 0,
+            },
+        ));
+        return None;
     }
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
@@ -18733,6 +18789,33 @@ fn refusal_arrangement(
         return Ok((arrangement, input, bound));
     }
     let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
+    // The row the steps name leaves every input guard on its identity decided as `input` decides
+    // it, as `identity_sent` keeps an accepting branch's row (beyond10x/ess#794): a guard over a
+    // caller attribute is otherwise answered on the arranging step and the refusal step.
+    if let Some(ResolvedInstance::Supplied { field }) = attempt
+        .outcome
+        .subject
+        .as_ref()
+        .map(|subject| &subject.instance)
+    {
+        if !sent_keeps_branch(
+            ir,
+            attempt.command,
+            &input,
+            &field.name,
+            &arrangement.steps,
+            &arrangement.instance,
+        ) {
+            arrangement = identity_steered(
+                ir,
+                attempt.command,
+                (handle, &field.name),
+                std::slice::from_ref(state),
+                actors,
+                (Distinction::PLAIN, &input),
+            )?;
+        }
+    }
     Ok((arrangement, input, BTreeMap::new()))
 }
 

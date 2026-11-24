@@ -8,6 +8,7 @@
 - `ess generate synthesize --target rust` writes the port of a component that accepts no command and declares no view without a field nothing reads, so the generated workspace builds with warnings denied, where `cargo build` warned that `behaviors` is never read (#793).
 - The obligation contract in `PLAN.md` and `plan.json` of a command with `when_related:` from `ess/27` states the precedence the interpreted target and the suite follow: input refusals and `before_row: true` externals first, then existence, the held state, missing and present related rows, and the accepting branches, where it put `existing_instance` and `exists: false` before the input refusals (#798).
 - `ess verify conform synthesize` tries values a text input's type admits where a guard reads the input and the type's invariant over its length refuses the value it started from, so the branch is witnessed without an `example:`, where it was refused as `ESS-SYNTH-003` naming a value its own type refuses (#809).
+- `ess verify conform synthesize` arranges the held state of a command's wrong-state scenario on a row whose identity the command's `when:` guard over `caller.<attr>` admits for the caller each step is sent as, and writes no reading whose arranging and refusing callers no one row admits, where it sent a caller that guard refused and the interpreted target failed the scenario (#794).
 
 ## [0.98.0] — 2026-11-23
 
