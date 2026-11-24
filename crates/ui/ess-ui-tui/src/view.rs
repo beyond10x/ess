@@ -1297,6 +1297,7 @@ impl App {
                         view: view.clone(),
                         fixture: None,
                         params: std::collections::BTreeMap::new(),
+                        pager: None,
                     };
                     if let Some(result) = self.rows_of(&request) {
                         let labels: Vec<String> = result
@@ -1492,7 +1493,7 @@ impl App {
             .collect();
         // Filtered and sorted once: the page shown and the footer's row count both read it.
         let arranged = self.arranged_rows(place.ui, collection, all);
-        let (rows, pages) = self.page_of(place.ui, collection, &arranged);
+        let (rows, pages) = self.page_of(place.ui, collection, &arranged, &place.ctx);
         let state = self.ui(place.ui);
         let cursor = state.cursor.min(rows.len().saturating_sub(1));
         let cards = matches!(
@@ -1801,7 +1802,10 @@ impl App {
                 }
             }
         }
-        let page = state.page.min(pages - 1);
+        let page = self
+            .server_page(collection, &place.ctx)
+            .map_or(state.page, |(page, _)| page)
+            .min(pages - 1);
         let mut footer = vec![format!("page {}/{pages}", page + 1)];
         footer.push(format!("{} rows", arranged.len()));
         // A paged read's footer shows the rows drawn as a range of all of them, as React's
@@ -2559,6 +2563,7 @@ impl App {
                 view: view.clone(),
                 fixture: None,
                 params: self.overlay_params(),
+                pager: None,
             };
             lines.push(Line::styled(format!("Used by ({view}):"), bold()));
             match self.read_state(&request) {

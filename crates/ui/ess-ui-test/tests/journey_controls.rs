@@ -1244,3 +1244,101 @@ fn every_column_of_a_wide_table_is_drawn() {
         ],
     ));
 }
+
+// ── a server pager is driven through the states it names (beyond10x/ess#722 items 23, 24) ────
+
+const SERVER_PAGED: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Orders: orders.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+navigation:
+  home: orders
+  sections: [{name: all, pages: [orders]}]
+pages:
+  orders:
+    kind: list_page
+    shell: app
+    title: Orders
+    state:
+      status: {type: {list: {enum: [open, closed]}}, class: page_state, store: url}
+      page: {type: integer, class: page_state, default: 1}
+      size: {type: integer, class: page_state, default: 5}
+    header:
+      actions:
+        - {name: report, does: shelf.Report, bind: {page: state.page, size: state.size}, label: Report}
+    sections:
+      - name: filters
+        component: filter_bar
+        binds: [state.status]
+        choices: [{name: status, component: choice, multiple: true, options: [open, closed]}]
+      - name: list
+        component: collection
+        reads: {view: shelf.Orders, params: {status: state.status, at: state.page, per: state.size}, paging: server, pager: {page: at, size: per, sizes: [5, 10]}}
+        columns: [id, status]
+";
+
+/// Twelve orders: `o-1` to `o-8` open, `o-9` to `o-12` closed.
+fn server_paged(name: &str, steps: &[&str]) -> Outcome {
+    let document = document_of(SERVER_PAGED, name);
+    let rows: Vec<String> = (1..=12)
+        .map(|at| {
+            let status = if at <= 8 { "open" } else { "closed" };
+            format!("      - {{id: o-{at}, status: {status}}}\n")
+        })
+        .collect();
+    std::fs::write(
+        document.with_file_name("orders.yaml"),
+        format!("views:\n  shelf.Orders:\n    rows:\n{}", rows.concat()),
+    )
+    .expect("the fixture is written");
+    let mut text =
+        format!("format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: {name}\n  steps:\n");
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let report = ess_ui_test::execute(&document, &[file]).unwrap_or_else(|error| panic!("{error}"));
+    report.tests.into_iter().next().expect("one outcome")
+}
+
+/// The collection shows the size its size state holds, `page` writes the page state the read is
+/// sent with, and an action binding `state.page` sends it (item 24).
+#[test]
+fn a_server_pager_pages_through_its_states() {
+    passed(&server_paged(
+        "server_pager_pages",
+        &[
+            "open: orders",
+            "expect: {at: pages/orders/sections/list, rows: [o-1, o-2, o-3, o-4, o-5]}",
+            "page: {at: pages/orders/sections/list, to: 2}",
+            "expect: {at: pages/orders/sections/list, rows: [o-6, o-7, o-8, o-9, o-10]}",
+            "act: pages/orders/header/actions/report",
+            "expect_command: {command: shelf.Report, input: {page: 2, size: 5}}",
+        ],
+    ));
+}
+
+/// A change to another param of the read returns the collection to page 1, the state included
+/// (item 23).
+#[test]
+fn a_server_pager_returns_to_page_one_when_another_param_changes() {
+    passed(&server_paged(
+        "server_pager_resets",
+        &[
+            "open: orders",
+            "page: {at: pages/orders/sections/list, to: 2}",
+            "choose: {at: pages/orders/sections/filters/choices/status, option: open}",
+            "expect: {at: pages/orders/sections/list, rows: [o-1, o-2, o-3, o-4, o-5]}",
+            "act: pages/orders/header/actions/report",
+            "expect_command: {command: shelf.Report, input: {page: 1, size: 5}}",
+        ],
+    ));
+}

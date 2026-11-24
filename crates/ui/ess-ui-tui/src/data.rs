@@ -23,6 +23,18 @@ pub struct ReadRequest {
     pub fixture: Option<String>,
     /// Params by name; absent params are not listed.
     pub params: BTreeMap<String, Value>,
+    /// The params a server pager names (`paging: server` with a `pager`): the fixture adapter
+    /// answers the slice they name. Not part of [`ReadRequest::key`]: the params are.
+    pub pager: Option<PagerParams>,
+}
+
+/// The names of the params that carry a server read's page and page size (`reads.pager`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PagerParams {
+    /// The param that carries the page, counted from 1.
+    pub page: String,
+    /// The param that carries the page size, when the pager names one.
+    pub size: Option<String>,
 }
 
 impl ReadRequest {
@@ -517,7 +529,12 @@ impl DataAdapter for FixtureAdapter {
                 }
             }
         }
+        let pager = request.pager.as_ref();
         for (name, value) in &request.params {
+            // A server pager's page and size params name the slice, not a field.
+            if pager.is_some_and(|pager| pager.page == *name || pager.size.as_ref() == Some(name)) {
+                continue;
+            }
             if name == "q" {
                 let needle = display(value).to_lowercase();
                 if !needle.is_empty() {
@@ -552,11 +569,27 @@ impl DataAdapter for FixtureAdapter {
             });
             filtered = true;
         }
-        let total = if filtered {
+        let mut total = if filtered {
             Some(rows.len() as u64)
         } else {
             data.total
         };
+        // A server pager's read is answered with the page its params name, counted from 1, of
+        // the size its size param names (beyond10x/ess#722 item 24).
+        let number = |name: Option<&String>| {
+            name.and_then(|name| request.params.get(name))
+                .and_then(|value| display(value).parse::<usize>().ok())
+        };
+        if let Some(size) = pager.and_then(|pager| number(pager.size.as_ref())) {
+            let size = size.max(1);
+            let page = number(pager.map(|pager| &pager.page)).unwrap_or(1).max(1);
+            total = total.or(Some(rows.len() as u64));
+            rows = rows
+                .into_iter()
+                .skip((page - 1) * size)
+                .take(size)
+                .collect();
+        }
         Ok(ReadResult { rows, total })
     }
 
@@ -628,6 +661,7 @@ mod tests {
             view: "things.Page".to_owned(),
             fixture: None,
             params: ess_yaml::from_str(params).expect("the params parse"),
+            pager: None,
         };
         let result = adapter.read(&request).expect("the read is answered");
         let ids = result.rows.iter().map(|row| display(&row["id"])).collect();
@@ -682,6 +716,48 @@ mod tests {
                 Some(40)
             ),
             "a param no row carries narrows nothing and leaves the view's total"
+        );
+    }
+
+    /// A server-paged read is answered with the slice its pager's params name, by the pager's
+    /// own param names, and the total of the rows before the slice (beyond10x/ess#722 item 24).
+    #[test]
+    fn a_server_pager_read_is_answered_with_the_page_its_params_name() {
+        let rows: Vec<String> = (1..=12).map(|at| format!("{{id: o-{at}}}")).collect();
+        let adapter = adapter(&format!("[{}]", rows.join(", ")));
+        let read = |params: &str| {
+            let request = ReadRequest {
+                view: "things.Page".to_owned(),
+                fixture: None,
+                params: ess_yaml::from_str(params).expect("the params parse"),
+                pager: Some(PagerParams {
+                    page: "at".to_owned(),
+                    size: Some("per".to_owned()),
+                }),
+            };
+            let result = adapter.read(&request).expect("the read is answered");
+            let ids: Vec<String> = result.rows.iter().map(|row| display(&row["id"])).collect();
+            (ids, result.total)
+        };
+        assert_eq!(
+            read("{at: 2, per: 5}"),
+            (
+                ["o-6", "o-7", "o-8", "o-9", "o-10"]
+                    .map(str::to_owned)
+                    .to_vec(),
+                Some(40)
+            ),
+            "page 2 of 5 rows, the view's total kept"
+        );
+        assert_eq!(
+            read("{at: 3, per: 5}").0,
+            ["o-11", "o-12"],
+            "the last page holds what is left"
+        );
+        assert_eq!(
+            read("{per: 5}").0.len(),
+            5,
+            "without a page param the first page"
         );
     }
 }

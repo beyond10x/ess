@@ -1052,6 +1052,7 @@ impl App {
                         view: dynamic.from_view.clone(),
                         fixture: None,
                         params: BTreeMap::new(),
+                        pager: None,
                     };
                     if let Some(ReadState::Ready(result)) = self.read_state(&request) {
                         for row in &result.rows {
@@ -1234,6 +1235,48 @@ impl App {
             _ => return,
         };
         self.store.set(&path, value, self.adapter.as_mut());
+        self.reset_server_pages(target);
+    }
+
+    /// Returns each server-paged collection of the page whose read sends the state `written`
+    /// names in a param other than its pager's own to page 1, the page state included, as a
+    /// client pager returns to its first page (beyond10x/ess#722 item 23).
+    fn reset_server_pages(&mut self, written: &str) {
+        let state: Vec<&str> = written.split('.').take(2).collect();
+        let ["state" | "shell", _] = state.as_slice() else {
+            return;
+        };
+        let state = state.join(".");
+        let mut resets = Vec::new();
+        for section in &self.page_def().sections {
+            let Body::Composite(Composite::Collection(collection)) = &section.body else {
+                continue;
+            };
+            let Some(reads) = &collection.reads else {
+                continue;
+            };
+            let Some((page, pager)) =
+                server_pager(reads).and_then(|pager| Some((pager.page.as_ref()?, pager)))
+            else {
+                continue;
+            };
+            let Some(bound) = reads.params.get(page) else {
+                continue;
+            };
+            let other = reads.params.iter().any(|(name, expr)| {
+                name != page && pager.size.as_ref() != Some(name) && mentions(&expr.0, &state)
+            });
+            if other && !mentions(&bound.0, &state) {
+                resets.push((section.name.clone(), bound.0.clone()));
+            }
+        }
+        for (section, bound) in resets {
+            let ctx = Ctx {
+                section: Some(&section),
+                ..Ctx::default()
+            };
+            self.set_bound(&bound, Value::Number(1.into()), &ctx);
+        }
     }
 
     pub(crate) fn channel_status(&self, channel: &str) -> String {
@@ -1266,6 +1309,14 @@ impl App {
                 }
             }
         }
+        // A server pager whose size state holds nothing is sent the first of its sizes.
+        if let Some(pager) = server_pager(reads) {
+            if let (Some(size), Some(first)) = (&pager.size, pager.sizes.first()) {
+                if reads.params.contains_key(size) && !params.contains_key(size) {
+                    params.insert(size.clone(), Value::Number((*first).into()));
+                }
+            }
+        }
         ReadRequest {
             view: reads
                 .view
@@ -1274,6 +1325,10 @@ impl App {
                 .unwrap_or_default(),
             fixture: reads.fixture.clone(),
             params,
+            pager: server_pager(reads).map(|pager| crate::data::PagerParams {
+                page: pager.page.clone().unwrap_or_default(),
+                size: pager.size.clone(),
+            }),
         }
     }
 
@@ -1618,6 +1673,7 @@ impl App {
                             view: view.view.clone(),
                             fixture: None,
                             params,
+                            pager: None,
                         });
                     }
                 }
@@ -1630,6 +1686,7 @@ impl App {
                         view: dynamic.from_view.clone(),
                         fixture: None,
                         params: BTreeMap::new(),
+                        pager: None,
                     });
                 }
             }
@@ -1827,6 +1884,7 @@ impl App {
                                 view: view.clone(),
                                 fixture: None,
                                 params: self.overlay_params(),
+                                pager: None,
                             });
                         }
                     }
@@ -1853,6 +1911,7 @@ impl App {
                                 view: view.clone(),
                                 fixture: None,
                                 params: BTreeMap::new(),
+                                pager: None,
                             });
                         }
                     }
@@ -1868,6 +1927,7 @@ impl App {
             view: label_from.view.clone(),
             fixture: None,
             params: BTreeMap::new(),
+            pager: None,
         }
     }
 
@@ -2038,8 +2098,50 @@ impl App {
             ui,
             collection,
             &self.arranged_rows(ui, collection, &result.rows),
+            ctx,
         );
         (rows.into_iter().cloned().collect(), pages)
+    }
+
+    /// The page a server pager's read was sent for, from 0, and how many pages its total makes
+    /// at the size it was sent with; `None` for a collection without a server pager.
+    pub(crate) fn server_page(
+        &self,
+        collection: &ess_ui::Collection,
+        ctx: &Ctx<'_>,
+    ) -> Option<(usize, usize)> {
+        let reads = collection.reads.as_ref()?;
+        let pager = server_pager(reads)?;
+        let request = self.request(reads, ctx);
+        let number = |name: Option<&String>| {
+            name.and_then(|name| request.params.get(name))
+                .and_then(|value| display(value).parse::<usize>().ok())
+        };
+        let size = number(pager.size.as_ref())
+            .unwrap_or(self.options.page_size)
+            .max(1);
+        let page = number(pager.page.as_ref()).unwrap_or(1).max(1);
+        let total = self
+            .rows_of(&request)
+            .and_then(|result| result.total)
+            .map_or(0, |total| usize::try_from(total).unwrap_or(usize::MAX));
+        Some((page - 1, total.div_ceil(size).max(1)))
+    }
+
+    /// Moves a server pager to page `to` (from 1): writes the state its page param binds, so the
+    /// read is sent for that page (beyond10x/ess#722 item 24).
+    fn turn_server_page(&mut self, collection: &ess_ui::Collection, ctx: &Ctx<'_>, to: usize) {
+        let Some(reads) = &collection.reads else {
+            return;
+        };
+        let Some(bound) = server_pager(reads)
+            .and_then(|pager| pager.page.as_ref())
+            .and_then(|page| reads.params.get(page))
+        else {
+            return;
+        };
+        let to = i64::try_from(to).unwrap_or(i64::MAX);
+        self.set_bound(&bound.0.clone(), Value::Number(to.into()), ctx);
     }
 
     /// Rows per page of `collection`: with a client pager the size chosen among its sizes, else
@@ -2055,13 +2157,18 @@ impl App {
         size.unwrap_or(self.options.page_size).max(1)
     }
 
-    /// The page of `arranged` (from `arranged_rows`) shown, and how many pages there are.
+    /// The page of `arranged` (from `arranged_rows`) shown, and how many pages there are. A
+    /// server pager's read answers one page: all of it is shown, of the pages its total makes.
     pub(crate) fn page_of<'r>(
         &self,
         ui: &str,
         collection: &ess_ui::Collection,
         arranged: &[&'r Value],
+        ctx: &Ctx<'_>,
     ) -> (Vec<&'r Value>, usize) {
+        if let Some((_, pages)) = self.server_page(collection, ctx) {
+            return (arranged.to_vec(), pages);
+        }
         let size = self.page_size(ui, collection);
         let pages = arranged.len().div_ceil(size).max(1);
         let page = self.ui(ui).page.min(pages - 1);
@@ -2101,7 +2208,12 @@ impl App {
             return Some(row);
         }
         let held = self.held_rows(collection.reads.as_ref()?, ctx)?;
-        let (rows, _) = self.page_of(ui, collection, &self.arranged_rows(ui, collection, &held));
+        let (rows, _) = self.page_of(
+            ui,
+            collection,
+            &self.arranged_rows(ui, collection, &held),
+            ctx,
+        );
         let cursor = self.ui(ui).cursor.min(rows.len().saturating_sub(1));
         rows.get(cursor).map(|row| (*row).clone())
     }
@@ -3223,6 +3335,19 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 let state = self.ui_mut(ui);
                 state.cursor = state.cursor.saturating_sub(1);
+            }
+            // A server pager moves through the state its page param binds.
+            KeyCode::Char(turn @ ('n' | 'p')) if self.server_page(collection, &ctx).is_some() => {
+                let (page, _) = self.server_page(collection, &ctx).unwrap_or((0, 1));
+                let to = if turn == 'n' {
+                    (page + 1).min(pages.saturating_sub(1))
+                } else {
+                    page.saturating_sub(1)
+                };
+                if to != page {
+                    self.turn_server_page(collection, &ctx, to + 1);
+                    self.ui_mut(ui).cursor = 0;
+                }
             }
             KeyCode::Char('n') => {
                 let state = self.ui_mut(ui);
@@ -5014,6 +5139,7 @@ pub(crate) fn actor_row(
         view: view.view.clone(),
         fixture: None,
         params: BTreeMap::new(),
+        pager: None,
     };
     adapter
         .read(&request)
@@ -5059,6 +5185,26 @@ pub(crate) fn client_sizes(collection: &ess_ui::Collection) -> Option<Vec<usize>
             .filter_map(|size| usize::try_from(*size).ok().filter(|size| *size >= 1))
             .collect(),
     )
+}
+
+/// Whether the expression `expr` reads `state` (`state.<name>`), whole or a field of it.
+fn mentions(expr: &str, state: &str) -> bool {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    expr.match_indices(state).any(|(at, _)| {
+        let before = expr[..at].chars().next_back();
+        let after = expr[at + state.len()..].chars().next();
+        !before.is_some_and(|c| word(c) || c == '.') && !after.is_some_and(word)
+    })
+}
+
+/// The pager of a server-paged read that names its page param (`paging: server` with a `pager`):
+/// the terminal pages it through the states its params bind (beyond10x/ess#722).
+pub(crate) fn server_pager(reads: &ess_ui::Reads) -> Option<&ess_ui::Pager> {
+    reads
+        .pager
+        .as_ref()
+        .filter(|pager| pager.page.is_some())
+        .filter(|_| matches!(reads.paging, Some(ess_ui::Paging::Server)))
 }
 
 /// Whether a collection's read is paged, by the server or by the renderer: its footer shows the

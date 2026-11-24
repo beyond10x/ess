@@ -195,6 +195,7 @@ fn expected(adapter: &HttpAdapter) -> Vec<Value> {
             view: "visit.ExpectedVisits".to_owned(),
             fixture: None,
             params: BTreeMap::new(),
+            pager: None,
         })
         .unwrap_or_else(|error| panic!("ExpectedVisits reads: {error}"))
         .rows

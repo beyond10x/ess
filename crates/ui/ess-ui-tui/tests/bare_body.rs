@@ -168,6 +168,7 @@ fn read(view: &str, answer: &'static str) -> Result<Vec<Value>, String> {
             view: view.to_owned(),
             fixture: None,
             params: BTreeMap::new(),
+            pager: None,
         })
         .map(|read| read.rows);
     server.join().expect("the server ran");

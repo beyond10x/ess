@@ -618,6 +618,7 @@ fn drive_terminal(
                 view: (*view).to_owned(),
                 fixture: None,
                 params: BTreeMap::new(),
+                pager: None,
             },
         )
         .unwrap_or_else(|error| panic!("{STORY}: terminal {view}: {error}"));
