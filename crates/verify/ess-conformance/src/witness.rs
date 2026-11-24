@@ -5298,6 +5298,7 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
             ordered_at(&declared, &value),
         );
         if let (Leaf::Text, Node::Text(base)) = (leaf, at_base) {
+            let mut joint = Vec::new();
             for invariant in invariants {
                 let mut reads = Vec::new();
                 text_reads(invariant, &value, true, &mut reads);
@@ -5306,6 +5307,15 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
                     if &node != at_base && !alternatives.contains(&node) {
                         alternatives.push(node);
                     }
+                }
+                joint.extend(reads);
+            }
+            // The affixes of every conjunct at once: a prefix and a suffix declared apart are met
+            // only by one value holding both (`AZ` under `starts_with: A` and `ends_with: Z`).
+            for text in compositions(&joint, base) {
+                let node = Node::Text(text);
+                if &node != at_base && !alternatives.contains(&node) {
+                    alternatives.push(node);
                 }
             }
         }
@@ -5326,6 +5336,20 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
             if let Some(lengths) = byte_lengths(&declared).get(&value) {
                 text_bytes_ladder(builder, path, lengths, ladders);
             }
+        }
+        // Each value above meets one conjunct of the invariant: a literal, a composition of an
+        // affix, a length. A resize of a composition can meet them all (`QI` under a length window
+        // and the prefix `Q`), but it sits late, and the bounded walk varies this leaf beside
+        // every other: the values the whole invariant admits go first, each keeping its order
+        // (the length-beside-prefix follow-up of beyond10x/ess#809).
+        if let Some(ladder) = ladders.get_mut(path) {
+            let alphabet = builder.alphabets.get(path);
+            let (admitted, refused): (Vec<Choice>, Vec<Choice>) =
+                std::mem::take(ladder).into_iter().partition(|choice| {
+                    matches!(choice, Choice::Value(node) if admits_base(invariants, alphabet, node))
+                });
+            ladder.extend(admitted);
+            ladder.extend(refused);
         }
     }
 }
