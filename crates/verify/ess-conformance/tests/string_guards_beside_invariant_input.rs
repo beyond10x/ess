@@ -314,6 +314,175 @@ fn every_candidate_holds_a_scope_its_type_admits() {
     );
 }
 
+/// A one-letter code a guard reads beside a list of slots (beyond10x/ess#809): `{invariant}` is the
+/// code's invariant over its length and `{pick}` the declared type of the input `pick`.
+fn one_letter(invariant: &str, pick: &str) -> String {
+    format!(
+        r#"format: ess/37
+system: depot
+version: v1
+domain: depot.racks
+types:
+  - name: depot.racks.Code
+    kind: newtype
+    of: String
+    alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    invariants:
+      - {invariant}
+  - name: depot.racks.Slot
+    kind: struct
+    fields:
+      - {{name: code, type: depot.racks.Code}}
+      - {{name: label, type: String}}
+  - name: depot.racks.Layout
+    kind: struct
+    fields:
+      - {{name: slots, type: "List<depot.racks.Slot>"}}
+entities:
+  - name: depot.racks.Shelf
+    identity: {{name: shelf_id, type: String}}
+    fields:
+      - {{name: layout, type: Optional<depot.racks.Layout>}}
+      - {{name: pick, type: {pick}}}
+    lifecycle: {{initial: Placed, states: [Placed], terminal: [Placed], transitions: []}}
+actors:
+  - name: depot.racks.Clerk
+    may: [depot.racks.PlaceShelf, depot.racks.Shelves]
+errors:
+  - {{name: depot.racks.UnknownPick, fields: []}}
+commands:
+  - name: depot.racks.PlaceShelf
+    input:
+      - {{name: shelf_id, type: String}}
+      - {{name: layout, type: Optional<depot.racks.Layout>}}
+      - {{name: pick, type: {pick}}}
+    outcomes:
+      - name: unknown-pick
+        when:
+          all:
+            - defined(pick)
+            - not: {{exists: {{in: layout.slots, as: s, that: s.code == pick}}}}
+        error: depot.racks.UnknownPick
+      - name: placed
+        unknown_instance: true
+        creates: depot.racks.Shelf
+        instance: shelf_id
+        sets: {{layout: input.layout, pick: input.pick}}
+        emits: [depot.racks.ShelfPlaced]
+        payload:
+          depot.racks.ShelfPlaced: {{shelf_id: input.shelf_id}}
+      - name: taken
+        preserves: depot.racks.Shelf
+        instance: shelf_id
+events:
+  - name: depot.racks.ShelfPlaced
+    fields:
+      - {{name: shelf_id, type: String}}
+views:
+  - name: depot.racks.Shelves
+    source: depot.racks.Shelf
+    consistency: read_your_writes
+    fields:
+      - {{name: shelf_id, type: String}}
+      - {{name: layout, type: Optional<depot.racks.Layout>}}
+      - {{name: pick, type: {pick}}}
+"#
+    )
+}
+
+/// The `unknown-pick` scenario of `text` sends one letter of the alphabet as `pick`, and passes on
+/// the interpreted target; no refusal names the branch.
+fn assert_unknown_pick_witnessed(text: &str) {
+    let model = ir(text);
+    let result = synthesize(&model);
+    let id = "depot.racks.PlaceShelf/outcome/unknown-pick";
+    let refused: Vec<String> = result
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .is_some_and(|scenario| scenario.to_string() == id)
+        })
+        .map(|refusal| format!("{}: {}", refusal.cause.code(), refusal.cause))
+        .collect();
+    assert_eq!(refused, Vec::<String>::new(), "{text}");
+    let (_, witness) = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .unwrap_or_else(|| panic!("no scenario {id}"));
+    let picks: Vec<&Node> = witness
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { input, .. } => match input.get("pick") {
+                Some(ess_conformance::ScenarioValue::Literal { value }) => Some(value),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert!(
+        picks.iter().any(|pick| matches!(pick, Node::Text(text)
+            if text.chars().count() == 1 && text.chars().all(|c| c.is_ascii_uppercase()))),
+        "{picks:?}"
+    );
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&result.suite).unwrap();
+    let report = ess_conformance::Runner::for_suite(&result.suite)
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        )
+        .into_report();
+    let run = report
+        .scenarios
+        .iter()
+        .find(|run| run.scenario.to_string() == id)
+        .unwrap_or_else(|| panic!("{id} is run"));
+    assert_eq!(
+        run.status,
+        ess_conformance::report::Status::Passed,
+        "{:?}",
+        run.checks
+    );
+}
+
+#[test]
+fn a_guard_read_optional_code_of_one_letter_is_witnessed() {
+    assert_unknown_pick_witnessed(&one_letter(
+        "value.count == 1",
+        "Optional<depot.racks.Code>",
+    ));
+}
+
+#[test]
+fn a_guard_read_code_under_a_byte_or_upper_bound_invariant_is_witnessed() {
+    for invariant in ["value.count <= 1", "value.utf8_bytes == 1"] {
+        assert_unknown_pick_witnessed(&one_letter(invariant, "Optional<depot.racks.Code>"));
+    }
+    assert_unknown_pick_witnessed(&one_letter("value.count == 1", "depot.racks.Code"));
+}
+
+/// The guard's own candidates stay on the ladder beside the invariant's: with `pick` required, the
+/// accepting branch needs a slot code equal to it, which only the guard's copy of one side onto
+/// the other offers.
+#[test]
+fn a_literal_the_guard_compares_with_stays_a_candidate() {
+    let result = synthesize(&ir(&one_letter("value.count == 1", "depot.racks.Code")));
+    let id = "depot.racks.PlaceShelf/outcome/placed";
+    assert!(
+        result
+            .suite
+            .scenarios
+            .iter()
+            .any(|(key, _)| key.to_string() == id),
+        "no scenario {id}"
+    );
+}
+
 /// The input an `external:` branch beside a registered client is sent: every hint guard refuted
 /// and the return address equal to the one the row registers, which the related search grounds
 /// as a guard over the input.

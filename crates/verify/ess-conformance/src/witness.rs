@@ -4608,8 +4608,8 @@ const MAX_COUNT_WITNESS_U32: u32 = 1024;
 ///
 /// A `.count` compared with a number is tried at the lengths either side of it (ess#104,
 /// `story:count-guards-above-one-are-synthesized`): a text resized to each, a list of that many
-/// elements. Invariant ladders come after the text ladders, so a leaf a guard already varies is
-/// left to the guard.
+/// elements. Invariant ladders come after the text ladders, so a leaf a guard already varies keeps
+/// the guard's values first.
 fn count_ladders(
     builder: &Builder<'_>,
     guards: &[&Predicate],
@@ -5250,9 +5250,9 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
         let Some((leaf, at_base)) = builder.leaves.get(path) else {
             continue;
         };
-        if ladders.contains_key(path)
-            || admits_base(invariants, builder.alphabets.get(path), at_base)
-        {
+        // A path a guard already gave a ladder keeps it, and the invariant's values follow it
+        // (beyond10x/ess#809): a guard-read leaf whose base its type refuses needs both.
+        if admits_base(invariants, builder.alphabets.get(path), at_base) {
             continue;
         }
         let declared: Vec<&Predicate> = invariants.iter().collect();
@@ -5275,10 +5275,13 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
             }
         }
         if !alternatives.is_empty() {
-            ladders.insert(
-                path.clone(),
-                alternatives.into_iter().map(Choice::Value).collect(),
-            );
+            let ladder = ladders.entry(path.clone()).or_default();
+            for node in alternatives {
+                let choice = Choice::Value(node);
+                if !ladder.contains(&choice) {
+                    ladder.push(choice);
+                }
+            }
         }
         // The same length rule as a guard's, for an invariant over `value.count`.
         if builder.strings.contains(path) {
