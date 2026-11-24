@@ -12,11 +12,20 @@ use super::super::shared::{self, Answer};
 use super::adversary_k6_pass1::{go_run_with, ir_of, rust_run_with};
 use super::answer_forms::{go_harness, rust_harness, MODEL_EDITS};
 
-/// The item gains an `Optional` note no command sets, and the model a view of every item.
+/// The item gains an `Optional` note no command sets and an `Optional` rank `PutItem` sets from its
+/// input, and the model a view of every item and one of every item with its rank.
 const EDITS: &[(&str, &str)] = &[
     (
         "      - {name: title, type: String}\n    lifecycle:",
-        "      - {name: title, type: String}\n      - {name: note, type: Optional<String>}\n    lifecycle:",
+        "      - {name: title, type: String}\n      - {name: note, type: Optional<String>}\n      - {name: rank, type: Optional<Integer>}\n    lifecycle:",
+    ),
+    (
+        "  - name: shop.items.PutItem\n    input:\n      - {name: item_id, type: shop.items.ItemId}\n      - {name: title, type: String}\n",
+        "  - name: shop.items.PutItem\n    input:\n      - {name: item_id, type: shop.items.ItemId}\n      - {name: title, type: String}\n      - {name: rank, type: Optional<Integer>}\n",
+    ),
+    (
+        "        sets: {title: input.title}\n",
+        "        sets: {title: input.title, rank: input.rank}\n",
     ),
     (
         "actors:\n",
@@ -27,12 +36,19 @@ const EDITS: &[(&str, &str)] = &[
       - {name: item_id, type: shop.items.ItemId}
       - {name: title, type: String}
       - {name: note, type: Optional<String>}
+  - name: shop.items.Ranked
+    source: shop.items.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String}
+      - {name: rank, type: Optional<Integer>}
 actors:
 ",
     ),
 ];
 
-/// The two view routes, before `Purge`'s.
+/// The three view routes, before `Purge`'s.
 const ROUTE_EDITS: &[(&str, &str)] = &[(
     "  - command: shop.items.Purge\n",
     "  - view: shop.items.Listing
@@ -49,6 +65,13 @@ const ROUTE_EDITS: &[(&str, &str)] = &[(
   - view: shop.items.ItemsTitled
     method: get
     path: /titled
+    representations:
+      - query: {format: csv}
+        encoding: {csv: {}}
+  - view: shop.items.Ranked
+    method: get
+    path: /ranked
+    body: array
     representations:
       - query: {format: csv}
         encoding: {csv: {}}
@@ -107,6 +130,15 @@ const REQUESTS: &[[&str; 7]] = &[
         "",
         "",
     ],
+    // After every request above, so `Listing` answers its three rows: six titles a spreadsheet
+    // would read as a formula, each opening with one of `=`, `+`, `-`, `@`, a tab and a CR.
+    ["put-equals", "y", "PUT", "/items/r-4", "", "", r#"{"title":"=1+2","rank":-7}"#],
+    ["put-plus", "y", "PUT", "/items/r-5", "", "", r#"{"title":"+1","rank":-7}"#],
+    ["put-minus", "y", "PUT", "/items/r-6", "", "", r#"{"title":"-1","rank":-7}"#],
+    ["put-at", "y", "PUT", "/items/r-7", "", "", r#"{"title":"@a","rank":-7}"#],
+    ["put-tab", "y", "PUT", "/items/r-8", "", "", r#"{"title":"\tt","rank":-7}"#],
+    ["put-return", "y", "PUT", "/items/r-9", "", "", r#"{"title":"\rr","rank":-7}"#],
+    ["ranked", "y", "GET", "/ranked", "format=csv", "", ""],
 ];
 
 /// `text` with every `(anchor, replacement)` applied, each anchor found once.
@@ -123,12 +155,12 @@ fn edited(text: &str, edits: &[(&str, &str)]) -> String {
     text
 }
 
-/// The Rust harness answering `Listing` over the stored items, too.
+/// The Rust harness answering `Listing` and `Ranked` over the stored items, too.
 fn rust() -> String {
     edited(
         &rust_harness(),
         &[
-            ("ItemsTitledQuery, ", "ItemsTitledQuery, ListingQuery, "),
+            ("ItemsTitledQuery, ", "ItemsTitledQuery, ListingQuery, RankedQuery, "),
             (
                 "fn clean(text: &str) -> String {",
                 "impl ListingQuery for Ports {
@@ -145,13 +177,27 @@ fn rust() -> String {
     }
 }
 
+impl RankedQuery for Ports {
+    fn ranked(&self) -> Result<Vec<items::Ranked>, UnmetObligation> {
+        Ok(self
+            .items
+            .iter()
+            .map(|row| items::Ranked {
+                item_id: row.data.item_id.clone(),
+                title: row.data.title.clone(),
+                rank: row.data.rank,
+            })
+            .collect())
+    }
+}
+
 fn clean(text: &str) -> String {",
             ),
         ],
     )
 }
 
-/// The Go harness answering `Listing` over the stored items, too.
+/// The Go harness answering `Listing` and `Ranked` over the stored items, too.
 fn go() -> String {
     edited(
         &go_harness(),
@@ -161,6 +207,14 @@ fn go() -> String {
 	found := []items.Listing{}
 	for _, row := range p.rows {
 		found = append(found, items.Listing{ItemId: row.Data.ItemId, Title: row.Data.Title, Note: row.Data.Note})
+	}
+	return found, nil
+}
+
+func (p *ports) Ranked() ([]items.Ranked, *obligation.UnmetObligation) {
+	found := []items.Ranked{}
+	for _, row := range p.rows {
+		found = append(found, items.Ranked{ItemId: row.Data.ItemId, Title: row.Data.Title, Rank: row.Data.Rank})
 	}
 	return found, nil
 }
@@ -282,4 +336,20 @@ fn a_view_reads_its_own_parameters_beside_the_selector() {
     let csv = answered("titled-csv");
     assert_eq!((csv.status, csv.content_type.as_str()), (200, CSV));
     assert_eq!(csv.body, "item_id,title\r\nr-2,a;b\r\n", "{csv:?}");
+}
+
+/// A text cell opening with `=`, `+`, `-`, `@`, a tab or a CR is written behind `'`, before the
+/// quoting, so a spreadsheet does not read it as a formula; the negative `Integer` rank is written
+/// as it is, an absent one as an empty field, and both servers write the same bytes.
+#[test]
+fn a_text_cell_a_spreadsheet_reads_as_a_formula_is_written_behind_an_apostrophe() {
+    let csv = answered("ranked");
+    assert_eq!((csv.status, csv.content_type.as_str()), (200, CSV));
+    assert_eq!(
+        csv.body,
+        "item_id,title,rank\r\nr-1,north,\r\nr-2,a;b,\r\nr-3,\"say \"\"hi\"\"\nnow\",\r\n\
+         r-4,'=1+2,-7\r\nr-5,'+1,-7\r\nr-6,'-1,-7\r\nr-7,'@a,-7\r\nr-8,'\tt,-7\r\n\
+         r-9,\"'\rr\",-7\r\n",
+        "{csv:?}"
+    );
 }

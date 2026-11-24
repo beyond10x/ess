@@ -2145,7 +2145,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             "http::Response::new(status, http::JSON, body)".to_owned(),
         ),
     };
-    let answer = represented(answer, view, representations);
+    let answer = represented(answer, server, view, representations);
     let _ = write!(
         out,
         "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
@@ -2215,6 +2215,7 @@ pub(super) fn selection(representations: &[ess_http::Representation], suffix: &s
 /// `representations` (beyond10x/ess#753): `selected` chooses between them.
 fn represented(
     answer: String,
+    server: &Server<'_>,
     view: &ResolvedView,
     representations: &[ess_http::Representation],
 ) -> String {
@@ -2223,23 +2224,39 @@ fn represented(
     }
     format!(
         "match selected {{\n            None => {answer},\n            Some((separator, header, headers)) => {}\n        }}",
-        csv_answer(view)
+        csv_answer(server, view)
     )
+}
+
+/// Whether each field of `view`, in declaration order, is a text cell of its CSV: a `String`, an
+/// `Optional<String>` or a newtype of one. Such a cell opening with `=`, `+`, `-`, `@`, a tab or a
+/// CR is written behind `'`, so a spreadsheet does not read it as a formula; a number, an enum or
+/// a timestamp is written as it is. The Go server's writer reads the same rule.
+fn text_cells(ir: &ess_compiler::ir::EssIr, view: &ResolvedView) -> Vec<&'static str> {
+    view.fields
+        .iter()
+        .map(|field| match http::flat(ir, &field.type_ref) {
+            Some((http::Shape::One | http::Shape::Optional, http::Flat::String)) => "true",
+            _ => "false",
+        })
+        .collect()
 }
 
 /// Rust code answering the rows of `{"rows": [...]}` (`body`, at `status`) as CSV, for the
 /// `separator`, `header` and `headers` [`selection`] bound: the view's fields in declaration order
 /// under their wire names, CRLF line ends, an absent value an empty field, each value in its flat
-/// text spelling, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
-fn csv_answer(view: &ResolvedView) -> String {
+/// text spelling, a text cell ([`text_cells`]) opening with `=`, `+`, `-`, `@`, a tab or a CR
+/// behind `'`, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
+fn csv_answer(server: &Server<'_>, view: &ResolvedView) -> String {
     let columns: Vec<String> = view
         .fields
         .iter()
         .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
         .collect();
+    let guarded = text_cells(server.ir, view);
     format!(
         "{{\n                let read = json::parse(&body).unwrap_or(json::Value::Null);\n                \
-         let columns = [{}];\n                let field = |out: &mut String, text: &str| {{\n                    \
+         let columns = [{}];\n                // A text cell opening with a character a spreadsheet reads as a formula is\n                // written behind an apostrophe.\n                let guarded = [{}];\n                let field = |out: &mut String, text: &str| {{\n                    \
          if text.contains([separator, '\"', '\\r', '\\n']) {{\n                        \
          out.push('\"');\n                        out.push_str(&text.replace('\"', \"\\\"\\\"\"));\n                        \
          out.push('\"');\n                    }} else {{\n                        \
@@ -2256,13 +2273,15 @@ fn csv_answer(view: &ResolvedView) -> String {
          Some(json::Value::Null) => String::new(),\n                                \
          Some(json::Value::Text(text)) => text.clone(),\n                                \
          Some(value) => http::bare(Some(value)),\n                            }};\n                            \
+         let text = if guarded[index]\n                                && text.starts_with(['=', '+', '-', '@', '\\t', '\\r'])\n                            {{\n                                format!(\"'{{text}}\")\n                            }} else {{\n                                text\n                            }};\n                            \
          field(&mut csv, &text);\n                        }}\n                        \
          csv.push_str(\"\\r\\n\");\n                    }}\n                }}\n                let mut \
          answer = http::Response::new(status, \"text/csv; charset=utf-8\", csv);\n                \
          answer.headers.extend(\n                    headers\n                        .iter()\n                        \
          .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),\n                );\n                \
          answer\n            }}",
-        columns.join(", ")
+        columns.join(", "),
+        guarded.join(", ")
     )
 }
 

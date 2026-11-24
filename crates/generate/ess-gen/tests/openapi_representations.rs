@@ -82,7 +82,13 @@ fn a_csv_representation_is_a_second_media_type_and_its_selector_a_query_paramete
     );
     assert_eq!(
         read["content"]["text/csv"],
-        json!({"schema": {"type": "string"}})
+        json!({"schema": {
+            "type": "string",
+            "description": "The rows as CSV. A text cell opening with `=`, `+`, `-`, `@`, a tab \
+                            or a carriage return is written behind `'`, so a spreadsheet does not \
+                            read it as a formula; a number, an enum or a timestamp is written as \
+                            it is.",
+        }})
     );
     assert_eq!(
         read["x-ess-representations"],

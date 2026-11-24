@@ -2680,7 +2680,7 @@ fn view(
          encodeView{function}(row))\n\t}}\n"
     );
     if !representations.is_empty() {
-        out.push_str(&csv_answer(view));
+        out.push_str(&csv_answer(ir, view));
     }
     json_answer(out, route);
 }
@@ -2795,17 +2795,27 @@ fn selection(representations: &[ess_http::Representation], suffix: &str) -> Stri
 /// Go code answering the encoded rows as CSV when [`selection`] chose a representation, as the
 /// Rust server writes it: the rows the JSON answer renders, read back, the view's fields in
 /// declaration order under their wire names, CRLF line ends, an absent value an empty field, each
-/// value in its flat text spelling, and a value holding the separator, `"`, CR or LF quoted with
-/// `"` doubled.
-fn csv_answer(view: &ResolvedView) -> String {
+/// value in its flat text spelling, a text cell (a `String`, an `Optional<String>` or a newtype of
+/// one) opening with `=`, `+`, `-`, `@`, a tab or a CR behind `'` so a spreadsheet does not read
+/// it as a formula, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
+fn csv_answer(ir: &EssIr, view: &ResolvedView) -> String {
     let columns: Vec<String> = view
         .fields
         .iter()
         .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
         .collect();
+    let guarded: Vec<&str> = view
+        .fields
+        .iter()
+        .map(|field| match http::flat(ir, &field.type_ref) {
+            Some((http::Shape::One | http::Shape::Optional, http::Flat::String)) => "true",
+            _ => "false",
+        })
+        .collect();
     format!(
         "\tif chosen {{\n\t\tread, _ := parseJSON(rendered(200, encoded).body)\n\t\titems, _ := \
-         read.([]any)\n\t\tcolumns := []string{{{}}}\n\t\tvar out strings.Builder\n\t\tfield := \
+         read.([]any)\n\t\tcolumns := []string{{{}}}\n\t\tguarded := []bool{{{}}}\n\t\tvar out \
+         strings.Builder\n\t\tfield := \
          func(text string) {{\n\t\t\tif strings.ContainsAny(text, separator+\"\\\"\\r\\n\") \
          {{\n\t\t\t\tout.WriteByte('\"')\n\t\t\t\tout.WriteString(strings.ReplaceAll(text, \
          \"\\\"\", \"\\\"\\\"\"))\n\t\t\t\tout.WriteByte('\"')\n\t\t\t}} else \
@@ -2815,10 +2825,14 @@ fn csv_answer(view: &ResolvedView) -> String {
          for _, row := range items {{\n\t\t\tfor index, column := range columns {{\n\t\t\t\tif index \
          > 0 {{\n\t\t\t\t\tout.WriteString(separator)\n\t\t\t\t}}\n\t\t\t\tswitch value := \
          memberOf(row, column).(type) {{\n\t\t\t\tcase nil:\n\t\t\t\t\tfield(\"\")\n\t\t\t\tcase \
-         string:\n\t\t\t\t\tfield(value)\n\t\t\t\tdefault:\n\t\t\t\t\tfield(bare(value))\n\t\t\t\t}}\
-         \n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\treturn response{{status: 200, \
-         contentType: \"text/csv; charset=utf-8\", body: out.String(), headers: headers}}\n\t}}\n",
-        columns.join(", ")
+         string:\n\t\t\t\t\tif guarded[index] && value != \"\" && \
+         strings.ContainsRune(\"=+-@\\t\\r\", rune(value[0])) {{\n\t\t\t\t\t\tvalue = \"'\" + \
+         value\n\t\t\t\t\t}}\n\t\t\t\t\tfield(value)\n\t\t\t\tdefault:\n\t\t\t\t\tfield(bare(value))\
+         \n\t\t\t\t}}\n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\treturn \
+         response{{status: 200, contentType: \"text/csv; charset=utf-8\", body: out.String(), \
+         headers: headers}}\n\t}}\n",
+        columns.join(", "),
+        guarded.join(", ")
     )
 }
 

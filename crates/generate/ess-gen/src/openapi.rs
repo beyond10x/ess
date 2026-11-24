@@ -1132,6 +1132,12 @@ fn query(
 /// The media type of a CSV representation (beyond10x/ess#753).
 const CSV_MEDIA_TYPE: &str = "text/csv";
 
+/// What the CSV answer of a view route says about its text cells (beyond10x/ess#753): both
+/// generated servers write a text cell a spreadsheet would read as a formula behind an apostrophe.
+const CSV_TEXT_CELLS: &str = "The rows as CSV. A text cell opening with `=`, `+`, `-`, `@`, \
+     a tab or a carriage return is written behind `'`, so a spreadsheet does not read it as \
+     a formula; a number, an enum or a timestamp is written as it is.";
+
 /// How a representation's separator is named in a sentence.
 fn separator_name(separator: ess_http::Separator) -> &'static str {
     match separator {
@@ -1201,7 +1207,10 @@ fn represent(
     response
         .content
         .get_or_insert_with(BTreeMap::new)
-        .extend(content_as(CSV_MEDIA_TYPE, json!({"type": "string"})));
+        .extend(content_as(
+            CSV_MEDIA_TYPE,
+            json!({"type": "string", "description": CSV_TEXT_CELLS}),
+        ));
     let columns: Vec<String> = view
         .fields
         .iter()
