@@ -1576,6 +1576,66 @@ func withQuery(value any, query map[string]any, listed []flatField, at string) (
 }
 "#;
 
+/// The credential checks of a route whose binding requires a scheme (beyond10x/ess#681), which
+/// follow [`BOUND`] only in a surface whose binding declares `authentication`, so every other
+/// bound surface keeps its bytes. They answer as the Rust server's `http::authorization`,
+/// `http::key_header` and `http::key_cookie` do: each says whether the request carries a
+/// credential where the scheme puts one, none keeps its value, and none reads the query.
+pub(super) const CREDENTIALS: &str = r#"
+// authorization says whether the request carries exactly one `Authorization` header under the
+// auth scheme `scheme`, compared ignoring case, followed by one or more spaces and a token68
+// (RFC 9110 §11.4, §11.2).
+func authorization(request *http.Request, scheme string) bool {
+	given := request.Header.Values("Authorization")
+	if len(given) != 1 {
+		return false
+	}
+	named, credentials, ok := strings.Cut(given[0], " ")
+	if !ok || !strings.EqualFold(named, scheme) {
+		return false
+	}
+	token := strings.TrimRight(strings.TrimLeft(credentials, " "), "=")
+	if token == "" {
+		return false
+	}
+	for _, c := range []byte(token) {
+		if !('A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' || strings.IndexByte("-._~+/", c) >= 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// keyHeader says whether the request carries exactly one header `name` that is not empty.
+func keyHeader(request *http.Request, name string) bool {
+	given := request.Header.Values(name)
+	return len(given) == 1 && strings.TrimSpace(given[0]) != ""
+}
+
+// keyCookie says whether a `Cookie` header carries the cookie `name` with a value that is not
+// empty (RFC 6265 §5.4).
+func keyCookie(request *http.Request, name string) bool {
+	for _, line := range request.Header.Values("Cookie") {
+		for _, pair := range strings.Split(line, ";") {
+			key, value, ok := strings.Cut(strings.TrimSpace(pair), "=")
+			if ok && key == name && value != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+"#;
+
+/// Whether a route of `binding` requires a scheme, which the surface checks with [`CREDENTIALS`].
+pub(super) fn authenticates(binding: &http::Binding) -> bool {
+    binding
+        .ir()
+        .routes()
+        .iter()
+        .any(|route| !binding.credentials_on(route).is_empty())
+}
+
 /// Whether a route of `binding` lists `request.query`, which the surface joins with [`QUERIED`].
 pub(super) fn reads_query_beside_body(binding: &http::Binding) -> bool {
     binding.ir().routes().iter().any(|route| {
@@ -1723,6 +1783,7 @@ pub(super) fn dispatch(
     system: &str,
     exported: &str,
     reading: Reading,
+    binding: Option<&http::Binding>,
 ) {
     let grants = http::checks_grants(ir);
     let caller = if grants { "caller *Caller, " } else { "" };
@@ -1784,7 +1845,15 @@ pub(super) fn dispatch(
                 if matches!(route.serves, Served::Command(_)) {
                     reads_body = true;
                 }
-                answer_call(ir, layout, route, declared.is_some(), variables)
+                let mut call = credential_check(ir, layout, binding, route);
+                call.push_str(&answer_call(
+                    ir,
+                    layout,
+                    route,
+                    declared.is_some(),
+                    variables,
+                ));
+                call
             }
         };
         body.push_str(&call);
@@ -1865,6 +1934,64 @@ pub(super) fn body_limit(
         );
     }
     let _ = writeln!(out, "\treturn {fixed}\n}}");
+}
+
+/// The check a guarded route runs before its grant and before it decodes anything
+/// (beyond10x/ess#681), as the Rust server's: a call authenticated as no actor, or carrying no
+/// credential where any one of the route's schemes puts it, is answered `unauthenticated` and runs
+/// nothing. Empty for a route the binding leaves open.
+fn credential_check(
+    ir: &EssIr,
+    layout: &Layout,
+    binding: Option<&http::Binding>,
+    route: &http::Route<'_>,
+) -> String {
+    let (Some(binding), Some(declared)) = (binding, route.declared) else {
+        return String::new();
+    };
+    let credentials = binding.credentials_on(declared);
+    if credentials.is_empty() {
+        return String::new();
+    }
+    let mut alternatives = Vec::new();
+    let mut handshake = false;
+    for credential in credentials {
+        match credential {
+            http::Credential::Authorization(scheme) => {
+                alternatives.push(format!("authorization(request, {})", go_string(scheme)));
+            }
+            http::Credential::Header(name) => {
+                alternatives.push(format!("keyHeader(request, {})", go_string(name)));
+            }
+            http::Credential::Cookie(name) => {
+                alternatives.push(format!("keyCookie(request, {})", go_string(name)));
+            }
+            http::Credential::Handshake => handshake = true,
+            http::Credential::Unread => {}
+        }
+    }
+    let condition = match alternatives.len() {
+        _ if handshake => "caller == nil".to_owned(),
+        1 => format!("caller == nil || !{}", alternatives[0]),
+        _ => format!("caller == nil || !({})", alternatives.join(" || ")),
+    };
+    let challenges = binding.challenges_on(declared);
+    let challenges = if challenges.is_empty() {
+        "nil".to_owned()
+    } else {
+        format!(
+            "[]string{{{}}}",
+            challenges
+                .iter()
+                .map(|challenge| go_string(challenge))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    format!(
+        "\t\t\tif {condition} {{\n\t\t\t\treturn refusalUnauthenticated{}({challenges})\n\t\t\t}}\n",
+        refusal_suffix(ir, layout, route)
+    )
 }
 
 /// What one matched row does under its own method: check the grant, then answer.
@@ -2815,8 +2942,14 @@ fn csv_answer(view: &ResolvedView) -> String {
 /// The standard refusals of a bound package's declared routes, as its binding answers them
 /// (`refusals:`), and today's answer for each the binding does not override. `refusalNotGranted`
 /// only where some declared route checks a grant, and `refusalTooLarge` only where one it answers
-/// bounds its request, so nothing emitted goes unused.
-pub(super) fn refusals(binding: &http::Binding, checks_grant: bool, too_large: bool) -> String {
+/// bounds its request, and `refusalUnauthenticated` only where one requires a scheme
+/// (beyond10x/ess#681), so nothing emitted goes unused.
+pub(super) fn refusals(
+    binding: &http::Binding,
+    checks_grant: bool,
+    too_large: bool,
+    authenticated: bool,
+) -> String {
     refusal_set(
         &RefusalSet {
             suffix: "",
@@ -2824,6 +2957,7 @@ pub(super) fn refusals(binding: &http::Binding, checks_grant: bool, too_large: b
             from: "",
             checks_grant,
             too_large,
+            authenticated,
         },
         |key| binding.refusal(key),
     )
@@ -2855,6 +2989,7 @@ pub(super) fn route_refusals(
                 from: "routes[].",
                 checks_grant,
                 too_large: binding.ir().bounds_request(own),
+                authenticated: !binding.credentials_on(own).is_empty(),
             },
             |key| binding.refusal_on(own, key),
         ));
@@ -2879,14 +3014,15 @@ fn refusal_suffix<'a>(ir: &EssIr, layout: &'a Layout, route: &http::Route<'_>) -
 }
 
 /// One set of standard-refusal functions: their name suffix, the route they answer on, as the
-/// comments name it, where the overrides are declared, whether a grant is checked and whether a
-/// route answering through the set bounds its request.
+/// comments name it, where the overrides are declared, whether a grant is checked, whether a
+/// route answering through the set bounds its request and whether one requires a scheme.
 struct RefusalSet<'a> {
     suffix: &'a str,
     on: String,
     from: &'static str,
     checks_grant: bool,
     too_large: bool,
+    authenticated: bool,
 }
 
 /// The functions answering each standard refusal for `set`: `refusalMalformed`,
@@ -2986,7 +3122,49 @@ fn refusal_set<'a>(
             }
         }
     }
+    if set.authenticated {
+        refusal_unauthenticated(&mut out, set, lookup(RefusalKey::Unauthenticated));
+    }
     out
+}
+
+/// `refusalUnauthenticated`, with `set.suffix`: the override for a call without the credential
+/// its route requires, else `401` with `{"refused": "unauthenticated"}` and one `WWW-Authenticate`
+/// per challenge the route passes, as the Rust server's `refusal_unauthenticated` answers
+/// (beyond10x/ess#681).
+fn refusal_unauthenticated(
+    out: &mut String,
+    set: &RefusalSet<'_>,
+    refusal: Option<&ess_http::Refusal>,
+) {
+    let RefusalSet {
+        suffix, on, from, ..
+    } = set;
+    let _ = write!(
+        out,
+        "\n// refusalUnauthenticated{suffix} is a call without the credential {on} requires: \
+         `{from}refusals.unauthenticated`,\n// else 401 with the route's challenges.\n"
+    );
+    match refusal {
+        Some(refusal) => {
+            let _ = write!(
+                out,
+                "func refusalUnauthenticated{suffix}(_ []string) response {{\n{}}}\n",
+                overridden(refusal)
+            );
+        }
+        None => {
+            let _ = write!(
+                out,
+                "func refusalUnauthenticated{suffix}(challenges []string) response {{\n\tanswer \
+                 := refusal({}, {})\n\tfor _, challenge := range challenges {{\n\t\tanswer.headers \
+                 = append(answer.headers, [2]string{{{}, challenge}})\n\t}}\n\treturn answer\n}}\n",
+                http::UNAUTHENTICATED,
+                go_string(http::UNAUTHENTICATED_REFUSED),
+                go_string(ess_http::CHALLENGE_HEADER)
+            );
+        }
+    }
 }
 
 /// The body of a function answering one overridden standard refusal: its status, its literal

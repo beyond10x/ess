@@ -1,15 +1,19 @@
-//! A route whose `ess-http/1` binding requires a scheme, served by the generated Rust server
-//! (beyond10x/ess#681, `story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge`):
+//! A route whose `ess-http/1` binding requires a scheme, served by the generated Rust and Go
+//! servers, which answer alike (beyond10x/ess#681,
+//! `story:the-rust-http-server-answers-an-unauthenticated-call-with-its-challenge` and its Go
+//! story):
 //! a call the realization authenticated as no actor, or one carrying no credential where any of the
 //! route's schemes puts it, is answered `unauthenticated` before its grant is checked and runs
 //! nothing; an open route and an ungranted caller answer as they did.
 
 use std::collections::BTreeMap;
 
-use ess_synth::{synthesize_bound, BindingRefusal, OutputLayout, SynthesisFailure, Target};
+use ess_synth::{
+    synthesize_bound, BindingRefusal, OutputLayout, Synthesis, SynthesisFailure, Target,
+};
 
 use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::rust_run;
+use super::adversary_k6_pass1::{go_run, rust_run};
 
 const ROUTES: &str = "authentication:
   schemes:
@@ -142,22 +146,71 @@ const REQUESTS: &[[&str; 7]] = &[
     ],
 ];
 
-/// The Rust server's answers to [`REQUESTS`], once per test binary.
-fn rust() -> &'static BTreeMap<String, Answer> {
-    static RUST: std::sync::OnceLock<BTreeMap<String, Answer>> = std::sync::OnceLock::new();
-    RUST.get_or_init(|| {
+/// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary
+/// (`story:the-go-http-server-answers-an-unauthenticated-call-with-its-challenge`).
+fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
+    static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
+        std::sync::OnceLock::new();
+    BOTH.get_or_init(|| {
         let ir = shared::ir();
         let bound = shared::binding(&ir, ROUTES);
-        let synthesis = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
-            .unwrap_or_else(|failure| panic!("synthesizes: {failure}"));
-        rust_run("w681auth", &synthesis, REQUESTS)
+        let synthesis = |target| -> Synthesis {
+            synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
+                .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
+        };
+        (
+            rust_run("w681auth", &synthesis(Target::Rust), REQUESTS),
+            go_run("w681auth", &synthesis(Target::Go), REQUESTS),
+        )
     })
 }
 
+fn rust() -> &'static BTreeMap<String, Answer> {
+    &both().0
+}
+
+/// The Rust server's answer to `label`, the Go server's held to its status, `Content-Type`,
+/// headers and body: the same JSON value, as the existing tests hold the standard `403`, whose
+/// members the two servers write in different orders, and the same bytes for every other body.
 fn answered(label: &str) -> &'static Answer {
-    rust()
+    let (rust, go) = both();
+    let rust = rust
         .get(label)
-        .unwrap_or_else(|| panic!("the Rust server answered `{label}`"))
+        .unwrap_or_else(|| panic!("the Rust server answered `{label}`"));
+    let go = go
+        .get(label)
+        .unwrap_or_else(|| panic!("the Go server answered `{label}`"));
+    let body = |answer: &Answer| {
+        serde_json::from_str::<serde_json::Value>(&answer.body)
+            .ok()
+            .filter(|_| answer.status == 403)
+            .unwrap_or_else(|| serde_json::Value::String(answer.body.clone()))
+    };
+    assert_eq!(
+        (
+            rust.status,
+            rust.content_type.as_str(),
+            body(rust),
+            &rust.headers
+        ),
+        (go.status, go.content_type.as_str(), body(go), &go.headers),
+        "{label}: the servers disagree:\n  rust {rust:?}\n  go   {go:?}"
+    );
+    rust
+}
+
+#[test]
+fn both_servers_answer_every_request_alike() {
+    for request in REQUESTS {
+        answered(request[0]);
+    }
+    for answer in both().1.values() {
+        assert!(
+            !answer.body.contains("test-token")
+                && !format!("{:?}", answer.headers).contains("test-token"),
+            "go: {answer:?}"
+        );
+    }
 }
 
 /// `label` answered the default `unauthenticated` refusal with the `Bearer` challenge.
