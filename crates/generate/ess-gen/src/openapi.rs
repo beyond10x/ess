@@ -715,7 +715,7 @@ fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Ref
     declared.is_some_and(|route| {
         route.request.is_some()
             || route.declares_answers()
-            || route.body != ess_http::ViewBody::Rows
+            || route.body != ess_http::ViewAnswer::default()
             || route.empty.is_some()
             || !route.refusals.is_empty()
             || refusals.is_some_and(|refusals| !refusals.is_empty())
@@ -1548,7 +1548,7 @@ fn bound_view_responses<'a>(
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'a>>> = BTreeMap::new();
     let overridden = |key| refusals.and_then(|refusals| refusals.get(&key).map(|r| (key, r)));
-    match (route.body, &route.empty) {
+    match (route.body.form, &route.empty) {
         (ess_http::ViewBody::Single, Some(empty)) => {
             by_status
                 .entry(READ.to_owned())
@@ -1833,16 +1833,19 @@ fn rendered_outcome(
             discriminated: Some((OUTCOME.to_owned(), outcome.name.to_string(), key)),
             text: false,
         }),
-        ess_http::Body::Response => Some(Member {
+        ess_http::Body::Response | ess_http::Body::Wrapped { field: None, .. } => Some(Member {
             schema: json!({"$ref": reference(&format!("{}.Result", command.name))}),
             discriminated: None,
             text: false,
         }),
-        ess_http::Body::ResponseField(_) => Some(Member {
-            schema: json!({"$ref": key}),
-            discriminated: None,
-            text: listed.is_some_and(|listed| listed.encoding == ess_http::ResponseEncoding::Text),
-        }),
+        ess_http::Body::ResponseField(_) | ess_http::Body::Wrapped { field: Some(_), .. } => {
+            Some(Member {
+                schema: json!({"$ref": key}),
+                discriminated: None,
+                text: listed
+                    .is_some_and(|listed| listed.encoding == ess_http::ResponseEncoding::Text),
+            })
+        }
         ess_http::Body::Error { member } => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: outcome.error.as_ref().map(|error| {
@@ -1964,6 +1967,13 @@ fn listed_sentence(
         ess_http::Body::ResponseField(field) => format!(
             "the command's response field `{field}`, bare: its value alone, with no object around \
              it."
+        ),
+        ess_http::Body::Wrapped { member, field } => format!(
+            "{}, under the one member `{member}`: no `outcome` names the branch.",
+            field.as_ref().map_or_else(
+                || "the command's response".to_owned(),
+                |field| format!("the command's response field `{field}`")
+            )
         ),
         ess_http::Body::Error { member } => {
             let wire = outcome.error.as_ref().map_or("", |error| {
@@ -2427,7 +2437,7 @@ fn schemas(
         roots.extend(types::field_leaves(&view.params));
         let bare = binding
             .and_then(|binding| binding.route(http::Served::View(handle)))
-            .is_some_and(|route| route.body != ess_http::ViewBody::Rows);
+            .is_some_and(|route| route.body.form != ess_http::ViewBody::Rows);
         if !bare {
             out.insert(view_key(view), written(view_schema(view)));
         }
@@ -2498,7 +2508,10 @@ fn command_schemas<'a>(
                 }
                 continue;
             }
-            ess_http::Body::ResponseField(field) => {
+            ess_http::Body::ResponseField(field)
+            | ess_http::Body::Wrapped {
+                field: Some(field), ..
+            } => {
                 if let Some(declared) = command
                     .response
                     .iter()
@@ -2512,7 +2525,9 @@ fn command_schemas<'a>(
                 }
                 continue;
             }
-            ess_http::Body::Response | ess_http::Body::None => continue,
+            ess_http::Body::Response
+            | ess_http::Body::None
+            | ess_http::Body::Wrapped { field: None, .. } => continue,
         }
         out.insert(
             response_key(command, outcome),
@@ -2725,8 +2740,9 @@ pub(crate) fn publishes_result(
             .map_or(ess_http::Body::Envelope, |listed| listed.body.clone());
         match body {
             ess_http::Body::Envelope => carries_result(ir, outcome),
-            ess_http::Body::Response => true,
+            ess_http::Body::Response | ess_http::Body::Wrapped { field: None, .. } => true,
             ess_http::Body::ResponseField(_)
+            | ess_http::Body::Wrapped { field: Some(_), .. }
             | ess_http::Body::Error { .. }
             | ess_http::Body::None => false,
         }

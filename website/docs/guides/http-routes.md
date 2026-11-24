@@ -181,6 +181,10 @@ The document follows those keys on the routes that use them:
   literal object `empty: {status: 404, body: {error: {literal: not_found}}}` gives.
 - `body: array` on a view that is not paged answers its rows as a bare JSON array, `[]` when it
   holds none.
+- A member around a bare form answers the same value under that one name: `body: {order: single}`
+  answers `{"order": {…}}` (with `empty` as for `single`), `body: {items: array}` answers
+  `{"items": […]}`, and on a command `body: {data: response}` or `{id: response.order_id}` answers
+  the response, or the one field, under that member. Each is refused wherever its bare form is.
 - A `refusals:` entry replaces the standard answer for that refusal on every operation the binding
   names. A route's own `refusals:` replaces it on that route alone, so one endpoint can answer
   `malformed` with its protocol's error while the others keep the binding's.

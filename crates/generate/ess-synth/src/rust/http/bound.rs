@@ -1091,7 +1091,7 @@ fn outcome_answer(
         .any(|source| matches!(source, AnswerSource::Response(_)))
         || listed
             .iter()
-            .any(|(_, declared)| matches!(declared.body, Body::Response | Body::ResponseField(_)));
+            .any(|(_, declared)| declared.body.reads_response());
     let reads_payload = sources
         .iter()
         .any(|source| matches!(source, AnswerSource::Error(_)))
@@ -1153,7 +1153,7 @@ fn outcome_arm(
         Body::Envelope => {
             format!("http::Response::new({status}, http::JSON, envelope.to_owned())")
         }
-        Body::Response => {
+        Body::Response | Body::Wrapped { field: None, .. } => {
             format!("http::Response::new({status}, http::JSON, http::bare(response))")
         }
         // A string field answered `encoding: text`: its value alone, not JSON. The media type is
@@ -1166,7 +1166,10 @@ fn outcome_arm(
             http::TEXT_CONTENT_TYPE,
             response_wire(command, field)
         ),
-        Body::ResponseField(field) => format!(
+        Body::ResponseField(field)
+        | Body::Wrapped {
+            field: Some(field), ..
+        } => format!(
             "http::Response::new({status}, http::JSON, http::bare(response.and_then(|response| \
              response.member({:?}))))",
             response_wire(command, field)
@@ -1380,7 +1383,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
     }
     let body = route
         .declared
-        .map_or(ess_http::ViewBody::Rows, |declared| declared.body);
+        .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
     let empty = route
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)

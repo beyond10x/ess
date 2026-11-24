@@ -528,3 +528,124 @@ fn compiled_ir_holds_errors_and_response_fields_to_the_format() {
         .to_string();
     assert!(error.contains("errors"), "{error}");
 }
+
+// --- a wrapped response (beyond10x/ess#755) -----------------------------------------------------
+
+#[test]
+fn an_outcome_answers_its_response_under_one_named_member() {
+    let ir = model();
+    let http = compiled(
+        &ir,
+        &send_task("    outcomes:\n      sent: {status: 201, body: {data: response}}\n"),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        only_route(&http)["outcomes"],
+        json!({"sent": {"status": 201, "body": {"data": "response"}}})
+    );
+    let typed = http.routes()[0].outcomes["sent"].body.clone();
+    assert_eq!(typed.to_string(), "{data: response}");
+    round_trips(&http);
+    let http = compiled(
+        &ir,
+        &send_task("    outcomes:\n      sent: {status: 200, body: {id: response.task_id}}\n"),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        only_route(&http)["outcomes"]["sent"]["body"],
+        json!({"id": "response.task_id"})
+    );
+    round_trips(&http);
+}
+
+#[test]
+fn a_wrapped_response_is_refused_where_its_bare_form_is() {
+    let ir = model();
+    for (outcome, body, why) in [
+        ("sent", "{data: response.note}", "Optional"),
+        (
+            "sent",
+            "{data: response.missing}",
+            "no response field `missing`",
+        ),
+        ("too-large", "{data: response}", "reports error"),
+        ("too-large", "{data: response.task_id}", "reports error"),
+        ("sent", "{'': response}", "member"),
+        ("sent", "{data: envelope}", "data"),
+        ("sent", "{data: single}", "data"),
+    ] {
+        let status = if outcome == "sent" { 200 } else { 400 };
+        let document = send_task(&format!(
+            "    outcomes:\n      {outcome}: {{status: {status}, body: {body}}}\n"
+        ));
+        let result = compiled(&ir, &document);
+        let words = match &result {
+            Ok(_) => panic!("`{body}` on `{outcome}` compiles"),
+            Err(diagnostics) => diagnostics.to_string(),
+        };
+        assert_eq!(
+            located(result),
+            [refused(
+                "ESS-HTTP-024",
+                &format!("routes[0].outcomes.{outcome}.body")
+            )],
+            "`{body}` on `{outcome}`: {words}"
+        );
+        assert!(words.contains(why), "`{body}`: {words}");
+    }
+    // Without `returns: true`.
+    let document = "routes:\n  - command: catalog.tasks.NoteTask\n    method: post\n    path: /api/notes\n    outcomes:\n      noted: {status: 200, body: {data: response}}\n";
+    let words = worded(compiled(&ir, document));
+    assert!(
+        words.iter().any(|word| word.contains("ESS-HTTP-024")
+            && word.contains("routes[0].outcomes.noted.body")
+            && word.contains("returns: true")),
+        "{words:?}"
+    );
+    // Under `errors`, and beside `encoding: text`.
+    let words = worded(compiled(
+        &ir,
+        &send_task("    errors: {status: 400, body: {data: response}}\n"),
+    ));
+    assert!(
+        words.iter().any(|word| word.contains("ESS-HTTP-024")),
+        "{words:?}"
+    );
+    let words = worded(compiled(
+        &ir,
+        &send_task(
+            "    outcomes:\n      sent: {status: 200, body: {id: response.task_id}, encoding: text}\n",
+        ),
+    ));
+    assert!(
+        words
+            .iter()
+            .any(|word| word.contains("ESS-HTTP-024") && word.contains("text")),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn ess_http_012_a_refinement_restates_a_wrapped_answer() {
+    let ir = model();
+    let outcome = |body: &str| {
+        send_task(&format!(
+            "    outcomes:\n      sent: {{status: 201, body: {body}}}\n"
+        ))
+    };
+    let base = outcome("{data: response}");
+    let refined = Refined::from_yaml((header(&ir) + &base).as_bytes()).expect("parses");
+    let refining = |document: &str| {
+        let text = header(&ir) + &format!("refines: {}\n", refined.digest()) + document;
+        let spec = HttpSpec::from_yaml(&text).expect("parses");
+        compile_refining(&spec, Some(&refined), &ir, &derived(&ir))
+    };
+    assert_eq!(located(refining(&base)), []);
+    for changed in [outcome("{item: response}"), outcome("response")] {
+        let codes: Vec<&str> = located(refining(&changed))
+            .iter()
+            .map(|(code, _)| *code)
+            .collect();
+        assert!(codes.contains(&"ESS-HTTP-012"), "{changed}: {codes:?}");
+    }
+}

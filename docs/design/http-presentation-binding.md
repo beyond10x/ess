@@ -380,6 +380,22 @@ mirrors `response.<field>` on the response side
 | `rows` (default) | a view | today's `{rows: [...]}` |
 | `single` | a view selected by its source entity's identity (decided for stage 2, answer 7) | the one row, bare; with `empty: {status, body}` answering a view that holds none, `body` being `none` (the default) or `{<member>: {literal: <text>}}` |
 | `array` | a view that is not paged | the rows, a bare JSON array, `[]` when the view holds none |
+| `{<member>: single}` | a view `single` admits | `{"<member>": <the row>}`; `empty` as for `single` |
+| `{<member>: array}` | a view `array` admits | `{"<member>": [<rows>]}`, `{"<member>": []}` when the view holds none |
+| `{<member>: response}` | an outcome `response` admits | `{"<member>": <the response object>}` |
+| `{<member>: response.<field>}` | an outcome `response.<field>` admits | `{"<member>": <the field's value>}` |
+
+A wrapped form (beyond10x/ess#755) holds, under its one named `<member>`, the value its bare form
+answers, and is refused wherever that bare form is (`ESS-HTTP-024`, `-030`, `-031`): on a paged
+view, `single` without identity selection or without `empty`, `response` without `returns: true` or
+under `errors`. An empty `<member>`, an object of two members, a member holding any other word, and
+`encoding: text` beside a wrapped form are refused with `ESS-HTTP-024`; a refinement that changes
+it is `ESS-HTTP-012`. `{<member>: error}` keeps its meaning: the member holds the error's wire name.
+`{rows: array}` on a view that is not paged is `rows`, ESS's own answer, and compiles to the same
+IR; `rows` is an object already, so it is never wrapped. Compiled IR writes the member and the form,
+`{"app": "single"}`, as the binding does, and a binding without a wrapped form compiles to the
+bytes it compiled to before. A body holds one form: fixed members beside the wrapped value
+(`{"success": true, "app": …}`) are not a body.
 
 A bare body carries no `outcome` and no `published`. A caller of such a route sees the branch only
 through status, body shape and headers, and sees no published event. That is what the protocol

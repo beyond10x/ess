@@ -1619,7 +1619,7 @@ fn outcome_answer(
         .any(|source| matches!(source, AnswerSource::Response(_)))
         || listed
             .iter()
-            .any(|(_, declared)| matches!(declared.body, Body::Response | Body::ResponseField(_)));
+            .any(|(_, declared)| declared.body.reads_response());
     let reads_payload = sources
         .iter()
         .any(|source| matches!(source, AnswerSource::Error(_)))
@@ -1712,10 +1712,13 @@ fn outcome_arm(
         Body::Envelope => {
             format!("response{{status: {status}, contentType: mediaJSON, body: envelope}}")
         }
-        Body::Response => {
+        Body::Response | Body::Wrapped { field: None, .. } => {
             format!("response{{status: {status}, contentType: mediaJSON, body: bare(reply)}}")
         }
-        Body::ResponseField(field) => field_answer(command, field, declared, &mut arm),
+        Body::ResponseField(field)
+        | Body::Wrapped {
+            field: Some(field), ..
+        } => field_answer(command, field, declared, &mut arm),
         Body::None => format!("response{{status: {status}}}"),
         Body::Error { member } => format!(
             "response{{status: {status}, contentType: mediaJSON, body: errorObject({}, {}, \
@@ -1909,7 +1912,7 @@ fn view(
     );
     let body = route
         .declared
-        .map_or(ess_http::ViewBody::Rows, |declared| declared.body);
+        .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
     let empty = route
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)

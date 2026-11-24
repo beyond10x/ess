@@ -389,16 +389,14 @@ pub enum BodySpec {
         /// Its text.
         text: String,
     },
-}
-
-impl BodySpec {
-    /// The word, when it is one.
-    fn word(&self) -> Option<&str> {
-        match self {
-            Self::Word(word) => Some(word),
-            Self::Error(_) | Self::Literal { .. } => None,
-        }
-    }
+    /// `{<member>: <form>}`, any word but `error`: what the bare form answers, under `<member>`
+    /// (beyond10x/ess#755). Which forms a key admits is [`compile`]'s to check.
+    Wrapped {
+        /// The member's name.
+        member: String,
+        /// The bare form it holds, as written.
+        form: String,
+    },
 }
 
 impl fmt::Display for BodySpec {
@@ -409,6 +407,7 @@ impl fmt::Display for BodySpec {
             Self::Literal { member, text } => {
                 write!(formatter, "{{{member}: {{literal: {text}}}}}")
             }
+            Self::Wrapped { member, form } => write!(formatter, "{{{member}: {form}}}"),
         }
     }
 }
@@ -445,6 +444,7 @@ impl<'de> serde::Deserialize<'de> for BodySpec {
                 Ok(match value {
                     MemberValue::Error => BodySpec::Error(member),
                     MemberValue::Literal(text) => BodySpec::Literal { member, text },
+                    MemberValue::Form(form) => BodySpec::Wrapped { member, form },
                 })
             }
         }
@@ -473,14 +473,21 @@ impl serde::Serialize for BodySpec {
                 )?;
                 map.end()
             }
+            Self::Wrapped { member, form } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(member, form)?;
+                map.end()
+            }
         }
     }
 }
 
-/// The value of a body object's one member: `error` or `{literal: <text>}`.
+/// The value of a body object's one member: `error`, `{literal: <text>}`, or another word, the
+/// bare form it wraps.
 enum MemberValue {
     Error,
     Literal(String),
+    Form(String),
 }
 
 /// `{literal: <text>}`, closed.
@@ -498,18 +505,15 @@ impl<'de> serde::Deserialize<'de> for MemberValue {
             type Value = MemberValue;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("`error` or `{literal: <text>}`")
+                formatter.write_str("`error`, a bare body form, or `{literal: <text>}`")
             }
 
             fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<Self::Value, E> {
-                if text == "error" {
-                    Ok(MemberValue::Error)
+                Ok(if text == "error" {
+                    MemberValue::Error
                 } else {
-                    Err(E::custom(format!(
-                        "`{text}` is not what a body member holds: `error`, or \
-                         `{{literal: <text>}}`"
-                    )))
-                }
+                    MemberValue::Form(text.to_owned())
+                })
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
@@ -547,6 +551,14 @@ pub enum Body {
         /// The member that carries the error's wire name.
         member: String,
     },
+    /// `{<member>: response}` or `{<member>: response.<field>}`: an object whose one `member`
+    /// holds what `response`, or `response.<field>`, answers bare (beyond10x/ess#755).
+    Wrapped {
+        /// The member that holds the value.
+        member: String,
+        /// The response field it holds, by local name; `None` for the whole response.
+        field: Option<String>,
+    },
 }
 
 impl Body {
@@ -559,7 +571,22 @@ impl Body {
             }
             Self::None => BodySpec::Word("none".into()),
             Self::Error { member } => BodySpec::Error(member.clone()),
+            Self::Wrapped { member, field } => BodySpec::Wrapped {
+                member: member.clone(),
+                form: field.as_ref().map_or_else(
+                    || "response".to_owned(),
+                    |field| AnswerSource::Response(field.clone()).to_string(),
+                ),
+            },
         }
+    }
+
+    /// Whether it answers the command's response, or a field of it, bare or wrapped.
+    pub fn reads_response(&self) -> bool {
+        matches!(
+            self,
+            Self::Response | Self::ResponseField(_) | Self::Wrapped { .. }
+        )
     }
 
     fn is_default(&self) -> bool {
@@ -601,6 +628,25 @@ impl<'de> serde::Deserialize<'de> for Body {
             BodySpec::Literal { .. } => Err(serde::de::Error::custom(format!(
                 "`{written}` is a literal body, which only a standard refusal answers"
             ))),
+            BodySpec::Wrapped { member, .. } if member.is_empty() => Err(serde::de::Error::custom(
+                format!("`{written}` names an empty member; a wrapped body has one named member"),
+            )),
+            BodySpec::Wrapped { member, form } => {
+                let field = match AnswerSource::parse(form) {
+                    _ if form == "response" => None,
+                    Some(AnswerSource::Response(field)) => Some(field),
+                    _ => {
+                        return Err(serde::de::Error::custom(format!(
+                            "`{written}` is not an outcome's body: compiled IR wraps `response` \
+                             or `response.<field>`"
+                        )))
+                    }
+                };
+                Ok(Self::Wrapped {
+                    member: member.clone(),
+                    field,
+                })
+            }
         }
     }
 }
@@ -630,12 +676,6 @@ pub enum ViewBody {
 }
 
 impl ViewBody {
-    // `skip_serializing_if` passes the field by reference.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn is_default(&self) -> bool {
-        *self == Self::default()
-    }
-
     /// The word that spells it.
     fn word(self) -> &'static str {
         match self {
@@ -646,9 +686,88 @@ impl ViewBody {
     }
 }
 
+/// A view route's answer: its form, bare, or under one named member (`{<member>: single}`,
+/// `{<member>: array}`, beyond10x/ess#755). `rows` is the default and compiled IR omits it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ViewAnswer {
+    /// What the route answers: `rows`, `single` or `array`.
+    pub form: ViewBody,
+    /// The member that holds the `single` or `array` answer; `None` where it is bare. Never
+    /// beside `rows`, which `{rows: array}` is.
+    pub member: Option<String>,
+}
+
+impl ViewAnswer {
+    /// The bare `form`.
+    pub fn bare(form: ViewBody) -> Self {
+        Self { form, member: None }
+    }
+
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn spec(&self) -> BodySpec {
+        match &self.member {
+            None => BodySpec::Word(self.form.word().to_owned()),
+            Some(member) => BodySpec::Wrapped {
+                member: member.clone(),
+                form: self.form.word().to_owned(),
+            },
+        }
+    }
+}
+
+impl fmt::Display for ViewAnswer {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.spec().fmt(formatter)
+    }
+}
+
+impl serde::Serialize for ViewAnswer {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.spec().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ViewAnswer {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let written = <BodySpec as serde::Deserialize>::deserialize(deserializer)?;
+        let form = |word: &str| match word {
+            "rows" => Some(ViewBody::Rows),
+            "single" => Some(ViewBody::Single),
+            "array" => Some(ViewBody::Array),
+            _ => None,
+        };
+        let refused = || {
+            serde::de::Error::custom(format!(
+                "`{written}` is not a view route's body: compiled IR writes `single`, `array`, \
+                 `{{<member>: single}}` or `{{<member>: array}}`"
+            ))
+        };
+        match &written {
+            BodySpec::Word(word) => form(word).map(Self::bare).ok_or_else(refused),
+            BodySpec::Wrapped { member, .. } if member.is_empty() => Err(serde::de::Error::custom(
+                format!("`{written}` names an empty member; a wrapped body has one named member"),
+            )),
+            BodySpec::Wrapped { member, form: word } => match form(word) {
+                Some(ViewBody::Array) if member == "rows" => Err(serde::de::Error::custom(
+                    format!("`{written}` is `rows`, ESS's own answer, which compiled IR omits"),
+                )),
+                Some(form @ (ViewBody::Single | ViewBody::Array)) => Ok(Self {
+                    form,
+                    member: Some(member.clone()),
+                }),
+                Some(ViewBody::Rows) | None => Err(refused()),
+            },
+            BodySpec::Error(_) | BodySpec::Literal { .. } => Err(refused()),
+        }
+    }
+}
+
 /// Reads a view route's `body` of compiled IR, refusing `rows` written out: compiled IR omits it.
-fn omitted_rows<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<ViewBody, D::Error> {
-    let body = <ViewBody as serde::Deserialize>::deserialize(deserializer)?;
+fn omitted_rows<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<ViewAnswer, D::Error> {
+    let body = <ViewAnswer as serde::Deserialize>::deserialize(deserializer)?;
     if body.is_default() {
         return Err(serde::de::Error::custom(
             "a view route's `body` is `rows`, its default, which compiled IR omits",
@@ -2166,10 +2285,10 @@ pub struct Route {
     /// A view route's body. Absent when it is `rows`, and always absent on a command.
     #[serde(
         default,
-        skip_serializing_if = "ViewBody::is_default",
+        skip_serializing_if = "ViewAnswer::is_default",
         deserialize_with = "omitted_rows"
     )]
-    pub body: ViewBody,
+    pub body: ViewAnswer,
     /// A `single` view route's answer for a view that holds no row; present exactly with `single`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Empty>,
@@ -2694,15 +2813,16 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                     route.operation
                 ));
             }
-            match (route.body, &route.empty) {
+            match (route.body.form, &route.empty) {
                 (ViewBody::Single, None) => Err(format!(
-                    "`{at}.body` is `single`, and `{at}.empty` is missing; compiled IR writes \
-                     the empty answer of every `single` route"
+                    "`{at}.body` is `{}`, and `{at}.empty` is missing; compiled IR writes \
+                     the empty answer of every `single` route",
+                    route.body
                 )),
-                (body @ (ViewBody::Rows | ViewBody::Array), Some(_)) => Err(format!(
+                (ViewBody::Rows | ViewBody::Array, Some(_)) => Err(format!(
                     "`{at}.empty` is on a route that answers `{}`; only a `single` route has \
                      an empty answer",
-                    body.word()
+                    route.body
                 )),
                 (_, Some(empty)) if !(400..500).contains(&empty.status) => Err(format!(
                     "`{at}.empty.status` `{}` is not a `4xx` status",
@@ -2718,7 +2838,7 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
             }
         }
         Operation::Command(_) => {
-            if route.body != ViewBody::Rows {
+            if !route.body.is_default() {
                 return Err(format!(
                     "`{at}.body` is on {}; a command answers per outcome, under `outcomes`",
                     route.operation
@@ -2742,7 +2862,7 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                         errors.status
                     ));
                 }
-                if matches!(errors.body, Body::Response | Body::ResponseField(_)) {
+                if errors.body.reads_response() {
                     return Err(format!(
                         "`{key}.body` is `{}`, the command's response, and an outcome that \
                          reports an error answers none",
@@ -5195,7 +5315,7 @@ struct Answers {
     outcomes: BTreeMap<String, Outcome>,
     errors: Option<Outcome>,
     alike: Vec<Vec<String>>,
-    body: ViewBody,
+    body: ViewAnswer,
     empty: Option<Empty>,
 }
 
@@ -5243,7 +5363,7 @@ fn answers(
                 outcomes,
                 errors,
                 alike,
-                body: ViewBody::Rows,
+                body: ViewAnswer::default(),
                 empty: None,
             }
         }
@@ -6074,6 +6194,61 @@ fn outcome_status_checked(
 /// or any body but `none` on `204` or beside a redirect. `status` is the outcome's compiled status:
 /// one refused (`ESS-HTTP-023`) holds the body to no `204`; `redirects` says the outcome declares a
 /// `redirect` on a redirect status.
+/// What `response` or `response.<field>` answers, under one named member (beyond10x/ess#755):
+/// `bare` resolves the form as the outcome's bare body, and a member holding any other form, an
+/// empty member, or a form the outcome cannot answer bare is refused.
+fn wrapped_body(
+    wrapped: &BodySpec,
+    member: &str,
+    bare: impl FnOnce() -> Result<Body, String>,
+    forms: &str,
+) -> Result<Body, String> {
+    if member.is_empty() {
+        return Err(format!(
+            "the member of `{wrapped}` is empty; a wrapped body holds its value under a named \
+             member"
+        ));
+    }
+    let member = member.to_owned();
+    match bare() {
+        Ok(Body::Response) => Ok(Body::Wrapped {
+            member,
+            field: None,
+        }),
+        Ok(Body::ResponseField(field)) => Ok(Body::Wrapped {
+            member,
+            field: Some(field),
+        }),
+        Ok(_) => Err(format!(
+            "`{wrapped}` wraps another form; a member holds `response` or `response.<field>`, \
+             and {forms}"
+        )),
+        Err(reason) => Err(format!("in `{wrapped}`, {reason}")),
+    }
+}
+
+/// `body` unless the outcome answers `204` or declares a `redirect`, which answer `none` only.
+fn no_content(
+    body: Body,
+    name: &impl fmt::Display,
+    status: Option<u16>,
+    redirects: bool,
+) -> Result<Body, String> {
+    if status == Some(204) && body != Body::None {
+        Err(format!(
+            "outcome `{name}` answers `204`, which carries no content, and its body is \
+             `{body}`; a `204` answers `body: none`"
+        ))
+    } else if redirects && body != Body::None {
+        Err(format!(
+            "outcome `{name}` declares a `redirect`, and its body is `{body}`; a redirect \
+             answers `body: none`"
+        ))
+    } else {
+        Ok(body)
+    }
+}
+
 fn outcome_body(
     written: Option<&BodySpec>,
     status: Option<u16>,
@@ -6098,39 +6273,43 @@ fn outcome_body(
         )),
         (true, None) => None,
     };
-    let forms = "an outcome answers `envelope`, `response`, `response.<field>`, `none` or \
-                 `{<member>: error}`";
-    let resolved = match written {
-        None => Ok(Body::Envelope),
-        Some(BodySpec::Word(word)) => match word.as_str() {
-            "envelope" => Ok(Body::Envelope),
-            "none" => Ok(Body::None),
-            "response" => answers_none(word).map_or(Ok(Body::Response), Err),
-            "rows" | "array" | "single" => Err(format!("`{word}` is a view's body; {forms}")),
-            _ => match AnswerSource::parse(word) {
-                Some(AnswerSource::Response(field)) => match answers_none(word) {
-                    Some(reason) => Err(reason),
-                    None => match declared_type(&command.response, &field) {
-                        None => Err(format!(
-                            "`{word}` names no field: command `{}` declares no response field \
+    let forms = "an outcome answers `envelope`, `response`, `response.<field>`, `none`, \
+                 `{<member>: error}`, `{<member>: response}` or `{<member>: response.<field>}`";
+    let word_body = |word: &String| match word.as_str() {
+        "envelope" => Ok(Body::Envelope),
+        "none" => Ok(Body::None),
+        "response" => answers_none(word).map_or(Ok(Body::Response), Err),
+        "rows" | "array" | "single" => Err(format!("`{word}` is a view's body; {forms}")),
+        _ => match AnswerSource::parse(word) {
+            Some(AnswerSource::Response(field)) => match answers_none(word) {
+                Some(reason) => Err(reason),
+                None => match declared_type(&command.response, &field) {
+                    None => Err(format!(
+                        "`{word}` names no field: command `{}` declares no response field \
                              `{field}`",
-                            command.name
-                        )),
-                        Some(type_ref @ ResolvedTypeRef::Optional { .. }) => Err(format!(
-                            "`{word}` has type `{type_ref}`, and a body is always present: a \
+                        command.name
+                    )),
+                    Some(type_ref @ ResolvedTypeRef::Optional { .. }) => Err(format!(
+                        "`{word}` has type `{type_ref}`, and a body is always present: a \
                              `response.<field>` body names a field that is not `Optional`"
-                        )),
-                        Some(_) => Ok(Body::ResponseField(field)),
-                    },
+                    )),
+                    Some(_) => Ok(Body::ResponseField(field)),
                 },
-                Some(source) => Err(format!(
-                    "`{source}` is a source a header or a redirect reads, not a body: of the \
+            },
+            Some(source) => Err(format!(
+                "`{source}` is a source a header or a redirect reads, not a body: of the \
                      sources, a body answers only `response.<field>`, and an error answers its \
                      object with `{{<member>: error}}`"
-                )),
-                None => Err(format!("`{word}` is not a body; {forms}")),
-            },
+            )),
+            None => Err(format!("`{word}` is not a body; {forms}")),
         },
+    };
+    let resolved = match written {
+        None => Ok(Body::Envelope),
+        Some(BodySpec::Word(word)) => word_body(word),
+        Some(wrapped @ BodySpec::Wrapped { member, form }) => {
+            wrapped_body(wrapped, member, || word_body(form), forms)
+        }
         Some(BodySpec::Error(member)) => match error {
             None => Err(format!(
                 "outcome `{name}` reports no error, so it has no error object for \
@@ -6161,22 +6340,7 @@ fn outcome_body(
              answers"
         )),
     };
-    let checked = resolved.and_then(|body| {
-        if status == Some(204) && body != Body::None {
-            Err(format!(
-                "outcome `{name}` answers `204`, which carries no content, and its body is \
-                 `{body}`; a `204` answers `body: none`"
-            ))
-        } else if redirects && body != Body::None {
-            Err(format!(
-                "outcome `{name}` declares a `redirect`, and its body is `{body}`; a redirect \
-                 answers `body: none`"
-            ))
-        } else {
-            Ok(body)
-        }
-    });
-    match checked {
+    match resolved.and_then(|body| no_content(body, name, status, redirects)) {
         Ok(body) => Some(body),
         Err(reason) => {
             refusals.refuse("ESS-HTTP-024", format!("{at}.body"), reason);
@@ -7186,7 +7350,8 @@ fn view_answers(
     no_outcomes_on_a_view(spec, operation, path, refusals);
     // `None` when the body is refused, which leaves `empty` unchecked against it.
     let body = view_body(spec, operation, view, path, refusals);
-    match (body, &spec.empty) {
+    let form = body.as_ref().map(|body| body.form);
+    match (form, &spec.empty) {
         (Some(ViewBody::Single), None) => refusals.refuse(
             "ESS-HTTP-030",
             path,
@@ -7203,7 +7368,7 @@ fn view_answers(
         ),
         _ => {}
     }
-    let held = !matches!(body, Some(ViewBody::Rows | ViewBody::Array));
+    let held = !matches!(form, Some(ViewBody::Rows | ViewBody::Array));
     // An `empty` beside `rows` or `array` is refused above as a whole, so its status and body are
     // not refused again.
     let empty = spec.empty.as_ref().and_then(|empty| {
@@ -7226,7 +7391,7 @@ fn view_answers(
             .zip(body)
             .map(|(status, body)| Empty { status, body })
     });
-    if body == Some(ViewBody::Single) {
+    if form == Some(ViewBody::Single) {
         if let Some((ir, view)) = view {
             let entity = ir.entity(&view.source);
             let identity = entity.identity.name.as_str();
@@ -7266,29 +7431,53 @@ fn view_body(
     view: Option<(&EssIr, &ResolvedView)>,
     path: &str,
     refusals: &mut Refusals,
-) -> Option<ViewBody> {
+) -> Option<ViewAnswer> {
+    let form = |word: &str| match word {
+        "rows" => Some(ViewBody::Rows),
+        "single" => Some(ViewBody::Single),
+        "array" => Some(ViewBody::Array),
+        _ => None,
+    };
     let body = match &spec.body {
-        None => Some(ViewBody::Rows),
-        Some(written) => match written.word() {
-            Some("rows") => Some(ViewBody::Rows),
-            Some("single") => Some(ViewBody::Single),
-            Some("array") => Some(ViewBody::Array),
-            _ => {
-                refusals.refuse(
-                    "ESS-HTTP-024",
-                    format!("{path}.body"),
-                    format!(
-                        "{operation} answers `rows`, `array` or `single`, and `{written}` is not \
-                         a view's body"
-                    ),
-                );
-                None
-            }
+        None => Some(ViewAnswer::default()),
+        Some(written) => match written {
+            BodySpec::Word(word) => form(word).map(ViewAnswer::bare),
+            // `{rows: array}` is `rows`, ESS's own answer; `rows` is an object already, so it is
+            // never wrapped (beyond10x/ess#755).
+            BodySpec::Wrapped { member, form: word } if !member.is_empty() => match form(word) {
+                Some(ViewBody::Array)
+                    if member == "rows" && view.is_none_or(|(_, view)| view.paging.is_none()) =>
+                {
+                    Some(ViewAnswer::default())
+                }
+                Some(form @ (ViewBody::Single | ViewBody::Array)) => Some(ViewAnswer {
+                    form,
+                    member: Some(member.clone()),
+                }),
+                _ => None,
+            },
+            _ => None,
         },
     };
-    if matches!(body, Some(ViewBody::Single | ViewBody::Array)) {
+    if body.is_none() {
+        let written = spec
+            .body
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        refusals.refuse(
+            "ESS-HTTP-024",
+            format!("{path}.body"),
+            format!(
+                "{operation} answers `rows`, `array`, `single`, `{{<member>: array}}` or \
+                 `{{<member>: single}}` under a named member, and `{written}` is not a view's body"
+            ),
+        );
+    }
+    let form = body.as_ref().map(|body| body.form);
+    if matches!(form, Some(ViewBody::Single | ViewBody::Array)) {
         if let Some((_, view)) = view.filter(|(_, view)| view.paging.is_some()) {
-            let answer = if body == Some(ViewBody::Single) {
+            let answer = if form == Some(ViewBody::Single) {
                 "one bare row"
             } else {
                 "a bare array of rows"
