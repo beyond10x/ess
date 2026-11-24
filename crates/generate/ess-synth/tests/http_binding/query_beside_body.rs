@@ -99,6 +99,24 @@ const FORM: &str = "application/x-www-form-urlencoded";
 
 const REQUESTS: &[[&str; 7]] = &[
     [
+        "review-json-body-only",
+        "y",
+        "POST",
+        "/restock",
+        "",
+        JSON,
+        r#"{"format":"csv","dryRun":true}"#,
+    ],
+    [
+        "review-form-body-only",
+        "y",
+        "POST",
+        "/recount",
+        "",
+        FORM,
+        "format=csv&dryRun=true",
+    ],
+    [
         "json",
         "y",
         "POST",
@@ -279,6 +297,15 @@ fn a_listed_field_out_of_its_place_or_its_rules_is_malformed() {
         "query.dry_run: no field of this request is named so",
     );
     malformed("json-twice", "query.dryRun: expected one value, found 2");
+}
+
+/// Review: a field `request.query` lists is read "from the query string alone, and the body
+/// naming it is malformed" (the story, the design page and `http::with_query`'s own doc). With
+/// the query silent the body's member is read instead, in both servers.
+#[test]
+fn review_a_listed_field_in_the_body_is_malformed_when_the_query_is_silent() {
+    malformed("review-json-body-only", "body.dryRun");
+    malformed("review-form-body-only", "body.dryRun");
 }
 
 #[test]

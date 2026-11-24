@@ -234,6 +234,11 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// story:a-tie-breaking-sort-key-is-pinned-by-a-synthesized-tie, which synthesizes a tie for the
 /// view's second sort key. This probe is `#[ignore]`d, so nothing caught the entry then. IR,
 /// refusals and mutants are unchanged.
+///
+/// beyond10x/ess#554 (`d0a3edcb69`): an unknown identity beside stored-field branches is
+/// synthesized, so `now-stored-rows` gains one scenario and loses its refusal. The suite and
+/// refusal digests equal the row that commit re-pinned in `synthesis-suite-bytes-table.tsv`; the
+/// entry superseded here keeps its IR and mutants.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -465,7 +470,7 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml",
-        "ir=fad93168fa11c42db418:30720 suite=7548062c85b64cffd671:140160 refusals=b0abbc30c3882c8c5037:423 mutants=4bb20b47d0340b004585:3915",
+        "ir=fad93168fa11c42db418:30720 suite=ca0cbb96a093aeaf003f:142971 refusals=e3b0c44298fc1c149afb:0 mutants=4bb20b47d0340b004585:3915",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml",

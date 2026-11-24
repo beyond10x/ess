@@ -901,21 +901,6 @@ impl fmt::Display for Refusal {
                     self.subject
                 )
             }
-            // The scenario exists; it puts too few rows in an ordered view to check the order
-            // (beyond10x/ess#795).
-            Some(id)
-                if self.stands && matches!(self.cause, RefusalCause::OrderUnwitnessed { .. }) =>
-            {
-                let RefusalCause::OrderUnwitnessed { view, .. } = &self.cause else {
-                    unreachable!("matched above")
-                };
-                writeln!(
-                    f,
-                    "refusal[{}]: {} has a scenario `{id}` without its order of `{view}`",
-                    self.code(),
-                    self.subject
-                )
-            }
             // The scenario exists; a later key of a view's order is not pinned by a tie in it
             // (beyond10x/ess#708).
             Some(id)
@@ -2048,17 +2033,6 @@ impl fmt::Display for RefusalCause {
                 view,
                 entity,
                 arranged,
-                reason: Unreachable::SecondAnswered { via, outcome },
-            } => write!(
-                f,
-                "`{view}` declares an order and this scenario can put {arranged} row(s) in it: \
-                 a second `{entity}` under one `{via}` is answered by `{}` of `{}`",
-                outcome.outcome, outcome.command
-            ),
-            Self::OrderUnwitnessed {
-                view,
-                entity,
-                arranged,
                 reason,
             } => write!(
                 f,
@@ -3117,15 +3091,6 @@ pub enum Unreachable {
         /// The field that links a row to its owner.
         via: String,
     },
-    /// The rows are read by their owner, through the link `via`, and the command creating them
-    /// answers a second row under one owner with a refusal reading the rows already there
-    /// (`when_related: {entity, where: <via> == input.<field>, exists: true}`, beyond10x/ess#795).
-    SecondAnswered {
-        /// The field that links a row to its owner.
-        via: String,
-        /// The branch that answers the second creation.
-        outcome: Box<OutcomeRef>,
-    },
     /// A move on the route reads a related row through a stored field of the row being arranged
     /// (`when_related: {via: <field>}`, ess/22, beyond10x/ess#304), and no arranging run can set
     /// that field so the move's branch is selected: left out, or naming a row of the related entity
@@ -3289,11 +3254,6 @@ impl Unreachable {
                 "an owner under `cardinality: one` holds one row, so an order over one owner's \
                  rows has nothing to rank; declare `cardinality: many` if an owner holds several"
             }
-            Self::SecondAnswered { .. } => {
-                "the creating command refuses a second row under one owner, so an order over one \
-                 owner's rows has nothing to rank; drop `order_by:`, or let a command create a \
-                 second row under the owner"
-            }
             Self::StoredReference { .. } => {
                 "an arranging run sends a branch reading a stored reference with the reference \
                  left out, or naming a row of the related entity arranged one level deep; declare \
@@ -3364,11 +3324,6 @@ impl fmt::Display for Unreachable {
                 f,
                 "the rows are read by the owner `{via}` names, and the owning relation is \
                  `cardinality: one`, so an owner holds one row"
-            ),
-            Self::SecondAnswered { via, outcome } => write!(
-                f,
-                "a second row under one `{via}` is answered by `{}` of `{}`",
-                outcome.outcome, outcome.command
             ),
             Self::StoredReference { outcome, why } => write!(
                 f,
@@ -8964,21 +8919,15 @@ fn created_owned_made(
                 && related_guard::reads_row(creator.command, input, bound)
         });
         if related_guard::routes(creator.command, creator.outcome) || external {
-            // The owner this row is filed under is there: arranged by `steps`, or held by the
-            // scenario (beyond10x/ess#795).
-            let held = owner.and_then(|(field, row)| {
-                ir.owner_of(entity)
-                    .map(|owned| (owned.owner, field.as_str(), row))
-            });
-            related_guard::drive_owned(
+            related_guard::drive(
                 ir,
                 creator,
+                None,
                 actors,
                 distinction,
                 (bound, steps),
                 input,
                 &chain,
-                held.as_ref().map(|(of, field, row)| (of, *field, *row)),
             )
             .map_err(|_| Unreachable::Unwitnessable {
                 outcome: OutcomeRef::new(
@@ -12555,8 +12504,7 @@ fn arrange_ranked(
             .filter(|(via, _)| reads_root(view, via));
         if let (Some((via, _)), false) = (read_by_owner, shares_owner(ir, beside.entity)) {
             if rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
-                // The scenario stands without the order (beyond10x/ess#795).
-                refusals.push(Refusal::beside(
+                refusals.push(Refusal::about(
                     id,
                     RefusalCause::OrderUnwitnessed {
                         view: name.clone(),
@@ -12594,20 +12542,7 @@ fn arrange_ranked(
                     break
                 }
                 Err(reason) => {
-                    // A second row under the subject's owner that the creating command refuses is
-                    // named by that refusal, not by the search that found no row
-                    // (beyond10x/ess#795); the scenario stands without the order.
-                    let reason = read_by_owner
-                        .and_then(|(via, _)| {
-                            row_set::answers_second(ir, beside.entity, via).map(|outcome| {
-                                Unreachable::SecondAnswered {
-                                    via: via.to_owned(),
-                                    outcome: Box::new(outcome),
-                                }
-                            })
-                        })
-                        .unwrap_or(reason);
-                    refusals.push(Refusal::beside(
+                    refusals.push(Refusal::about(
                         id,
                         RefusalCause::OrderUnwitnessed {
                             view: name.clone(),
@@ -14615,7 +14550,7 @@ fn subject_row(
     state: &StateName,
 ) -> Vec<ViewExpectation> {
     let mut row = shown(view, identity.clone(), &run.settled);
-    unclaimed_absence(view, &mut row);
+    unclaimed_absence(view, outcome, &mut row);
     let required = shown_leaves(ir, view, outcome, &run.input, &run.before_settled, &mut row);
     row.extend(lifecycle_state(ir, entity, view, state));
     let mut expectations = vec![ViewExpectation::Contains { fields: row }];
@@ -15575,15 +15510,19 @@ fn shown(
     fields
 }
 
-/// Drops from `row` each absent field where the view field declares no `null_when_absent`: an
-/// absent value may be published left out or as `null`, and a plain field name is compared
-/// exactly, so the row does not claim the spelling (as an event payload does not,
-/// beyond10x/ess#285). An `Optional` input an arranging step left out (beyond10x/ess#546) leaves
-/// such a field absent, and so does a value the branch writes absent, `{cleared: true}` or an
-/// absent `Optional` input (beyond10x/ess#799).
-fn unclaimed_absence(view: &ResolvedView, row: &mut BTreeMap<String, ScenarioValue>) {
+/// Drops from `row` each field the arrangement left absent and `outcome` does not write, where the
+/// view field declares no `null_when_absent`: an absent value may be published left out or as
+/// `null`, and a plain field name is compared exactly, so the row does not claim the spelling (as
+/// an event payload does not, beyond10x/ess#285). An `Optional` input an arranging step left out
+/// (beyond10x/ess#546) leaves such a field absent. A field the branch writes keeps its claim.
+fn unclaimed_absence(
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    row: &mut BTreeMap<String, ScenarioValue>,
+) {
     row.retain(|name, value| {
         !matches!(value, ScenarioValue::Literal { value: Node::Null })
+            || outcome.sets.iter().any(|set| set.target == *name)
             || view.field(name).and_then(|field| field.naming.presence)
                 == Some(ess_domain::types::Presence::NullWhenAbsent)
     });
@@ -19474,7 +19413,7 @@ fn from_source(
         }
         let identity = identifying(ir, subject, Some(&arrangement.instance), view);
         let mut row = shown(view, identity.clone(), &left);
-        unclaimed_absence(view, &mut row);
+        unclaimed_absence(view, outcome, &mut row);
         let required = shown_leaves(ir, view, outcome, &supplied, &before, &mut row);
         row.extend(lifecycle_state(ir, &subject.entity, view, to));
         let name = ViewRef::new(view.name.clone());

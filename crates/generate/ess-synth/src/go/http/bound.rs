@@ -1279,8 +1279,9 @@ func unquoted(text string) string {
 	return out.String()
 }
 
-// parameters is a header value's first item and its name=value parameters, each name in lower
-// case, split at each ; outside a quoted string.
+// parameters is a header value's first item and its name=value parameters, each name with its
+// ASCII capitals lower-cased and every other character as sent (as the Rust server's
+// `to_ascii_lowercase`), split at each ; outside a quoted string.
 func parameters(value string) (string, [][2]string) {
 	items := []string{}
 	var item strings.Builder
@@ -1305,10 +1306,22 @@ func parameters(value string) (string, [][2]string) {
 	for _, one := range items[1:] {
 		name, text, ok := strings.Cut(one, "=")
 		if ok {
-			pairs = append(pairs, [2]string{strings.ToLower(strings.TrimSpace(name)), unquoted(strings.TrimSpace(text))})
+			pairs = append(pairs, [2]string{lowerASCII(strings.TrimSpace(name)), unquoted(strings.TrimSpace(text))})
 		}
 	}
 	return strings.TrimSpace(items[0]), pairs
+}
+
+// lowerASCII is text with each ASCII capital lower-cased and every other byte kept: a parameter
+// name is matched by its ASCII spelling only (RFC 7578), never by Unicode case folding.
+func lowerASCII(text string) string {
+	out := []byte(text)
+	for index, one := range out {
+		if 'A' <= one && one <= 'Z' {
+			out[index] = one + ('a' - 'A')
+		}
+	}
+	return string(out)
 }
 
 // multipartBoundary is the boundary of a `multipart/form-data` request, or a refusal where its
@@ -1553,18 +1566,15 @@ func echoedParts(request *http.Request, body []byte, carried []flatField, path [
 /// What a surface adds where a route lists `request.query` (beyond10x/ess#754): the join of the
 /// fields read from the query string with the body's, as the Rust server's `http::with_query`.
 pub(super) const QUERIED: &str = r#"
-// withQuery is value with the members the query string carries added (beyond10x/ess#754), each
-// of listed that query holds, in the order listed: a field the route's `request.query` lists is
-// read from the query string alone, and the body naming it is malformed.
+// withQuery is value with the members the query string carries added (beyond10x/ess#754): a
+// field the route's `request.query` lists is read from the query string alone, and the body
+// naming it is malformed, whether the query carries it or not, checked in the order listed.
 func withQuery(value any, query map[string]any, listed []flatField, at string) (any, error) {
 	object, ok := value.(map[string]any)
 	if !ok {
 		return value, nil
 	}
 	for _, field := range listed {
-		if _, read := query[field.wire]; !read {
-			continue
-		}
 		if _, present := object[field.wire]; present {
 			return nil, fmt.Errorf("%s: the query carries this field, so the body does not", nested(at, field.wire))
 		}
@@ -2797,7 +2807,7 @@ fn view(
          encodeView{function}(row))\n\t}}\n"
     );
     if !representations.is_empty() {
-        out.push_str(&csv_answer(view));
+        out.push_str(&csv_answer(ir, view));
     }
     json_answer(out, route);
 }
@@ -2912,17 +2922,27 @@ fn selection(representations: &[ess_http::Representation], suffix: &str) -> Stri
 /// Go code answering the encoded rows as CSV when [`selection`] chose a representation, as the
 /// Rust server writes it: the rows the JSON answer renders, read back, the view's fields in
 /// declaration order under their wire names, CRLF line ends, an absent value an empty field, each
-/// value in its flat text spelling, and a value holding the separator, `"`, CR or LF quoted with
-/// `"` doubled.
-fn csv_answer(view: &ResolvedView) -> String {
+/// value in its flat text spelling, a text cell (a `String`, an `Optional<String>` or a newtype of
+/// one) opening with `=`, `+`, `-`, `@`, a tab or a CR behind `'` so a spreadsheet does not read
+/// it as a formula, and a value holding the separator, `"`, CR or LF quoted with `"` doubled.
+fn csv_answer(ir: &EssIr, view: &ResolvedView) -> String {
     let columns: Vec<String> = view
         .fields
         .iter()
         .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
         .collect();
+    let guarded: Vec<&str> = view
+        .fields
+        .iter()
+        .map(|field| match http::flat(ir, &field.type_ref) {
+            Some((http::Shape::One | http::Shape::Optional, http::Flat::String)) => "true",
+            _ => "false",
+        })
+        .collect();
     format!(
         "\tif chosen {{\n\t\tread, _ := parseJSON(rendered(200, encoded).body)\n\t\titems, _ := \
-         read.([]any)\n\t\tcolumns := []string{{{}}}\n\t\tvar out strings.Builder\n\t\tfield := \
+         read.([]any)\n\t\tcolumns := []string{{{}}}\n\t\tguarded := []bool{{{}}}\n\t\tvar out \
+         strings.Builder\n\t\tfield := \
          func(text string) {{\n\t\t\tif strings.ContainsAny(text, separator+\"\\\"\\r\\n\") \
          {{\n\t\t\t\tout.WriteByte('\"')\n\t\t\t\tout.WriteString(strings.ReplaceAll(text, \
          \"\\\"\", \"\\\"\\\"\"))\n\t\t\t\tout.WriteByte('\"')\n\t\t\t}} else \
@@ -2932,10 +2952,14 @@ fn csv_answer(view: &ResolvedView) -> String {
          for _, row := range items {{\n\t\t\tfor index, column := range columns {{\n\t\t\t\tif index \
          > 0 {{\n\t\t\t\t\tout.WriteString(separator)\n\t\t\t\t}}\n\t\t\t\tswitch value := \
          memberOf(row, column).(type) {{\n\t\t\t\tcase nil:\n\t\t\t\t\tfield(\"\")\n\t\t\t\tcase \
-         string:\n\t\t\t\t\tfield(value)\n\t\t\t\tdefault:\n\t\t\t\t\tfield(bare(value))\n\t\t\t\t}}\
-         \n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\treturn response{{status: 200, \
-         contentType: \"text/csv; charset=utf-8\", body: out.String(), headers: headers}}\n\t}}\n",
-        columns.join(", ")
+         string:\n\t\t\t\t\tif guarded[index] && value != \"\" && \
+         strings.ContainsRune(\"=+-@\\t\\r\", rune(value[0])) {{\n\t\t\t\t\t\tvalue = \"'\" + \
+         value\n\t\t\t\t\t}}\n\t\t\t\t\tfield(value)\n\t\t\t\tdefault:\n\t\t\t\t\tfield(bare(value))\
+         \n\t\t\t\t}}\n\t\t\t}}\n\t\t\tout.WriteString(\"\\r\\n\")\n\t\t}}\n\t\treturn \
+         response{{status: 200, contentType: \"text/csv; charset=utf-8\", body: out.String(), \
+         headers: headers}}\n\t}}\n",
+        columns.join(", "),
+        guarded.join(", ")
     )
 }
 

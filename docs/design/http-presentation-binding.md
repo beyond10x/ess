@@ -395,7 +395,8 @@ repeating its part. A field without a flat spelling is refused as for `form` (`E
   its attributes read; every other part its field's schema. `media_types` is the part's Encoding
   Object `contentType`, joined by `, `. The route publishes no `{command}.Input`: that schema's
   `Bytes` member is base64 and it would hold the attribute fields. `required` lists the parts whose
-  fields are not `Optional`, and `unknown: ignore` opens the object.
+  fields are neither `Optional` nor a `List`: a `List` repeats its part once per element, so no
+  part is the empty list, as both servers read it. `unknown: ignore` opens the object.
 - The Rust server (`story:the-generated-rust-server-reads-a-multipart-request`) carries its own
   RFC 7578 reader, as it carries its own JSON reader, emitted only where a route is `multipart`:
   the body's boundary from `Content-Type`, a preamble and an epilogue ignored, transport padding
@@ -999,7 +1000,10 @@ routes:
   One line per row in the order the JSON answer gives, CRLF line ends, the view's fields in
   declaration order under their wire names, each value in the flat text spelling `form` and
   `query` use, an absent `Optional` an empty field, and RFC 4180 quoting: a value holding the
-  separator, `"`, CR or LF is quoted, `"` doubled. `Content-Type: text/csv; charset=utf-8`. A view
+  separator, `"`, CR or LF is quoted, `"` doubled. A text cell (a `String`, an `Optional<String>`
+  or a newtype of one) opening with `=`, `+`, `-`, `@`, a tab or a CR is written behind `'`, before
+  the quoting, so a spreadsheet does not read it as a formula; a number, an enum or a timestamp is
+  written as it is. `Content-Type: text/csv; charset=utf-8`. A view
   field without a flat spelling (a struct, a union, a `List`, a `Map`, `Json`) is refused, naming
   the field.
 - **`headers`** takes `{literal: <text>}` values only, under the checks an answer's headers have
@@ -1019,8 +1023,8 @@ routes:
 - **OpenAPI.** One operation: the selector is an optional `in: query` parameter, a `string` whose
   `enum` holds each value in the order written, described with what each selects and that its
   absence selects the JSON answer. The `200` response holds `application/json` as before and
-  `text/csv` as `{type: string}`, and carries `x-ess-representations`, one entry per
-  representation in order: `query`, `media_type`, `separator`, `header` and `columns`, the wire
+  `text/csv` as `{type: string}` described with that rule for text cells, and carries
+  `x-ess-representations`, one entry per representation in order: `query`, `media_type`, `separator`, `header` and `columns`, the wire
   names in field order. A representation's header is a response header, never required, whose
   description names the selector value it applies to. `x-ess-operations`, the name first asked
   for, is not used: there is one operation.

@@ -226,7 +226,75 @@ const FILES: &str = concat!(
     r#"--XyZ--\r\nepilogue"#,
 );
 
+/// Review: [`IMPORT`] with its `filename` parameter spelled `fİlename` (U+0130, whose simple
+/// lower case is ASCII `i`); RFC 7578 names the parameter `filename`, ASCII only.
+const DOTTED_FILENAME: &str = concat!(
+    r#"--XyZ\r\nContent-Disposition: form-data; name="file"; fİlename="rows.csv"\r\n"#,
+    r#"Content-Type: text/csv\r\n\r\na\r\n"#,
+    r#"--XyZ\r\nContent-Disposition: form-data; name="format"\r\n\r\ncsv\r\n"#,
+    r#"--XyZ\r\nContent-Disposition: form-data; name="dry_run"\r\n\r\ntrue\r\n--XyZ--"#,
+);
+
+/// Review: a filename holding path separators.
+const TRAVERSAL_FILENAME: &str = concat!(
+    r#"--XyZ\r\nContent-Disposition: form-data; name="file"; filename="../..\\x/rows.csv"\r\n"#,
+    r#"Content-Type: text/csv\r\n\r\na\r\n"#,
+    r#"--XyZ\r\nContent-Disposition: form-data; name="format"\r\n\r\ncsv\r\n"#,
+    r#"--XyZ\r\nContent-Disposition: form-data; name="dry_run"\r\n\r\ntrue\r\n--XyZ--"#,
+);
+
+/// Review: a part with no `name`.
+const NAMELESS: &str = concat!(
+    r#"--XyZ\r\nContent-Disposition: form-data; filename="rows.csv"\r\n"#,
+    r#"Content-Type: text/csv\r\n\r\na\r\n--XyZ--"#,
+);
+
+/// Review: a boundary of 71 characters, one over RFC 2046's bound.
+const LONG_TYPE: &str = "multipart/form-data; \
+     boundary=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+const LONG: &str = concat!(
+    r#"--BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r\n"#,
+    r#"Content-Disposition: form-data; name="format"\r\n\r\ncsv\r\n"#,
+    r#"--BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB--"#,
+);
+
 const REQUESTS: &[[&str; 7]] = &[
+    [
+        "review-dotted-filename",
+        "y",
+        "POST",
+        "/imports",
+        "",
+        TYPE,
+        DOTTED_FILENAME,
+    ],
+    [
+        "review-traversal-filename",
+        "y",
+        "POST",
+        "/imports",
+        "",
+        TYPE,
+        TRAVERSAL_FILENAME,
+    ],
+    [
+        "review-nameless",
+        "y",
+        "POST",
+        "/imports",
+        "",
+        TYPE,
+        NAMELESS,
+    ],
+    [
+        "review-long-boundary",
+        "y",
+        "POST",
+        "/imports",
+        "",
+        LONG_TYPE,
+        LONG,
+    ],
     ["import", "y", "POST", "/imports", "", TYPE, IMPORT],
     [
         "import-json-type",
@@ -480,5 +548,35 @@ fn a_multipart_request_out_of_its_rules_is_malformed_naming_the_part() {
     malformed(
         "photo-other",
         "body.item_id: the path carries this field with another value",
+    );
+}
+
+/// Review: a `Content-Disposition` parameter is matched by its ASCII name in both servers. The Go
+/// server lower-cases parameter names with `strings.ToLower`, which maps U+0130 to ASCII `i`, so
+/// `fİlename` reads as `filename` there and as an unknown parameter in the Rust server.
+#[test]
+fn review_a_non_ascii_parameter_name_is_no_filename_in_either_server() {
+    malformed(
+        "review-dotted-filename",
+        "body.file: the part has no filename, which input field `file_name` requires",
+    );
+}
+
+/// Review: hostile multipart requests answer the same in both servers: a filename with path
+/// separators is data, read as sent; a part without a name and a boundary over 70 characters are
+/// malformed.
+#[test]
+fn review_hostile_multipart_requests_answer_alike() {
+    ran(
+        "review-traversal-filename",
+        &[r#""file_name":"../..\\x/rows.csv""#],
+    );
+    malformed(
+        "review-nameless",
+        "a part has no `Content-Disposition: form-data` name",
+    );
+    malformed(
+        "review-long-boundary",
+        "the body is `multipart/form-data` without a `boundary`",
     );
 }

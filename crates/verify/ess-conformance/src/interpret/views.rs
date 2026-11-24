@@ -449,15 +449,10 @@ fn project(
                 let Some(value) = fields.get(&field.name) else {
                     if field.type_ref.is_optional() {
                         // A view field carrying `omitted_when_absent` (ess/31, beyond10x/ess#677)
-                        // or no presence at all leaves the member out, as its published row schema
-                        // says; only a nullable one is written `null` (beyond10x/ess#799).
-                        if matches!(
-                            field.naming.presence,
-                            Some(
-                                ess_domain::types::Presence::NullWhenAbsent
-                                    | ess_domain::types::Presence::OmittedOrNull
-                            )
-                        ) {
+                        // leaves the member out, as its published row schema says.
+                        if field.naming.presence
+                            != Some(ess_domain::types::Presence::OmittedWhenAbsent)
+                        {
                             row.insert(field.name.clone(), Node::Null);
                         }
                         continue;

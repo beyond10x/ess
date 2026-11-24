@@ -799,3 +799,61 @@ fn design_page_flag_example_compiles() {
     assert!(binding.contains("{kind: flag, long: net}"), "{binding}");
     launch(RUN_MODEL, binding).unwrap();
 }
+
+/// The `ArgumentSource` every `ess` up to 0.98.2 reads a compiled plan with: the closed tagged
+/// enum of `wire.rs` at 0.98.2, with no `flag` kind and no `repeated` key.
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[allow(dead_code)]
+enum OlderArgumentSource {
+    Option {
+        long: String,
+    },
+    Positional {
+        index: usize,
+    },
+    Document {
+        inline: String,
+        file: String,
+        stdin: String,
+    },
+    Protected {
+        file: String,
+        stdin: String,
+        hidden_tty: String,
+    },
+    Trailing {},
+}
+
+/// beyond10x/ess#694 adds `{kind: flag}` and `repeated: true` to a persisted plan without a format
+/// version: a reader of 0.98.2 refuses each by name rather than reading a flag or a repeated option
+/// as something else, and the option without `repeated` it reads as before.
+#[test]
+fn an_older_plan_reader_refuses_a_flag_and_a_repeated_option_by_name() {
+    let text = launch(RUN_MODEL, RUN_BINDING).unwrap().to_canonical_json();
+    let plan: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let arguments = plan["commands"][0]["arguments"].as_array().unwrap();
+    let source = |field: &str| {
+        arguments
+            .iter()
+            .find(|argument| argument["field"] == field)
+            .unwrap_or_else(|| panic!("no argument `{field}`: {text}"))["source"]
+            .clone()
+    };
+    let error = serde_json::from_value::<OlderArgumentSource>(source("net"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown variant `flag`"), "{error}");
+    let error = serde_json::from_value::<OlderArgumentSource>(source("ro"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `repeated`"), "{error}");
+    let unflagged = launch(LAUNCH_MODEL, LAUNCH_BINDING)
+        .unwrap()
+        .to_canonical_json();
+    let unflagged: serde_json::Value = serde_json::from_str(&unflagged).unwrap();
+    for argument in unflagged["commands"][0]["arguments"].as_array().unwrap() {
+        serde_json::from_value::<OlderArgumentSource>(argument["source"].clone())
+            .unwrap_or_else(|error| panic!("{argument}: {error}"));
+    }
+}

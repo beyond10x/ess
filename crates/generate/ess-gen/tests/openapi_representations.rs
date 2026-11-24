@@ -82,7 +82,13 @@ fn a_csv_representation_is_a_second_media_type_and_its_selector_a_query_paramete
     );
     assert_eq!(
         read["content"]["text/csv"],
-        json!({"schema": {"type": "string"}})
+        json!({"schema": {
+            "type": "string",
+            "description": "The rows as CSV. A text cell opening with `=`, `+`, `-`, `@`, a tab \
+                            or a carriage return is written behind `'`, so a spreadsheet does not \
+                            read it as a formula; a number, an enum or a timestamp is written as \
+                            it is.",
+        }})
     );
     assert_eq!(
         read["x-ess-representations"],
@@ -153,4 +159,21 @@ fn a_view_route_without_representations_keeps_its_answer() {
     let read = &operation["responses"]["200"];
     assert!(read.get("x-ess-representations").is_none(), "{read}");
     assert!(read["content"].get("text/csv").is_none(), "{read}");
+}
+
+/// Review: a view route without parameters but with representations answers a selector value no
+/// representation names with the route's `malformed` refusal (both generated servers), so the
+/// document lists that refusal's status, as it does for a view that declares `params:`.
+#[test]
+fn review_a_representation_route_publishes_the_malformed_refusal_its_selector_answers() {
+    let ir = model();
+    let routes = format!(
+        "{ROWS}{CSV}    refusals:\n      malformed: {{status: 422, body: {{error: {{literal: unreadable}}}}}}\n"
+    );
+    let document = document(&ir, &routes);
+    let responses = &document["paths"]["/reports/rows"]["get"]["responses"];
+    assert!(
+        responses.get("422").is_some(),
+        "a selector value no representation names is answered 422, unpublished: {responses}"
+    );
 }
