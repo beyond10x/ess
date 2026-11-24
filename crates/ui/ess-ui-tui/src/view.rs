@@ -1204,6 +1204,7 @@ impl App {
                     } else {
                         bold()
                     };
+                    let start = lines.len();
                     // A row without the field that picks its widget says so, as one whose kind
                     // no widget names does.
                     let heading = if kind.is_empty() {
@@ -1225,9 +1226,30 @@ impl App {
                             ui: "board-widget",
                             focused: false,
                             record: false,
+                            // The widget reads its row, as React scopes it (`row`).
+                            ctx: Ctx {
+                                row: Some(row),
+                                ..place.ctx
+                            },
                             ..*place
                         };
                         lines.extend(self.body_lines(&node.body, &inner));
+                    }
+                    // A section's or an overlay's own board records each placed widget on its
+                    // lines, at `<board>/rows/<widget>`, the path React draws it at
+                    // (beyond10x/ess#722).
+                    if place.record {
+                        let key = display(&row["widget"]);
+                        self.mark(Mark {
+                            path: format!("{}/rows/{key}", place.path),
+                            row: Some(key),
+                            line: start,
+                            height: lines.len() - start,
+                            x: 0,
+                            width: None,
+                            text: None,
+                            key: None,
+                        });
                     }
                 }
                 let row = rows.get(cursor);
@@ -2380,7 +2402,22 @@ impl App {
             lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&group.actions)));
         }
         if let Some(result) = &form.result {
+            let start = lines.len();
             lines.extend(self.node_lines(result, place));
+            // A section's or an overlay's own form records its result on lines of its own, at the
+            // path React renders it at (beyond10x/ess#722).
+            if place.record && lines.len() > start {
+                self.mark(Mark {
+                    path: format!("{}/result", place.path),
+                    row: None,
+                    line: start,
+                    height: lines.len() - start,
+                    x: 0,
+                    width: None,
+                    text: None,
+                    key: None,
+                });
+            }
         }
         lines
     }

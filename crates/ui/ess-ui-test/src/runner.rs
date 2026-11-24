@@ -247,11 +247,15 @@ impl<'d> Runner<'d> {
             }
             return Ok(());
         }
-        if target.overlay().is_some() {
-            return self.require_overlay(target);
-        }
-        self.require_no_overlay(target)?;
-        if let Some(row) = &target.row {
+        // A row action's inline confirm is an overlay, though its path is under the row.
+        if let Some(row) = target
+            .row
+            .as_ref()
+            .filter(|_| target.row_overlay().is_none())
+        {
+            if target.overlay().is_none() {
+                self.require_no_overlay(target)?;
+            }
             self.select_row(target, row)?;
             if target.node == format!("{}/expand", row.container) {
                 // `x` shows the cursor row's expanded detail, when it is not shown already.
@@ -267,6 +271,10 @@ impl<'d> Runner<'d> {
             }
             return Ok(());
         }
+        if target.overlay().is_some() {
+            return self.require_overlay(target);
+        }
+        self.require_no_overlay(target)?;
         let section = target.section().ok_or_else(|| {
             format!(
                 "{}: the terminal selects sections, rows and overlays",
@@ -674,15 +682,22 @@ impl<'d> Runner<'d> {
             return Ok(());
         }
         let action = self.action(target)?;
-        let lines = self.section_box(&row_section(target, row)?)?.lines;
-        let key =
-            hint_key(lines.iter().map(|line| line.text.as_str()), &action).ok_or_else(|| {
-                format!(
-                    "{}: the row does not offer {}",
-                    target.written,
-                    label(&action)
-                )
-            })?;
+        let lines: Vec<String> = match row_home(target, row)? {
+            RowHome::Section(section) => self
+                .section_box(&section)?
+                .lines
+                .into_iter()
+                .map(|line| line.text)
+                .collect(),
+            RowHome::Overlay => self.screen().text().lines().map(str::to_owned).collect(),
+        };
+        let key = hint_key(lines.iter().map(String::as_str), &action).ok_or_else(|| {
+            format!(
+                "{}: the row does not offer {}",
+                target.written,
+                label(&action)
+            )
+        })?;
         self.app.keys(&key_spec(key));
         Ok(())
     }
@@ -799,8 +814,12 @@ impl<'d> Runner<'d> {
         else {
             return Err(format!("{}: `mark` names a row", target.written));
         };
-        let section = row_section(target, row)?;
-        let selects = match &self.section_def(&section)?.body {
+        let home = row_home(target, row)?;
+        let body = match &home {
+            RowHome::Section(section) => self.section_def(section)?.body.clone(),
+            RowHome::Overlay => self.overlay_body(&row.container)?,
+        };
+        let selects = match &body {
             Body::Composite(Composite::Collection(collection)) => !matches!(
                 collection.selection,
                 None | Some(ess_ui::Selection::Mode(ess_ui::SelectionMode::None))
@@ -813,7 +832,9 @@ impl<'d> Runner<'d> {
                 target.written
             ));
         }
-        self.require_no_overlay(target)?;
+        if let RowHome::Section(_) = home {
+            self.require_no_overlay(target)?;
+        }
         self.select_row(target, row)?;
         self.app.keys("<space>");
         Ok(())
@@ -907,30 +928,44 @@ impl<'d> Runner<'d> {
     // ── rows ────────────────────────────────────────────────────────────────────────────────
 
     fn select_row(&mut self, target: &Target, row: &Row) -> Result<(), String> {
-        let section = row_section(target, row)?;
-        self.app.focus_section(&section);
-        let rows = self.app.rows(&section);
-        let field = self.key_field(&section);
-        rows.iter()
-            .position(|data| key_of(data, &field) == row.key)
-            .ok_or_else(|| {
-                format!(
-                    "no row {} in {}; it holds [{}]",
-                    row.key,
-                    row.container,
-                    rows.iter()
-                        .map(|data| key_of(data, &field))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            })?;
-        let (_, pages) = self.pager(&section)?;
+        let (count, pages) = match row_home(target, row)? {
+            RowHome::Section(section) => {
+                self.app.focus_section(&section);
+                let rows = self.app.rows(&section);
+                let field = self.key_field(&section);
+                rows.iter()
+                    .position(|data| key_of(data, &field) == row.key)
+                    .ok_or_else(|| {
+                        format!(
+                            "no row {} in {}; it holds [{}]",
+                            row.key,
+                            row.container,
+                            rows.iter()
+                                .map(|data| key_of(data, &field))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    })?;
+                (rows.len(), self.pager(&section)?.1)
+            }
+            // The open overlay's collection takes the keys itself: its footer counts its rows.
+            RowHome::Overlay => {
+                self.require_overlay(target)?;
+                let screen = self.screen();
+                let footer = screen
+                    .region(&row.container)
+                    .map(|region| screen.text_in(region))
+                    .and_then(|text| text.lines().find_map(footer_counts));
+                let shown = screen.rows(&row.container).len();
+                footer.map_or((shown, 1), |(pages, rows)| (rows.max(shown), pages))
+            }
+        };
         self.app.keys(&"p".repeat(pages));
         for page in 0..pages {
-            self.app.keys(&"k".repeat(rows.len()));
+            self.app.keys(&"k".repeat(count));
             // The cursor moves one row per `j`; the rows it passes are counted by their keys, so
             // rows that show the same values are still told apart.
-            for _ in 0..=rows.len() {
+            for _ in 0..=count {
                 let shown = self.screen().rows(&row.container);
                 match shown.iter().find(|(_, cursor)| *cursor) {
                     Some((key, _)) if *key == row.key => return Ok(()),
@@ -953,10 +988,26 @@ impl<'d> Runner<'d> {
         ))
     }
 
-    /// The keys of the rows the section's collection draws, in screen order.
-    fn shown_rows(&self, section: &str) -> Result<Vec<String>, String> {
-        self.section_box(section)?;
-        let collection = format!("pages/{}/sections/{section}", self.app.page());
+    /// The keys of the rows the collection at `target` draws, in screen order: a section's, or
+    /// the open overlay's.
+    fn shown_rows(&self, target: &Target) -> Result<Vec<String>, String> {
+        let collection = match target.overlay() {
+            Some((_, path)) if target.node == path && target.row.is_none() => {
+                if !matches!(
+                    self.overlay_body(&path)?,
+                    Body::Composite(Composite::Collection(_) | Composite::References(_))
+                ) {
+                    return Err(format!("{} is not a collection", target.written));
+                }
+                self.require_overlay(target)?;
+                path
+            }
+            _ => {
+                let section = self.collection_section(target)?;
+                self.section_box(&section)?;
+                format!("pages/{}/sections/{section}", self.app.page())
+            }
+        };
         Ok(self
             .screen()
             .rows(&collection)
@@ -1011,8 +1062,7 @@ impl<'d> Runner<'d> {
                 ))
             }
             Check::RowCount(count) => {
-                let section = self.collection_section(target)?;
-                let keys = self.shown_rows(&section)?;
+                let keys = self.shown_rows(target)?;
                 if keys.len() == *count {
                     return Ok(());
                 }
@@ -1024,8 +1074,7 @@ impl<'d> Runner<'d> {
                 ))
             }
             Check::RowKeys(wanted) => {
-                let section = self.collection_section(target)?;
-                let keys = self.shown_rows(&section)?;
+                let keys = self.shown_rows(target)?;
                 if keys == *wanted {
                     return Ok(());
                 }
@@ -1270,8 +1319,12 @@ impl<'d> Runner<'d> {
         let section = target
             .section()
             .filter(|_| target.is_section() && target.row.is_none());
-        let section = section
-            .ok_or_else(|| format!("{}: rows are a section's collection's", target.written))?;
+        let section = section.ok_or_else(|| {
+            format!(
+                "{}: rows are a section's or an overlay's collection's",
+                target.written
+            )
+        })?;
         match &self.section_def(&section)?.body {
             Body::Composite(
                 Composite::Collection(_) | Composite::References(_) | Composite::GraphEditor(_),
@@ -1442,13 +1495,41 @@ fn option_index(
         })
 }
 
+/// Where a row's collection is drawn.
+enum RowHome {
+    /// The body of the section named.
+    Section(String),
+    /// The body of the open overlay.
+    Overlay,
+}
+
+/// The page count and the row count a collection's footer shows: `page 1/2 · 14 rows`.
+fn footer_counts(line: &str) -> Option<(usize, usize)> {
+    let rest = line.trim_start().strip_prefix("page ")?;
+    let (_, rest) = rest.split_once('/')?;
+    let pages: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let rows = rest.split(" · ").nth(1)?.strip_suffix(" rows")?;
+    Some((pages.parse().ok()?, rows.trim().parse().ok()?))
+}
+
+/// Where the collection of `row` is drawn: a section's body, or the open overlay's.
+fn row_home(target: &Target, row: &Row) -> Result<RowHome, String> {
+    if target
+        .overlay()
+        .is_some_and(|(_, path)| path == row.container)
+    {
+        return Ok(RowHome::Overlay);
+    }
+    row_section(target, row).map(RowHome::Section)
+}
+
 /// The section of a row's collection: the collection is the section's body.
 fn row_section(target: &Target, row: &Row) -> Result<String, String> {
     let segments: Vec<&str> = row.container.split('/').collect();
     match segments.as_slice() {
         ["pages", _, "sections", section] => Ok((*section).to_owned()),
         _ => Err(format!(
-            "{}: the terminal addresses rows of a section's collection",
+            "{}: the terminal addresses rows of a section's or an overlay's collection",
             target.written
         )),
     }

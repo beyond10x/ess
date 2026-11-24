@@ -57,7 +57,8 @@ impl Options {
 /// section, the open overlay, and for a collection that is a section's or an overlay's body: its
 /// column headers (a table's only), each drawn row line, each cell of a row (not for cards, a
 /// list or a tree with an `item`, whose cells the generated React project does not render) and
-/// each row action a row offers. A node not listed was not drawn on its own cells (or not drawn
+/// each row action a row offers; a form's `result` and a board's placed widgets
+/// (`<board>/rows/<widget>`). A node not listed was not drawn on its own cells (or not drawn
 /// at all).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Region {

@@ -14,8 +14,9 @@
 //!   where React renders the item instead of the cells;
 //! - a references list's rows are not addressed by React, so a path into them is refused;
 //! - `text` reads a node that has cells of its own: the page, a section, an overlay, the page
-//!   header and its actions, a section's child, a field slot of a section's or an overlay's own
-//!   form, and the collection parts above; and never an icon action or an action drawn as a
+//!   header and its actions, a section's child, a field slot and the `result` of a section's or
+//!   an overlay's own form, a board's placed widget (`<board>/rows/<widget>`), and the
+//!   collection parts above; and never an icon action or an action drawn as a
 //!   choice, which show no label in the browser;
 //! - `act` on a form (a section's or an overlay's own) that saves on change is refused: the
 //!   generated form draws no submit then ([`submit`]); an overlay opened from a row is not
@@ -352,6 +353,7 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
     // field's line, recorded at the field's path.
     if own_form_field(document, target).is_some_and(|field| field.host.is_some())
         || own_record_slot(document, target)
+        || own_form_result(document, target)
     {
         return None;
     }
@@ -439,6 +441,31 @@ fn own_record_slot(document: &Document, target: &Target) -> bool {
                     })
                 )
         })
+}
+
+/// Whether `target` is the `result` of a section's or an overlay's own form, which the terminal
+/// records on lines of its own at its path.
+fn own_form_result(document: &Document, target: &Target) -> bool {
+    if target.row.is_some() {
+        return false;
+    }
+    let Some(form) = target.node.strip_suffix("/result") else {
+        return false;
+    };
+    document.nodes().into_iter().any(|located| {
+        located.path.to_string() == form
+            && match located.node {
+                NodeRef::Section(ess_ui::Section {
+                    body: Body::Composite(Composite::Form(form)),
+                    ..
+                })
+                | NodeRef::Overlay(ess_ui::Overlay {
+                    body: Body::Composite(Composite::Form(form)),
+                    ..
+                }) => form.result.is_some(),
+                _ => false,
+            }
+    })
 }
 
 /// The field at `target` of a section's or an overlay's own form, directly or in one of its

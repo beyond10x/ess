@@ -1079,3 +1079,168 @@ fn the_playwright_spec_clicks_each_action_at_its_path() {
 }
 
 const PLACES_ROWS: &str = "pages/items/sections/list/rows";
+
+// ── every node the browser addresses has a terminal region (beyond10x/ess#722 items 12, 17,
+// 18 and 19) ─────────────────────────────────────────────────────────────────────────────────
+
+const REGIONS: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml, shelf.Kinds: views.yaml, shelf.Wide: regions.yaml, shelf.Widgets: regions.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items, board, wide]}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    header:
+      actions:
+        - {name: pick, opens: pick, label: Pick}
+        - {name: create, opens: create_stay, label: Create}
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+    overlays:
+      pick:
+        kind: dialog
+        component: collection
+        title: Pick a kind
+        reads: {view: shelf.Kinds, key: code}
+        selection: multiple
+        columns: [title]
+        row_actions: [{name: choose, does: shelf.Choose, bind: {code: row.code}, label: Choose}]
+      create_stay:
+        kind: drawer
+        component: form
+        title: Create
+        does: shelf.Create
+        fields: [name]
+        submit: {closes: false}
+        result: {name: done, primitive: text, text: Order created}
+  board:
+    kind: dashboard_page
+    shell: app
+    title: Board
+    sections:
+      - name: board
+        component: board
+        reads: {view: shelf.Widgets}
+        widget_by: type
+        widgets:
+          metric: {primitive: text, text: row.label}
+  wide:
+    kind: list_page
+    shell: app
+    title: Wide
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Wide}
+        columns: [c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13]
+";
+
+/// The rows of the `wide` table (13 columns of 26 characters) and the `board`'s widgets.
+fn regions_fixture() -> String {
+    use std::fmt::Write as _;
+    let mut row = "{id: o-1".to_owned();
+    for column in 1..=13 {
+        write!(row, ", c{column:02}: value-of-column-{column:02}-abcdefg")
+            .expect("a String takes the text");
+    }
+    row.push('}');
+    format!(
+        "views:\n  shelf.Wide:\n    rows:\n      - {row}\n  shelf.Widgets:\n    rows:\n      - {{widget: w-1, type: metric, label: STOCK-MARK}}\n      - {{widget: w-2, type: metric, label: OTHER-MARK}}\n"
+    )
+}
+
+fn run_regions(name: &str, steps: &[&str]) -> Outcome {
+    let document = document_of(REGIONS, name);
+    std::fs::write(document.with_file_name("regions.yaml"), regions_fixture())
+        .expect("the fixture is written");
+    let mut text =
+        format!("format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: {name}\n  steps:\n");
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let report = ess_ui_test::execute(&document, &[file]).unwrap_or_else(|error| panic!("{error}"));
+    report.tests.into_iter().next().expect("one outcome")
+}
+
+/// The rows of an overlay's collection are read, selected, marked and acted on at
+/// `…/overlays/<o>/rows/<key>` (item 12).
+#[test]
+fn an_overlays_collection_rows_are_addressed() {
+    passed(&run_regions(
+        "overlay_rows",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/pick",
+            "expect: {at: pages/items/overlays/pick, rows: [k1, k2, k3]}",
+            "expect: {at: pages/items/overlays/pick/rows/k2, text: Hammer}",
+            "select: pages/items/overlays/pick/rows/k3",
+            "mark: pages/items/overlays/pick/rows/k2",
+            "act: pages/items/overlays/pick/rows/k2/row_actions/choose",
+            "expect_command: {command: shelf.Choose, input: {code: k2}}",
+        ],
+    ));
+}
+
+/// A form's `result` is read on its own cells after a submit that keeps the overlay open
+/// (item 17).
+#[test]
+fn a_forms_result_is_read_at_its_path() {
+    passed(&run_regions(
+        "form_result",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/create",
+            "type: {at: pages/items/overlays/create_stay/fields/name, text: Ada}",
+            "act: pages/items/overlays/create_stay",
+            "expect_command: {command: shelf.Create, input: {name: Ada}}",
+            "expect: {at: pages/items/overlays/create_stay/result, text: Order created}",
+        ],
+    ));
+}
+
+/// A board's placed widget is read at `<board>/rows/<key>`, the path the React project draws it
+/// at, and only its own text shows there (item 18).
+#[test]
+fn a_boards_widget_is_read_at_its_row() {
+    passed(&run_regions(
+        "board_widget",
+        &[
+            "open: board",
+            "expect: {at: pages/board/sections/board/rows/w-1, text: STOCK-MARK}",
+            "expect: {at: pages/board/sections/board/rows/w-1, not_text: OTHER-MARK}",
+            "expect: {at: pages/board/sections/board/rows/w-2, text: OTHER-MARK}",
+        ],
+    ));
+}
+
+/// A table wider than 160 cells draws every column headless: its last cell is read whole
+/// (item 19).
+#[test]
+fn every_column_of_a_wide_table_is_drawn() {
+    passed(&run_regions(
+        "wide_table",
+        &[
+            "open: wide",
+            "expect: {at: pages/wide/sections/list/rows/o-1/columns/c13, text: value-of-column-13-abcdefg}",
+            "expect: {at: pages/wide/sections/list/columns/c13, text: c13}",
+        ],
+    ));
+}

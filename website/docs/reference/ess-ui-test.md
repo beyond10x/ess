@@ -407,8 +407,10 @@ Every step goes through what a reader of the terminal has: key presses and the d
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
 the page header, its actions and its help, section boxes and their children, the open overlay, and for a
 section's or an overlay's collection a table's column headers, each row line keyed by the row's
-key, each cell, and each row action a row offers. Cards, a list or a tree with an `item` have no
-cell regions.
+key, each cell, and each row action a row offers, the `result` of a section's or an overlay's own form,
+and each widget a board places, at `<board>/rows/<widget>`. Cards, a list or a tree with an `item`
+have no cell regions. The headless screen is 160 cells wide and grows until no row or column is cut,
+so every column of a wide table has cells of its own, as in the browser's scrolling frame.
 
 A region also carries the node's whole text where the screen cuts it (`Region::text`).
 Rows are counted and found by those keys, so rows that show the same values are still told apart.
