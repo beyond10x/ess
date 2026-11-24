@@ -183,22 +183,7 @@ pub(super) fn server_crate(
         ),
         Artifact::new(
             format!("crates/{package}/src/http.rs"),
-            if binding.is_some() {
-                // A served binding decodes `form` and `query` requests with the query reader's
-                // helpers, so it carries them whatever its views declare.
-                format!(
-                    "{}{}{QUERY}{}",
-                    provenance.commented_for("//", REGENERATE),
-                    bound::served_http_module(HTTP, server.capped),
-                    bound::BOUND
-                )
-            } else {
-                format!(
-                    "{}{HTTP}{}",
-                    provenance.commented_for("//", REGENERATE),
-                    if serves_params(ir) { QUERY } else { "" }
-                )
-            },
+            http_text(ir, &server, provenance),
         ),
         Artifact::new(
             format!("crates/{package}/src/entry.rs"),
@@ -234,6 +219,31 @@ pub(super) fn server_crate(
         ));
     }
     artifacts
+}
+
+/// The server crate's `http.rs`. A served binding decodes `form` and `query` requests with the
+/// query reader's helpers, so it carries them whatever its views declare, and the readers of
+/// `unknown: ignore` only where a route needs them.
+fn http_text(ir: &EssIr, server: &Server<'_>, provenance: &Provenance) -> String {
+    if let Some(binding) = server.binding {
+        format!(
+            "{}{}{QUERY}{}{}",
+            provenance.commented_for("//", REGENERATE),
+            bound::served_http_module(HTTP, server.capped),
+            bound::BOUND,
+            if bound::ignores_unknown(binding) {
+                bound::IGNORING
+            } else {
+                ""
+            }
+        )
+    } else {
+        format!(
+            "{}{HTTP}{}",
+            provenance.commented_for("//", REGENERATE),
+            if serves_params(ir) { QUERY } else { "" }
+        )
+    }
 }
 
 /// `encode_system_event`: any event on the system's log, as the envelope a served answer lists it

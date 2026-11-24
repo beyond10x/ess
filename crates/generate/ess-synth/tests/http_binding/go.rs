@@ -1777,3 +1777,6 @@ mod uuid_segments;
 
 #[path = "undeclared_members.rs"]
 mod undeclared_members;
+
+#[path = "ignored_members.rs"]
+mod ignored_members;

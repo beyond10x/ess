@@ -1074,6 +1074,125 @@ func boundMethodNotAllowed(allowed []string) response {
 /// The imports [`BOUND`] needs beyond the ones the helpers file always has.
 pub(super) const IMPORTS: [&str; 5] = ["net/url", "sort", "strings", "unicode", "unicode/utf8"];
 
+/// The readers of a route with `unknown: ignore` (beyond10x/ess#752), which follow [`BOUND`] only
+/// in a surface whose binding declares one, so every other bound surface keeps its bytes. They
+/// answer as the Rust server's `http::ignoring` and `http::echoed_keys` do.
+pub(super) const IGNORING: &str = r#"
+// openJSONBody is a `json` body as jsonBody reads it, no member refused: ignoring decides which
+// members are read.
+func openJSONBody(body []byte, required bool) (any, error) {
+	if !utf8.Valid(body) {
+		return nil, fmt.Errorf("the body is not UTF-8")
+	}
+	if !required && len(bytes.TrimSpace(body)) == 0 {
+		return map[string]any{}, nil
+	}
+	value, err := parseJSON(string(body))
+	if err != nil {
+		return nil, fmt.Errorf("the body is not JSON: %s", err)
+	}
+	return decoderValue(value), nil
+}
+
+// ignoring is a `json` request read under `unknown: ignore`: value less every member no field of
+// fields names, at its top level only (a struct inside keeps its own closedness), and less every
+// member the path carries that holds the path's value. A member the path carries that holds
+// another value is malformed. A value that is not an object is the decoder's to refuse.
+func ignoring(value any, fields []string, path []pathMember, at string) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	for _, carried := range path {
+		if member, present := object[carried.wire]; present && !sameValue(member, carried.value) {
+			return nil, echoed(at, carried.wire)
+		}
+	}
+	kept := map[string]any{}
+	for _, field := range fields {
+		if member, present := object[field]; present {
+			kept[field] = member
+		}
+	}
+	return kept, nil
+}
+
+// echoedKeys holds each key of a `form` body or a query string read under `unknown: ignore` that
+// the path carries to the path's value, read as its field reads it: a key whose value does not
+// decode or is not the path's is malformed.
+func echoedKeys(text string, carried []flatField, path []pathMember, at string) error {
+	for _, pair := range strings.Split(text, "&") {
+		if pair == "" {
+			continue
+		}
+		rawKey, rawValue, _ := strings.Cut(pair, "=")
+		key, ok := formDecoded(rawKey)
+		if !ok {
+			continue
+		}
+		for index, field := range carried {
+			if field.wire != key {
+				continue
+			}
+			place := nested(at, key)
+			decoded, ok := formDecoded(rawValue)
+			if !ok {
+				return fmt.Errorf("%s: expected percent-encoded UTF-8 text, found `%s`", place, rawValue)
+			}
+			read, err := flatValue(decoded, field.kind, place)
+			if err != nil {
+				return err
+			}
+			if !sameValue(read, path[index].value) {
+				return echoed(at, key)
+			}
+		}
+	}
+	return nil
+}
+
+// echoed is the refusal of a member or key the path carries with another value.
+func echoed(at string, wire string) error {
+	return fmt.Errorf("%s: the path carries this field with another value", nested(at, wire))
+}
+
+// sameValue is whether a request's member holds what the path's value does: the same text or
+// boolean, or two numbers that denote one integer.
+func sameValue(member any, carried any) bool {
+	switch held := carried.(type) {
+	case string:
+		text, ok := member.(string)
+		return ok && text == held
+	case bool:
+		value, ok := member.(bool)
+		return ok && value == held
+	case json.Number:
+		number, ok := member.(json.Number)
+		if !ok {
+			return false
+		}
+		if number == held {
+			return true
+		}
+		one, err := integerAt(number, "", "")
+		other, otherErr := integerAt(held, "", "")
+		return err == nil && otherErr == nil && one == other
+	}
+	return false
+}
+"#;
+
+/// Whether a route of `binding` declares `unknown: ignore` beside a `json` body or a path variable,
+/// which the surface reads with [`IGNORING`].
+pub(super) fn ignores_unknown(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route.request.as_ref().is_some_and(|request| {
+            request.unknown == ess_http::Unknown::Ignore
+                && (request.encoding == ess_http::Encoding::Json || !route.parameters.is_empty())
+        })
+    })
+}
+
 /// The reader of a bare request body (`request: {body: input.<field>}`), which follows [`BOUND`]
 /// only in a surface whose binding declares one, so every other bound surface keeps its bytes.
 pub(super) const BARE_BODY: &str = r#"
@@ -1441,6 +1560,68 @@ fn path_members(ir: &EssIr, route: &http::Route<'_>) -> (String, String) {
     )
 }
 
+/// The path members a bound command route adds to its input, as Go source, and the statements
+/// before that read them. Under `unknown: ignore` (beyond10x/ess#752), on a `json` route or one
+/// with a path variable, what no field names is dropped and what the path carries is held to the
+/// path's value first, as the Rust server reads it; every other route keeps its bytes.
+fn ignoring(
+    ir: &EssIr,
+    route: &http::Route<'_>,
+    command: &ResolvedCommand,
+    at: &str,
+    statements: &mut String,
+    members: String,
+) -> String {
+    let request = http::request(route);
+    if request.unknown != ess_http::Unknown::Ignore
+        || (request.encoding != Encoding::Json && http::path_fields(ir, route).is_empty())
+    {
+        return members;
+    }
+    let _ = writeln!(statements, "\t\tcarried := {members}");
+    let _ = match request.encoding {
+        Encoding::Json => write!(
+            statements,
+            "\t\tvalue, err = ignoring(value, []string{{{}}}, carried, {at})\n\t\tif err != nil \
+             {{\n\t\t\treturn nil, err\n\t\t}}\n",
+            command
+                .input
+                .iter()
+                .filter(|field| !http::carried(ir, route).contains(field.name.as_str()))
+                .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        encoding => write!(
+            statements,
+            "\t\tif err := echoedKeys({}, {}, carried, {at}); err != nil {{\n\t\t\treturn nil, \
+             err\n\t\t}}\n",
+            if encoding == Encoding::Query {
+                "request.URL.RawQuery"
+            } else {
+                "string(body)"
+            },
+            carried_flat_table(ir, route)
+        ),
+    };
+    "carried".to_owned()
+}
+
+/// The `[]flatField` literal of the fields the path carries, in path order, each one value.
+fn carried_flat_table(ir: &EssIr, route: &http::Route<'_>) -> String {
+    let rows: Vec<String> = http::path_fields(ir, route)
+        .iter()
+        .map(|(_, field)| {
+            format!(
+                "{{{}, {}, shapeOne}}",
+                go_string(ess_gen::schema::wire_field_name(field)),
+                flat_kind(ir, field)
+            )
+        })
+        .collect();
+    format!("[]flatField{{{}}}", rows.join(", "))
+}
+
 /// A flat request's `[]flatField` literal: every field the path does not carry, in declaration
 /// order.
 fn flat_table(ir: &EssIr, fields: &[ResolvedField], route: &http::Route<'_>) -> String {
@@ -1530,6 +1711,10 @@ fn command(
                 |members| format!("[]string{{{}}}", members.join(", "))
             )
         ),
+        Encoding::Json if ignore => format!(
+            "openJSONBody(body, {})",
+            http::body_required_without(command, &http::carried(ir, route)),
+        ),
         Encoding::Json => format!(
             "jsonBody(body, {}, []string{{{}}})",
             http::body_required_without(command, &http::carried(ir, route)),
@@ -1556,7 +1741,8 @@ fn command(
     } else {
         "body"
     });
-    let (statements, members) = path_members(ir, route);
+    let (mut statements, members) = path_members(ir, route);
+    let members = ignoring(ir, route, command, &at, &mut statements, members);
     let suffix = refusal_suffix(ir, layout, route);
     let declares = http::declares_answers(route);
     let answer = if declares {

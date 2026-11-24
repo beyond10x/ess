@@ -734,6 +734,113 @@ pub fn single(rows: &str, empty: u16) -> Response {
 }
 "#;
 
+/// The readers of a route with `unknown: ignore` (beyond10x/ess#752), which follow [`BOUND`] only
+/// in a surface whose binding declares one, so every other bound surface keeps its bytes.
+pub(super) const IGNORING: &str = r#"
+/// A `json` request read under `unknown: ignore`: `value` less every member no field of `fields`
+/// names, at its top level only (a struct inside keeps its own closedness), and less every member
+/// the path carries that holds the path's value.
+///
+/// # Errors
+///
+/// A refusal naming the member under `at` when a member the path carries holds another value.
+pub fn ignoring(
+    value: crate::json::Value,
+    fields: &[&str],
+    path: &[(String, crate::json::Value)],
+    at: &str,
+) -> Result<crate::json::Value, String> {
+    let crate::json::Value::Object(members) = value else {
+        // Not an object: the decoder refuses it by name.
+        return Ok(value);
+    };
+    for (wire, carried) in path {
+        if let Some((_, member)) = members.iter().find(|(name, _)| name == wire) {
+            if !same_value(member, carried) {
+                return Err(echoed(at, wire));
+            }
+        }
+    }
+    Ok(crate::json::Value::Object(
+        members
+            .into_iter()
+            .filter(|(name, _)| fields.contains(&name.as_str()))
+            .collect(),
+    ))
+}
+
+/// Holds each key of a `form` body or a query string read under `unknown: ignore` that the path
+/// carries, `(wire name, flat)`, to the path's value, read as its field reads it.
+///
+/// # Errors
+///
+/// A refusal naming the key under `at` when its value does not decode or is not the path's.
+pub fn echoed_keys(
+    text: &str,
+    carried: &[(&str, Flat)],
+    path: &[(String, crate::json::Value)],
+    at: &str,
+) -> Result<(), String> {
+    for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let Some(key) = form_decoded(key) else {
+            continue;
+        };
+        let Some(position) = carried.iter().position(|(wire, _)| *wire == key) else {
+            continue;
+        };
+        let place = crate::json::nested(at, &key);
+        let text = form_decoded(value).ok_or_else(|| {
+            format!("{place}: expected percent-encoded UTF-8 text, found `{value}`")
+        })?;
+        let read = flat_value(text, carried[position].1, &place)?;
+        if !path
+            .iter()
+            .find(|(wire, _)| *wire == key)
+            .is_some_and(|(_, held)| same_value(&read, held))
+        {
+            return Err(echoed(at, &key));
+        }
+    }
+    Ok(())
+}
+
+/// The refusal of a member or key the path carries with another value.
+fn echoed(at: &str, wire: &str) -> String {
+    format!(
+        "{}: the path carries this field with another value",
+        crate::json::nested(at, wire)
+    )
+}
+
+/// Whether a request's `member` holds what the path's `carried` value does: the same JSON value,
+/// or two numbers that denote one integer.
+fn same_value(member: &crate::json::Value, carried: &crate::json::Value) -> bool {
+    use crate::json::Value;
+    match (member, carried) {
+        (Value::Number(_), Value::Number(_)) if member != carried => matches!(
+            (
+                crate::json::integer_at(member, "", ""),
+                crate::json::integer_at(carried, "", ""),
+            ),
+            (Ok(one), Ok(other)) if one == other
+        ),
+        _ => member == carried,
+    }
+}
+"#;
+
+/// Whether a route of `binding` declares `unknown: ignore` beside a `json` body or a path variable,
+/// which the surface reads with [`IGNORING`].
+pub(super) fn ignores_unknown(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route.request.as_ref().is_some_and(|request| {
+            request.unknown == ess_http::Unknown::Ignore
+                && (request.encoding == ess_http::Encoding::Json || !route.parameters.is_empty())
+        })
+    })
+}
+
 /// The route match of a bound surface: every row of the table, tried in turn in
 /// [`http::dispatch_order`], path order but for a literal segment taking precedence over a
 /// variable at the first position two templates of one method differ.
@@ -962,6 +1069,32 @@ fn flat_table(server: &Server<'_>, fields: &[ResolvedField], route: &http::Route
     format!("&[{}]", rows.join(", "))
 }
 
+/// The wire names of the input fields the path does not carry, as a Rust slice.
+fn wire_table(server: &Server<'_>, fields: &[ResolvedField], route: &http::Route<'_>) -> String {
+    let carried = http::carried(server.ir, route);
+    let wires: Vec<String> = fields
+        .iter()
+        .filter(|field| !carried.contains(field.name.as_str()))
+        .map(|field| format!("{:?}", ess_gen::schema::wire_field_name(field)))
+        .collect();
+    format!("&[{}]", wires.join(", "))
+}
+
+/// The `(wire name, flat)` of each field the path carries, as a Rust slice.
+fn carried_flat_table(server: &Server<'_>, route: &http::Route<'_>) -> String {
+    let rows: Vec<String> = http::path_fields(server.ir, route)
+        .iter()
+        .map(|(_, field)| {
+            format!(
+                "({:?}, http::Flat::{})",
+                ess_gen::schema::wire_field_name(field),
+                flat_of(server, field).as_str()
+            )
+        })
+        .collect();
+    format!("&[{}]", rows.join(", "))
+}
+
 /// The wire names of the fields the path carries, as a Rust slice.
 fn carried_table(server: &Server<'_>, route: &http::Route<'_>) -> String {
     let wires: Vec<String> = http::path_fields(server.ir, route)
@@ -1031,6 +1164,31 @@ fn command(
         "body"
     };
     let path = if variables { "path" } else { "_path" };
+    let members = if variables {
+        path_members(server, route)
+    } else {
+        "Vec::new()".to_owned()
+    };
+    // Under `unknown: ignore` (beyond10x/ess#752) what no field names is dropped and what the path
+    // carries is held to the path's value before the path's members are added.
+    let joined = match (ignore && (variables || request.encoding == Encoding::Json), request.encoding) {
+        (false, _) => format!("http::with_path(value, {members}, {at:?})"),
+        (true, Encoding::Json) => format!(
+            "let carried = {members};\n        let value = http::ignoring(value, {}, &carried, \
+             {at:?})?;\n        http::with_path(value, carried, {at:?})",
+            wire_table(server, &command.input, route)
+        ),
+        (true, encoding) => format!(
+            "let carried = {members};\n        http::echoed_keys({}, {}, &carried, {at:?})?;\n        \
+             http::with_path(value, carried, {at:?})",
+            if encoding == Encoding::Query {
+                "&request.query"
+            } else {
+                "http::body_text(&request.body)?"
+            },
+            carried_flat_table(server, route)
+        ),
+    };
     let suffix = refusal_suffix(server, route);
     let declares = http::declares_answers(route);
     let answer = if declares {
@@ -1043,7 +1201,7 @@ fn command(
         "\n/// `{}` `{}`: `{}`, read and answered as its `ess-http/1` binding declares.\nfn \
          {}{angled}(system: &mut {system_crate}::System{angled}, request: &http::Request, \
          {path}: &[String], taken: &mut Vec<{system_crate}::SystemEvent>) -> http::Response\n{}{{\n    let read = || -> Result<json::Value, \
-         String> {{\n        let value = {read};\n        http::with_path(value, {}, {at:?})\n    \
+         String> {{\n        let value = {read};\n        {joined}\n    \
          }};\n    let value = match read() {{\n        Ok(value) => value,\n        Err(detail) => \
          return refusal_malformed{suffix}(&detail),\n    }};\n    match {run}(system, &value, taken) {{\n        \
          Ok((status, envelope)) => {answer},\n        Err(refused) => refused_bound{suffix}(&refused),\n    \
@@ -1053,11 +1211,6 @@ fn command(
         command.name,
         bound_ident(layout, &command.name),
         where_clause(server),
-        if variables {
-            path_members(server, route)
-        } else {
-            "Vec::new()".to_owned()
-        },
     );
     if declares {
         outcome_answer(out, server, route, command);

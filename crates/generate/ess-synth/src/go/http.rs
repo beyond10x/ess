@@ -233,6 +233,9 @@ fn helpers_file(
         if bound::reads_a_bare_body(binding) {
             helpers.push_str(bound::BARE_BODY);
         }
+        if bound::ignores_unknown(binding) {
+            helpers.push_str(bound::IGNORING);
+        }
         let checks_grant = served(ir, refusals).into_iter().any(|component| {
             http::bound_routes(ir, component, Some(binding))
                 .iter()
