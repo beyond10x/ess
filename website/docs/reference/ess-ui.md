@@ -483,7 +483,7 @@ A section is a heading with pages under it — a fixed list, or entries generate
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name |
 | `label` | `string` |   |   | heading text |
-| `icon` | `string` |   |   | semantic icon name mapped by the renderer |
+| `icon` | `string` |   |   | a name of `icon.icons`, drawn before the label |
 | `pages` | one of: list of name of a [Page](#page) \| [DynamicNavEntries](#dynamicnaventries) | yes |   | fixed pages or entries from a view |
 
 **Example**
@@ -494,6 +494,12 @@ label: Billing
 icon: receipt
 pages: [invoices.list]
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 
 ### DynamicNavEntries
 
@@ -1817,10 +1823,44 @@ The renderer maps the semantic name to its icon set; a TUI shows a glyph or the 
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `icon` | `string` | yes |   | semantic icon name |
+| `icon` | `string` | yes |   | a name of `icons`; another is warned (`icon_names`) and draws its label |
 | `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role, and the tone of a value `tone_by` does not map |
 | `tone_by` | record \{ `value`: `expr`, `map`: optional (one of: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \| record \{ `bands`: list of record \{ `from`: `number`, `tone`: (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} \}), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out (exact values, or `bands`), or `tones` naming an entry of `tone_maps`; exactly one of the two |
 | `label` | `string` | yes |   | accessible text |
+
+**Icons**
+
+```yaml
+add: {glyph: +, meaning: add an item}
+edit: {glyph: ✎, meaning: change an item}
+delete: {glyph: ✕, meaning: remove an item for good}
+archive: {glyph: ▤, meaning: put an item away}
+copy: {glyph: ⧉, meaning: copy a value}
+download: {glyph: ⤓, meaning: save a file}
+upload: {glyph: ⤒, meaning: send a file}
+refresh: {glyph: ↻, meaning: read again}
+search: {glyph: ⌕, meaning: find by text}
+filter: {glyph: ∇, meaning: narrow what is shown}
+settings: {glyph: ⚙, meaning: change preferences}
+open: {glyph: ↗, meaning: open in full}
+close: {glyph: ×, meaning: close a pane or an overlay}
+check: {glyph: ✓, meaning: done or confirmed}
+warning: {glyph: ⚠, meaning: needs attention}
+info: {glyph: ℹ, meaning: more about this}
+arrow_up: {glyph: ↑, meaning: up}
+arrow_down: {glyph: ↓, meaning: down}
+arrow_left: {glyph: ←, meaning: back or left}
+arrow_right: {glyph: →, meaning: forward or right}
+home: {glyph: ⌂, meaning: the home page}
+user: {glyph: ☺, meaning: a person or the account}
+play: {glyph: ▶, meaning: start}
+pause: {glyph: ‖, meaning: pause}
+typing: {glyph: …, meaning: someone is writing}
+briefcase: {glyph: ⊞, meaning: work or business}
+receipt: {glyph: ▦, meaning: a bill or a payment}
+lifebuoy: {glyph: ⊕, meaning: help or support}
+bookmark: {glyph: ⚑, meaning: a saved or marked item}
+```
 
 **Example**
 
@@ -1838,6 +1878,7 @@ visible: channel.ticket_chat.typing
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `tone_map_refs` | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 | `tone_bands` | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 
 ### button
@@ -1853,7 +1894,7 @@ Use inside widgets and section children; page-level actions belong in the header
 | `label` | `string` | yes |   | button text |
 | `action` | [Action](#action) | yes |   | what the button does |
 | `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis |
-| `icon` | `string` |   |   | optional semantic icon |
+| `icon` | `string` |   |   | optional; a name of `icon.icons` |
 
 **Emphasis**
 
@@ -1873,6 +1914,12 @@ label: Send
 tone: primary
 action: {name: send, does: tickets.PostReply}
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 
 ### link
 
@@ -2129,6 +2176,8 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `sets` | map of `expr` → (one of: `expr` \| exactly `toggle`) |   |   | UI state change only, never business data |
 | `label` | `string` |   |   | button or menu text |
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
+| `icon` | `string` |   |   | a name of `icon.icons`: an `as: icon` action draws its glyph alone, with the label as its accessible name; any other draws it before the label |
+| `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis, as a button's: React fills a `primary` action, draws a `danger` one destructive and a `ghost` one without border; the terminal draws `primary` bold, `danger` bold and underlined |
 | `choice` | [Node](#node) |   |   | options for as choice |
 | `loads` | [Reads](#reads) |   |   | a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state |
 | `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read |
@@ -2176,6 +2225,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 |---|---|---|---|
 | `opens_resolves` | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 | `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 | `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `toggle_state_unknown` | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
@@ -2835,6 +2885,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
 | `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
 | `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+| `icon_names` | [NavSection](#navsection), [icon](#icon), [button](#button), [Action](#action) | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 | `tone_bands` | [badge](#badge), [icon](#icon) | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 | `label_map_refs` | [Field](#field), [badge](#badge) | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 | `label_map_unused` | [Document](#document) | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |

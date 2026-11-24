@@ -1359,17 +1359,34 @@ impl App {
         if keyed.is_empty() {
             return Vec::new();
         }
-        let hint: Vec<String> = keyed
-            .iter()
-            .map(|(key, action)| {
+        let mut spans = Vec::new();
+        for (at, (key, action)) in keyed.iter().enumerate() {
+            if at > 0 {
+                spans.push(Span::styled(" · ", dim()));
+            }
+            // An action's icon glyph goes before its key, and its tone is drawn as emphasis
+            // (beyond10x/ess#723).
+            let glyph = action
+                .icon
+                .as_deref()
+                .and_then(ess_ui::icon_glyph)
+                .map(|glyph| format!("{glyph} "))
+                .unwrap_or_default();
+            let style = match action.tone {
+                Some(ess_ui::ButtonTone::Primary) => bold(),
+                Some(ess_ui::ButtonTone::Danger) => bold().add_modifier(Modifier::UNDERLINED),
+                _ => dim(),
+            };
+            spans.push(Span::styled(
                 format!(
-                    "{key} {}{}",
+                    "{glyph}{key} {}{}",
                     self.switch_mark(action, ctx),
                     action.label.clone().unwrap_or_else(|| action.name.clone())
-                )
-            })
-            .collect();
-        vec![Line::styled(hint.join(" · "), dim())]
+                ),
+                style,
+            ));
+        }
+        vec![Line::from(spans)]
     }
 
     /// A toggle's on/off mark before its label in the hint (`[x] ` or `[ ] `, as a toggle column
@@ -2714,13 +2731,11 @@ impl App {
                 vec![Span::styled(format!("[{shown}]"), bold())]
             }
             Primitive::Icon(icon) => {
-                let glyph = match icon.icon.as_str() {
-                    "home" => "⌂",
-                    "typing" => "…",
-                    "settings" => "⚙",
-                    _ => "•",
-                };
-                vec![Span::raw(format!("{glyph} {}", icon.label))]
+                // A name of the vocabulary draws its glyph; another draws its label alone.
+                vec![Span::raw(match ess_ui::icon_glyph(&icon.icon) {
+                    Some(glyph) => format!("{glyph} {}", icon.label),
+                    None => icon.label.clone(),
+                })]
             }
             Primitive::Button(button) => {
                 vec![Span::styled(format!("[ {} ]", button.label), bold())]

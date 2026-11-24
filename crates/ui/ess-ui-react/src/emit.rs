@@ -883,6 +883,23 @@ impl<'d> Gen<'d> {
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("name", Some(ts::string(&action.name))),
             ("label", quoted(action.label.as_ref())),
+            ("icon", quoted(action.icon.as_ref())),
+            (
+                "glyph",
+                action
+                    .icon
+                    .as_deref()
+                    .and_then(ess_ui::icon_glyph)
+                    .map(ts::string),
+            ),
+            (
+                "tone",
+                action
+                    .tone
+                    .as_ref()
+                    .and_then(variant)
+                    .map(|s| ts::string(&s)),
+            ),
             (
                 "as",
                 action
@@ -1927,6 +1944,7 @@ impl<'d> Gen<'d> {
                 El::new(&component)
                     .path(&path)
                     .expr("icon", ts::string(&i.icon))
+                    .opt("glyph", ess_ui::icon_glyph(&i.icon).map(ts::string))
                     .opt(
                         "tone",
                         i.tone.as_ref().and_then(variant).map(|s| ts::string(&s)),
@@ -1946,6 +1964,13 @@ impl<'d> Gen<'d> {
                         b.tone.as_ref().and_then(variant).map(|s| ts::string(&s)),
                     )
                     .opt("icon", quoted(b.icon.as_ref()))
+                    .opt(
+                        "glyph",
+                        b.icon
+                            .as_deref()
+                            .and_then(ess_ui::icon_glyph)
+                            .map(ts::string),
+                    )
                     .render()
             }
             Primitive::Link(l) => {

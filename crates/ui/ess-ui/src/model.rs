@@ -3170,6 +3170,11 @@ pub struct Action {
     /// Presentation hint.
     #[serde(rename = "as")]
     pub action_as: Option<ActionAs>,
+    /// A name of the icon vocabulary ([`crate::icon_glyph`]), drawn alone with `as: icon` and
+    /// before the label otherwise (beyond10x/ess#723).
+    pub icon: Option<String>,
+    /// Emphasis, as a button's.
+    pub tone: Option<ButtonTone>,
     /// Options for `as: choice`.
     pub choice: Option<Box<Node>>,
     /// Current value for a header toggle or choice.

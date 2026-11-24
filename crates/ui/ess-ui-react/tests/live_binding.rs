@@ -200,16 +200,18 @@ fn fnv(text: &str) -> u64 {
 /// `actions.tsx`, `data.ts` and the whole-project digest re-pinned for
 /// story:a-sent-value-may-be-mapped-or-left-out: a read param, a navigation param and a `bind`
 /// entry written `{value, when}` are sent only while `when` holds (`sent`, beyond10x/ess#723).
+/// `actions.tsx` and the whole-project digest re-pinned for story:an-action-names-its-icon: an
+/// action draws its icon's glyph (`glyph`), and no rule draws one dot for every icon.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
-    ("src/runtime/actions.tsx", 0x8239_c173_01e5_ae57),
+    ("src/runtime/actions.tsx", 0xe486_1587_9e68_cda4),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
     ("src/runtime/data.ts", 0x51fa_44ce_7140_2852),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xcf41_4375_6bc7_5a27;
+const PLAIN_PROJECT: u64 = 0x98bb_19bc_d175_0fd9;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

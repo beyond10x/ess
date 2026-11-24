@@ -254,3 +254,47 @@ fn a_conditional_bind_entry_is_left_out_while_its_condition_is_false() {
         app.render_text(120, 30)
     );
 }
+
+/// An action names its icon and its tone (beyond10x/ess#723): the key hint shows the glyph before
+/// the key, a `danger` action bold and underlined, a `primary` one bold, and an action with
+/// neither as before.
+#[test]
+fn a_row_action_shows_its_glyph_and_its_tone_in_the_hint() {
+    use ratatui::backend::TestBackend;
+    use ratatui::style::Modifier;
+    use ratatui::Terminal;
+    let document = DOCUMENT.replace(
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+        "          - {name: drop, does: things.Drop, label: Drop, icon: delete, tone: danger, confirm: ask}\n          \
+         - {name: keep, does: things.Keep, label: Keep, icon: check, tone: primary}\n",
+    );
+    let (app, _) = open_with("action-look", &document);
+    let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("a terminal");
+    terminal.draw(|frame| app.draw(frame)).expect("a frame");
+    let buffer = terminal.backend().buffer().clone();
+    let modifier = |text: &str| {
+        for y in 0..buffer.area.height {
+            let joined: String = (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect();
+            if let Some(byte) = joined.find(text) {
+                let column = u16::try_from(joined[..byte].chars().count()).expect("a column");
+                return (joined.clone(), buffer[(column, y)].modifier);
+            }
+        }
+        panic!("`{text}` is not on the screen");
+    };
+    let (line, drop) = modifier("Drop");
+    assert!(line.contains("✕ d Drop"), "{line}");
+    assert!(line.contains("✓ e Keep"), "{line}");
+    assert!(line.contains("r Remove"), "{line}");
+    assert!(
+        drop.contains(Modifier::BOLD | Modifier::UNDERLINED),
+        "{drop:?}"
+    );
+    let (_, keep) = modifier("Keep");
+    assert!(keep.contains(Modifier::BOLD), "{keep:?}");
+    assert!(!keep.contains(Modifier::UNDERLINED), "{keep:?}");
+    let (_, remove) = modifier("Remove");
+    assert!(!remove.contains(Modifier::BOLD), "{remove:?}");
+}

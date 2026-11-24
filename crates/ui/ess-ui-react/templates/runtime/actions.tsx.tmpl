@@ -39,6 +39,8 @@ export interface ActionSpec {
   visible?: string;
   tone?: string;
   icon?: string;
+  /** The icon's glyph, from the schema's vocabulary; absent for a name outside it, drawn as the label. */
+  glyph?: string;
 }
 
 function label(action: ActionSpec): string {
@@ -356,7 +358,12 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
         data-ui-path={useUiPath(path)}
         onClick={() => start()}
       >
-        {action.as === "icon" ? <span className={`ui-icon ui-icon-${action.icon ?? action.name}`} /> : label(action)}
+        {action.glyph === undefined
+          ? label(action)
+          : [
+              <span key="glyph" className={`ui-icon ui-icon-${action.icon}`} aria-hidden="true">{action.glyph}</span>,
+              ...(action.as === "icon" ? [] : [label(action)]),
+            ]}
       </button>
     );
   }

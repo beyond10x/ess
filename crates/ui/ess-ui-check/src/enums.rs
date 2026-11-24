@@ -204,6 +204,7 @@ mod tests {
     /// The enum fields `ess-ui` reads into Rust enums, so the loader refuses a value outside them.
     const TYPED: &[&str] = &[
         "Action.as",
+        "Action.tone",
         "Channel.delivery",
         "Channel.direction",
         "Channel.resume",

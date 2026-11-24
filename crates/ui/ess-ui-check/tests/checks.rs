@@ -2994,3 +2994,66 @@ fn a_bare_body_route_is_served_to_a_generated_ui() {
     assert!(json.contains("\"body\":\"priorities\""), "{json}");
     assert!(!json.contains("body_alias"), "{json}");
 }
+
+/// Icon names are one closed list (beyond10x/ess#723): a name outside it is warned `icon_names`
+/// at its node and the document still loads, on a menu group, an icon primitive and an action;
+/// an action takes `icon` and `tone`, and an unknown tone is refused by path.
+#[test]
+fn icon_names() {
+    let text = doc(&[
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, icon: sparkle, pages: [p]}, {name: more, icon: home, pages: [p]}]}",
+        ),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [\
+              {name: card, component: record, reads: t.ById, children: [\
+                {name: mark, primitive: icon, icon: rocket, label: Mark}, \
+                {name: done, primitive: icon, icon: check, label: Done}]}, \
+              {name: list, component: collection, reads: t.ById, columns: [id], row_actions: [\
+                {name: archive, does: t.Archive, as: icon, icon: archive, tone: danger}, \
+                {name: launch, does: t.Launch, icon: rocket, tone: primary}]}]}}",
+        ),
+    ]);
+    let report = report(&text);
+    assert!(
+        tripped(&report, "document_loads").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    let mut warned: Vec<&str> = tripped(&report, "icon_names")
+        .iter()
+        .map(|finding| finding.path.as_str())
+        .collect();
+    warned.sort_unstable();
+    assert_eq!(
+        warned,
+        [
+            "navigation/sections/all",
+            "pages/p/sections/card/children/mark",
+            "pages/p/sections/list/row_actions/launch",
+        ],
+        "{:#?}",
+        report.findings
+    );
+    let finding = trips_in(
+        &report,
+        "icon_names",
+        "pages/p/sections/list/row_actions/launch",
+    );
+    assert_eq!(finding.severity, Severity::Warning);
+    assert!(finding.message.contains("`rocket`"), "{finding:?}");
+    let loud = text.replace("tone: danger", "tone: loud");
+    let report = report_with(&loud, None, &Options::default());
+    assert!(
+        tripped(&report, "document_loads")
+            .iter()
+            .any(
+                |finding| finding.path == "pages/p/sections/list/row_actions/archive"
+                    && finding.message.contains("ButtonTone")
+            ),
+        "{:#?}",
+        report.findings
+    );
+}

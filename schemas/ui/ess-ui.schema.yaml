@@ -350,7 +350,7 @@ constructs:
     fields:
       name:  {type: name, required: true, note: node name}
       label: {type: string, note: heading text}
-      icon:  {type: string, note: semantic icon name mapped by the renderer}
+      icon:  {type: string, note: "a name of `icon.icons`, drawn before the label"}
       pages: {type: {one_of: [{list: {ref: page}}, DynamicNavEntries]}, required: true, note: fixed pages or entries from a view}
     example: {name: billing, label: Billing, icon: receipt, pages: [invoices.list]}
 
@@ -1129,10 +1129,40 @@ constructs:
       tone is fixed (`tone`) or picked from a value (`tone_by`), exactly as on a badge, so a state
       shown as an icon follows the same tone map as the badge showing it elsewhere.
     fields:
-      icon:    {type: string, required: true, note: semantic icon name}
+      icon:    {type: string, required: true, note: "a name of `icons`; another is warned (`icon_names`) and draws its label"}
       tone:    {type: {enum: [neutral, info, success, warning, danger]}, default: neutral, note: "colour role, and the tone of a value `tone_by` does not map"}
       tone_by: {type: {record: {value: expr, map: {optional: {one_of: [{map: {key: string, value: {enum: [neutral, info, success, warning, danger]}}}, {record: {bands: {list: {record: {from: number, tone: {enum: [neutral, info, success, warning, danger]}}}}}}]}}, tones: {optional: {ref: tone_map}}}}, note: "tone per value: `map` written out (exact values, or `bands`), or `tones` naming an entry of `tone_maps`; exactly one of the two"}
       label:   {type: string, required: true, note: accessible text}
+    icons:
+      add:         {glyph: "+", meaning: add an item}
+      edit:        {glyph: "✎", meaning: change an item}
+      delete:      {glyph: "✕", meaning: remove an item for good}
+      archive:     {glyph: "▤", meaning: put an item away}
+      copy:        {glyph: "⧉", meaning: copy a value}
+      download:    {glyph: "⤓", meaning: save a file}
+      upload:      {glyph: "⤒", meaning: send a file}
+      refresh:     {glyph: "↻", meaning: read again}
+      search:      {glyph: "⌕", meaning: find by text}
+      filter:      {glyph: "∇", meaning: narrow what is shown}
+      settings:    {glyph: "⚙", meaning: change preferences}
+      open:        {glyph: "↗", meaning: open in full}
+      close:       {glyph: "×", meaning: close a pane or an overlay}
+      check:       {glyph: "✓", meaning: done or confirmed}
+      warning:     {glyph: "⚠", meaning: needs attention}
+      info:        {glyph: "ℹ", meaning: more about this}
+      arrow_up:    {glyph: "↑", meaning: up}
+      arrow_down:  {glyph: "↓", meaning: down}
+      arrow_left:  {glyph: "←", meaning: back or left}
+      arrow_right: {glyph: "→", meaning: forward or right}
+      home:        {glyph: "⌂", meaning: the home page}
+      user:        {glyph: "☺", meaning: a person or the account}
+      play:        {glyph: "▶", meaning: start}
+      pause:       {glyph: "‖", meaning: pause}
+      typing:      {glyph: "…", meaning: someone is writing}
+      briefcase:   {glyph: "⊞", meaning: work or business}
+      receipt:     {glyph: "▦", meaning: a bill or a payment}
+      lifebuoy:    {glyph: "⊕", meaning: help or support}
+      bookmark:    {glyph: "⚑", meaning: a saved or marked item}
     example: {name: typing, primitive: icon, icon: typing, tone: info, label: Someone is typing, visible: channel.ticket_chat.typing}
 
   button:
@@ -1148,7 +1178,7 @@ constructs:
       label:  {type: string, required: true, note: button text}
       action: {type: Action, required: true, note: what the button does}
       tone:   {type: {enum: [primary, secondary, danger, ghost]}, default: secondary, note: emphasis}
-      icon:   {type: string, note: optional semantic icon}
+      icon:   {type: string, note: "optional; a name of `icon.icons`"}
     emphasis:
       primary:   {fill: accent, text: on_accent, border: accent}
       secondary: {fill: surface, text: text, border: line}
@@ -1320,6 +1350,8 @@ constructs:
       sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: "UI state change only, never business data"}
       label:      {type: string, note: button or menu text}
       as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
+      icon:       {type: string, note: "a name of `icon.icons`: an `as: icon` action draws its glyph alone, with the label as its accessible name; any other draws it before the label"}
+      tone:       {type: {enum: [primary, secondary, danger, ghost]}, default: secondary, note: "emphasis, as a button's: React fills a `primary` action, draws a `danger` one destructive and a `ghost` one without border; the terminal draws `primary` bold, `danger` bold and underlined"}
       choice:     {type: Node, note: options for as choice}
       loads:      {type: Reads, note: "a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state"}
       checked:    {type: expr, note: "the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read"}
@@ -1781,6 +1813,7 @@ checks:
     - {id: theme_choice,        subject: theme, must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes], severity: error}
     - {id: tone_map_refs,       subject: ["**.tone_by.tones", "**.field.tone_by"], must_resolve: {ref: tone_map}, severity: error}
     - {id: tone_map_unused,     subject: "tone_maps.*", must: be_named_by_a_tone_by, severity: warning}
+    - {id: icon_names,          subject: "icon on a menu group, an icon, a button and an action", must: be_a_name_of_icon_icons, severity: warning}
     - {id: tone_bands,          subject: ["tone_maps.*.bands", "**.tone_by.map.bands"], must: ascend_strictly_by_from, severity: error}
     - {id: label_map_refs,      subject: "**.labels naming a label map", must_resolve: {ref: label_map}, severity: error}
     - {id: label_map_unused,    subject: "label_maps.*", must: be_named_by_the_labels_of_a_field_or_badge, severity: warning}
