@@ -133,6 +133,7 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ),
     ("synthesize/related_guard.rs", "OWN_WORK", Handling::Counter),
     ("synthesize/row_set.rs", "ATTEMPTS", Handling::Counter),
+    ("synthesize/row_set.rs", "SELECTORS", Handling::Counter),
     ("synthesize/row_set.rs", "TRIED", Handling::Counter),
     ("synthesize/run_memo.rs", "ASKED", Handling::Counter),
     ("synthesize/run_memo.rs", "KEPT", Handling::Memory),
@@ -306,6 +307,7 @@ work! {
     own_strict: u64 = related_guard::taken_own_work().1;
     own_deepest: usize = related_guard::taken_own_work().2;
     attempts: u64 = row_set::taken_attempts();
+    selectors: u64 = row_set::taken_selectors();
     tried: u64 = row_set::taken_tried();
     run_asked: u64 = run_memo::taken_asked();
     run_made: u64 = run_memo::taken_made();
@@ -353,6 +355,7 @@ impl Work {
         "synthesize/related_guard.rs:OWN_OVERLAY_WORK",
         "synthesize/related_guard.rs:OWN_WORK",
         "synthesize/row_set.rs:ATTEMPTS",
+        "synthesize/row_set.rs:SELECTORS",
         "synthesize/row_set.rs:TRIED",
         "synthesize/run_memo.rs:ASKED",
         "synthesize/run_memo.rs:MADE",
@@ -401,6 +404,7 @@ impl Work {
         ));
         related_guard::add_own_work((self.own_arranged, self.own_strict, self.own_deepest));
         row_set::add_attempts(self.attempts);
+        row_set::add_selectors(self.selectors);
         row_set::add_tried(self.tried);
         run_memo::add_asked(self.run_asked);
         run_memo::add_made(self.run_made);

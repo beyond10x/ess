@@ -3475,6 +3475,15 @@ pub fn row_set_arrangements_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
     row_set::counting(run)
 }
 
+/// What `run` returns, and how many selectors the row-set strategy arranged rows for while it ran,
+/// on every thread the synthesis used, rather than taking them from the attempt before, which
+/// arranged the same counts for them: the work a test bounds where a wall-clock bound would depend
+/// on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_selectors_arranged<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    row_set::selectors_counting(run)
+}
+
 /// What `run` returns, and how many times a creating branch's rows were arranged on this thread
 /// while it ran rather than answered from what the synthesis made before: the work a test bounds
 /// where a wall-clock bound would depend on the machine (beyond10x/ess#633). Not part of the suite.
