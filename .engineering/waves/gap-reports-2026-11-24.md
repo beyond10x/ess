@@ -679,6 +679,10 @@ active. The thirteen P0 units, by round:
 The three P0 follow-ups (`story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own`, `story:the-terminal-keeps-a-section-s-rows-while-its-read-runs-again-and-marks-rows-only-in-a-collection-that`,
 `story:the-generated-react-app-counts-new-live-rows-while-its-reader-is-paged-away-with-or-without-a-filter-and-keeps`) stay drafts.
 
+Accepted 2026-11-24 by the coordinator under the owner's delegation: `story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per`,
+an output-identical change with a measured work counter. `story:a-row-set-branch-s-search-does-not-arrange-a-combination-of-counts-that-provably-cannot-take-the-branch-and` and
+`story:a-branch-the-row-set-strategy-prepares-is-prepared-once-per-model-branch-actors-and-arrangement-context-and` wait for their check.
+
 ## Not accepted yet
 
 Every other story here is a draft until its critics and the coordinator accept it. Item 7 is a

@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:a-row-set-branch-s-search-arranges-the-rows-of-a-selector-once-per-distinct-prefix-of-counts-not-once-per
 kind: story
-status: draft
+status: active
 title: A row-set branch's search arranges the rows of a selector once per distinct prefix of counts, not once per combination tried.
 tags:
 - gap-p0
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T01:33:06Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-24T01:33:07Z", actor: "human:timo", revision: 3}
 ---
 # pf1-arrange-reuses-prefix
 
