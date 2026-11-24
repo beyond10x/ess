@@ -35,7 +35,7 @@ scope:
   path: crates/generate/schema-contract/src/realize/ts.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/model_ergonomics.rs
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 3}
@@ -116,6 +116,8 @@ All three exit 0. `types-report.json` obligations:
    keeps promising what the code does not hold. (b) Alphabet only, Rust only: the request as filed,
    one cell of the grid. (c) Every declared constraint in every generated decoder, or a named
    refusal (chosen).
+
+Amendment A5 (thirteenth gap report, 2026-11-24): a generated crate that carries no decoder (`--layout crate` or the Go types of a model without a served component) says in its type documentation only that `broken_constraint` exists and what calls it, never that "the generated decoder refuses" a value (story:a-generated-type-s-doc-comment-names-a-decoder-only-where-the-crate-carries-one). Whether such a crate gains a decoder is decision FM-D9 of the thirteenth report: B, recorded as a draft only and not built.
 
 ## Decisions
 
