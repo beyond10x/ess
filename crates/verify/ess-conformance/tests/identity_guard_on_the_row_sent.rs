@@ -439,3 +439,126 @@ fn a_cross_reading_that_no_row_satisfies_is_not_written() {
         }
     }
 }
+
+/// `HOLDER` with the caller guard over an input that names no row: `zone != caller.zone`. Each
+/// step's `zone` is written as the caller it is sent as, so a scenario that arranges the bay as
+/// one caller and sends the refusal as the other passes, and 0.98.0 wrote exactly that.
+const ZONED: &str = r"format: ess/37
+system: depot
+version: v1
+domain: depot.bay
+types:
+  - {name: depot.bay.BayId, kind: newtype, of: Uuid}
+entities:
+  - name: depot.bay.Bay
+    identity: {name: bay_id, type: depot.bay.BayId}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+actors:
+  - name: depot.bay.Opener
+    may: [depot.bay.OpenBay]
+  - name: depot.bay.Holder
+    attributes:
+      - {name: zone, type: String}
+    may: [depot.bay.CloseBay]
+errors:
+  - name: depot.bay.WrongZone
+    fields: []
+  - name: depot.bay.BayStateConflict
+    fields:
+      - {name: state, type: depot.bay.Bay.State}
+commands:
+  - name: depot.bay.OpenBay
+    input:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: depot.bay.Bay
+        instance: bay_id
+        sets: {note: input.note}
+        emits: [depot.bay.BayOpened]
+        payload:
+          depot.bay.BayOpened: {bay_id: input.bay_id}
+  - name: depot.bay.CloseBay
+    input:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: zone, type: String}
+    outcomes:
+      - name: wrong-zone
+        when: zone != caller.zone
+        error: depot.bay.WrongZone
+      - name: closed
+        moves: depot.bay.Bay.close
+        instance: bay_id
+        emits: [depot.bay.BayClosed]
+        payload:
+          depot.bay.BayClosed: {bay_id: input.bay_id}
+      - name: wrong-state
+        wrong_state: true
+        error: depot.bay.BayStateConflict
+        payload:
+          depot.bay.BayStateConflict: {state: {subject: state}}
+events:
+  - name: depot.bay.BayOpened
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+  - name: depot.bay.BayClosed
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+views:
+  - name: depot.bay.Bays
+    source: depot.bay.Bay
+    consistency: read_your_writes
+    fields:
+      - {name: bay_id, type: depot.bay.BayId}
+      - {name: state, type: depot.bay.Bay.State}
+";
+
+/// Review of the #794 fix: a caller guard over an input that names no row needs no single row
+/// for two callers, so the wrong-state scenario keeps the reading in which the bay is closed by
+/// one caller and the refusal is sent by the other (as 0.98.0 wrote it, passing). The fix checks
+/// the refusal input before it is written as the acting caller and drops that reading without a
+/// note or a refusal.
+#[test]
+fn a_caller_guard_over_an_input_naming_no_row_keeps_the_two_caller_wrong_state_reading() {
+    let run = run(ZONED);
+    let scenario = written(&run, CLOSED_REFUSES).unwrap_or_else(|| {
+        panic!("{CLOSED_REFUSES} is written");
+    });
+    let steps = scenario["steps"].as_array().cloned().unwrap_or_default();
+    // (caller zone, input zone, the outcome the next step expects) of every `CloseBay` step.
+    let sent: Vec<(Value, Value, Value)> = steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| {
+            step["step"] == "execute_command" && step["command"] == "depot.bay.CloseBay"
+        })
+        .map(|(at, step)| {
+            (
+                step["caller"]["zone"].clone(),
+                step["input"]["zone"]["value"].clone(),
+                steps
+                    .get(at + 1)
+                    .map_or(Value::Null, |next| next["outcome"]["outcome"].clone()),
+            )
+        })
+        .collect();
+    for (caller, input, _) in &sent {
+        assert_eq!(caller, input, "{scenario:#}");
+    }
+    let crossed = sent
+        .windows(2)
+        .any(|pair| pair[0].2 == "closed" && pair[1].2 == "wrong-state" && pair[0].0 != pair[1].0);
+    assert!(
+        crossed,
+        "the bay closed by one caller is refused for the other: {sent:#?}"
+    );
+    assert_all_pass(&run);
+}

@@ -17035,8 +17035,10 @@ fn wrong_state_scenario(
 
 /// The input refusal of `attempt`'s command that holds for the row `steps` captured as
 /// `instance`, sent in place of the identity `input` holds: read as the acting caller, and, where
-/// the arranging steps send the same command, as the arranging caller too. `None` where none holds
-/// or the row's identity is no literal the steps send (beyond10x/ess#794).
+/// the arranging steps send the same command, as the arranging caller too. Only a guard reading
+/// the identity field is decided, as [`sent_keeps_branch`] decides it: every other input is
+/// written for the caller each step is sent as. `None` where none holds or the row's identity is
+/// no literal the steps send (beyond10x/ess#794).
 fn acting_refusal<'a>(
     models: &caller::InvocationModels<'a>,
     attempt: &Driver<'_>,
@@ -17068,6 +17070,12 @@ fn acting_refusal<'a>(
             .iter()
             .filter(|outcome| outcome.error.is_some())
             .filter_map(when)
+            .filter(|guard| {
+                guard
+                    .fact_paths()
+                    .iter()
+                    .any(|path| path.namespace() == field.name)
+            })
             .find(|guard| facts.decide(guard).is_satisfied())
     })
 }
