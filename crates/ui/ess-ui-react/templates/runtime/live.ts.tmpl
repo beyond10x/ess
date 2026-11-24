@@ -55,7 +55,7 @@ export function fixturePlayer(spec: ChannelSpec, session?: unknown): ChannelSour
         return () => undefined;
       }
       const timers: ReturnType<typeof setTimeout>[] = [];
-      const period = Math.max(1000, ...script.events.map((entry) => entry.at)) + 1000;
+      const period = script.events.length > 0 ? script.events[script.events.length - 1].at : 0;
       let stopped = false;
       const round = () => {
         if (stopped) {
@@ -72,7 +72,7 @@ export function fixturePlayer(spec: ChannelSpec, session?: unknown): ChannelSour
             }, entry.at),
           );
         }
-        if (script.loop) {
+        if (script.loop && period > 0) {
           timers.push(setTimeout(round, period));
         }
       };
@@ -408,7 +408,9 @@ function apply(rows: Json[], event: ChannelEvent, spec: LiveSpec): Json[] {
   const index = rows.findIndex((row) => isObject(row) && id !== undefined && row[key] === id);
   switch (spec.effect) {
     case "insert_top": {
-      const next = [payload, ...rows];
+      const held = index < 0 ? undefined : rows[index];
+      const top = isObject(held) && isObject(payload) ? { ...held, ...payload } : payload;
+      const next = [top, ...rows.filter((_, at) => at !== index)];
       return spec.maxRows ? next.slice(0, spec.maxRows) : next;
     }
     case "insert_or_patch":
