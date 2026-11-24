@@ -3388,12 +3388,34 @@ pub(super) type Prepared = (Setup, BTreeMap<String, Node>, Vec<RefusalCause>);
 /// Where that fails too, a refusal for want of an arrangement names the creator's guard that
 /// refused instead: the one refusing a missing row where no such row could be arranged, and
 /// otherwise the ones over its stored fields that the arranged row does not refute.
-pub(super) fn prepare(
-    models: &super::caller::InvocationModels<'_>,
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
+///
+/// Prepared once per model, branch, actors and context while the model is remembered, and shared
+/// by every later request ([`super::prepare_memo`]).
+pub(super) fn prepare(preparing: &Preparing<'_>) -> super::prepare_memo::Shared {
+    super::prepare_memo::prepare(preparing, || prepared(preparing))
+}
+
+/// What [`prepare`] reads: the model it arranges on, the branch and the actors. Every request
+/// names the arrangement model only, the one model of
+/// [`InvocationModels`](super::caller::InvocationModels) a preparation reads; a field added here
+/// is a part of the memory's key ([`super::prepare_memo`]).
+pub(super) struct Preparing<'p> {
+    pub(super) arrangement: &'p EssIr,
+    pub(super) command: &'p ResolvedCommand,
+    pub(super) outcome: &'p ResolvedOutcome,
+    pub(super) actors: &'p BTreeMap<QualifiedName, ActorRef>,
+}
+
+/// [`prepare`], made afresh.
+fn prepared(
+    &Preparing {
+        arrangement,
+        command,
+        outcome,
+        actors,
+    }: &Preparing<'_>,
 ) -> Result<Prepared, RefusalCause> {
+    let models = &super::caller::InvocationModels::plain(arrangement);
     // Beside rows the input names (ess/32, beyond10x/ess#554) the rows are created naming those
     // rows first, so a refusal over them is witnessed beside rows the row set selects wherever
     // the precedence order lets them stand.

@@ -11,13 +11,16 @@
 //! creates fails every attempt. So the work is bounded by the count of arrangements tried, and the
 //! branches are what the full search would make of them.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_conformance::synthesize::{
-    row_set_arrangements_tried, row_set_selectors_arranged, synthesize, Synthesis,
+    row_set_arrangements_tried, row_set_preparations, row_set_preparations_unkept,
+    row_set_selectors_arranged, synthesize, with_jobs, Preparations, Synthesis,
 };
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
@@ -350,6 +353,122 @@ fn a_command_refusing_on_several_row_sets_arranges_each_prefix_once() {
         ],
         "the scenarios of `Approve`\nrefusals: {refusals:#?}"
     );
+}
+
+/// The branches of each model below are prepared more than once from one context: before, every
+/// request searched every arrangement afresh (8 made for 8 asked under 7 keys, and 3 for 3 under
+/// 2). A later request reads the first's preparation. Where a branch is made under two keys, the
+/// message names the parts of its keys that differ.
+#[test]
+fn a_row_set_branch_asked_again_in_the_same_context_is_prepared_once() {
+    for name in [
+        "filtered-related-reads.yaml",
+        "row-set-refusal-beside-the-addressed-related-row.yaml",
+    ] {
+        let ir = compiled(&fixture(name));
+        let (_, preparations) = with_jobs(NonZeroUsize::MIN, || {
+            row_set_preparations(|| synthesize(&ir))
+        });
+        let Preparations { asked, made, keys } = &preparations;
+        let mut branches: BTreeMap<String, Vec<&String>> = BTreeMap::new();
+        for key in keys {
+            let branch = key.splitn(3, '|').take(2).collect::<Vec<_>>().join("|");
+            branches.entry(branch).or_default().push(key);
+        }
+        let differing: Vec<String> = branches
+            .iter()
+            .filter(|(_, keys)| keys.len() > 1)
+            .map(|(branch, keys)| {
+                let parts: Vec<Vec<&str>> =
+                    keys.iter().map(|key| key.split('|').collect()).collect();
+                let apart: Vec<String> = (0..parts[0].len())
+                    .filter(|at| {
+                        parts
+                            .iter()
+                            .any(|other| other.get(*at) != parts[0].get(*at))
+                    })
+                    .map(|at| {
+                        parts
+                            .iter()
+                            .map(|key| key.get(at).copied().unwrap_or("-"))
+                            .collect::<Vec<_>>()
+                            .join(" / ")
+                    })
+                    .collect();
+                format!("{branch}: {apart:?}")
+            })
+            .collect();
+        assert!(
+            made < asked,
+            "{name}: {made} preparations made for {asked} asked, under {} keys: none answered \
+             from memory\nbranches made under several keys: {differing:#?}",
+            keys.len()
+        );
+        assert_eq!(
+            *made,
+            keys.len() as u64,
+            "{name}: a preparation made twice under one key\nbranches made under several keys: \
+             {differing:#?}"
+        );
+    }
+}
+
+/// The suite and the refusals of `text`, synthesized at one job with the preparations kept and
+/// with each made afresh.
+fn kept_and_fresh(text: &str) -> (String, String) {
+    let ir = compiled(text);
+    let shown = |synthesis: &Synthesis| {
+        format!(
+            "{}\n{:?}",
+            serde_json::to_string(&synthesis.suite).expect("the suite serializes"),
+            synthesis.refusals
+        )
+    };
+    with_jobs(NonZeroUsize::MIN, || {
+        let kept = synthesize(&ir);
+        let fresh = row_set_preparations_unkept(|| synthesize(&ir));
+        (shown(&kept), shown(&fresh))
+    })
+}
+
+/// A model the row-set targets read, under `tests/fixtures/`.
+fn fixture(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// One test per model: its suite is the same bytes with the preparations kept and made afresh.
+macro_rules! kept_preparations_write_the_fresh_bytes {
+    ($($test:ident: $text:expr;)*) => {
+        $(
+            #[test]
+            fn $test() {
+                let (kept, fresh) = kept_and_fresh(&$text);
+                assert!(kept == fresh, "the suite differs with the preparations kept");
+            }
+        )*
+    };
+}
+
+kept_preparations_write_the_fresh_bytes! {
+    kept_preparations_approvals_2: approvals(2);
+    kept_preparations_approvals_3: approvals(3);
+    kept_preparations_approvals_4: approvals(4);
+    kept_preparations_filtered_related_reads: fixture("filtered-related-reads.yaml");
+    kept_preparations_identity_beside_row_set: fixture("../../../../specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml");
+    kept_preparations_nested_ordered_heads: fixture("nested-ordered-heads.yaml");
+    kept_preparations_now_stored_rows: fixture("now-stored-rows.yaml");
+    kept_preparations_row_set_creator_predicate_guard: fixture("row-set-creator-predicate-guard.yaml");
+    kept_preparations_row_set_refusal_beside_a_named_related_row:
+        fixture("row-set-refusal-beside-a-named-related-row.yaml");
+    kept_preparations_row_set_refusal_beside_the_addressed_related_row:
+        fixture("row-set-refusal-beside-the-addressed-related-row.yaml");
+    kept_preparations_row_set_upsert: fixture("row-set-upsert.yaml");
+    kept_preparations_two_related_selectors: fixture("two-related-selectors.yaml");
+    kept_preparations_two_sided_pick: fixture("two-sided-pick.yaml");
+    kept_preparations_unique_within_scope: fixture("unique-within-scope.yaml");
 }
 
 #[test]

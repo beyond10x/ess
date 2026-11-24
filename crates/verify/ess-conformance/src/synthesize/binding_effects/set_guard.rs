@@ -188,8 +188,14 @@ fn arranged_for<'a>(
     trigger: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Prepared<'a>> {
-    let models = super::super::caller::InvocationModels::plain(ir);
-    let (setup, input, gaps) = row_set::prepare(&models, invoked, accepting, actors).ok()?;
+    let prepared = row_set::prepare(&row_set::Preparing {
+        arrangement: ir,
+        command: invoked,
+        outcome: accepting,
+        actors,
+    });
+    // The preparation is shared: these steps are rearranged on their own copy.
+    let (setup, input, gaps) = prepared.as_ref().as_ref().ok()?.clone();
     // Only the rows are the scenario's to choose: a row the input names is a value the event fills.
     if !gaps.is_empty() || setup.instance.is_some() || !setup.bound.is_empty() {
         return None;

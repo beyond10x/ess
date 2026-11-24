@@ -49,6 +49,7 @@
 - `ess verify conform synthesize` forces an external refusal marked `before_row: true` once more beside the row a sibling `when_related: {entity, where, exists: true}` refusal arranges, sending that row's input, so a target that looks the row up before it asks the provider fails; the `ESS-COMMAND-004` hint for a branch declared below a plain `external:` refusal also names `before_row: true` (beyond10x/ess#554).
 - `ess verify conform synthesize` witnesses an aggregate measure over an expression that declares `skip_absent: true` or `where:`, such as the mean of `ended_at - started_at` over windows some of which are still open: one group holds rows lacking a field the expression reads beside rows holding it, another lacks it in every row and expects the figure absent, and a conditioned measure is arranged beside a row its condition excludes, where the view was refused `ESS-SYNTH-017`. Suites of models without such a measure keep their bytes (beyond10x/ess#561).
 - Validation and synthesis of a command with several row-set guards no longer arrange the rows of its earlier selectors again for every combination of row counts they try.
+- Synthesis prepares each branch a row-set guard decides once per arrangement context, where it prepared it again for every scenario family and driver that asked.
 
 ## [0.98.2] — 2026-11-24
 

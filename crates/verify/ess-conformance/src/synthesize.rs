@@ -204,6 +204,7 @@ mod model_memo;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
+mod prepare_memo;
 mod provided;
 mod reference_integrity;
 mod referenced_input;
@@ -3663,6 +3664,33 @@ pub fn wrapped_runs_unkept<R>(run: impl FnOnce() -> R) -> R {
     run_memo::unkept(run)
 }
 
+/// The preparations of row-set branches a run asked for on one thread ([`row_set_preparations`]).
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Preparations {
+    /// How many preparations were asked for.
+    pub asked: u64,
+    /// How many of them were made rather than answered from memory.
+    pub made: u64,
+    /// The distinct keys of the ones made: what each read, `|`-separated.
+    pub keys: BTreeSet<String>,
+}
+
+/// What `run` returns, and the preparations of row-set branches it asked for on this thread: the
+/// work a test bounds where a wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_preparations<R>(run: impl FnOnce() -> R) -> (R, Preparations) {
+    let (out, asked, made, keys) = prepare_memo::counting(run);
+    (out, Preparations { asked, made, keys })
+}
+
+/// What `run` returns with every preparation of a row-set branch made afresh, for a test comparing
+/// the suite with the one made from memory. Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_preparations_unkept<R>(run: impl FnOnce() -> R) -> R {
+    prepare_memo::unkept(run)
+}
+
 /// What `run` returns, and how many stored fields of arranged rows were bound to facts on this
 /// thread while it ran, for the stored-field predicates decided over those rows: the work a test
 /// bounds where a wall-clock bound would depend on the machine. Not part of the suite.
@@ -3950,6 +3978,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _orderings = crate::now_offset::remember(ir);
     let _kept = model_memo::keep(ir);
     let _created = created_memo::remember(ir);
+    let _prepared = prepare_memo::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
@@ -5839,14 +5868,21 @@ fn run_as(
             return Err(row_set::unarranged());
         }
         let beside_named = row_set::beside_named(ir.format(), command, outcome);
-        match row_set::prepare(models, command, outcome, actors) {
+        let prepared = row_set::prepare(&row_set::Preparing {
+            arrangement: models.arrangement,
+            command,
+            outcome,
+            actors,
+        });
+        match &*prepared {
             Ok((setup, input, gaps)) => {
+                // The preparation is shared: this family arranges on its own copy.
                 let (mut setup, input) =
-                    beside_addressed_row(ir, command, outcome, actors, &input, setup)?;
+                    beside_addressed_row(ir, command, outcome, actors, input, setup.clone())?;
                 if beside_named {
                     row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
                 }
-                row_gaps = gaps;
+                row_gaps.clone_from(gaps);
                 (setup, input)
             }
             // A refusal carrying a `when:` beside its named row that no send beside the row set
@@ -5869,7 +5905,7 @@ fn run_as(
                     None,
                 )?
             }
-            Err(refused) => return Err(refused),
+            Err(refused) => return Err(refused.clone()),
         }
     } else if related {
         match witness {
@@ -8080,6 +8116,9 @@ fn replay_condition(
 /// instance to arrange — the new row is the scenario's own doing — but it may still have an
 /// **owner** to arrange, because a row of an owned entity cannot exist without the row it belongs
 /// to. See [`arrange_owner`].
+///
+/// `Clone`, so a caller of a shared preparation ([`row_set::prepare`]) arranges on its own copy.
+#[derive(Clone)]
 struct Setup {
     /// The steps that bring the instance into the state the branch needs.
     steps: Vec<ScenarioStep>,
@@ -13560,10 +13599,18 @@ fn before_row_beside_related(
                 }
             )
     }) {
-        let Ok((mut setup, input, _)) = row_set::prepare(models, command, sibling, actors) else {
+        let prepared = row_set::prepare(&row_set::Preparing {
+            arrangement: models.arrangement,
+            command,
+            outcome: sibling,
+            actors,
+        });
+        let Ok((setup, input, _)) = &*prepared else {
             continue;
         };
-        if !reaches_before_row(ir, command, outcome, &input, None).unwrap_or(false) {
+        // The preparation is shared: these steps are marked on their own copy.
+        let mut setup = setup.clone();
+        if !reaches_before_row(ir, command, outcome, input, None).unwrap_or(false) {
             continue;
         }
         let supplied: BTreeMap<String, ScenarioValue> = input

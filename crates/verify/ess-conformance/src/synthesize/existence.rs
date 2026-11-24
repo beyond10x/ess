@@ -2290,7 +2290,13 @@ fn on_rows(
     fresh: Fresh,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Segment> {
-    let (setup, input, gaps) = super::row_set::prepare(models, command, creating.0, actors).ok()?;
+    let prepared = super::row_set::prepare(&super::row_set::Preparing {
+        arrangement: models.arrangement,
+        command,
+        outcome: creating.0,
+        actors,
+    });
+    let (setup, input, gaps) = prepared.as_ref().as_ref().ok()?;
     if !gaps.is_empty() || setup.instance.is_some() || !setup.bound.is_empty() {
         return None;
     }
@@ -2302,7 +2308,7 @@ fn on_rows(
         declared,
         fresh,
         actors,
-        Some((&setup, &input)),
+        Some((setup, input)),
     )
     .ok()??;
     super::row_set::walk(models.arrangement, &part.steps, true)
