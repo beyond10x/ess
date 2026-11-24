@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it
 - depends_on: story:an-action-names-its-icon
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -132,7 +132,7 @@ a downstream application, fifth list, item 2.
    - It composes with `confirm`, `visible`, `label`, `as` and actor grants (an `href` action needs
      no grant, because it sends no command). It is refused where it means nothing.
    - Siblings: the `link` primitive already has `href`. A navigation menu entry is the one
-     remaining place, put to LP-D8.
+     remaining place. Under LP-D8 (A) it gets `href` too, in its own story `lp2-nav-href`.
    - Every target handles it: React, the terminal, `ess ui check`, `ess ui test` (`lp2-visit-expect`)
      and the docs. No ESS model target reads a UI action.
 5. **Second adopter.** A logistics console's row action opens the carrier's tracking page for a
@@ -177,11 +177,12 @@ word. Open questions:
   records the visit, in a run and in a test alike. (B) It opens it with the host's opener when run
   interactively, and records it in a headless run. **Recommended: (A).** Starting a program is the
   host's business, and a terminal that sometimes starts one behaves differently in a test.
-- **LP-D8. Does a navigation menu section list external entries?** (A) Not in this feature: an
-  external address in the shell is an account-menu entry or a header action with `href`. (B)
-  `NavSection` takes `links: [{name, label, href}]` beside `pages`, as a unit after this one.
-  (C) Decline. **Recommended: (A),** until a finding shows a menu entry. The fifth list says
-  "action or link" and does not say where.
+- **LP-D8. Does a navigation menu section list external entries?** It does: the requester said
+  external links sit in the navigation menu, so this decision is now about how, and it is carried
+  by `lp2-nav-href`, not by this story. (A) In, as `links: [{name, label, href}]` beside `pages`.
+  (B) In, as a record inside `pages`. (C) Out: an account-menu entry or a header action with
+  `href`. **Recommended: (A).** Navigation entries stay out of this story, which keeps it at
+  about 450 lines.
 
 ## Scope
 
@@ -209,7 +210,7 @@ word. Open questions:
   The partner-portal golden file does not move.
 - `story:an-action-names-its-icon` (active) adds keys to the same `Action` in the same files.
   One lands after the other.
-- Unblocks `lp2-visit-expect`.
+- Unblocks `lp2-visit-expect` and `lp2-nav-href`, which reuses `App::visits()` and the notice.
 
 ## Source
 

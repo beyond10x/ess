@@ -139,11 +139,12 @@ Two findings from lifting an existing page into `ess-ui/1`. No item of the first
 - Item 1: the reference shows how a section shows a paragraph or a field's value with no label, and
   both renderers are pinned to it. `story:the-reference-shows-how-a-section-shows-a-paragraph-or-a-field-s-value-with-no-label-and-both-renderers-are` (S, about 200; docs and tests, no
   key). Related, separate: `story:a-node-draws-text-written-in-markdown` (existing, draft).
-- Item 2: an action leads to an address outside the document. Three units:
+- Item 2: an action or a navigation menu entry leads to an address outside the document. Four units:
   `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` (M, about 280; one rule for which external addresses a document may name,
   applied alike by `ess ui check` and both renderers), `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` (M, about 450; `href` as
   an action effect), `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` (M, about 300; a test asserts an action opened an external
-  address). `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` answers the link question of
+  address), `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` (M, about 500; `links` beside `pages` in a navigation section).
+  `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` answers the link question of
   `story:a-node-draws-text-written-in-markdown`.
 
 ### Fourth report (a service contract) (filed)
@@ -268,7 +269,8 @@ after SP-D5 and after `story:a-test-opens-one-section-overlay-or-widget-of-a-doc
 
 Fifth list: `story:the-reference-shows-how-a-section-shows-a-paragraph-or-a-field-s-value-with-no-label-and-both-renderers-are` any time (no key, independent of P0); `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` after
 `story:the-ess-ui-loader-writes-every-constant-default-the-schema-declares-into-the-document-before-reading-it-from` and `story:ess-ui-load-format-json-prints-the-document-the-loader-resolved-every-default-filled-as-the-versioned-format`; `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub` after `story:one-rule-decides-which-external-addresses-a-document-may-name-and-ess-ui-check-and-both-renderers-apply-it` and
-the active `story:an-action-names-its-icon`; `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` after `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub`.
+the active `story:an-action-names-its-icon`; `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` after `story:an-action-leads-to-an-address-outside-the-document-so-a-button-a-header-action-or-a-menu-item-needs-no-stub`; `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub` after `story:a-ui-test-asserts-that-an-action-opened-an-external-address-in-the-terminal-and-in-the-browser-without-a` (its tests use
+`expect_visit`).
 
 Fourth report: `story:a-second-caller-s-run-expects-the-identity-it-sent-also-in-a-nested-payload-member` first (a defect, patch release after
 0.98.1); `story:an-unreadable-request-may-be-answered-with-a-2xx-status-and-no-body-where-the-service-does-so` before `story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text` (shared body checks in
@@ -467,8 +469,11 @@ Fifth list (a page lifted into a document):
   `rel="noreferrer"`; C: a key per link. Default A.
 - LP-D7 (item 2): does the terminal open an external address. A: never, it shows the address,
   records the visit and shows a notice; B: opens it interactively. Default A.
-- LP-D8 (item 2): does a navigation menu section list external entries. A: not in this feature;
-  B: `NavSection` takes `links`; C: decline. Default A.
+- LP-D8 (item 2): how a navigation menu entry leads to an outside address (the requester confirmed
+  such links sit in the menu). A: `NavSection` takes `links: [{name, label, href, icon?,
+  synonyms?}]` beside `pages`, drawn after the pages, as `story:an-entry-of-a-navigation-section-is-a-page-or-an-outside-address-in-one-ordered-list-so-a-menu-needs-no-stub`; B: a record
+  `{name, label, href}` inside `pages`; C: out, the application keeps a stub page per entry.
+  Default A (in).
 
 Fourth report (a service contract):
 
