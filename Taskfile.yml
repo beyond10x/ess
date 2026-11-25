@@ -18,6 +18,7 @@ vars:
   BODY_CAP_GO_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-go-server'
   CLAP_SHARED_BINARY: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/clap-shared-binary'
   BINARY64_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/binary64-harness'
+  LIBRARY_CRATE_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/library-crate-harness'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
@@ -88,6 +89,7 @@ tasks:
       ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
+      ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
     cmds:
       - task: integer-spellings-harness
       - task: append-set-harness
@@ -97,6 +99,7 @@ tasks:
       - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
+      - task: library-crate-harness
       - cargo test --workspace --exclude ess-xtask --locked
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
@@ -122,6 +125,7 @@ tasks:
       ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
+      ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
     cmds:
       - task: integer-spellings-harness
       - task: append-set-harness
@@ -131,6 +135,7 @@ tasks:
       - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
+      - task: library-crate-harness
       - defer: { task: test-slowest }
       - |
         set -eu
@@ -171,6 +176,7 @@ tasks:
       - task: body-cap-go-server
       - task: clap-shared-binary
       - task: binary64-harness
+      - task: library-crate-harness
 
   # A test that runs cargo builds a crate graph inside its lane
   # (`crates/edge/ess-xtask/tests/no_test_builds.rs`), so the harness the `integer_spellings` test
@@ -222,6 +228,33 @@ tasks:
         cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
       - cp {{.WORK}}/target/debug/harness {{.BINARY64_HARNESS}}
       - rm -rf {{.WORK}}
+
+  # The harness ess-synth's single_crate_layout round trip runs against a crate generated with
+  # `--layout crate` and no component, built once here for the reason `integer-spellings-harness`
+  # gives, and handed to the test as ESS_LIBRARY_CRATE_HARNESS. The crate is generated with
+  # `--package shop-model --no-workspace-table` into an enclosing workspace beside the harness, so
+  # the build also shows it builds as a member of another workspace with warnings denied.
+  library-crate-harness:
+    desc: Build the Rust harness ess-synth's single_crate_layout round trip runs, at LIBRARY_CRATE_HARNESS (no test builds with cargo, no_test_builds.rs).
+    vars:
+      WORK: target/library-crate-harness
+      FIXTURES: crates/generate/ess-synth/tests/fixtures
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}}/harness/src {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/library-crate/model.yaml.in {{.WORK}}/model.yaml
+      - target/debug/ess generate synthesize --path {{.WORK}}/model.yaml --target rust --layout crate --package shop-model --no-workspace-table --out {{.WORK}}/shop-model
+      - cp {{.FIXTURES}}/library-crate-harness/workspace.toml {{.WORK}}/Cargo.toml
+      - cp {{.FIXTURES}}/library-crate-harness/harness.toml {{.WORK}}/harness/Cargo.toml
+      - cp {{.FIXTURES}}/library-crate-harness/main.rs {{.WORK}}/harness/src/main.rs
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER
+        CARGO_INCREMENTAL=0 RUSTFLAGS='-D warnings'
+        cargo build --offline --quiet --manifest-path {{.WORK}}/Cargo.toml --workspace --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/harness {{.LIBRARY_CRATE_HARNESS}}
+      - rm -rf {{.WORK}}
+
 
   append-set-harness:
     desc: Build the Rust harness ess-synth's append_set test runs, at APPEND_SET_HARNESS (no test builds with cargo, no_test_builds.rs).
@@ -420,6 +453,7 @@ tasks:
       ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
+      ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
     cmds:
       - rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst
       - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null

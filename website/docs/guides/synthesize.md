@@ -129,18 +129,39 @@ $ ess generate synthesize --path examples/gatepass --target rust --layout crate 
 
 | Module | Holds |
 |---|---|
-| `src/<context>.rs` | one per bounded context, as in the workspace's types crate, beside `primitives` and the `json`, `obligation`, `actor` and `behaviour` modules the model needs |
+| `src/<context>.rs` | one per bounded context, as in the workspace's types crate, beside `primitives` and the `obligation`, `actor` and `behaviour` modules the model needs |
+| `src/wire.rs`, `src/json.rs` | every declared type, event payload, error and entity snapshot as JSON, both ways, and the reader and writer they use; always, with or without a server |
 | `src/ports.rs`, `src/ports/<component>.rs` | each component's port |
 | `src/system.rs` | the bindings and the transport |
-| `src/server.rs`, `src/server/` | the HTTP surface: `http`, `wire`, `json`, `entry` and one route module per served component |
+| `src/server.rs`, `src/server/` | the HTTP surface: `http`, `entry`, one route module per served component, and `wire` and `json`, which re-export the root modules beside the system event codecs |
 
 The HTTP surface is the `server` Cargo feature, off by default. Without it the crate has no
 `std::net` in it. With `--features server` it is the same server the workspace builds, and passes
-the same conformance suite. A bounded context named `ports`, `system` or `server` becomes
-`ports_domain`, `system_domain` or `server_domain` in this layout only.
+the same conformance suite. A bounded context named `ports`, `system`, `server`, `wire` or `json`
+becomes `<name>_domain` in this layout only.
 
-`plan.json` records the layout in its `scope`, and `PLAN.md` and every file header name
-`ess synthesize --layout crate` as the command that rewrites the tree. The `go`, `web` and `clap`
+A crate with no component is a model library: its types, their invariant checks, their
+lifecycles and their decoders, and nothing else. `wire::decode_<type>(&value, "$")` reads a
+`json::Value` (`json::parse`) and refuses at the key path of the first refusal, in the words the
+served decoders use: a broken alphabet, length, prefix or invariant, a `distinct:` duplicate, a
+member a closed struct does not declare. `wire::encode_<type>(&value, &mut out)` writes it back.
+An entity crosses as its snapshot, `decode_entity_<entity>` and `encode_entity_<entity>`, and
+the snapshot decoder refuses a value that breaks one of the entity's invariants. Command and view
+codecs are written only with a server.
+
+To take the crate into a workspace of your own, name its package and leave its `[workspace]`
+table out:
+
+```shell-session
+$ ess generate synthesize --path spec --target rust --layout crate --package shop-model --no-workspace-table --out crates/shop-model
+```
+
+Both flags are options of `--layout crate` only; the workspace layout refuses them with exit
+status 2 and writes nothing.
+
+`plan.json` records the layout, the package and `--no-workspace-table` in its `scope`, and `PLAN.md`
+and every file header name `ess synthesize --layout crate` with those options as the command that
+rewrites the tree. The `go`, `web` and `clap`
 targets refuse `--layout crate` with exit status 2 and write nothing. The workspace layout's bytes
 are unchanged. See the
 [layout tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/single_crate_layout.rs).

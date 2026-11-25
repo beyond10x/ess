@@ -646,12 +646,14 @@ fn entity_decoder(out: &mut String, surface: &dyn Surface, entity: &ResolvedEnti
     if entity.invariants.is_empty() {
         let _ = writeln!(out, "    Ok({snapshot} {{ state, data }})");
     } else {
-        // The declared invariants are held here, as a struct's decoder holds the struct's.
+        // The declared invariants are held here, as a struct's decoder holds the struct's, and a
+        // broken one is named in the struct decoder's words.
         let _ = writeln!(
             out,
-            "    match data.broken_invariant() {{\n        Some(expected) => \
-             Err(json::DecodeError::of(at, expected, value)),\n        None => Ok({snapshot} {{ \
-             state, data }}),\n    }}"
+            "    match data.broken_invariant() {{\n        Some(broken) => \
+             Err(json::DecodeError::of(\n            at,\n            &format!(\"a value \
+             satisfying `{{broken}}`\"),\n            value,\n        )),\n        None => \
+             Ok({snapshot} {{ state, data }}),\n    }}"
         );
     }
     out.push_str("}\n");

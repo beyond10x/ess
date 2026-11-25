@@ -1,0 +1,64 @@
+format: ess/37
+system: shop
+version: v1
+domain: shop.catalog
+summary: >-
+  A consumer's model crate: a document read from a file into the types, with no component and so
+  no server.
+types:
+  - {name: shop.catalog.ItemId, kind: newtype, of: String}
+  - {name: shop.catalog.Mode, kind: enum, variants: [enforce, report]}
+  - name: shop.catalog.Limit
+    kind: struct
+    fields:
+      - {name: min, type: Optional<Decimal>}
+      - {name: max, type: Optional<Decimal>}
+    invariants:
+      - any: ["defined(min)", "defined(max)"]
+  - name: shop.catalog.Entry
+    kind: struct
+    fields:
+      - {name: item, type: shop.catalog.ItemId}
+      - {name: mode, type: shop.catalog.Mode}
+      - {name: limit, type: shop.catalog.Limit}
+      - {name: tags, type: List<String>}
+      - {name: labels, type: "Optional<Map<String, String>>"}
+  - name: shop.catalog.Sku
+    kind: newtype
+    of: String
+    prefix: "sku-"
+    alphabet: "abcdefghijklmnopqrstuvwxyz0123456789-"
+    invariants: [value.count <= 12]
+  - name: shop.catalog.Bundle
+    kind: struct
+    fields:
+      - {name: skus, type: List<shop.catalog.Sku>}
+    invariants:
+      - {distinct: {in: skus, as: sku}}
+  - name: shop.catalog.Note
+    kind: struct
+    undeclared_fields: ignored
+    fields:
+      - {name: text, type: String}
+entities:
+  - name: shop.catalog.Catalog
+    provided: true
+    identity: {name: project, type: String}
+    fields:
+      - {name: format, type: String}
+      - {name: entries, type: List<shop.catalog.Entry>}
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+  - name: shop.catalog.Shelf
+    provided: true
+    identity: {name: shelf, type: String}
+    fields:
+      - {name: capacity, type: Integer}
+    invariants:
+      - capacity >= 1
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]

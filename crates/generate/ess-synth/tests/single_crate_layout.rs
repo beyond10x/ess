@@ -736,8 +736,9 @@ fn an_entity_snapshot_has_a_decoder_and_an_encoder_in_the_crate_layout_only() {
         .unwrap_or_else(|| panic!("no invoice snapshot decoder in:\n{wire}"));
     assert!(
         decoder.contains(
-            "    match data.broken_invariant() {\n        Some(expected) => \
-             Err(json::DecodeError::of(at, expected, value)),\n"
+            "    match data.broken_invariant() {\n        Some(broken) => \
+             Err(json::DecodeError::of(\n            at,\n            &format!(\"a value \
+             satisfying `{broken}`\"),\n"
         ),
         "{decoder}"
     );
@@ -884,4 +885,132 @@ fn generated_single_manifest_uses_caret_ranges() {
         !manifest.contains("\"="),
         "an exact pin remains:\n{manifest}"
     );
+}
+
+// ---- the consumer's crate, built once --------------------------------------------------------
+
+/// The variable naming the harness `task library-crate-harness` built: the crate generated from
+/// `fixtures/library-crate/model.yaml.in` with `--layout crate --package shop-model
+/// --no-workspace-table`, built as a member of the harness's workspace with warnings denied.
+const HARNESS: &str = "ESS_LIBRARY_CRATE_HARNESS";
+
+/// Each case: the declaration, the document read, and the line the harness prints for it, either
+/// `ok` and what the encoder wrote back (read again and held equal by the harness), or `refused`
+/// with the path and the words the served decoders use.
+const ROUND_TRIPS: &[(&str, &str, &str)] = &[
+    ("item_id", r#""i-1""#, r#"ok "i-1""#),
+    ("mode", r#""report""#, r#"ok "report""#),
+    ("limit", r#"{"min":"1.5"}"#, r#"ok {"min":"1.5"}"#),
+    (
+        "entry",
+        r#"{"item":"i-1","mode":"enforce","limit":{"max":"9"},"tags":["a","b"],"labels":{"k":"v"}}"#,
+        r#"ok {"item":"i-1","mode":"enforce","limit":{"max":"9"},"tags":["a","b"],"labels":{"k":"v"}}"#,
+    ),
+    ("sku", r#""sku-a1""#, r#"ok "sku-a1""#),
+    ("bundle", r#"{"skus":["sku-a","sku-b"]}"#, r#"ok {"skus":["sku-a","sku-b"]}"#),
+    ("note", r#"{"text":"t","extra":1}"#, r#"ok {"text":"t"}"#),
+    (
+        "catalog",
+        r#"{"project":"p","format":"f","entries":[],"state":"Declared"}"#,
+        r#"ok {"project":"p","format":"f","entries":[],"state":"Declared"}"#,
+    ),
+    (
+        "shelf",
+        r#"{"shelf":"s","capacity":2,"state":"Open"}"#,
+        r#"ok {"shelf":"s","capacity":2,"state":"Open"}"#,
+    ),
+    (
+        "sku",
+        r#""sku-A""#,
+        "refused $ | a value whose every character is one of `abcdefghijklmnopqrstuvwxyz0123456789-`",
+    ),
+    ("sku", r#""abc""#, "refused $ | a value starting with `sku-`"),
+    ("sku", r#""sku-abcdefghij""#, "refused $ | a value satisfying `value.count <= 12`"),
+    ("limit", "{}", "refused $ | a value satisfying `(defined(min) or defined(max))`"),
+    (
+        "bundle",
+        r#"{"skus":["sku-a","sku-a"]}"#,
+        "refused $ | a value satisfying `distinct sku in skus`",
+    ),
+    (
+        "entry",
+        r#"{"item":"i-1","mode":"enforce","limit":{"max":"9"},"tags":[],"extra":1}"#,
+        "refused $.extra | no member: no field is named so",
+    ),
+    (
+        "catalog",
+        r#"{"project":"p","format":"f","entries":[{"item":"i-1","mode":"strict","limit":{"min":"1"},"tags":[]}],"state":"Declared"}"#,
+        "refused $.entries.0.mode | one of `enforce`, `report`",
+    ),
+    (
+        "shelf",
+        r#"{"shelf":"s","capacity":0,"state":"Open"}"#,
+        "refused $ | a value satisfying `capacity >= 1`",
+    ),
+    (
+        "shelf",
+        r#"{"shelf":"s","capacity":1,"state":"Gone"}"#,
+        "refused $.state | one of `Open`",
+    ),
+];
+
+/// The harness `task library-crate-harness` built, from the path [`HARNESS`] names. A file that
+/// is not executable is made so: an uploaded CI artifact loses its mode bits.
+fn library_harness() -> PathBuf {
+    let Some(path) = std::env::var_os(HARNESS).map(PathBuf::from) else {
+        panic!(
+            "{HARNESS} is not set: run `task library-crate-harness` and set it to the binary that \
+             task names, or run the tests through `task test`, which does both"
+        );
+    };
+    let metadata = std::fs::metadata(&path).unwrap_or_else(|error| {
+        panic!(
+            "{HARNESS}={} names no harness ({error}): run `task library-crate-harness`",
+            path.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions).expect("the harness is made executable");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    path
+}
+
+/// A consumer's model crate, generated with no component, named by the consumer and built as a
+/// member of the consumer's workspace, reads every declared type and entity snapshot from a
+/// document, writes it back so that it reads the same again, and refuses a broken value at its
+/// path in the words the served decoders use.
+#[test]
+fn a_crate_without_a_server_reads_and_writes_its_types_in_a_workspace_of_its_consumer() {
+    let output = Command::new(library_harness())
+        .args(
+            ROUND_TRIPS
+                .iter()
+                .flat_map(|(declaration, document, _)| [*declaration, *document]),
+        )
+        .output()
+        .expect("the harness runs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "the harness failed:\n{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let read = ROUND_TRIPS
+        .iter()
+        .zip(stdout.lines())
+        .map(|((declaration, document, _), line)| format!("{declaration} {document}\n  {line}"))
+        .collect::<Vec<_>>();
+    let expected = ROUND_TRIPS
+        .iter()
+        .map(|(declaration, document, line)| format!("{declaration} {document}\n  {line}"))
+        .collect::<Vec<_>>();
+    assert_eq!(read.join("\n"), expected.join("\n"));
 }
