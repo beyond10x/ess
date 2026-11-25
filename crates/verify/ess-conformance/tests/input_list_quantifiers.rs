@@ -1294,3 +1294,181 @@ fn adv3_a_second_nested_branch_is_spread_though_the_pooled_codes_each_decide_a_b
         adv3_evidence(&result, "tags")
     );
 }
+
+/// A crate whose `items`, an optional list, a guard refuses when one item has a blank code or
+/// size: the default `packed` is the accepting branch of a quantifier over an input list.
+const CRATES: &str = "format: ess/37
+system: demo
+version: v1
+domain: demo.crates
+types:
+  - {name: demo.crates.CrateId, kind: newtype, of: Uuid}
+  - name: demo.crates.ItemInput
+    kind: struct
+    fields:
+      - {name: code, type: String}
+      - {name: size, type: String}
+errors:
+  - {name: demo.crates.BadItem, summary: An item is blank., fields: []}
+entities:
+  - name: demo.crates.Crate
+    identity: {name: crate_id, type: demo.crates.CrateId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Packed, states: [Packed], terminal: [Packed]}
+events:
+  - name: demo.crates.CratePacked
+    fields: [{name: crate_id, type: demo.crates.CrateId}]
+actors:
+  - {name: demo.crates.Packer, may: [demo.crates.PackCrate]}
+commands:
+  - name: demo.crates.PackCrate
+    input:
+      - {name: label, type: String}
+      - {name: items, type: 'Optional<List<demo.crates.ItemInput>>'}
+    outcomes:
+      - name: bad-item
+        when: {bad_item}
+        error: demo.crates.BadItem
+      - name: packed
+        creates: demo.crates.Crate
+        instance: crate_id
+        emits: [demo.crates.CratePacked]
+        payload:
+          demo.crates.CratePacked: {crate_id: {generated: true}}
+        sets: {label: input.label}
+";
+
+const BAD_ITEM: &str = "{all: [defined(input.items), {exists: {in: input.items, as: i, that: {any: [{i.code: {trimmed: {equals: \"\"}}}, {i.size: {trimmed: {equals: \"\"}}}]}}}]}";
+const BAD_ITEM_ID: &str = "demo.crates.PackCrate/outcome/bad-item";
+const PACKED_ID: &str = "demo.crates.PackCrate/outcome/packed";
+
+fn crates(bad_item: &str) -> String {
+    CRATES.replace("{bad_item}", bad_item)
+}
+
+/// Every non-empty `items` list the scenario `id` sends, with the outcome the step after it
+/// expects.
+fn non_empty_items(result: &Synthesis, id: &str) -> Vec<(Vec<Node>, String)> {
+    let (_, scenario) = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .unwrap_or_else(|| panic!("{id} is in the suite"));
+    let mut found = Vec::new();
+    for (at, step) in scenario.steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand { input, .. } = step else {
+            continue;
+        };
+        let Some(ScenarioValue::Literal {
+            value: Node::Seq(list),
+        }) = input.get("items")
+        else {
+            continue;
+        };
+        if list.is_empty() {
+            continue;
+        }
+        let expected = scenario.steps[at + 1..]
+            .iter()
+            .find_map(|step| match step {
+                ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        found.push((list.clone(), expected));
+    }
+    found
+}
+
+/// The accepting branch of a quantifier over an input list is sent a non-empty list whose
+/// elements all fail the quantifier, beside the several-element witness of the refusal
+/// (beyond10x/ess#240, correction 1): a target refusing every non-empty list fails it.
+#[test]
+fn an_accepting_scenario_sends_a_non_empty_list_no_element_of_which_meets_the_quantifier() {
+    let model = crates(BAD_ITEM);
+    let result = synthesized(&model);
+    assert!(
+        items(sent(&result, BAD_ITEM_ID, "items")).len() >= 3,
+        "the refusal keeps its several-element witness"
+    );
+    let sends = non_empty_items(&result, PACKED_ID);
+    assert!(
+        !sends.is_empty(),
+        "{PACKED_ID} sends a non-empty `items` list, got none"
+    );
+    for (list, expected) in &sends {
+        assert_eq!(expected, "packed", "{list:?}");
+    }
+    for (id, status) in statuses(&result, &model) {
+        assert_eq!(status, Status::Passed, "{id}");
+    }
+    let run = statuses(
+        &result,
+        &crates("{all: [defined(input.items), 'input.items.count > 0']}"),
+    );
+    assert_ne!(
+        run.get(PACKED_ID),
+        Some(&Status::Passed),
+        "a target refusing every non-empty `items` fails {PACKED_ID}, got {run:?}"
+    );
+}
+
+/// Whether `text` is empty once the six ASCII whitespace characters a `trimmed` guard removes are
+/// trimmed from it (`docs/design/value-expressions.md` § E10).
+fn trims_blank(text: &Node) -> bool {
+    matches!(text, Node::Text(text)
+        if text.trim_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r']).is_empty())
+}
+
+/// The refusal of a `trimmed` comparison in a quantifier body over an input list is sent the
+/// literal between `\v\f` and `\r\n` on the one element that meets the quantifier, beside the
+/// elements of its several-element witness (beyond10x/ess#240, correction 1): a target trimming
+/// spaces and tabs alone finds no element meeting it, answers the accepting branch and fails.
+#[test]
+fn a_refusal_sends_the_vertical_whitespace_witness_on_the_element_that_decides_it() {
+    let result = synthesized(&crates(BAD_ITEM));
+    let (_, scenario) = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == BAD_ITEM_ID)
+        .unwrap_or_else(|| panic!("{BAD_ITEM_ID} is in the suite"));
+    let vertical = Node::Text("\u{b}\u{c}\r\n".to_owned());
+    let mut sent = Vec::new();
+    let decided_by_it = scenario.steps.iter().any(|step| {
+        let ScenarioStep::ExecuteCommand { input, .. } = step else {
+            return false;
+        };
+        let Some(ScenarioValue::Literal {
+            value: Node::Seq(list),
+        }) = input.get("items")
+        else {
+            return false;
+        };
+        sent.push(list.clone());
+        let leaves = |element: &Node| -> Vec<Node> {
+            match element {
+                Node::Map(members) => ["code", "size"]
+                    .iter()
+                    .filter_map(|name| members.get(*name).cloned())
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        let meeting: Vec<Vec<Node>> = list
+            .iter()
+            .map(leaves)
+            .filter(|leaves| leaves.iter().any(trims_blank))
+            .collect();
+        list.len() >= 3
+            && matches!(meeting.as_slice(), [only]
+                if only.iter().filter(|leaf| trims_blank(leaf)).collect::<Vec<_>>() == [&vertical])
+    });
+    assert!(
+        decided_by_it,
+        "{BAD_ITEM_ID} sends a list of three or more whose one element meeting the quantifier \
+         is blank only through \\v\\f..\\r\\n, got {sent:?}"
+    );
+}

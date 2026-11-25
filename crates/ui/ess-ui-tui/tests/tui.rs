@@ -773,6 +773,102 @@ fn overlay_form_preserves_typed_parameters() {
     );
 }
 
+/// An overlay's `params` are "values passed by the opener": `create_child`, opened by an action
+/// of the open overlay `edit`, takes `params.id` from `edit` and sends it as `parent_id`. Before,
+/// it was evaluated against the page's params alone and nothing was sent.
+#[test]
+fn an_overlay_opened_from_an_overlay_reads_its_openers_params() {
+    let dir = state_dir("overlay-from-overlay");
+    std::fs::create_dir_all(&dir).expect("fixture directory");
+    std::fs::write(
+        dir.join("rows.yaml"),
+        "views:\n  issues.All:\n    rows:\n      - {id: issue-1, title: First}\n",
+    )
+    .expect("fixture");
+    let document = ess_ui::load_str(
+        r"
+format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {issues.All: rows.yaml}}
+shells:
+  app: {regions: {main: {kind: page_outlet}, overlay: {kind: overlay_outlet}}}
+navigation: {home: issues, sections: [{name: all, pages: [issues]}]}
+pages:
+  issues:
+    kind: list_page
+    title: Issues
+    sections:
+      - name: list
+        component: collection
+        reads: issues.All
+        columns: [title]
+        row_actions: [{name: edit, label: Edit, opens: edit}]
+    overlays:
+      edit:
+        kind: drawer
+        component: record
+        title: Edit issue
+        params: {id: row.id}
+        reads: issues.All
+        fields: [title]
+        actions:
+          - {name: add_child, label: Add child, opens: create_child}
+          - {name: close_issue, label: Close issue, does: issues.Close, bind: {issue: params.id}}
+      create_child:
+        kind: dialog
+        component: form
+        title: New child
+        does: issues.CreateChild
+        params: {parent_id: params.id}
+        fields: [title]
+",
+    )
+    .expect("overlay document");
+    let (inner, scripts) = FixtureAdapter::load(&document, &dir, None).expect("fixtures");
+    let commands = Recorded::default();
+    let mut app = App::with_adapter(
+        document,
+        Box::new(Budgeted {
+            inner,
+            commands: commands.clone(),
+        }),
+        scripts,
+        Options::new(dir.join("state")),
+    )
+    .expect("app");
+    app.focus_section("list");
+    app.render_text(120, HEIGHT);
+    app.keys("e");
+    assert!(app.render_text(120, HEIGHT).contains("Edit issue"));
+    app.keys("a");
+    assert!(app.render_text(120, HEIGHT).contains("New child"));
+    app.keys("<enter>Second<c-s>");
+    {
+        let commands = commands.borrow();
+        let (command, input) = commands.last().expect("the child form submitted");
+        assert_eq!(command, "issues.CreateChild");
+        assert_eq!(
+            input.get("parent_id"),
+            Some(&Value::String("issue-1".to_owned())),
+            "{input:?}"
+        );
+    }
+    // A command an action of the open overlay runs reads the overlay's params the same way.
+    app.keys("e");
+    app.render_text(120, HEIGHT);
+    app.keys("c");
+    let commands = commands.borrow();
+    let (command, input) = commands.last().expect("the overlay's action ran");
+    assert_eq!(command, "issues.Close");
+    assert_eq!(
+        input.get("issue"),
+        Some(&Value::String("issue-1".to_owned())),
+        "{input:?}"
+    );
+}
+
 #[test]
 fn overlay_form_draft_overrides_matching_parameter() {
     let input = submitted_overlay_parameters("overlay-param-collision");

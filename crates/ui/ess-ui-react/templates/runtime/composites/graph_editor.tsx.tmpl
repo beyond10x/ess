@@ -259,7 +259,7 @@ export function GraphEditorView(props: {
                     boxSizing: "border-box",
                     background: "var(--ui-surface)",
                   }}
-                  onDoubleClick={() => props.nodes?.opens && scope.open(props.nodes.opens, isObject(row) ? { ...row } : {})}
+                  onDoubleClick={() => props.nodes?.opens && scope.open(props.nodes.opens, isObject(row) ? { ...row } : {}, undefined, isObject(scope.values.params) ? scope.values.params : undefined)}
                 >
                   <strong>{label(row)}</strong>
                   {props.nodes?.kindBy !== undefined || props.nodes === undefined ? <span className="ui-note">{String(display(row, kindField))}</span> : null}
