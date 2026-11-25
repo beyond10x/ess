@@ -1508,21 +1508,51 @@ fn layout_member<'i>(
 
 #[test]
 fn a_further_create_keeps_the_example_at_every_leaf_its_guard_reads_only_for_presence() {
-    let result = synthesize(&ir(SHELF));
+    assert_further_creates_send_the_examples(SHELF);
+}
+
+/// The shelf's note is copied into a stored field that another command's guard reads only for
+/// presence, beside the creating command's own presence guard on the note: neither tells a
+/// further shelf apart, so every further create sends the whole example.
+#[test]
+fn a_further_create_keeps_the_example_at_a_leaf_a_stored_row_guard_reads_only_for_presence() {
+    let text = with(
+        SHELF,
+        "      - {name: rev, type: Integer}\n    lifecycle",
+        "      - {name: rev, type: Integer}\n      - {name: note_copy, type: \"Optional<String>\"}\n    \
+         lifecycle",
+    );
+    let text = with(
+        &text,
+        "layout: input.layout, rev: 0}",
+        "layout: input.layout, rev: 0, note_copy: input.layout.note}",
+    );
+    let text = with(
+        &text,
+        "      - name: saved\n",
+        "      - name: unnoted\n        when_subject: {predicate: not defined(note_copy)}\n        \
+         error: demo.shelf.BadLayout\n      - name: saved\n",
+    );
+    assert_further_creates_send_the_examples(&text);
+}
+
+/// Every [`further_creates`] input of `text` sends the example at `layout`, `title` and `code`.
+fn assert_further_creates_send_the_examples(text: &str) {
+    let result = synthesize(&ir(text));
     let further = further_creates(&result);
     assert!(!further.is_empty(), "a further shelf is created");
     let layout = yaml("{style: oak, labels: [jars], note: top}");
-    let text = |value: &str| Some(ScenarioValue::literal(Node::Text(value.to_owned())));
+    let literal = |value: &str| Some(ScenarioValue::literal(Node::Text(value.to_owned())));
     for (id, input) in &further {
         assert_eq!(
             input.get("layout"),
             Some(&ScenarioValue::literal(layout.clone())),
             "{id}: {input:#?}"
         );
-        assert_eq!(input.get("title").cloned(), text("Pantry"), "{id}");
-        assert_eq!(input.get("code").cloned(), text("walnut"), "{id}");
+        assert_eq!(input.get("title").cloned(), literal("Pantry"), "{id}");
+        assert_eq!(input.get("code").cloned(), literal("walnut"), "{id}");
     }
-    passes_on_the_interpreter(SHELF, &result, result.suite.scenarios.len());
+    passes_on_the_interpreter(text, &result, result.suite.scenarios.len());
 }
 
 /// Every [`further_creates`] input sends the example at `labels` and `note`, and the further
