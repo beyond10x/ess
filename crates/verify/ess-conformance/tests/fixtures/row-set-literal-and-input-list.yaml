@@ -1,0 +1,51 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.shelf
+summary: Enrols a reader as featured when the genres it is sent name the one featured genre held.
+types:
+  - {name: demo.shelf.GenreCode, kind: newtype, of: String}
+  - {name: demo.shelf.ReaderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.shelf.Genre
+    identity: {name: code, type: demo.shelf.GenreCode}
+    fields: [{name: label, type: "Optional<String>"}]
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
+  - name: demo.shelf.Reader
+    identity: {name: reader_id, type: demo.shelf.ReaderId}
+    fields: [{name: genres, type: "List<demo.shelf.GenreCode>"}, {name: featured, type: Boolean}]
+    lifecycle: {initial: Enrolled, states: [Enrolled], terminal: [Enrolled]}
+commands:
+  - name: demo.shelf.AddGenre
+    input: [{name: code, type: demo.shelf.GenreCode}]
+    outcomes:
+      - {name: added, creates: demo.shelf.Genre, instance: code, emits: [demo.shelf.GenreAdded],
+         payload: {demo.shelf.GenreAdded: {code: input.code}}}
+  - name: demo.shelf.Enrol
+    input: [{name: genres, type: "List<demo.shelf.GenreCode>"}]
+    outcomes:
+      - name: enrolled-featured
+        when_related:
+          entity: demo.shelf.Genre
+          where:
+            all:
+              - 'code == "classics"'
+              - exists: {in: input.genres, as: g, that: code == g}
+          exists: true
+        creates: demo.shelf.Reader
+        instance: reader_id
+        emits: [demo.shelf.ReaderEnrolled]
+        payload: {demo.shelf.ReaderEnrolled: {reader_id: {generated: true}, featured: true}}
+        sets: {genres: input.genres, featured: true}
+      - name: enrolled
+        creates: demo.shelf.Reader
+        instance: reader_id
+        emits: [demo.shelf.ReaderEnrolled]
+        payload: {demo.shelf.ReaderEnrolled: {reader_id: {generated: true}, featured: false}}
+        sets: {genres: input.genres, featured: false}
+events:
+  - {name: demo.shelf.GenreAdded, fields: [{name: code, type: demo.shelf.GenreCode}]}
+  - {name: demo.shelf.ReaderEnrolled, fields: [{name: reader_id, type: demo.shelf.ReaderId}, {name: featured, type: Boolean}]}
+views:
+  - {name: demo.shelf.ReaderRecord, source: demo.shelf.Reader, consistency: read_your_writes,
+     fields: [{name: reader_id, type: demo.shelf.ReaderId}, {name: featured, type: Boolean}]}
