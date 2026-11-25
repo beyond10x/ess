@@ -13,7 +13,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table
 - informed_by: story:a-shorthand-struct-binary64-location-resolves
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -65,6 +65,10 @@ target keeps its output.
   three refusing targets. Recommended A (the consumer's need is Rust).
 - TD-D8, the encoder of a shorthand struct. A: always the object (one canonical spelling; the decoder reads both). B: the short form
   when only the shorthand field holds a value. Recommended A.
+
+- TD-D7: A, taken by the coordinator on 2026-11-25 (D114), agreed by the operator session: the Rust target only; Go and web keep their refusal by name.
+
+- TD-D8: A, taken by the coordinator on 2026-11-25 (D114), agreed by the operator session: the encoder always writes the object; the decoder reads both spellings.
 
 ## Acceptance
 

@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:an-idle-output-record-carries-no-machine-path
-revision: 1
+revision: 3
 ---
 ## Defect
 
@@ -68,6 +68,10 @@ instead. The UUID is minted when an output directory is first initialized: `crat
   per-run and the documented rule is that `.ess-output/` is not part of what a consumer commits or compares, with a `--check` on
   `generate synthesize` as the comparison. C: both A and B. Recommended A. Touches the output-ownership model: architecture: the
   owner's.
+
+- TD-D12: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away): a new anchor's UUID is derived from the output family and the digest of its first ledger; an existing record keeps its anchor; reversible until the release that carries it.
+
+- TD-D12, option B (not taken) would need a documented rule that `.ess-output/` is not part of what a consumer commits or compares, and a `--check` on `generate synthesize` (which has none on 0.99.1) as the comparison.
 
 ## Acceptance
 

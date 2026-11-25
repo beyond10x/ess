@@ -15,7 +15,7 @@ relations:
 - informed_by: story:generated-decoders-check-struct-invariants
 - informed_by: story:generated-rust-and-go-decoders-check-a-structs-distinct-invariant
 - informed_by: story:a-published-event-payload-has-a-generated-decoder
-revision: 1
+revision: 7
 ---
 ## Need
 
@@ -137,6 +137,18 @@ rules (`AGENTS.md` § Crate tree) is marked "architecture: the owner's".
   existing caller). Recommended A.
 - TD-D6, the `[workspace]` table. A: a switch (flag) that leaves it out; the default is unchanged. B: the crate layout never writes
   it (every standalone build then fails inside another workspace's tree). Recommended A.
+
+- TD-D1: A, taken by the coordinator on 2026-11-25 (D113), agreed by the operator session: the synthesized crate's own wire module, emitted without a server, dependency-free.
+
+- TD-D2: A, taken by the coordinator on 2026-11-25 (D113), agreed by the operator session: the wire module is always emitted in `--layout crate`, at the crate root and outside the `server` feature.
+
+- TD-D3: A, taken by the coordinator on 2026-11-25 (D113), agreed by the operator session: `--layout crate` only.
+
+- TD-D4: A, taken by the coordinator on 2026-11-25 (D113), agreed by the operator session: the crate's root `json.rs`, emitted whenever the wire module is.
+
+- TD-D5: A, taken by the coordinator on 2026-11-25 (D113), agreed by the operator session: an optional `--package <name>` for the Rust target in `--layout crate`; the system's name without it.
+
+- TD-D6: A, taken by the coordinator on 2026-11-25 (D113), agreed by the operator session: a flag that leaves out the `[workspace]` table; the default is unchanged.
 
 ## Acceptance
 

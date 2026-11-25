@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table
 - informed_by: story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own
-revision: 1
+revision: 4
 ---
 ## Need
 
@@ -83,6 +83,12 @@ decoder of `ess-synth` (`rust/wire.rs`, `decode_primitive`, 1038-1051) reads a `
 - TD-D11, how a to d are declared. A: on the type, field and entity declarations of the specification (a new `ess/N`). B: in a
   separate document-form file beside the specification, a format of its own. C: through a normalization recipe. Recommended A, to be
   confirmed by the design page; the choice is architecture: the owner's.
+
+- TD-D9: A, the owner's pick of 2026-11-25 about 03:42 CET: declared rule; the strict decoder stays string-only, rule e joins the document-form story.
+
+- TD-D10: A, taken by the coordinator on 2026-11-25 (D114), agreed by the operator session: the consumer brings the YAML reader and hands over `json::Value`.
+
+- TD-D11: A, the owner's pick of 2026-11-25 about 04:00 CET: in the specification, a new `ess/N`; the design page confirms it before any code.
 
 ## Acceptance
 
