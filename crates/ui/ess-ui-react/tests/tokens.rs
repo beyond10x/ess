@@ -393,6 +393,15 @@ fn a_document_without_tokens_computes_the_values_of_the_old_stylesheet() {
             ".ui-tone-ghost" => ".ui-emphasis-ghost".to_owned(),
             _ => selector,
         };
+        // Every icon drew one dot (`content: "●"`); each draws the glyph of its name now
+        // (story:an-action-names-its-icon, beyond10x/ess#723), so the rule is gone.
+        if selector == ".ui-icon::before" {
+            assert!(
+                !drawn.iter().any(|(s, _, _)| s == ".ui-icon::before"),
+                "no rule draws one glyph for every icon"
+            );
+            continue;
+        }
         // The one color no token holds, black at 0.2 for the table's scroll shadow, is now the
         // backdrop token (black at 0.3) mixed down to 2/3: the same pixels, not the same text.
         if value.contains("rgb(0 0 0 / 0.2)") {

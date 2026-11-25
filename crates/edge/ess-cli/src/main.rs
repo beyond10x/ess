@@ -29,6 +29,7 @@ mod target_process;
 mod toolchain;
 mod transport;
 mod ui;
+mod vendor;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -197,6 +198,40 @@ enum SpecifyCommand {
         /// Output rendering.
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+    },
+    /// Write a consumer's copy of an owner's type and the composition entries that prove it.
+    ///
+    /// The copy is the type and every named type it reaches, renamed into `--into` with every
+    /// field, wire name, presence, invariant and variant attribute kept, in one source file headed
+    /// by the owner's system, version and IR digest. The fragment holds both `services:` entries,
+    /// the consumer pinned with the copy in it, and one `conformances:` entry per copied type.
+    Vendor {
+        /// The owner specification, written `service-key=path` as `compose --service` takes it.
+        #[arg(long, value_name = "KEY=PATH")]
+        from: String,
+        /// The consumer specification, written `service-key=path`; its key is each
+        /// conformance's `local` service.
+        #[arg(long, value_name = "KEY=PATH")]
+        service: String,
+        /// The consumer's component in the fragment. Default: the one whose `owns` names
+        /// `--into`.
+        #[arg(long)]
+        component: Option<String>,
+        /// The owner's type to copy, with every named type it reaches.
+        #[arg(long = "type", value_name = "NAME")]
+        type_name: String,
+        /// The consumer domain the copies are declared in.
+        #[arg(long, value_name = "DOMAIN")]
+        into: String,
+        /// Where to write the source file holding the copies.
+        #[arg(long)]
+        out: PathBuf,
+        /// Where to write the composition fragment.
+        #[arg(long)]
+        conformances: PathBuf,
+        /// Write nothing; exit 1 naming each copy that differs from what would be written.
+        #[arg(long)]
+        check: bool,
     },
     /// Inspect one declaration in resolved IR.
     Inspect {
@@ -1785,6 +1820,25 @@ fn specify_area(command: SpecifyCommand) -> Result<ExitCode> {
             ownership_root.as_deref(),
             format,
         ),
+        SpecifyCommand::Vendor {
+            from,
+            service,
+            component,
+            type_name,
+            into,
+            out,
+            conformances,
+            check,
+        } => vendor::run(&vendor::Request {
+            from,
+            service,
+            component,
+            type_name,
+            into,
+            out,
+            conformances,
+            check,
+        }),
         SpecifyCommand::Inspect { input, name } => inspect(&input.path, &name, input.format),
         SpecifyCommand::Graph { input, format } => graph(&input.path, format),
         SpecifyCommand::Realization { command } => realization(&command),
@@ -6808,7 +6862,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 85;
+    const AREA_LEAVES: usize = 86;
     const AREA_ONLY_LEAVES: [&[&str]; 13] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],

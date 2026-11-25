@@ -243,6 +243,17 @@ The reference states it as a fixed table, the values React uses today (`styles.c
 | `secondary` (default) | `surface` | `text` | `line` |
 | `ghost` | none | `text` | none |
 
+An action takes the same emphasis as `tone:` (default `secondary`), and in the terminal a
+`primary` action's key hint is bold and a `danger` one's bold and underlined (beyond10x/ess#723).
+
+**Icons are one closed vocabulary.** `constructs.icon.icons` in the schema lists every icon name
+with its meaning and one glyph of its own, which both renderers draw: React inside the icon's
+span, the terminal in one cell before the label (`ess_ui::icon_glyph`). The icon primitive, a menu
+group, a button and an action (`icon:`) take a name of the list; `ess ui check` warns
+`icon_names` at the node for another name, which still loads and is drawn as its label. An
+`as: icon` action draws the glyph alone, with its label as accessible name and title; any other
+draws the glyph before the label.
+
 A theme that overrides `accent` restyles every primary button. Button emphasis moves to its own
 class prefix, because `.ui-tone-danger` serves both a `ButtonTone` and a `Tone` today
 (`styles.css.tmpl:67` and `92`); the rename touches generated output only.

@@ -635,10 +635,10 @@ it when no quoted string carries the wire name (`ESS-HTTP-027`). `Content-Type`,
 `Content-Encoding`, `Content-Length` and `Transfer-Encoding` belong to the encoding, `Connection`
 to the server, and `Location` to `redirect`. Declaring any of them is refused.
 
-This states a header. It does not add authentication to the model: `security` and `securitySchemes`
-stay omitted for the reason `openapi.rs:164` and `openapi.rs:171-191` give (decided for stage 2,
-answer 8). A `401` with a challenge is the answer a declared outcome gives; how a caller proves who
-it is remains the realization's.
+This states a header. It does not add authentication to the model: a challenge never puts
+`security` or `securitySchemes` into the document (decided for stage 2, answer 8). A `401` with a
+challenge is the answer a declared outcome gives; how a caller proves who it is is the binding's
+`authentication` ("Authentication", under stage 3), from which alone the projection writes them.
 
 ### Redirects
 
@@ -668,7 +668,7 @@ The served surface refuses some requests without a declared outcome: an actor no
 input where the command declares that answer (`400`, `http.rs:83-86`), and a malformed request or a
 path nothing declares (`rust/http.rs:1566-1579`). A protocol states its own answer for some of them
 (RFC 6749 §5.2, `invalid_request`, `invalid_client`). Top-level `refusals:` takes `not_granted`,
-`too_large`, `unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
+`too_large`, `unauthenticated` ("Authentication"), `unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
 keeps today's answer.
 
 A route may state its own: `routes[i].refusals:` takes the same keys and the same checks, and on
@@ -698,7 +698,7 @@ and its answers.
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
 | `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
-| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
+| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed`, `not_granted`, `too_large` and `unauthenticated`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
 | `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, an `empty` status outside `4xx`, or an `empty` body other than `none` and `{<member>: {literal: …}}` | `routes[i]`, or `routes[i].empty.body` |
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 | `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
@@ -766,7 +766,7 @@ same bytes.
 | `routes[].refusals.<key>` | as `refusals.<key>` with its `status`, `body` and `headers`; on that route in place of the top-level entry | absent, omitted when the route states none | 0.77.0 |
 | `limits.request_bytes` | a whole number of bytes from 1 to 16777216; **required** under `limits` | absent: the fixed 1 MiB; written only where declared | this wave |
 | `routes[].limits.request_bytes` | as `limits.request_bytes`; on a command route that reads a body (`json` or `form`, not `get`), in place of the binding's | absent, omitted | this wave |
-| `refusals.<key>` | `malformed`, `not_granted`, `too_large`, `unfinished` | absent: today's answer | k2 |
+| `refusals.<key>` | `malformed`, `not_granted`, `too_large`, `unauthenticated`, `unfinished` | absent: today's answer | k2; `unauthenticated` beyond10x/ess#681 |
 | `refusals.<key>.status` | an integer; **required** | always written | k2 |
 | `refusals.<key>.body` | `{<member>: {literal: <text>}}`, `none`; **required** | always written | k2 |
 | `routes[].outcomes.<outcome>.headers.<Name>` | `{literal: <text>}`, `{source: <path>}`, `{challenge: {scheme, params}}` | absent, omitted when empty; ordered by name | k3 |
@@ -788,7 +788,7 @@ k4 to k6 add no binding key:
 
 | unit | adds |
 |---|---|
-| k4 | the OpenAPI projection of every key above (below); `security` and `securitySchemes` stay omitted (answer 8) |
+| k4 | the OpenAPI projection of every key above (below); `security` and `securitySchemes` stay omitted (answer 8) until a binding declares `authentication` (stage 3) |
 | k5 | `ess generate synthesize --target rust --http FILE [--refines FILE]`, modelled first in `models/toolchain/domains/generate.yaml`; `--http` with any other target is refused by name, `go` included until k6; built |
 | k6 | `--http` admitted for `--target go`, with the Rust server's behaviour, byte for byte where both write the same answer; built |
 
@@ -1084,6 +1084,66 @@ ess verify conform run --path MODEL --target http --http server-http.yaml \
 Formats: the `ess-conformance/*` documents do not change. `--target` gains one value, and
 `ess-http-ir/1` is the target's only new input.
 
+### Authentication
+
+How a caller proves who it is belongs to the transport, and who may do what to the model
+(`architecture-decision-record:a-binding-authenticates-the-caller-through-a-port`, option B;
+beyond10x/ess#681). The model keeps `may:` and `caller` unchanged; the binding states the
+schemes:
+
+```yaml
+authentication:
+  schemes:
+    bearer_auth: {kind: bearer}
+    key_auth: {kind: api_key, in: header, name: X-Api-Key}
+  required: [bearer_auth]
+routes:
+  - command: example.order.PlaceOrder
+    method: post
+    path: /orders
+    authentication: [bearer_auth, key_auth]
+```
+
+- **Kinds.** `bearer` (RFC 6750, challenge `Bearer`), `basic` (RFC 7617, with `realm`, challenge
+  `Basic realm="…"`), `api_key` (`in: header | query | cookie` and `name`) and `mutual_tls`. A
+  scheme name is an RFC 9110 token. `oauth2` and `open_id_connect` are refused by name as not yet
+  admitted, until a need names a flow.
+- **Which routes.** `required` lists the schemes a route that states none requires; a route's own
+  `authentication` replaces it, and `[]` makes the route open. A list holds alternatives: any one
+  scheme suffices. Absent both, a route is open, as every route is today. `authentication`
+  applies to the routes the binding names, never to a derived route.
+- **The answer to a call without the credential.** The standard refusal `unauthenticated`
+  (`refusals:`, top-level and per route, a `4xx`), else `401` with the challenge of each scheme of
+  the route that has one. A declared `401` carries a `WWW-Authenticate` challenge (`ESS-HTTP-027`,
+  as every `401`). A route whose schemes have no challenge (`api_key`, `mutual_tls` only) states
+  its `unauthenticated` answer, its own or the binding's.
+- **What compiling checks.** `ESS-HTTP-037`, each naming the key: a kind outside the four, a key
+  the kind does not take or one it requires missing, an `in` outside the three, a header or cookie
+  name that is not a token, a query name outside RFC 3986 `unreserved`, a realm no quoted string
+  carries, a scheme name that is not a token or declared twice, an empty `schemes`, a list naming a
+  scheme not declared or one twice, a scheme no route requires, `authentication` over a
+  specification that declares no actor, and a route whose schemes have no challenge without a
+  `refusals.unauthenticated`. `ESS-HTTP-029` admits `unauthenticated`.
+- **Refinement.** A refining binding restates what each refined route requires, its own list or
+  through `required`, each scheme as declared; a change is `ESS-HTTP-012` at
+  `routes[i].authentication`.
+- **What the artifacts do.** The OpenAPI projection writes `components.securitySchemes` and a
+  per-operation `security`, and the `unauthenticated` answer among a guarded operation's responses.
+  The Rust and Go servers check a guarded route before its grant: a call the realization's
+  `authenticate` mapped to no actor, or one carrying no credential where any of the route's
+  schemes puts it, is answered with the `unauthenticated` refusal and never runs the command or
+  view. A `bearer` or `basic` credential is exactly one `Authorization` header under that scheme,
+  compared ignoring case, with a token68; an `api_key` one is a header or a cookie of its name,
+  not empty. The server only checks presence and shape; `authenticate` decides who the caller is,
+  and alone decides a `mutual_tls` scheme, whose certificate the TLS layer in front checks. No
+  credential is read from the query while it is undecided whether one may travel there, so a
+  route requiring only `in: query` keys is refused at synthesis. A credential is never an ordinary input: no log line, error body or
+  generated example holds it.
+- **Format.** `ess-http/1` and `ess-http-ir/1` gain optional keys: `authentication` (the schemes
+  by name, in name order, and `required` when not empty) after `servers`, and each route's
+  `authentication` after its `operation_id`, both absent when not declared, so every binding
+  without them compiles to the same bytes.
+
 ## Still refused
 
 - The `http:` key on a command or view in `ess/N`. The binding replaces it.
@@ -1093,7 +1153,8 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
   query value selects ("Representations of a view's answer"). Partial-segment path templates.
 - `--http` with an artifact that cannot honour it: `ess ui`, the clap, web and TypeScript targets,
   and any `--kind` other than `openapi`. Each refuses it by name rather than ignoring it.
-- Authentication: the binding states a status and a challenge, not how a caller proves who it is.
+- Authentication schemes other than `bearer`, `basic`, `api_key` and `mutual_tls`
+  ("Authentication").
 
 ## Decided for stage 1 (2026-10-11, `decision-blocker:ess-060-wave-scope`)
 
@@ -1131,7 +1192,9 @@ and none can be tightened later without refusing a document that compiled.
    is, which the model does not state (`crates/generate/ess-gen/src/openapi.rs:164`,
    `openapi.rs:171-191`). Rejected: deriving a scheme from each declared challenge, which claims an
    authentication mechanism the model does not declare, and which every generated client would
-   then implement.
+   then implement. Revised (beyond10x/ess#681): the binding now declares its schemes
+   ("Authentication", under stage 3), and the projection writes `securitySchemes` and `security`
+   from that declaration, never from a challenge.
 9. **`{<member>: error}` writes the error's own fields under their wire names, unchanged.** A
    protocol field such as `error_description` (RFC 6749 §5.2) is a field of that name on the
    model's error (`crates/specify/ess-domain/src/command.rs:4880-4881`, `fields`), so the model

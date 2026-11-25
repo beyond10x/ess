@@ -610,6 +610,27 @@ ess specify compose [OPTIONS] --path <PATH> --service <KEY=PATH>
 | `--ownership-root` | `<OWNERSHIP_ROOT>` | no |  | One enclosing ownership anchor for every composition output |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
 
+#### `ess specify vendor`
+
+Write a consumer's copy of an owner's type and the composition entries that prove it.
+
+The copy is the type and every named type it reaches, renamed into `--into` with every field, wire name, presence, invariant and variant attribute kept, in one source file headed by the owner's system, version and IR digest. The fragment holds both `services:` entries, the consumer pinned with the copy in it, and one `conformances:` entry per copied type.
+
+```text
+ess specify vendor [OPTIONS] --from <KEY=PATH> --service <KEY=PATH> --type <NAME> --into <DOMAIN> --out <OUT> --conformances <CONFORMANCES>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<KEY=PATH>` | yes |  | The owner specification, written `service-key=path` as `compose --service` takes it |
+| `--service` | `<KEY=PATH>` | yes |  | The consumer specification, written `service-key=path`; its key is each conformance's `local` service |
+| `--component` | `<COMPONENT>` | no |  | The consumer's component in the fragment. Default: the one whose `owns` names `--into` |
+| `--type` | `<NAME>` | yes |  | The owner's type to copy, with every named type it reaches |
+| `--into` | `<DOMAIN>` | yes |  | The consumer domain the copies are declared in |
+| `--out` | `<OUT>` | yes |  | Where to write the source file holding the copies |
+| `--conformances` | `<CONFORMANCES>` | yes |  | Where to write the composition fragment |
+| `--check` |  | no |  | Write nothing; exit 1 naming each copy that differs from what would be written |
+
 #### `ess specify inspect`
 
 Inspect one declaration in resolved IR

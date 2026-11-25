@@ -319,3 +319,227 @@ fn dynamic_menu_keeps_matching_rows_and_refuses_invalid_predicates() {
         assert!(!screen.contains("Beta"), "{screen}");
     }
 }
+
+/// A read that records the params of every request it is asked.
+struct Recorded(Rc<std::cell::RefCell<Vec<BTreeMap<String, Value>>>>);
+impl DataAdapter for Recorded {
+    fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
+        self.0.borrow_mut().push(request.params.clone());
+        Ok(ReadResult {
+            rows: Vec::new(),
+            total: None,
+        })
+    }
+    fn run(&mut self, _: &str, _: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
+        panic!("unexpected command")
+    }
+    fn load_state(&self, _: &str) -> Option<Value> {
+        None
+    }
+    fn store_state(&mut self, _: &str, _: Value) {}
+}
+
+/// `{value, when}` sends a param only while `when` holds: with the toggle off the read carries
+/// `q` alone, not `only_open: false` (beyond10x/ess#723).
+#[test]
+fn a_conditional_param_is_left_out_while_its_condition_is_false() {
+    for (open_only, expected) in [(false, "{q: a}"), (true, "{q: a, only_open: true}")] {
+        let source = format!(
+            r"format: ess-ui/1
+app: filters
+model: t
+placement_profile: fat
+shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}
+navigation: {{home: p, sections: [{{name: all, pages: [p]}}]}}
+pages:
+  p:
+    kind: detail_page
+    title: Orders
+    state:
+      search: {{type: string, class: page_state, default: a}}
+      open_only: {{type: boolean, class: page_state, default: {open_only}}}
+    sections:
+      - name: list
+        component: collection
+        reads: {{view: t.Orders, params: {{q: state.search, only_open: {{value: true, when: state.open_only}}}}}}
+        columns: [id]
+"
+        );
+        let requests = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let state = Scratch::new("ess-read-conditional-param");
+        let mut app = App::with_adapter(
+            ess_ui::load_str(&source).unwrap_or_else(|error| panic!("{error}")),
+            Box::new(Recorded(requests.clone())),
+            vec![],
+            Options::new(state.0.clone()),
+        )
+        .unwrap();
+        app.advance(Duration::from_secs(1));
+        let expected: BTreeMap<String, Value> = ess_yaml::from_str(expected).unwrap();
+        assert_eq!(
+            requests.borrow().last(),
+            Some(&expected),
+            "open_only {open_only}"
+        );
+    }
+}
+
+/// Rows the read answers whatever it is asked.
+struct Answering(&'static str);
+impl DataAdapter for Answering {
+    fn read(&self, _: &ReadRequest) -> Result<ReadResult, String> {
+        Ok(ReadResult {
+            rows: ess_yaml::from_str(self.0).unwrap(),
+            total: None,
+        })
+    }
+    fn run(&mut self, _: &str, _: &BTreeMap<String, Value>) -> ess_ui::binding::Answer {
+        panic!("unexpected command")
+    }
+    fn load_state(&self, _: &str) -> Option<Value> {
+        None
+    }
+    fn store_state(&mut self, _: &str, _: Value) {}
+}
+
+/// A chart's `x` and each `series` take a field as a column does (beyond10x/ess#723): the
+/// terminal titles the axis and the series with their labels and draws each tick in the field's
+/// `as`, in the chart and in its table.
+#[test]
+fn a_chart_names_its_axes_and_formats_its_ticks() {
+    for kind in ["bar", "table"] {
+        let source = format!(
+            r"format: ess-ui/1
+app: charts
+model: t
+placement_profile: fat
+shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}
+navigation: {{home: p, sections: [{{name: all, pages: [p]}}]}}
+pages:
+  p:
+    kind: detail_page
+    title: Events
+    sections:
+      - {{name: chart, component: chart, chart: {kind}, reads: {{view: t.Events}}, x: {{field: at, label: Day, as: date}}, series: [{{field: count, label: Orders}}]}}
+"
+        );
+        let state = Scratch::new("ess-chart-axes");
+        let mut app = App::with_adapter(
+            ess_ui::load_str(&source).unwrap_or_else(|error| panic!("{error}")),
+            Box::new(Answering(
+                "[{at: '2026-01-02T00:00:00Z', count: 3}, {at: '2026-01-03T00:00:00Z', count: 5}]",
+            )),
+            vec![],
+            Options::new(state.0.clone()),
+        )
+        .unwrap();
+        app.advance(Duration::from_secs(1));
+        let screen = app.render_text(120, 40);
+        assert!(screen.contains("Day"), "{kind}: {screen}");
+        assert!(screen.contains("Orders"), "{kind}: {screen}");
+        assert!(screen.contains("2026-01-02"), "{kind}: {screen}");
+        assert!(!screen.contains("T00:00:00Z"), "{kind}: {screen}");
+    }
+}
+
+/// A terminal chart over `rows`, with `tail` after its `series`, fed `events` on channel `points`.
+fn sorted_chart(kind: &str, rows: &'static str, tail: &str, events: &str) -> (Scratch, App) {
+    let source = format!(
+        r"format: ess-ui/1
+app: charts
+model: t
+placement_profile: fat
+shells: {{app: {{regions: {{main: {{kind: page_outlet}}}}}}}}
+navigation: {{home: p, sections: [{{name: all, pages: [p]}}]}}
+channels: {{points: {{carries: {{events: [t.Point]}}, direction: server_to_client, delivery: every_event, resume: refetch}}}}
+pages:
+  p:
+    kind: detail_page
+    title: Points
+    sections:
+      - {{name: trend, component: chart, chart: {kind}, reads: {{view: t.Points, key: seq}}, x: seq, series: [value]{tail}}}
+"
+    );
+    let scripts = if events.is_empty() {
+        vec![]
+    } else {
+        vec![ess_ui_tui::live::Script::parse(
+            "points",
+            &ess_yaml::from_str(&format!("{{events: [{events}]}}")).unwrap(),
+        )
+        .unwrap()]
+    };
+    let state = Scratch::new(&format!("ess-chart-sort-{kind}"));
+    let app = App::with_adapter(
+        ess_ui::load_str(&source).unwrap_or_else(|error| panic!("{error}")),
+        Box::new(Answering(rows)),
+        scripts,
+        Options::new(state.0.clone()),
+    )
+    .unwrap();
+    (state, app)
+}
+
+/// A terminal chart draws its rows in the order its `sort` declares, after the live effects
+/// (beyond10x/ess#723): rows 1, 2, 3 and two inserts, which put each new row first, draw 1 to 5
+/// under `sort: {by: seq}` (the sparkline as for rows read in that order, the footer
+/// `line · seq: 1 … 5`, the table in that order), 5 to 1 under `dir: desc`, and 5, 4, 1, 2, 3
+/// without a sort.
+#[test]
+fn a_chart_draws_its_rows_in_the_order_its_sort_declares() {
+    const READ: &str = "[{seq: 1, value: 1}, {seq: 2, value: 2}, {seq: 3, value: 3}]";
+    const EVENTS: &str = "{at: 2s, event: t.Point, payload: {seq: 4, value: 4}}, {at: 3s, event: t.Point, payload: {seq: 5, value: 5}}";
+    let live = ", live: {channel: points, effect: insert_or_patch}";
+    let screen = |kind: &str, rows: &'static str, tail: &str, events: &str| {
+        let (_state, mut app) = sorted_chart(kind, rows, tail, events);
+        app.advance(Duration::from_secs(4));
+        app.render_text(120, 40)
+    };
+    let spark = |screen: &str| {
+        screen
+            .lines()
+            .find(|line| line.contains("max 5"))
+            .unwrap_or_else(|| panic!("no sparkline: {screen}"))
+            .to_owned()
+    };
+    let in_order = screen(
+        "line",
+        "[{seq: 1, value: 1}, {seq: 2, value: 2}, {seq: 3, value: 3}, {seq: 4, value: 4}, {seq: 5, value: 5}]",
+        "",
+        "",
+    );
+    let sorted = screen("line", READ, &format!(", sort: {{by: seq}}{live}"), EVENTS);
+    assert!(sorted.contains("line · seq: 1 … 5"), "{sorted}");
+    assert_eq!(spark(&sorted), spark(&in_order), "{sorted}");
+    let descending = screen(
+        "line",
+        READ,
+        &format!(", sort: {{by: seq, dir: desc}}{live}"),
+        EVENTS,
+    );
+    assert!(descending.contains("line · seq: 5 … 1"), "{descending}");
+    let unsorted = screen("line", READ, live, EVENTS);
+    assert!(unsorted.contains("line · seq: 5 … 3"), "{unsorted}");
+    for (tail, expected) in [
+        (
+            format!(", sort: {{by: seq}}{live}"),
+            ["1", "2", "3", "4", "5"],
+        ),
+        (
+            format!(", sort: {{by: seq, dir: desc}}{live}"),
+            ["5", "4", "3", "2", "1"],
+        ),
+    ] {
+        let table = screen("table", READ, &tail, EVENTS);
+        let drawn: Vec<&str> = table
+            .lines()
+            .filter_map(|line| {
+                line.trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+                    .split_whitespace()
+                    .next()
+            })
+            .filter(|first| first.len() == 1 && first.chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        assert_eq!(drawn, expected, "{table}");
+    }
+}

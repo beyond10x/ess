@@ -16,6 +16,8 @@ use crate::Sink;
 #[cfg(test)]
 const CHECKED: &[&str] = &[
     "Action.export.as",
+    "chart.series.as",
+    "chart.x.as",
     "Channel.lifecycle",
     "Channel.scope",
     "Field.as",
@@ -115,6 +117,13 @@ fn body(sink: &mut Sink, path: &NodePath, body: &Body) {
             if let ChartKind::Fixed(kind) = &chart.chart {
                 value(sink, path, "chart.chart", "chart", kind);
             }
+            let x: Vec<&ess_ui::Field> = chart.x.as_deref().into_iter().collect();
+            let series: Vec<&ess_ui::Field> = chart.series.iter().collect();
+            for (at, axes) in [("chart.x.as", x), ("chart.series.as", series)] {
+                for written in axes.iter().filter_map(|axis| axis.field_as.as_deref()) {
+                    value(sink, path, at, "as", written);
+                }
+            }
         }
         Body::Primitive(Primitive::Image(image)) => {
             if let Some(fit) = &image.fit {
@@ -204,6 +213,7 @@ mod tests {
     /// The enum fields `ess-ui` reads into Rust enums, so the loader refuses a value outside them.
     const TYPED: &[&str] = &[
         "Action.as",
+        "Action.tone",
         "Channel.delivery",
         "Channel.direction",
         "Channel.resume",
@@ -213,6 +223,8 @@ mod tests {
         "Field.tone",
         "Field.scale",
         "Field.unit",
+        "chart.series.unit",
+        "chart.x.unit",
         "HostSlot.stands_in_for",
         "Live.effect",
         "Live.when_paged_away",
@@ -235,6 +247,7 @@ mod tests {
         "Widget.arrange",
         "badge.tone",
         "button.tone",
+        "chart.sort.dir",
         "choice.style",
         "collection.selection",
         "collection.selection.mode",

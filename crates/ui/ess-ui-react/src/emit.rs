@@ -62,13 +62,49 @@ fn navigate(navigate: &ess_ui::Navigate) -> String {
         ("to", Some(ts::string(&navigate.to))),
         (
             "params",
-            (!navigate.params.is_empty()).then(|| exprs(&navigate.params)),
+            (!navigate.params.is_empty()).then(|| sent_exprs(&navigate.params)),
         ),
+    ])
+}
+
+/// A chart axis as the runtime's `AxisSpec`: its field name when written bare, so a chart of bare
+/// names generates what it did, else `{ field, label, as, unit }` (beyond10x/ess#723).
+fn axis(field: &ess_ui::Field) -> String {
+    let unit = field
+        .unit
+        .as_ref()
+        .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
+        .map(|unit| ts::string(unit.as_str()));
+    if field.label.is_none() && field.field_as.is_none() && unit.is_none() {
+        return ts::string(&field.field);
+    }
+    ts::object([
+        ("field", Some(ts::string(&field.field))),
+        ("label", quoted(field.label.as_ref())),
+        ("as", quoted(field.field_as.as_ref())),
+        ("unit", unit),
     ])
 }
 
 fn strings<'a>(values: impl IntoIterator<Item = &'a String>) -> String {
     ts::array(values.into_iter().map(|value| ts::string(value)))
+}
+
+/// A map of values the UI sends, as the runtime's `Sent` reads it: each entry its `literal`, or
+/// `{ value, when }` where it is sent only while `when` holds (beyond10x/ess#723).
+fn sent<V>(values: &ess_ui::Sent<V>, literal: impl Fn(&V) -> String) -> String {
+    ts::object(values.iter().map(|(name, value)| {
+        let value = literal(value);
+        let value = match values.when(name) {
+            Some(when) => ts::object([("value", Some(value)), ("when", Some(ts::string(&when.0)))]),
+            None => value,
+        };
+        (name.as_str(), Some(value))
+    }))
+}
+
+fn sent_exprs(values: &ess_ui::Sent<ess_ui::Expr>) -> String {
+    sent(values, |value| ts::string(&value.0))
 }
 
 fn exprs<'a>(values: impl IntoIterator<Item = (&'a String, &'a ess_ui::Expr)>) -> String {
@@ -724,6 +760,7 @@ impl<'d> Gen<'d> {
             };
             for read in reads {
                 exprs.extend(read.params.values().map(|param| param.0.clone()));
+                exprs.extend(read.params.conditions().values().map(|when| when.0.clone()));
                 exprs.extend(read.filter.as_ref().map(|filter| filter.0.clone()));
             }
         }
@@ -762,7 +799,7 @@ impl<'d> Gen<'d> {
             ("filter", expr(reads.filter.as_ref())),
             (
                 "params",
-                (!reads.params.is_empty()).then(|| exprs(&reads.params)),
+                (!reads.params.is_empty()).then(|| sent_exprs(&reads.params)),
             ),
             (
                 "paging",
@@ -865,6 +902,23 @@ impl<'d> Gen<'d> {
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("name", Some(ts::string(&action.name))),
             ("label", quoted(action.label.as_ref())),
+            ("icon", quoted(action.icon.as_ref())),
+            (
+                "glyph",
+                action
+                    .icon
+                    .as_deref()
+                    .and_then(ess_ui::icon_glyph)
+                    .map(ts::string),
+            ),
+            (
+                "tone",
+                action
+                    .tone
+                    .as_ref()
+                    .and_then(variant)
+                    .map(|s| ts::string(&s)),
+            ),
             (
                 "as",
                 action
@@ -876,7 +930,14 @@ impl<'d> Gen<'d> {
             ("does", quoted(action.does.as_ref())),
             (
                 "bind",
-                (!action.bind.is_empty()).then(|| exprs(&action.bind)),
+                (!action.bind.is_empty()).then(|| {
+                    sent(&action.bind, |value| match value {
+                        ess_ui::BindValue::One(value) => ts::string(&value.0),
+                        ess_ui::BindValue::List(items) => {
+                            ts::array(items.iter().map(|item| ts::string(&item.0)))
+                        }
+                    })
+                }),
             ),
             ("opens", quoted(action.opens.as_ref())),
             ("navigate", navigate),
@@ -885,6 +946,8 @@ impl<'d> Gen<'d> {
             ("copy", expr(action.copy.as_ref())),
             ("sets", sets),
             ("checked", checked),
+            // The read `loads.<field>` reads its first row from (beyond10x/ess#723, C17).
+            ("loads", action.loads.as_ref().and_then(Self::reads)),
             ("choice", choice),
             ("confirm", confirm),
             ("confirmShow", confirm_show),
@@ -1752,8 +1815,23 @@ impl<'d> Gen<'d> {
                     .path_if(!opts.framed, &path)
                     .opt("reads", Self::own_reads(opts, Some(&c.reads)))
                     .expr("chart", chart)
-                    .opt("x", quoted(c.x.as_ref()))
-                    .opt("series", (!c.series.is_empty()).then(|| strings(&c.series)))
+                    .opt("x", c.x.as_deref().map(axis))
+                    .opt(
+                        "series",
+                        (!c.series.is_empty()).then(|| ts::array(c.series.iter().map(axis))),
+                    )
+                    .opt(
+                        "sort",
+                        c.sort.as_ref().map(|sort| {
+                            ts::object([
+                                ("by", Some(ts::string(&sort.by))),
+                                (
+                                    "dir",
+                                    sort.dir.as_ref().and_then(variant).map(|d| ts::string(&d)),
+                                ),
+                            ])
+                        }),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }
@@ -1902,6 +1980,7 @@ impl<'d> Gen<'d> {
                 El::new(&component)
                     .path(&path)
                     .expr("icon", ts::string(&i.icon))
+                    .opt("glyph", ess_ui::icon_glyph(&i.icon).map(ts::string))
                     .opt(
                         "tone",
                         i.tone.as_ref().and_then(variant).map(|s| ts::string(&s)),
@@ -1921,6 +2000,13 @@ impl<'d> Gen<'d> {
                         b.tone.as_ref().and_then(variant).map(|s| ts::string(&s)),
                     )
                     .opt("icon", quoted(b.icon.as_ref()))
+                    .opt(
+                        "glyph",
+                        b.icon
+                            .as_deref()
+                            .and_then(ess_ui::icon_glyph)
+                            .map(ts::string),
+                    )
                     .render()
             }
             Primitive::Link(l) => {
@@ -1930,7 +2016,7 @@ impl<'d> Gen<'d> {
                         ("page", Some(ts::string(&navigate.to))),
                         (
                             "params",
-                            (!navigate.params.is_empty()).then(|| exprs(&navigate.params)),
+                            (!navigate.params.is_empty()).then(|| sent_exprs(&navigate.params)),
                         ),
                     ])
                 });
@@ -2045,11 +2131,22 @@ impl<'d> Gen<'d> {
                 .params
                 .iter()
                 .map(|(key, value)| {
-                    format!(
+                    let passed = format!(
                         "{}: {evaluate}({}, __opener)",
                         ts::key(key),
                         ts::string(&value.0)
-                    )
+                    );
+                    // A param written `{value, when}` is passed only while `when` holds.
+                    match overlay.params.when(key) {
+                        Some(when) => {
+                            let truthy = self.import("runtime/expr", "truthy");
+                            format!(
+                                "...({truthy}({evaluate}({}, __opener)) ? {{ {passed} }} : {{}})",
+                                ts::string(&when.0)
+                            )
+                        }
+                        None => passed,
+                    }
                 })
                 .collect();
             lines.push(format!(

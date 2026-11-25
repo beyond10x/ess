@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use ess_ui::binding::{classify, Answer};
+use ess_ui::binding::{classify, classify_declared, Answer, DeclaredAnswer, DeclaredError};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +100,7 @@ fn every_answer_vector_classifies_as_recorded() {
         "409 refused",
         "404 malformed",
         "403 not_granted",
+        "401 not_granted",
         "403 refused",
         "400 refused",
         "400 malformed",
@@ -114,6 +115,65 @@ fn every_answer_vector_classifies_as_recorded() {
     assert!(
         missing.is_empty(),
         "no vector for {missing:?}; covered: {covered:?}"
+    );
+}
+
+/// The answers a binding declares are read first (beyond10x/ess#723): an `error` body by its
+/// member's wire name, a status only an accepting outcome has as accepted, a status only one
+/// refusal has as that refusal, and anything else as the envelope reads.
+#[test]
+fn a_declared_answer_classifies_as_its_binding_declares_it() {
+    let error = |wire: &str, code: &str| {
+        Some(DeclaredError {
+            wire: wire.to_owned(),
+            code: code.to_owned(),
+        })
+    };
+    let answer = |status, body: &str, member: Option<&str>, error| DeclaredAnswer {
+        status,
+        outcome: "o".to_owned(),
+        body: body.to_owned(),
+        member: member.map(str::to_owned),
+        error,
+        text: false,
+    };
+    let declared = vec![
+        answer(204, "none", None, None),
+        answer(409, "error", Some("code"), error("locked", "d.Locked")),
+        answer(409, "error", Some("code"), error("gone", "d.Gone")),
+        answer(410, "none", None, error("gone", "d.Gone")),
+        answer(422, "none", None, error("a", "d.A")),
+        answer(422, "response", None, error("b", "d.B")),
+    ];
+    let read = |status, body: &str| classify_declared(status, body, &declared);
+    assert_eq!(read(204, ""), Answer::Accepted);
+    assert_eq!(
+        read(409, r#"{"code":"gone","at":1}"#),
+        Answer::Refused {
+            error: "d.Gone".to_owned(),
+            payload: Some(serde_json::json!({"at": 1})),
+        }
+    );
+    assert_eq!(
+        read(409, r#"{"code":"locked"}"#),
+        Answer::Refused {
+            error: "d.Locked".to_owned(),
+            payload: None,
+        }
+    );
+    assert_eq!(read(409, r#"{"code":"other"}"#), Answer::Transport);
+    assert_eq!(
+        read(410, ""),
+        Answer::Refused {
+            error: "d.Gone".to_owned(),
+            payload: None,
+        }
+    );
+    assert_eq!(read(422, "{}"), Answer::Transport);
+    assert_eq!(read(401, ""), Answer::NotGranted { actor: None });
+    assert_eq!(
+        read(200, r#"{"outcome":"o","published":[]}"#),
+        Answer::Accepted
     );
 }
 

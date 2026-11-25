@@ -143,6 +143,36 @@ pub const UNFINISHED: &str = "501";
 /// default, when the binding declares no `refusals.too_large`.
 pub const TOO_LARGE: &str = "413";
 
+/// A call on a route whose binding requires a scheme carries no credential of it, or the
+/// realization authenticated it as no actor (beyond10x/ess#681). The status a server answers by
+/// default, when the binding declares no `refusals.unauthenticated`, with one `WWW-Authenticate`
+/// challenge per scheme of the route that has one ([`Binding::challenges_on`]).
+pub const UNAUTHENTICATED: &str = "401";
+
+/// The `refused` member of the default `unauthenticated` refusal's body,
+/// `{"refused": "unauthenticated"}`. It names no credential and no scheme.
+pub const UNAUTHENTICATED_REFUSED: &str = "unauthenticated";
+
+/// Where a served surface looks for one scheme's credential before it runs a guarded route
+/// (beyond10x/ess#681). A server never runs the command or view of a guarded route for a call
+/// that carries none of its schemes' credentials.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Credential<'a> {
+    /// One `Authorization` header under this auth scheme (`Bearer`, `Basic`), compared ignoring
+    /// case, and a token68 after it.
+    Authorization(&'static str),
+    /// One request header of this name, in lower case, not empty.
+    Header(&'a str),
+    /// A cookie of this name, not empty.
+    Cookie(&'a str),
+    /// A client certificate, which the TLS layer in front of the server checks; the server reads
+    /// no part of it, and the realization's `authenticate` decides.
+    Handshake,
+    /// A key in the query string, which no served surface reads while it is undecided whether a
+    /// credential may travel there: this scheme never admits a call.
+    Unread,
+}
+
 /// Whether a request for `command` must carry a body.
 ///
 /// The one answer for the document that declares the `requestBody` and the servers that read it.
@@ -431,6 +461,14 @@ impl Binding {
             .routes()
             .iter()
             .filter_map(|route| {
+                let credentials = self.credentials_on(route);
+                if !credentials.is_empty()
+                    && credentials
+                        .iter()
+                        .all(|credential| *credential == Credential::Unread)
+                {
+                    return Some((route.operation.clone(), Reason::UnreadCredential));
+                }
                 let segments = route.segments()?;
                 RESERVED
                     .into_iter()
@@ -480,6 +518,68 @@ impl Binding {
     pub fn route(&self, served: Served<'_>) -> Option<&ess_http::Route> {
         self.0.route(&served.operation())
     }
+
+    /// The schemes `route` requires, each with its declaration, in the order the route lists them:
+    /// its own, else the binding's `authentication.required`. Empty when the route is open.
+    pub fn schemes_on<'a>(
+        &'a self,
+        route: &'a ess_http::Route,
+    ) -> Vec<(&'a str, &'a ess_http::Scheme)> {
+        let Some(authentication) = self.0.authentication() else {
+            return Vec::new();
+        };
+        self.0
+            .required_schemes(route)
+            .iter()
+            .filter_map(|name| {
+                authentication
+                    .schemes
+                    .get(name)
+                    .map(|scheme| (name.as_str(), scheme))
+            })
+            .collect()
+    }
+
+    /// Where a server looks for the credential of each scheme `route` requires, in route order.
+    pub fn credentials_on<'a>(&'a self, route: &'a ess_http::Route) -> Vec<Credential<'a>> {
+        self.schemes_on(route)
+            .into_iter()
+            .map(|(_, scheme)| match scheme {
+                ess_http::Scheme::Bearer => Credential::Authorization("Bearer"),
+                ess_http::Scheme::Basic { .. } => Credential::Authorization("Basic"),
+                ess_http::Scheme::ApiKey { location, name } => match location {
+                    ess_http::KeyLocation::Header => Credential::Header(name),
+                    ess_http::KeyLocation::Cookie => Credential::Cookie(name),
+                    ess_http::KeyLocation::Query => Credential::Unread,
+                },
+                ess_http::Scheme::MutualTls => Credential::Handshake,
+            })
+            .collect()
+    }
+
+    /// The `WWW-Authenticate` challenges of the default `unauthenticated` answer on `route`: one
+    /// per scheme it requires that has one, in route order, `Bearer` and `Basic realm="<realm>"`
+    /// with `"` and `\` escaped.
+    pub fn challenges_on(&self, route: &ess_http::Route) -> Vec<String> {
+        self.schemes_on(route)
+            .into_iter()
+            .filter_map(|(_, scheme)| match scheme {
+                ess_http::Scheme::Bearer => Some("Bearer".to_owned()),
+                ess_http::Scheme::Basic { realm } => {
+                    let mut quoted = String::from("Basic realm=\"");
+                    for c in realm.chars() {
+                        if c == '"' || c == '\\' {
+                            quoted.push('\\');
+                        }
+                        quoted.push(c);
+                    }
+                    quoted.push('"');
+                    Some(quoted)
+                }
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// Why a binding's route cannot be projected.
@@ -491,6 +591,9 @@ pub enum Reason {
     Method(ess_http::Method),
     /// Its template matches this path, which a served surface answers about itself.
     Reserved(&'static str),
+    /// Every scheme it requires is an API key in the query string, which a served surface does
+    /// not read (beyond10x/ess#681).
+    UnreadCredential,
 }
 
 /// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
@@ -518,6 +621,12 @@ impl std::fmt::Display for Unprojectable {
                     formatter,
                     "{operation} has a path a request for `{path}` would match, and a served \
                      surface answers `{path}` itself; route it elsewhere"
+                )?,
+                Reason::UnreadCredential => write!(
+                    formatter,
+                    "{operation} requires only API keys in the query string, and a served surface \
+                     reads no credential from the query; require a header, cookie or \
+                     `Authorization` scheme beside it"
                 )?,
             }
         }

@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 import { useUiPath } from "../core";
 
-/** A named icon with its accessible label. */
-export function IconView(props: { "data-ui-path": string; icon: string; tone?: string; label: string }): ReactNode {
+/**
+ * A named icon with its accessible label: the glyph of a name of the schema's vocabulary, or the
+ * label itself for a name outside it.
+ */
+export function IconView(props: { "data-ui-path": string; icon: string; glyph?: string; tone?: string; label: string }): ReactNode {
   return (
     <span
       className={`ui-icon ui-icon-${props.icon} ui-tone-${props.tone ?? "neutral"}`}
@@ -10,6 +13,8 @@ export function IconView(props: { "data-ui-path": string; icon: string; tone?: s
       aria-label={props.label}
       title={props.label}
       data-ui-path={useUiPath(props["data-ui-path"])}
-    />
+    >
+      {props.glyph ?? props.label}
+    </span>
   );
 }

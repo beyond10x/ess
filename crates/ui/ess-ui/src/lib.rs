@@ -47,6 +47,13 @@ pub fn positions() -> &'static Positions {
     schema::Schema::embedded().positions()
 }
 
+/// The glyph both renderers draw for the icon `name`: one character of its own, from the
+/// schema's closed vocabulary (`constructs.icon.icons`). `None` for a name outside it, which a
+/// renderer draws as its label (beyond10x/ess#723).
+pub fn icon_glyph(name: &str) -> Option<&'static str> {
+    schema::Schema::embedded().icon_glyph(name)
+}
+
 /// The format marker every document carries.
 pub const FORMAT: &str = "ess-ui/1";
 

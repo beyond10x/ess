@@ -5,7 +5,7 @@ import { useLocation } from "./router";
 import { hrefFor, pageAt } from "../routes";
 import { useNotices, useScope } from "./core";
 import { dataAdapter, invalidate } from "./data";
-import { evaluate, truthy } from "./expr";
+import { evaluate, truthy, type Sent } from "./expr";
 //+plain
 import { runAction } from "./actions";
 //-plain
@@ -134,7 +134,7 @@ export interface MenuEntry {
   opens?: string;
   does?: string;
   /** Run as an action runs them: the page to go to, the state to set. */
-  navigate?: { to: string; params?: Record<string, string> };
+  navigate?: { to: string; params?: Record<string, Sent<string>> };
   sets?: Record<string, string>;
 }
 

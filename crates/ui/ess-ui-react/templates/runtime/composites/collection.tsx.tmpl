@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
 import { RowPath, ScopeLayer, display, readsRow, rowKey, shownFor, useData, useFramePath, useReport, useScope, useSectionName, type Scope } from "../core";
+import { compareValues } from "../compare";
 import type { ReadSpec } from "../data";
 import { assignable, evaluate, truthy } from "../expr";
 import { FieldValue, HelpNote, fieldLabel, useLabelled, type FieldSpec } from "../fields";
@@ -566,35 +567,6 @@ export function Collection(props: {
       {data && props.pager ? <Pager pager={props.pager} total={data.total} rows={rows.length} local={local} /> : null}
     </div>
   );
-}
-
-/**
- * Orders two values of a sort, a total order: numbers (and, under a numeric column, text that
- * reads as one) by value and before every other value; the others by their text.
- */
-export function compareValues(left: unknown, right: unknown, asNumber = false): number {
-  const a = numeric(left, asNumber);
-  const b = numeric(right, asNumber);
-  if (a !== undefined && b !== undefined) {
-    return a < b ? -1 : a > b ? 1 : 0;
-  }
-  if (a !== undefined || b !== undefined) {
-    return a !== undefined ? -1 : 1;
-  }
-  const l = stableKey(left);
-  const r = stableKey(right);
-  return l < r ? -1 : l > r ? 1 : 0;
-}
-
-function numeric(value: unknown, asNumber: boolean): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : undefined;
-  }
-  if (asNumber && typeof value === "string" && value.trim() !== "") {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : undefined;
-  }
-  return undefined;
 }
 
 /** A name as a heading: `owner_name` reads `owner name`. */
