@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:a-view-parameter-carries-its-wire-name-on-every-http-reader
-revision: 1
+revision: 2
 ---
 ## Summary
 
@@ -119,3 +119,6 @@ Each is expected green on the reading above; a red one is the defect it names.
 
 - VW-D1 open: options (a), (b), (c) above; recommended (a), or (a) with (b) if the owner wants one
   accessor. Not architecture of a published format unless (c) is chosen.
+
+VW-D1 = (a) (D138), taken by the coordinator on 2026-11-25: the compiled IR's member is the
+contract, and the guide gains one sentence that names it.

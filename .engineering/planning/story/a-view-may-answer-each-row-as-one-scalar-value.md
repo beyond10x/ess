@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:28:01Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:28:02Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
@@ -101,6 +101,10 @@ the released format `ess-http/1` in options A and B, to the model format in opti
   for every reader (the UI, synthesis).
 - Open with the owner. A release that carries this key names this pick in its pull-request line.
 
+**BA-D1 = A (D135):** `body: array.<field>` and `single.<field>`, for a view of one field only,
+anything else refused (fails closed); taken by the coordinator on 2026-11-25; a release that
+carries this key names this pick in its pull-request line.
+
 ## Fit review
 
 1. **Need.** A list view whose row has one field must answer a bare JSON array of that field's
@@ -143,3 +147,21 @@ the released format `ess-http/1` in options A and B, to the model format in opti
 7. **Considered.** Change nothing: the route stays unbound, or is bound with a form that misstates
    the wire (two views of the reporter's specification do that). The three options of BA-D1. The
    reporter's spelling is option B and is not the recommended one, see BA-D1.
+
+## Second reported case
+
+A second report of the same need (2026-11-25, a downstream application, `ess-http/1` at 0.99.2).
+It does not change BA-D1.
+
+- A view's row has two fields: one the route's path carries (`prefix`), one a list of strings
+  (`keys`).
+- The service answers `GET …/{prefix}` with only the bare array of the list field:
+  `["k1","k2"]` (the one list field of a single row).
+- `single.<field>` would fit if a field the path carries may stand beside the answered field. The
+  choice is between "exactly one field" and "exactly one field the request does not already
+  carry". A row field that is neither answered nor carried by the path stays refused (fails
+  closed).
+
+BA-D2 (open, the coordinator's): may a view field whose value the route's path already carries
+stand beside the answered field? Recommended: yes, and only then; every other second field stays
+refused.
