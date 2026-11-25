@@ -35,7 +35,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:02Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:03Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -133,6 +133,8 @@ renderer fix by sharing the parser. C17 is answered by a `loads.<field>` root sc
 that declares `loads`, not by a general "stored value" expression. No new format version;
 `docs/design/ui-read-filter.md` gains a section on the shared grammar and the `loads` root before
 code.
+
+- D110 (2026-11-25, the coordinator): step 39 C17 `loads.<field>`: each renderer reads `loads` through its read cache when it draws the action; the action is disabled and `loads.<field>` absent until the first row answers; the action's command re-reads it.
 
 ## Source
 

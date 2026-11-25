@@ -26,7 +26,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -155,6 +155,8 @@ feature, every node the browser addresses has a terminal region. Item 17's closi
 declared behaviour of a form that closes on submit; the idiom is `submit: {closes: false}`, and this
 story makes its `result` addressable. Item 19 gets no test key; the headless screen grows to the
 widest table.
+
+- D111 (2026-11-25, the coordinator): a collection nested in a record's `item` gets a cursor and row regions in the terminal target at the path the React target uses; the parity rule stops refusing it.
 
 ## Source
 
