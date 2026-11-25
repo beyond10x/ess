@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` no longer writes scenarios that their own model refuses in two guard shapes, which `ess verify conform run --target interpreted` reported as failed. A command whose `when_subject:` refusal compares the row's stored link with an input, such as `account_id != input.account_id`, beside `when_related:` guards reading the row that input or another input names, got its later branches sent a row other than the linked one, so the link refusal answered instead; this is in every release from 0.97.4 on, and these branches are now refused by synthesis. A command reading a related row through a stored field of its subject, whose creating command relates the row it stores to another of its inputs, such as a clerk's desk compared with the desk sent, got scenarios whose setup creation its own guards refuse; this is in every release from 0.98.0 on, and these scenarios are now refused by synthesis, as on 0.97.4. Synthesized again, the suite of a model with these guard shapes loses those scenarios and gains the refusals in their place.
+
 ## [0.99.2] — 2026-11-25
 
 ### Fixed

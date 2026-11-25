@@ -4370,6 +4370,48 @@ fn absent_at(
     Ok((setup, input))
 }
 
+/// The branch of `command` the precedence plan answers before `outcome` that refuses wherever the
+/// subject's stored link differs from `input.<field>`: a `when_subject:` predicate without an input
+/// guard that is `<link> != input.<field>`, or a disjunction holding one. `account_id !=
+/// input.account_id` beside a `when_related:` read through `input.account_id`: the related row is
+/// arranged apart from the subject, so the send naming it is answered by that refusal first.
+fn subject_link_refuses<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    field: &str,
+) -> Option<&'c ResolvedOutcome> {
+    fn differs(predicate: &Predicate, field: &str) -> bool {
+        match predicate {
+            Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(left),
+                op: ess_primitives::predicate::CompareOp::Ne,
+                right: ess_primitives::predicate::Operand::Fact(right),
+                ..
+            } => [(left, right), (right, left)]
+                .into_iter()
+                .any(|(link, sent)| {
+                    link.segments().len() == 1
+                        && link.namespace() != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && sent.segments().len() == 2
+                        && sent.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && sent.segments()[1] == field
+                }),
+            Predicate::Any(children) => children.iter().any(|child| differs(child, field)),
+            _ => false,
+        }
+    }
+    super::precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .find(|first| {
+            matches!(
+                &first.condition,
+                ResolvedCondition::SubjectPredicate { predicate, input: None }
+                    if differs(predicate, field)
+            )
+        })
+}
+
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
 #[allow(
     clippy::too_many_lines,
@@ -4409,6 +4451,27 @@ fn arranged_at(
     });
     if names_subject || setup.bound.contains_key(field) {
         return Err(unarranged());
+    }
+    // The row the input names, and every row beside it, is arranged apart from the subject, so a
+    // held-state refusal answered first that compares the subject's stored link with the input
+    // naming one of them would answer instead.
+    let read = std::iter::once((field, entity))
+        .chain(others.iter().map(|other| (other.via.field(), other.entity)));
+    for (named, of) in read {
+        if let Some(first) = subject_link_refuses(ir, command, outcome, named) {
+            return Err(RefusalCause::GuardUnsatisfiable {
+                predicate: format!(
+                    "`{}/{}` refuses first wherever the subject's stored link differs from \
+                     `input.{named}`, and the row of `{}` the arrangement names through \
+                     `input.{named}` is not the one the subject is linked to",
+                    command.name,
+                    first.name,
+                    of.name()
+                ),
+                tried: 0,
+                cut: 0,
+            });
+        }
     }
     place_beside(ir, outcome, &mut setup, others);
     let mut steps = Vec::new();
