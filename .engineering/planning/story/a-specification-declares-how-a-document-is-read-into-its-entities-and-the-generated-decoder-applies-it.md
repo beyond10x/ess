@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table
 - informed_by: story:the-model-holds-every-filled-default-as-a-plain-value-and-no-renderer-or-checker-keeps-a-fallback-of-its-own
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -70,6 +70,40 @@ decoder of `ess-synth` (`rust/wire.rs`, `decode_primitive`, 1038-1051) reads a `
    `story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table`
    is the decoder this story's rules extend (depends_on).
 
+## Design page
+
+`docs/design/document-form-rules.md`, branch `design/document-form-rules`, commit `087d2b67b03be0e6d28af6fa4f453dd2b9d65403`
+(pushed 2026-11-25 07:05:42 CET; no pull request). The page covers rules a to e; f and g are out of its scope.
+
+Verdict line, word for word:
+
+> **TD-D11: NOT CONFIRMED: rules b to e describe one document form (a file of many entities) that the
+> HTTP surface, the served views, the interpreter and the conformance suite do not read, and the
+> repository places such a reading in a sibling document pinned to the specification, never in
+> `ess/N`; only rule a has an `ess/N` precedent.**
+
+The two sibling-document precedents it rests on (§ 3), with the page's citations:
+
+- `ess-transport/1`: "never part of `ess/N`. The model does not change when the same event is carried by another broker"
+  (`docs/design/event-transport-binding.md:19-23`), including one message carrying a JSON array of items (`:11-15`).
+- `ess-http/1`, the same words for a route (`docs/design/http-presentation-binding.md:41-46`), and in it the request encodings
+  (`:324-340`) and the body forms (`:495-510`).
+
+The one `ess/N` precedent, for rule a only: `shorthand: <field>` (`ess/27`, `website/docs/reference/spec-versions.md:407-420`).
+
+What the page specifies (option B of its § 3): a sibling document `ess-document-form/1`, pinned to the specification
+(`specification: {system, version, source_digest}`), read by the document decoder only. No `ess/N`; `RawSpecFile`,
+`schemas/generated/ess.schema.json`, `macro-guards.json`, `FORMAT_HISTORY` and every IR, digest, projection and suite byte of every
+specification stay unmoved. Rust gets a `document` module beside the strict decoders; Go and TypeScript refuse the flag by name.
+Its § 6 also lists what the picked placement (A, keys in the next free `ess/N`) would move on top: a `FORMAT_HISTORY` row, every new
+key refused below the new version, `RawSpecFile` and `cargo xtask schema`, `unread_document_rule` in `validation_codes!` and
+`macro-guards.json`, an `ess-diff` kind per rule, and every projector, the interpreter, Entity Runtime and the Go and HTTP decoders
+answering or refusing each key.
+
+Not verified, as the page marks them: that rule f needs no change (a YAML 1.2 core-schema reader gives a string for a date and the
+strict decoder reads `Timestamp` from a string; inferred, to be confirmed by the first decoder test); that the web target decodes
+through the Rust code compiled to WebAssembly (inferred from `web/bridge.rs:1-10`).
+
 ## Decisions
 
 - TD-D9, rule e, a `Decimal` as a number token. A: the strict decoder stays string-only; the number-token reading is a document-form
@@ -89,6 +123,25 @@ decoder of `ess-synth` (`rust/wire.rs`, `decode_primitive`, 1038-1051) reads a `
 - TD-D10: A, taken by the coordinator on 2026-11-25 (D114), agreed by the operator session: the consumer brings the YAML reader and hands over `json::Value`.
 
 - TD-D11: A, the owner's pick of 2026-11-25 about 04:00 CET: in the specification, a new `ess/N`; the design page confirms it before any code.
+  2026-11-25: the design page does not confirm this pick (`TD-D11: NOT CONFIRMED`). The owner's condition was that the page's finding
+  goes to him before anything is built: sent to the operator session on 2026-11-25 07:06 CET as DF2-D1. Nothing of this story is
+  built until DF2-D1 is picked.
+
+- DF2-D1, placement of rules b to e. A: a sibling document `ess-document-form/1` pinned to the specification, read by the document
+  decoder only. B: keys on the type, field and entity declarations in the next free `ess/N` (TD-D11 as picked), each read by the
+  document decoder only. C: an `ess-normalization/N` extension. Page recommends A. State: open, architecture: the owner's; no default.
+- DF2-D2, rule a. A: in the sibling with b to e, read by the document decoder only. B: a `default:` on the field in the next free
+  `ess/N`, read by every reader and stated in the schema, after `shorthand:`. Page recommends A (B kept for a second surface that
+  needs it). State: open; the coordinator's after DF2-D1 is picked; not taken.
+- DF2-D3, the crate. A: a new crate `crates/specify/ess-document-form`, compiled against the IR like `ess-http`. B: a module of
+  `ess-synth` with no compile step or IR. Page recommends A. State: open, architecture: the owner's (a new crate under
+  `crates/specify/`); follows DF2-D1.
+- DF2-D4, targets of the first cut. A: Rust; Go and TypeScript refuse the flag by name. B: Rust and Go, with Go decoders outside the
+  server. Page recommends A. State: open; the coordinator's after DF2-D1 is picked; not taken.
+- DF2-D5, rule e's scope. A: one switch per document. B: per field. Page recommends A (the grammar is one, and a per-field list can
+  disagree with the fields it misses). State: open; the coordinator's after DF2-D1 is picked; not taken.
+- DF2-D6, a schema of the document. A: on request, a separate output describing the lenient form. B: none. Page recommends A.
+  State: open; the coordinator's after DF2-D1 is picked; not taken.
 
 ## Acceptance
 
