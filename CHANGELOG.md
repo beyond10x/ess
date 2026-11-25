@@ -33,6 +33,13 @@
 - `ess ui test` reads and drives the rows of an overlay's collection (`expect rows`, `select`, `mark`, `act` at a row action), reads a form's `result` and a board's placed widget at `<board>/rows/<widget>`, the paths the generated React project draws them at, and grows its headless screen past 160 cells until no row or column is cut, so the last column of a wide table is read (beyond10x/ess#722).
 - The terminal pages a server-paged collection with a `pager` through the states its params bind: it shows the size its size state holds (else the first of `sizes`), `n`, `p` and the `page` step of `ess ui test` write the page state, so the read and an action binding it are sent with that page, and a change to another param of the read returns it to page 1; the fixture adapter answers such a read with the slice the pager's params name. In the `ess-ui-tui` library `ReadRequest` has a new field `pager` of the new type `PagerParams` (beyond10x/ess#722).
 
+## [0.99.2] — 2026-11-25
+
+### Fixed
+
+- An overlay's `params:` are values its opener passes, and are now read where the opener stands. Releases 0.96.0 to 0.99.1 carry the regression: `ess ui check` judged them inside the overlay, against its own params, so an overlay opened from another could not pass that overlay's `params.<name>` on (`expr_paths`). The check now holds each such value at every action of the page that opens the overlay and names the one that lacks it. The terminal renderer and the generated React app sent such a value empty and now send the opener's; an action of an open overlay in the terminal also reads that overlay's params in its `bind`, as React does.
+- A command whose refusal walks an input list with `exists` or `forall` has its accepting scenario sent a non-empty list again, as up to 0.94.0. Releases 0.95.0 to 0.99.1 carry the regression: the refusal's witness list holds its deciding element neither first nor last since 0.95.0 (beyond10x/ess#240, correction 1), so the `trimmed` near-miss the accepting branch is sent (`{kind: "  "}` in an element, `docs/design/value-expressions.md` § E10) landed on another element, still selected the refusal and was dropped, and a target refusing every non-empty list of such an input passed the whole suite. The near-miss now goes onto the deciding element, the elements beside it kept, so the accepting scenario sends a list of several elements none of which meets the quantifier; the refusal's own `trimmed` witnesses (the literal between `\v\f` and `\r\n`) go onto the deciding element too, so a target trimming only spaces and tabs fails again. Suites of models with a quantifier over an input list gain these steps, so their pinned suites move.
+
 ## [0.99.1] — 2026-11-24
 
 ### Fixed

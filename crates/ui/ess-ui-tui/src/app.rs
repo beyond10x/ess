@@ -797,7 +797,7 @@ impl App {
     /// Opens an overlay of the page shown (or of its shell), passing the page's params.
     pub fn open_overlay(&mut self, name: &str) {
         let params = self.params.clone();
-        self.show_overlay(name, None, Some(params), None);
+        self.show_overlay(name, &Ctx::default(), Some(params), None);
         self.pump();
     }
 
@@ -4454,8 +4454,11 @@ impl App {
         row: Option<Value>,
         confirmed: bool,
     ) -> Option<Refused> {
+        // An action of the open overlay reads that overlay's params beside the page's, and the
+        // row its `loads` read answers (beyond10x/ess#723).
         let ctx = Ctx {
             row: row.as_ref(),
+            overlay: self.in_open_overlay(action),
             ..Ctx::default()
         }
         .of_action(action);
@@ -4467,12 +4470,7 @@ impl App {
             match &action.confirm {
                 Some(ActionConfirm::Opens(name)) => {
                     let name = name.clone();
-                    self.show_overlay(
-                        &name,
-                        row.as_ref(),
-                        None,
-                        Some((action.clone(), row.clone())),
-                    );
+                    self.show_overlay(&name, &ctx, None, Some((action.clone(), row.clone())));
                     return None;
                 }
                 Some(ActionConfirm::Inline(inline)) => {
@@ -4517,7 +4515,7 @@ impl App {
             return None;
         }
         if let Some(overlay) = &action.opens {
-            self.show_overlay(overlay, row.as_ref(), None, None);
+            self.show_overlay(overlay, &ctx, None, None);
             return None;
         }
         if let Some(does) = &action.does {
@@ -4647,13 +4645,25 @@ impl App {
         self.place_refusal(ui, action, refused);
     }
 
+    /// Whether `action` stands inside the overlay that is open: its expressions then read that
+    /// overlay's params beside the page's.
+    fn in_open_overlay(&self, action: &Action) -> bool {
+        self.overlay.as_ref().is_some_and(|open| {
+            self.action_path(action)
+                .is_some_and(|at| at.segments().starts_with(open.path.segments()))
+        })
+    }
+
+    /// Opens overlay `name`. Its `params` are values passed by the opener (`Overlay.params`):
+    /// evaluated in `opener`, where the action that opens it stands, unless `params` are given.
     fn show_overlay(
         &mut self,
         name: &str,
-        row: Option<&Value>,
+        opener: &Ctx<'_>,
         params: Option<BTreeMap<String, Value>>,
         then: Option<(Action, Option<Value>)>,
     ) {
+        let row = opener.row;
         let page = self.page_def();
         let (overlay, path) = if let Some(overlay) = page.overlays.get(name) {
             (
@@ -4678,10 +4688,7 @@ impl App {
             self.notify(format!("no overlay {name}"));
             return;
         };
-        let ctx = Ctx {
-            row,
-            ..Ctx::default()
-        };
+        let ctx = opener;
         let params = params.unwrap_or_else(|| {
             if overlay.params.is_empty() {
                 row.and_then(|row| row.get("id"))
@@ -4691,9 +4698,9 @@ impl App {
                 overlay
                     .params
                     .iter()
-                    .filter(|(key, _)| self.sends(&overlay.params, key, &ctx))
+                    .filter(|(key, _)| self.sends(&overlay.params, key, ctx))
                     .filter_map(|(key, value)| {
-                        self.eval(&value.0, &ctx).map(|value| (key.clone(), value))
+                        self.eval(&value.0, ctx).map(|value| (key.clone(), value))
                     })
                     .collect()
             }

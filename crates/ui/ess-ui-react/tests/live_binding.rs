@@ -208,17 +208,22 @@ fn fnv(text: &str) -> u64 {
 /// (beyond10x/ess#723); no file of the pins above changes. `actions.tsx` and the whole-project
 /// digest re-pinned for story:both-renderers-read-one-binding-expression-grammar, C17: an action
 /// reads the row its `loads` read answers (`useRead` in `ActionControl`) and is drawn disabled
-/// until it answers; `expr.ts` admits the `loads` root (beyond10x/ess#723).
+/// until it answers; `expr.ts` admits the `loads` root (beyond10x/ess#723). `actions.tsx` and the
+/// whole-project digest re-pinned for the fix "an overlay's params are read where its opener
+/// stands": every open call passes the params in scope where the opener stands (`actions.tsx`,
+/// `graph_editor.tsx`), and the overlay host hands them to the overlay it opens (`core.tsx`,
+/// `overlays.tsx`). Both re-recorded together at the merge of 0.99.2, which brought that fix
+/// beside the `loads` read: `actions.tsx` and the whole-project digest hold both changes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
-    ("src/runtime/actions.tsx", 0xe9c0_f829_a428_0cab),
+    ("src/runtime/actions.tsx", 0x21d5_9fe3_924f_a5e1),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
     ("src/runtime/data.ts", 0x51fa_44ce_7140_2852),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xac18_5d19_b7f3_b76d;
+const PLAIN_PROJECT: u64 = 0xea26_5dc3_fd05_f6cc;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

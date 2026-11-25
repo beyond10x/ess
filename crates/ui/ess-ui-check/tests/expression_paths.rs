@@ -383,6 +383,85 @@ fn an_overlay_that_declares_params_is_held_to_them() {
     );
 }
 
+/// Overlay `edit` takes `id` from its row; its action opens `create_child`, whose `params` pass
+/// `edit`'s `id` on as `parent_id`.
+const EDIT_OPENS_CREATE_CHILD: &str = "edit: {kind: drawer, component: record, title: E, \
+     params: {id: row.id}, reads: {view: t.ById, params: {id: params.id}}, fields: [id], \
+     actions: [{name: add_child, label: Add child, opens: create_child}]}, \
+     create_child: {kind: dialog, component: record, title: C, params: {parent_id: params.id}, \
+     reads: {view: t.ById, params: {id: params.parent_id}}, fields: [id]}";
+
+/// An overlay's `params` are "values passed by the opener" (`overlay.params`): they are judged
+/// where the action that opens it stands, so `create_child` opened from `edit` reads `edit`'s
+/// `params.id`. Before, they were judged inside the overlay itself, against its own params.
+#[test]
+fn an_overlays_params_are_judged_where_its_opener_stands() {
+    let report = run(&with_overlays(EDIT_OPENS_CREATE_CHILD));
+    assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+/// One action of an overlay reads both `params.id`, which its opener passes, and `loads.mode`,
+/// from the row its own `loads` read answers (beyond10x/ess#723); without `loads` the same bind
+/// is refused for `loads.mode` alone.
+#[test]
+fn an_overlays_action_reads_its_openers_params_and_the_row_it_loads() {
+    let overlay = "edit: {kind: drawer, component: record, title: E, params: {id: row.id}, \
+         reads: {view: t.ById, params: {id: params.id}}, fields: [id], \
+         actions: [{name: close, label: Close, does: t.Close, loads: {view: t.Settings}, \
+         bind: {issue: params.id, mode: loads.mode}}]}";
+    let report = run(&with_overlays(overlay));
+    assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+    let report = run(&with_overlays(
+        &overlay.replace("loads: {view: t.Settings}, ", ""),
+    ));
+    let found = of(&report, "expr_paths");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert!(
+        found[0].message.contains("`loads.<field>`")
+            && found[0].message.contains("(in `bind/mode`)"),
+        "{found:#?}"
+    );
+}
+
+/// An overlay opened from the page and from another overlay is held to every opener's scope:
+/// the page's row action has no `params.id`, and the error names that opener. The overlay's own
+/// params are no value its opener has.
+#[test]
+fn an_overlay_opened_from_several_places_is_held_to_every_openers_scope() {
+    let text = with_overlays(EDIT_OPENS_CREATE_CHILD).replace(
+        "row_actions: [{name: open,",
+        "row_actions: [{name: child, label: Child, opens: create_child}, {name: open,",
+    );
+    let report = run(&text);
+    let found = of(&report, "expr_paths");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert_eq!(found[0].path, "pages/p/overlays/create_child");
+    assert!(
+        found[0].message.contains("`params.id`")
+            && found[0]
+                .message
+                .contains("`pages/p/sections/deals/row_actions/child`")
+            && found[0].message.contains("(in `params/parent_id`)"),
+        "{found:#?}"
+    );
+    let own = with_overlays(&EDIT_OPENS_CREATE_CHILD.replace(
+        "params: {parent_id: params.id}",
+        "params: {parent_id: params.parent_id}",
+    ));
+    let report = run(&own);
+    let found = of(&report, "expr_paths");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert!(
+        found[0].message.contains("`params.parent_id`")
+            && found[0]
+                .message
+                .contains("`pages/p/overlays/edit/actions/add_child`"),
+        "{found:#?}"
+    );
+}
+
 #[test]
 fn a_bare_section_is_resolved_by_its_name_only() {
     for (text, _, _) in at_both_sites("section.deals") {

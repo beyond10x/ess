@@ -160,6 +160,11 @@ function bound(action: Pick<ActionSpec, "bind">, values: Record<string, unknown>
   return input;
 }
 
+/** The params in scope where an action stands: an overlay it opens evaluates its `params` there. */
+function openerParams(values: Record<string, unknown>): Record<string, unknown> | undefined {
+  return isObject(values.params) ? values.params : undefined;
+}
+
 function download(name: string, file: Blob): void {
   const url = URL.createObjectURL(file);
   const link = document.createElement("a");
@@ -198,7 +203,7 @@ export async function runAction(
 //-bound
   } else if (action.opens) {
     const row = values.row;
-    scope.open(action.opens, isObject(row) ? { ...row } : undefined);
+    scope.open(action.opens, isObject(row) ? { ...row } : undefined, undefined, openerParams(values));
   } else if (action.navigate) {
     const params: Record<string, unknown> = {};
     for (const [name, expr] of sent(action.navigate.params, values)) {
@@ -287,7 +292,7 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
   });
   const start = (extra?: Record<string, unknown>) => {
     if (action.confirmOpens) {
-      scope.open(action.confirmOpens, isObject(scope.values.row) ? { ...scope.values.row } : undefined, opener(extra));
+      scope.open(action.confirmOpens, isObject(scope.values.row) ? { ...scope.values.row } : undefined, opener(extra), openerParams(scope.values));
       return;
     }
     if (action.confirm && (action.confirmShow === undefined || truthy(evaluate(action.confirmShow, scope.values)))) {

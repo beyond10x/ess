@@ -21,7 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_ui::{Body, Document, NodePath, NodeRef, Primitive};
+use ess_ui::{ActionConfirm, Body, Composite, Document, NodePath, NodeRef, Primitive};
 use ess_yaml::Value;
 
 use crate::expr;
@@ -539,6 +539,51 @@ impl Walker<'_> {
         })
     }
 
+    /// For a value of a page overlay's own `params` (`at` is `pages/<p>/overlays/<o>/params/<k>`):
+    /// each place that opens the overlay, with the parameters in scope there. The values are
+    /// "values passed by the opener" (`overlay.params`), so they are taken where an action of the
+    /// page or of one of its overlays that opens `<o>` stands, and a name must be in scope at every
+    /// one. An overlay nothing on its page opens is held to the page's parameters. `None` for
+    /// every other expression.
+    fn openers(&self, at: &NodePath) -> Option<Vec<(String, BTreeSet<String>)>> {
+        let [pages, page, overlays, name, params, _] = at.segments() else {
+            return None;
+        };
+        if pages != "pages" || overlays != "overlays" || params != "params" {
+            return None;
+        }
+        if !self.document.pages.get(page)?.overlays.contains_key(name) {
+            return None;
+        }
+        let under = NodePath::root().child("pages").child(page);
+        let mut openers: Vec<(String, BTreeSet<String>)> = self
+            .document
+            .nodes()
+            .into_iter()
+            .filter(|located| located.path.segments().starts_with(under.segments()))
+            .filter(|located| match located.node {
+                NodeRef::Action(action) => {
+                    action.opens.as_ref() == Some(name)
+                        || matches!(&action.confirm, Some(ActionConfirm::Opens(opens)) if opens == name)
+                }
+                node => matches!(
+                    body_of(node),
+                    Some(Body::Composite(Composite::GraphEditor(editor)))
+                        if editor.nodes.as_ref().and_then(|nodes| nodes.opens.as_ref()) == Some(name)
+                ),
+            })
+            .map(|located| {
+                let params = Scope::at(self.document, &located.path).params;
+                (format!("`{}`", located.path), params)
+            })
+            .collect();
+        if openers.is_empty() {
+            let params = Scope::at(self.document, &under).params;
+            openers.push((format!("page `{page}` (nothing opens it)"), params));
+        }
+        Some(openers)
+    }
+
     /// `state.<name>`, `params.<name>` and `shell.<name>` name a declaration in scope where the
     /// expression stands: the scope a row filter is held to.
     fn declared(
@@ -563,8 +608,28 @@ impl Walker<'_> {
         if !judged {
             return; // a page kind, a widget declaration or the navigation: scope not known here
         }
-        if segments[0] == "params" && self.opener_passes_params(at) {
-            return;
+        if segments[0] == "params" {
+            if let Some(openers) = self.openers(at) {
+                for (opener, params) in openers {
+                    if !params.contains(*name) {
+                        let in_scope: Vec<&str> = params.iter().map(String::as_str).collect();
+                        let message = format!(
+                            "`params.{name}` names no parameter in scope at {opener}, which opens \
+                             this overlay and passes its params; {}",
+                            if in_scope.is_empty() {
+                                "no parameter is in scope there".to_owned()
+                            } else {
+                                format!("in scope there: {}", listed(&in_scope))
+                            }
+                        );
+                        self.report(sink, "expr_paths", at, &message);
+                    }
+                }
+                return;
+            }
+            if self.opener_passes_params(at) {
+                return;
+            }
         }
         let scope = Scope::at(self.document, at);
         let (names, what) = match segments[0] {
