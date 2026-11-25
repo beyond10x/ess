@@ -436,3 +436,47 @@ const overlays = (nodes) => {{
         ),
     );
 }
+
+/// An overlay opened from inside another takes its `params` from that opener: `explain` passes
+/// `resolve`'s `params.ambiguity_id` on. Before, they were evaluated against the page, which has
+/// no such param, and the confirm sent nothing for it.
+#[test]
+fn an_overlay_opened_from_another_reads_its_openers_params() {
+    let document = STACKED.replace(
+        "    does: objectives.ExplainAmbiguity\n",
+        "    does: objectives.ExplainAmbiguity\n        params: {ambiguity: params.ambiguity_id}\n",
+    );
+    assert_ne!(document, STACKED, "the explain overlay declares its params");
+    let project = generate("stacked-params", &document);
+    build(&project, &["pages/ObjectivesList.tsx"]);
+    node(
+        &project,
+        "stacked-params",
+        &format!(
+            r#"{HARNESS}
+(async () => {{
+  const first = open("Resolve");
+  const explain = find(first, (n) => n.tag === "button" && text(n) === "Explain");
+  assert(explain, "the resolve form offers its Explain action");
+  explain.props.onClick();
+  const stacked = React.__renderTree(tree);
+  const buttons = [];
+  const collect = (list) => {{
+    for (const node of list) {{
+      if (typeof node !== "object") continue;
+      if (node.tag === "button" && text(node) === "Confirm") buttons.push(node);
+      collect(node.children);
+    }}
+  }};
+  collect(stacked);
+  assert.strictEqual(buttons.length, 1, "the explain confirm is open");
+  buttons[0].props.onClick();
+  await settle();
+  assert.strictEqual(sent.length, 1, `one command is sent: ${{JSON.stringify(sent)}}`);
+  assert.strictEqual(sent[0].command, "objectives.ExplainAmbiguity");
+  assert.strictEqual(sent[0].input.ambiguity, "amb-1", `the confirm sends ${{JSON.stringify(sent[0].input)}}`);
+}})().catch((error) => {{ console.error(error); process.exit(1); }});
+"#
+        ),
+    );
+}

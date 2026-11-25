@@ -41,7 +41,8 @@ export interface Opener {
 export interface Scope {
   values: Record<string, unknown>;
   set(path: string, value: unknown): void;
-  open(overlay: string, params?: Record<string, unknown>, opener?: Opener): void;
+  /** `params` is the row the opener ran on; `from` the params in scope where the opener stands. */
+  open(overlay: string, params?: Record<string, unknown>, opener?: Opener, from?: Record<string, unknown>): void;
   close(): void;
   /** The action a confirm open here confirms; confirming runs it. */
   confirmed?: Opener;

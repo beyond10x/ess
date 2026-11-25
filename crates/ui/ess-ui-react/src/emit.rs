@@ -2033,9 +2033,12 @@ impl<'d> Gen<'d> {
             let use_scope = self.import("runtime/core", "useScope");
             let evaluate = self.import("runtime/expr", "evaluate");
             lines.push(format!("const __outer = {use_scope}();"));
-            // Params are values passed by the opener: `row` is the row the opener ran on.
+            // Params are values passed by the opener: `row` is the row the opener ran on and
+            // `params` the params in scope where it stands.
             lines.push(
-                "const __opener = { ...__outer.values, row: __outer.values.opener_row };"
+                "const __opener = { ...__outer.values, \
+                 params: __outer.values.opener_params ?? __outer.values.params, \
+                 row: __outer.values.opener_row };"
                     .to_owned(),
             );
             let params: Vec<String> = overlay

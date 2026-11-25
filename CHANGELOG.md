@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- An overlay's `params:` are values its opener passes, and are now read where the opener stands. Since 0.96.0 `ess ui check` judged them inside the overlay, against its own params, so an overlay opened from another could not pass that overlay's `params.<name>` on (`expr_paths`). The check now holds each such value at every action of the page that opens the overlay and names the one that lacks it. The terminal renderer and the generated React app sent such a value empty and now send the opener's; an action of an open overlay in the terminal also reads that overlay's params in its `bind`, as React does.
+
 ## [0.99.1] — 2026-11-24
 
 ### Fixed
