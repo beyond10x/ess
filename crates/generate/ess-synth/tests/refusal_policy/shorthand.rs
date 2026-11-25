@@ -1,7 +1,7 @@
 //! A struct with a shorthand (`ess/27`, beyond10x/ess#594) in the synthesized targets: the Rust
-//! and Go servers and the web app do not decode the short form yet, so each refuses a model that
-//! reaches one, by name, rather than refusing an honest short-form value at run time. A model with
-//! no shorthand is synthesized as before.
+//! target decodes the short form beside the object, in both layouts; the Go server and the web app
+//! do not decode it yet, so each refuses a model that reaches one, by name, rather than refusing an
+//! honest short-form value at run time. A model with no shorthand is synthesized as before.
 
 use super::*;
 

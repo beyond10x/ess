@@ -9,7 +9,10 @@
 //! `Decimal`, `Timestamp`, `Duration` and `Uuid` as strings, a tagged union adjacently tagged with
 //! its payload under the key [`ess_gen::schema::union_content_key`] decides, an absent optional
 //! field omitted rather than sent as `null`. Two projections of one model must not disagree about
-//! what a value looks like, so neither of them decides alone.
+//! what a value looks like, so neither of them decides alone. A struct with a shorthand (`ess/27`)
+//! is published as `oneOf` its field's value and its object, so its decoder reads both: a value
+//! that is not an object is that field alone. Its encoder writes the object, the one spelling every
+//! writer the model generates uses.
 //!
 //! # Both directions, and what each is for
 //!

@@ -366,13 +366,14 @@ pub(crate) fn retry_bound(
     }
 }
 
-/// A struct with a shorthand (`ess/27`, beyond10x/ess#594) is refused by the Rust and Go servers
-/// and the web app.
+/// A struct with a shorthand (`ess/27`, beyond10x/ess#594) is refused by the Go server and the web
+/// app.
 ///
 /// Their codecs decode a struct from its object only, so a request or a row written in the short
 /// form — a value the specification admits — would be refused at run time as malformed. Each struct
-/// is named, so the short-form decoder is owed rather than silently missing. The command-line
-/// target is outside the story's list and keeps its output.
+/// is named, so the short-form decoder is owed rather than silently missing. The Rust target's wire
+/// module reads both spellings (`rust::wire`), so it passes here; the command-line target is
+/// outside the story's list and keeps its output.
 pub(crate) fn shorthand(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,

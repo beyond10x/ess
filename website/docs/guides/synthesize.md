@@ -145,6 +145,8 @@ lifecycles and their decoders, and nothing else. `wire::decode_<type>(&value, "$
 `json::Value` (`json::parse`) and refuses at the key path of the first refusal, in the words the
 served decoders use: a broken alphabet, length, prefix or invariant, a `distinct:` duplicate, a
 member a closed struct does not declare. `wire::encode_<type>(&value, &mut out)` writes it back.
+A struct with a shorthand (`ess/27`) is read from its field's value alone as from its object, and
+written as the object; the `go` and `web` targets refuse such a struct by name.
 An entity crosses as its snapshot, `decode_entity_<entity>` and `encode_entity_<entity>`, and
 the snapshot decoder refuses a value that breaks one of the entity's invariants. Command and view
 codecs are written only with a server.
