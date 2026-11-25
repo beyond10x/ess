@@ -796,7 +796,7 @@ fn an_overflowing_field_is_refused_only_for_the_value_types_it_reaches() {
 /// `OpenStore` takes a `String` identity, so every `String` field name is one a caller-swapped
 /// half redraws a copied identity under (`name` among them); `CreateShelf` refuses more than 50
 /// items, so the shelf is created empty and `UpdateShelf` arranges the list the view publishes.
-const SHELF: &str = r#"format: ess/33
+const SHELF: &str = r"format: ess/33
 system: demo
 version: v1
 domain: demo.shop
@@ -911,7 +911,7 @@ views:
       - {name: shelf_id, type: demo.shop.ShelfId}
       - {name: name, type: String}
       - {name: items, type: List<demo.shop.Item>}
-"#;
+";
 
 /// The caller-swapped half of an `invariant-wrapped` scenario selects its witness row by the
 /// identity field the view projects, as the first half does (adopter report N91). The first half
