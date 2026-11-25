@@ -215,6 +215,7 @@
 //! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
 //! | `request: {query: [input.<field>, …]}` beside a body | each listed field is an `in: query` parameter under its wire name, in the order listed, by the rules of `encoding: query`, and is in neither the request body nor `{command}.Input` (beyond10x/ess#754) |
 //! | `request: {unknown: ignore}` beside `json` or `form` | `{command}.Input` is `additionalProperties: true`, and the request body says that what no field names is ignored and what the path carries must equal the path's value |
+//! | `request: {members: {<field>: <member.path>}}` beside `json` | `{command}.Input` is nested: each mapped field's property under its member path, each object a path opens `{type: object, properties, required, additionalProperties}`, required when it holds a required property and open under `unknown: ignore` |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
@@ -3030,6 +3031,151 @@ fn schemas(
     out
 }
 
+/// `{command}.Input`, the object of the input fields `body` the request body carries, nested as
+/// its route's `request.members` read them ([`nested_input`]).
+fn input_schema(
+    command: &ResolvedCommand,
+    body: &[ResolvedField],
+    request: &ess_http::Request,
+) -> Fragment {
+    // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
+    // open body.
+    let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
+        UndeclaredFields::Ignored
+    } else {
+        UndeclaredFields::Refused
+    };
+    let flat = embedded(&types::message(&Message {
+        fields: body,
+        undeclared_fields,
+        ..Message::of_command(command)
+    }));
+    nested_input(flat, command, request)
+}
+
+/// `{command}.Input` as the body carries it when its route reads input fields from nested members
+/// (`request.members`): each mapped field's property moved under its member path, every object the
+/// paths open `{type: object, properties, required, additionalProperties}`, required when it holds
+/// a required property, and open exactly when the route ignores what no field names. The flat
+/// `input` as it is without `members`.
+fn nested_input(
+    input: Fragment,
+    command: &ResolvedCommand,
+    request: &ess_http::Request,
+) -> Fragment {
+    let Fragment::Mapping(mut object) = input else {
+        return input;
+    };
+    if request.members.is_empty() {
+        return Fragment::Mapping(object);
+    }
+    let Some(Fragment::Mapping(properties)) = object.get("properties").cloned() else {
+        return Fragment::Mapping(object);
+    };
+    let required = match object.get("required") {
+        Some(Fragment::Sequence(required)) => required.clone(),
+        _ => Vec::new(),
+    };
+    let paths: BTreeMap<&str, &[String]> = command
+        .input
+        .iter()
+        .filter_map(|field| {
+            request
+                .member(&field.name)
+                .map(|path| (types::wire_name(field), path.segments()))
+        })
+        .collect();
+    let mut level = Level::default();
+    for (name, schema) in properties {
+        let Fragment::String(wire) = &name else {
+            continue;
+        };
+        let top = [wire.clone()];
+        let path = paths.get(wire.as_str()).copied().unwrap_or(&top);
+        level.insert(path, schema, required.contains(&name));
+    }
+    let open = request.unknown == ess_http::Unknown::Ignore;
+    let (nested, required) = level.into_fragments(open);
+    object.insert("properties".into(), Fragment::Mapping(nested));
+    if !required.is_empty() {
+        object.insert("required".into(), Fragment::Sequence(required));
+    }
+    Fragment::Mapping(object)
+}
+
+/// One object level of a nested `{command}.Input`: its members in the order first met, each a
+/// property's schema with whether it is required, or an object level a member path opens.
+#[derive(Default)]
+struct Level(Vec<(String, Nested)>);
+
+/// One member of a [`Level`]: a property's schema with whether it is required, or a level.
+enum Nested {
+    Property(Fragment, bool),
+    Object(Level),
+}
+
+impl Level {
+    /// Files `schema` under `path`, opening each object on the way.
+    fn insert(&mut self, path: &[String], schema: Fragment, required: bool) {
+        let [first, rest @ ..] = path else {
+            return;
+        };
+        if rest.is_empty() {
+            self.0
+                .push((first.clone(), Nested::Property(schema, required)));
+            return;
+        }
+        let index = self
+            .0
+            .iter()
+            .position(|(name, member)| name == first && matches!(member, Nested::Object(_)))
+            .unwrap_or_else(|| {
+                self.0
+                    .push((first.clone(), Nested::Object(Level::default())));
+                self.0.len() - 1
+            });
+        if let Nested::Object(level) = &mut self.0[index].1 {
+            level.insert(rest, schema, required);
+        }
+    }
+
+    /// Whether it holds a required property at any depth.
+    fn required(&self) -> bool {
+        self.0.iter().any(|(_, member)| match member {
+            Nested::Property(_, required) => *required,
+            Nested::Object(level) => level.required(),
+        })
+    }
+
+    /// Its `properties` and its `required` names, each object level written out.
+    fn into_fragments(self, open: bool) -> (ess_yaml::Mapping, Vec<Fragment>) {
+        let mut properties = ess_yaml::Mapping::new();
+        let mut required = Vec::new();
+        for (name, member) in self.0 {
+            let (schema, needed) = match member {
+                Nested::Property(schema, needed) => (schema, needed),
+                Nested::Object(level) => {
+                    let needed = level.required();
+                    let (nested, names) = level.into_fragments(open);
+                    let mut object = ess_yaml::Mapping::new();
+                    object.insert("type".into(), "object".into());
+                    object.insert("properties".into(), Fragment::Mapping(nested));
+                    if !names.is_empty() {
+                        object.insert("required".into(), Fragment::Sequence(names));
+                    }
+                    object.insert("additionalProperties".into(), Fragment::Bool(open));
+                    (Fragment::Mapping(object), needed)
+                }
+            };
+            if needed {
+                required.push(Fragment::String(name.clone()));
+            }
+            properties.insert(Fragment::String(name), schema);
+        }
+        (properties, required)
+    }
+}
+
 /// The schemas one accepted command's operation needs, under its binding `route` if it has one,
 /// and the named types they reach, as [`schemas`] describes.
 fn command_schemas<'a>(
@@ -3059,20 +3205,9 @@ fn command_schemas<'a>(
     // (beyond10x/ess#754): a file part is not the base64 string that schema holds.
     let parted = encoding == ess_http::Encoding::Multipart;
     if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare && !parted {
-        // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
-        // open body.
-        let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
-            UndeclaredFields::Ignored
-        } else {
-            UndeclaredFields::Refused
-        };
         out.insert(
             format!("{}.Input", command.name),
-            embedded(&types::message(&Message {
-                fields: &body,
-                undeclared_fields,
-                ..Message::of_command(command)
-            })),
+            input_schema(command, &body, &request),
         );
     }
     roots.extend(types::field_leaves(&command.input));

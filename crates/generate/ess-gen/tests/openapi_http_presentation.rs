@@ -356,6 +356,77 @@ fn a_listed_query_field_is_a_query_parameter_and_in_no_body() {
     assert!(schema["properties"].get("tags").is_none(), "{schema}");
 }
 
+// --- `request.members` (`ae1d-a-json-request-reads-an-input-from-a-nested-member`) ---
+
+const BOARD: &str = include_str!("../../../specify/ess-http/tests/fixtures/board.yaml");
+
+#[test]
+fn a_nested_member_is_written_nested_with_required_per_level() {
+    let ir = model_of(&[("board.yaml", BOARD)]);
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {members: {board_id: event.board_id, title: event.data.title, note: event.data.note}}
+";
+    let written = documents(&ir, binding(&ir, routes));
+    let document = as_json(&written["openapi/board-service.yaml"]);
+    let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
+    assert_eq!(
+        input["properties"]
+            .as_object()
+            .map(|object| object.keys().collect::<Vec<_>>()),
+        Some(vec![&"event".to_owned()]),
+        "{input}"
+    );
+    assert_eq!(input["required"], json!(["event"]), "{input}");
+    let event = &input["properties"]["event"];
+    assert_eq!(event["type"], "object", "{event}");
+    assert_eq!(event["additionalProperties"], false, "{event}");
+    assert_eq!(event["required"], json!(["board_id", "data"]), "{event}");
+    let data = &event["properties"]["data"];
+    assert_eq!(data["required"], json!(["title"]), "{data}");
+    assert_eq!(data["properties"]["title"]["type"], "string", "{data}");
+    assert!(data["properties"].get("note").is_some(), "{data}");
+    assert_eq!(
+        document["paths"]["/hooks"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+            ["$ref"],
+        "#/components/schemas/catalog.board.RenameBoard.Input"
+    );
+
+    // An object holding only `Optional` fields is not required; `unknown: ignore` opens each level.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {unknown: ignore, members: {note: meta.note}}
+";
+    let written = documents(&ir, binding(&ir, routes));
+    let document = as_json(&written["openapi/board-service.yaml"]);
+    let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
+    assert_eq!(input["required"], json!(["board_id", "title"]), "{input}");
+    assert_eq!(
+        input["properties"]["meta"]["additionalProperties"], true,
+        "{input}"
+    );
+    assert!(
+        input["properties"]["meta"].get("required").is_none(),
+        "{input}"
+    );
+
+    // Without `members` the schema is flat, as before.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+";
+    let written = documents(&ir, binding(&ir, routes));
+    let document = as_json(&written["openapi/board-service.yaml"]);
+    let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
+    assert_eq!(input["required"], json!(["board_id", "title"]), "{input}");
+    assert!(input["properties"].get("note").is_some(), "{input}");
+}
+
 // --- authentication (beyond10x/ess#681, `story:an-http-binding-projects-its-security-schemes`) ---
 
 /// The orders fixture with an actor granted both commands: `authentication` needs an actor.

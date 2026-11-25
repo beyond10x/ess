@@ -160,6 +160,22 @@ The document follows those keys on the routes that use them:
   the whole request body, bare: the request body's schema is the field's own, a list
   `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
   and the path must carry every other input field.
+- `members: {<field>: <member.path>}` beside `encoding: json` (or no `encoding`) reads an input
+  field from a nested member of the body, the path being member names joined by `.`; the input
+  stays flat, and every other field stays a top-level member. `{command}.Input` is written nested,
+  each object required when it holds a field that is not `Optional`. A required field under a
+  missing object is malformed; an `Optional` one reads as absent. `ESS-HTTP-020` refuses a key
+  that is no input field, a field the path or `request.query` carries, `members` beside `form`,
+  `query`, `multipart` or a bare `body`, on `get` or on a view, an empty name, two fields on one
+  path, one path an object above another, and a path starting at an unmapped field's wire name:
+
+  ```yaml
+  - command: catalog.desk.CloseTicket
+    method: post
+    path: /hooks
+    request: {members: {ticket_id: data.ticket_id, reason: data.reason}}
+    # {"kind": "closed", "data": {"ticket_id": "t-1", "reason": "done"}}
+  ```
 - `unknown: ignore` beside `json`, `form` or `query` ignores a member or key no input field names,
   for a client that sends a whole object back, and `{command}.Input` is written with
   `additionalProperties: true`. A member the path carries is admitted when it equals the path's
