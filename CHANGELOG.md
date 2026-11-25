@@ -2,17 +2,13 @@
 
 ## [Unreleased]
 
-### Fixed
-
-- A command a system actor issues with an `external:` branch narrowed by `when_subject:` and answered only for some value of an input, through a `when:` beside it, an `input.` read inside its predicate or a sibling declared before it that takes the other values, got a scenario awaiting the command with no `input`; a correct target issuing it with another value took a sibling, and the scenario failed with `ESS-CF-OUTCOME`. The await now states each input those guards read at the value synthesis sent. Suites without such a branch keep their bytes.
-
 ## [0.99.1] — 2026-11-24
 
 ### Fixed
 
 - `ess verify conform synthesize` witnesses a row-set guard that selects rows by a literal identity and by membership in an input list, such as `code == "classics"` beside `exists: {in: input.genres, as: g, that: code == g}`, where every branch of the command was refused `ESS-SYNTH-001` as selecting rows by no equality with the input. From `ess/23` such a membership counts as that equality with each element sent, and a branch that needs the literal's row is sent a list holding it. Suites without such a selector keep their bytes.
 - A command with a refusal over a list of references and a `when_subject:` refusal on a stored field that no command writes to the value it needs got a scenario expecting that refusal on a row the creating command stored, and so did each one-time disclosure cell that sends it; the scenario failed on every target. Synthesis now arranges such a refusal on a row that holds its guard, and refuses it and its disclosure cells (`ESS-SYNTH-003`) naming the stored field where no row does.
-
+- A command a system actor issues with an `external:` branch narrowed by `when_subject:` and answered only for some value of an input, through a `when:` beside it, an `input.` read inside its predicate or a sibling declared before it that takes the other values, got a scenario awaiting the command with no `input`; a correct target issuing it with another value took a sibling, and the scenario failed with `ESS-CF-OUTCOME`. The await now states each input those guards read at the value synthesis sent. Suites without such a branch keep their bytes.
 
 ## [0.99.0] — 2026-11-24
 
