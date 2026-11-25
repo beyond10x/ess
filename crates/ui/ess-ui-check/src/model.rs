@@ -67,8 +67,9 @@ use ess_gen::http::{self, Served};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate};
 use ess_ui::binding::{
-    Binding, CommandEffect, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, FixtureEffects,
-    ModelEnums, QueryParam, RowChange, RowFilter, SetValue, ViewRoute, ViewShape,
+    Binding, CommandEffect, CommandRoute, DeclaredAnswer, DeclaredError, EnumLookup, EnumVariant,
+    ErrorRoute, FixtureEffects, ModelEnums, QueryParam, RowChange, RowFilter, SetValue, ViewRoute,
+    ViewShape,
 };
 use ess_ui::{
     Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, HostSlot,
@@ -94,6 +95,9 @@ pub struct Model {
     commands: BTreeSet<String>,
     /// Each command's input fields by qualified name, as [`View::fields`] holds a row's.
     pub(crate) inputs: BTreeMap<String, Fields>,
+    /// Each command's inputs a call must carry, by qualified name: every input not `Optional`,
+    /// under its name and its wire name.
+    pub(crate) required_inputs: BTreeMap<String, BTreeSet<String>>,
     events: BTreeSet<String>,
     /// Every declared actor by qualified name, with the qualified names of the commands it may
     /// invoke.
@@ -260,7 +264,25 @@ fn actor_reads(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
         .collect()
 }
 
+/// Each command's inputs that are not `Optional`, under their names and wire names.
+fn required_inputs(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
+    ir.commands()
+        .iter()
+        .map(|(name, command)| {
+            let required = command
+                .input
+                .iter()
+                .filter(|field| !matches!(field.type_ref, ResolvedTypeRef::Optional { .. }))
+                .flat_map(|field| std::iter::once(&field.name).chain(&field.naming.wire))
+                .cloned()
+                .collect();
+            (name.to_string(), required)
+        })
+        .collect()
+}
+
 impl Model {
+    #[allow(clippy::too_many_lines)] // one field per index of the model
     fn index(ir: &EssIr) -> Self {
         let actor_reads = actor_reads(ir);
         let readable = ir
@@ -317,6 +339,7 @@ impl Model {
                 .iter()
                 .map(|(name, command)| (name.to_string(), fields_of(ir, &command.input)))
                 .collect(),
+            required_inputs: required_inputs(ir),
             events: ir.events().keys().map(ToString::to_string).collect(),
             actors: ir
                 .actors()
@@ -465,8 +488,8 @@ impl Model {
                         self.anonymous_read(sink, &named.at, &qualified);
                     }
                     self.page_actor_reads(document, &page_actors, sink, &named.at, &qualified);
-                    if let Some(params) = bound_params(document, &named.node, bound) {
-                        read_params(sink, &named.at, &qualified, view, params);
+                    if let Some((params, when)) = bound_params(document, &named.node, bound) {
+                        read_params(sink, &named.at, &qualified, view, params, when);
                     }
                 }
             }
@@ -661,6 +684,14 @@ impl Model {
         wire_problem(&qualified, &view.wires, field, "a section's row")
     }
 
+    /// What is wrong with `field` as a key of the first row an action's `loads` read answers
+    /// (`loads.<field>`), held as `section.<name>.row.<field>` is.
+    pub(crate) fn loaded_row_problem(&self, reads: &Reads, field: &str) -> Option<String> {
+        let (qualified, view) = self.view(reads.view.as_deref()?)?;
+        let field = field.split('.').next().unwrap_or(field);
+        wire_problem(&qualified, &view.wires, field, "the row an action loads")
+    }
+
     /// The fields and values the document reads from rows and inputs the model types: a
     /// `group_by`, `group_order`, an aggregate's `field`, a `label_from`, a `suggests` `value`, a form choice's fixed
     /// options, and a choice's `value` and `label` (beyond10x/ess#351, #358, #364, #330, #328).
@@ -730,6 +761,7 @@ impl Model {
                         row_field(sink, &path.child("field"), &view, fields, field);
                     }
                 }
+                Composite::Chart(chart) => self.chart_sort(chart, path, sink),
                 Composite::Form(form) => self.form_options(form, path, sink),
                 Composite::Choice(choice) => {
                     let Some((qualified, view)) = choice
@@ -793,6 +825,22 @@ impl Model {
             field,
             "a header title",
         );
+    }
+
+    /// A chart's `sort.by` names a row field of its view, as a collection's `group_by` does
+    /// (beyond10x/ess#723).
+    fn chart_sort(&self, chart: &ess_ui::Chart, path: &NodePath, sink: &mut Sink) {
+        if let (Some(sort), Some((view, fields))) =
+            (&chart.sort, self.row_fields(Some(&chart.reads)))
+        {
+            row_field(
+                sink,
+                &path.child("sort").child("by"),
+                &view,
+                fields,
+                &sort.by,
+            );
+        }
     }
 
     /// A form field whose choice lists fixed options, over a command input that is an enum:
@@ -1001,6 +1049,9 @@ fn enum_values(
     }
 }
 
+/// A read's params and the condition each param written `{value, when}` is sent under.
+type ParamsAndWhen<'a> = (&'a BTreeMap<String, Expr>, &'a BTreeMap<String, Expr>);
+
 /// No parameter at all: what a read with no `params:` slot binds.
 static NONE: BTreeMap<String, Expr> = BTreeMap::new();
 
@@ -1013,11 +1064,11 @@ fn bound_params<'a>(
     document: &'a Document,
     node: &NodePath,
     bound: Bound<'a>,
-) -> Option<&'a BTreeMap<String, Expr>> {
+) -> Option<ParamsAndWhen<'a>> {
     match bound {
-        Bound::Read(read) => Some(read.params),
-        Bound::Nothing | Bound::Export(None) => Some(&NONE),
-        Bound::Export(Some(ExportParams::Map(params))) => Some(params),
+        Bound::Read(read) => Some((read.params, read.when)),
+        Bound::Nothing | Bound::Export(None) => Some((&NONE, &NONE)),
+        Bound::Export(Some(ExportParams::Map(params))) => Some((params, &NONE)),
         Bound::Export(Some(ExportParams::Expression(expr))) => {
             let section = expr
                 .0
@@ -1030,7 +1081,7 @@ fn bound_params<'a>(
             let Body::Composite(composite) = &section.body else {
                 return None;
             };
-            composite_reads(composite).map(|(_, reads)| &reads.params)
+            composite_reads(composite).map(|(_, reads)| (&*reads.params, reads.params.conditions()))
         }
         Bound::Elsewhere => None,
     }
@@ -1053,6 +1104,7 @@ fn read_params(
     qualified: &str,
     view: &View,
     bound: &BTreeMap<String, Expr>,
+    when: &BTreeMap<String, Expr>,
 ) {
     let declared: Vec<&str> = view
         .params
@@ -1078,7 +1130,18 @@ fn read_params(
         }
     }
     for param in view.params.iter().filter(|param| param.required) {
-        if !bound.contains_key(&param.name) {
+        if when.contains_key(&param.name) {
+            sink.push(
+                "read_params",
+                at,
+                format!(
+                    "view `{qualified}` requires the parameter `{}`, which this read sends only \
+                     under its `when`: the served surface cannot answer the read that leaves it \
+                     out",
+                    param.name
+                ),
+            );
+        } else if !bound.contains_key(&param.name) {
             sink.push(
                 "read_params",
                 at,
@@ -1165,6 +1228,8 @@ impl<'a> Bound<'a> {
 #[derive(Clone, Copy)]
 struct Read<'a> {
     params: &'a BTreeMap<String, Expr>,
+    /// The condition each param written `{value, when}` is sent under.
+    when: &'a BTreeMap<String, Expr>,
     paging: Option<&'a Paging>,
 }
 
@@ -1172,6 +1237,7 @@ impl<'a> Read<'a> {
     fn of(reads: &'a Reads) -> Self {
         Self {
             params: &reads.params,
+            when: reads.params.conditions(),
             paging: reads.paging.as_ref(),
         }
     }
@@ -1205,6 +1271,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                 for view in shell.preload.iter().flat_map(|preload| &preload.views) {
                     let read = Read {
                         params: &view.params,
+                        when: &NONE,
                         paging: None,
                     };
                     push(
@@ -1826,8 +1893,8 @@ fn moved(ir: &EssIr, route: &http::Route<'_>, default: http::Method) -> Moved {
 }
 
 /// Why a route of `http` cannot be what a generated UI calls: the binding routes none, serves a
-/// command on `get` with an input field its path does not carry, or reads a command's input as
-/// anything but a JSON body.
+/// command on `get` with an input field its path does not carry, answers a command's outcome with
+/// a redirect, or reads a command's input as anything but a JSON body.
 fn unbound(
     ir: &EssIr,
     bound: HttpBinding<'_>,
@@ -1865,6 +1932,24 @@ fn unbound(
                  must carry every input field",
                 bound.path.display(),
                 left.join(", ")
+            ));
+        }
+    }
+    // Every other declared answer form reaches the route table (`declared_answers`); a redirect
+    // is one no generated UI reads, since `fetch` follows it to a page that is no answer.
+    if let (Served::Command(handle), Some(declared)) = (route.serves, route.declared) {
+        let redirected = ir.command(handle).outcomes.iter().find(|outcome| {
+            declared
+                .answer(outcome.name.as_str(), outcome.error.is_some())
+                .is_some_and(|listed| listed.redirect.is_some())
+        });
+        if let Some(outcome) = redirected {
+            return Some(format!(
+                "command `{qualified}` answers its outcome `{}` with a redirect in the binding {}: \
+                 a generated UI follows no redirect; answer that outcome with a body or a status \
+                 alone",
+                outcome.name,
+                bound.path.display()
             ));
         }
     }
@@ -1919,6 +2004,10 @@ impl Surface {
                             path_aliases: off.path_aliases,
                             body,
                             body_alias,
+                            answers: route
+                                .declared
+                                .map(|declared| declared_answers(ir, command, declared))
+                                .unwrap_or_default(),
                         };
                         surface
                             .commands
@@ -1948,12 +2037,16 @@ impl Surface {
                             }
                         }
                         let off = moved(ir, &route, http::Method::Get);
+                        let (answer, member, empty) = view_answer(route.declared);
                         let route = ViewRoute {
                             path: route.path,
                             params,
                             identity: None,
                             method: off.method,
                             path_params: off.path_params,
+                            answer,
+                            member,
+                            empty,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
                         surface.unservable.insert(handle.to_string(), unservable);
@@ -1969,6 +2062,77 @@ impl Surface {
         }
         surface
     }
+}
+
+/// How a view route's rows are answered, as the route table carries it (beyond10x/ess#723): the
+/// form where it is not `rows`, the member a wrapped form is answered under, and a `single` view's
+/// empty status. All `None` for a derived route and the default form.
+fn view_answer(
+    declared: Option<&ess_gen::ess_http::Route>,
+) -> (Option<String>, Option<String>, Option<u16>) {
+    use ess_gen::ess_http::ViewBody;
+    let Some(route) = declared else {
+        return (None, None, None);
+    };
+    let form = match route.body.form {
+        ViewBody::Rows => None,
+        ViewBody::Array => Some("array".to_owned()),
+        ViewBody::Single => Some("single".to_owned()),
+    };
+    (
+        form,
+        route.body.member.clone(),
+        route.empty.as_ref().map(|empty| empty.status),
+    )
+}
+
+/// Each outcome `route` answers other than with ESS's envelope, in the order the command declares
+/// them, as the route table carries it (beyond10x/ess#723). Every body form is carried: an
+/// exhaustive match, so a form `ess-http/1` adds fails to compile here until a UI reads it.
+fn declared_answers(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    route: &ess_gen::ess_http::Route,
+) -> Vec<DeclaredAnswer> {
+    use ess_gen::ess_http::{Body, ResponseEncoding};
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| {
+            let listed = route.answer(outcome.name.as_str(), outcome.error.is_some())?;
+            let (body, member) = match &listed.body {
+                Body::Envelope => return None,
+                Body::None => ("none".to_owned(), None),
+                Body::Response => ("response".to_owned(), None),
+                Body::ResponseField(field) => (format!("response.{field}"), None),
+                Body::Wrapped { member, field } => (
+                    field.as_ref().map_or_else(
+                        || "response".to_owned(),
+                        |field| format!("response.{field}"),
+                    ),
+                    Some(member.clone()),
+                ),
+                Body::Error { member } => ("error".to_owned(), Some(member.clone())),
+            };
+            // An outcome that refuses names its error whatever its body, so a UI never reads it as
+            // accepted; only an `error` body carries the wire name to tell two apart.
+            let error = outcome.error.as_ref().map(|handle| {
+                let declared = ir.error(handle);
+                DeclaredError {
+                    wire: declared.naming.wire_or(&declared.name).to_owned(),
+                    code: declared.wire_code(),
+                }
+            });
+            Some(DeclaredAnswer {
+                status: listed.status,
+                outcome: outcome.name.to_string(),
+                body,
+                member,
+                error,
+                text: listed.encoding == ResponseEncoding::Text,
+            })
+        })
+        .collect()
 }
 
 /// Fields by name and by wire name, each with the wire variants of its enum, if it is one.

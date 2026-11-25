@@ -811,3 +811,652 @@ fn adversary2_a_closed_group_refuses_a_field_or_group_named_groups() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+/// A page whose actions sit where no section or row hint used to offer them: a row's `item`
+/// button, a row's `expand` record, a drawer form's own actions, a drawer whose body is a
+/// collection and a section's child buttons (beyond10x/ess#722 items 13 to 16 and 25).
+const PLACES: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml, shelf.ItemById: views.yaml, shelf.Kinds: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items, item]}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    state:
+      mode: {type: string, class: page_state, default: fast}
+    header: {actions: [{name: lines, opens: lines, label: Lines}]}
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+        row_actions: [{name: open, opens: edit, label: Open}]
+        item: [{name: go, primitive: button, label: Ship it, action: {name: ship, does: shelf.Ship, bind: {id: row.id}}}]
+        expand: {component: record, reads: {view: shelf.ItemById, params: {id: row.id}}, fields: [note], actions: [{name: plain, does: shelf.Plain, bind: {id: row.id, mode: state.mode}, label: Plain}]}
+    overlays:
+      edit: {kind: drawer, component: form, title: Edit, does: shelf.Save, fields: [name], actions: [{name: void, does: shelf.Void, label: Void item}]}
+      lines: {kind: drawer, component: collection, title: Lines, reads: {view: shelf.Kinds}, columns: [title], actions: [{name: add, opens: create, label: Add line}]}
+      create: {kind: dialog, component: form, title: Create line, does: shelf.Create, fields: [name]}
+  item:
+    kind: detail_page
+    shell: app
+    title: Item
+    sections:
+      - name: card
+        component: record
+        reads: {view: shelf.ItemById, params: {id: it-1}}
+        fields: [note]
+        children:
+          - {name: home, primitive: button, label: Go home, action: {name: home, navigate: {to: items}}}
+          - {name: ping, primitive: button, label: Ping, action: {name: ping, does: shelf.Ping}}
+";
+
+/// An overlay of `kind` whose body is `component`, opened by the header action `show`, with an
+/// action that sends a command, an upload and an action hidden while `state.mode` is `fast`.
+fn overlay_document(kind: &str, component: &str) -> String {
+    let body = match component {
+        "record" => "reads: {view: shelf.ItemById, params: {id: it-1}}\n        fields: [note]",
+        _ => "does: shelf.Save\n        fields: [name]",
+    };
+    format!(
+        r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {{views: {{shelf.Items: views.yaml, shelf.ItemById: views.yaml}}}}
+shells:
+  app:
+    regions:
+      main: {{kind: page_outlet}}
+      overlay: {{kind: overlay_outlet}}
+navigation:
+  home: items
+  sections: [{{name: all, pages: [items]}}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    state:
+      mode: {{type: string, class: page_state, default: fast}}
+    header: {{actions: [{{name: show, opens: o, label: Show}}]}}
+    sections:
+      - name: list
+        component: collection
+        reads: {{view: shelf.Items}}
+        columns: [name]
+    overlays:
+      o:
+        kind: {kind}
+        component: {component}
+        title: Panel
+        {body}
+        actions:
+          - {{name: void, does: shelf.Void, label: Void item}}
+          - {{name: take, upload: {{accept: [text/csv], does: shelf.Import}}, label: Take file}}
+          - {{name: hidden, does: shelf.Hidden, label: Hidden, visible: state.mode == slow}}
+"
+    )
+}
+
+/// `act` at an overlay's action runs it for every overlay kind and both components that carry
+/// actions, and `upload` at one sends its command (B11-1, beyond10x/ess#722 item 13).
+#[test]
+fn act_runs_an_overlays_action_for_every_kind_and_component() {
+    for kind in ["dialog", "drawer", "fullscreen", "popover"] {
+        for component in ["record", "form"] {
+            let text = overlay_document(kind, component);
+            let name = format!("overlay_{kind}_{component}");
+            passed(&run_document(
+                &text,
+                &name,
+                &[
+                    "open: items",
+                    "act: pages/items/header/actions/show",
+                    "act: pages/items/overlays/o/actions/void",
+                    "expect_command: {command: shelf.Void}",
+                ],
+            ));
+            passed(&run_document(
+                &text,
+                &format!("{name}_upload"),
+                &[
+                    "open: items",
+                    "act: pages/items/header/actions/show",
+                    "upload: {at: pages/items/overlays/o/actions/take, file: stock.csv}",
+                    "expect_command: {command: shelf.Import, input: {name: stock.csv, content: \"id,name\\nit-9,Wrench\\n\"}}",
+                ],
+            ));
+        }
+    }
+}
+
+/// An action the overlay does not offer (hidden by its `visible`) is refused naming the overlay,
+/// and nothing is sent.
+#[test]
+fn act_refuses_an_action_the_overlay_does_not_offer() {
+    let outcome = run_document(
+        &overlay_document("drawer", "form"),
+        "overlay_hidden",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/show",
+            "act: pages/items/overlays/o/actions/hidden",
+        ],
+    );
+    assert_eq!(outcome.status, Status::Failed, "{outcome:#?}");
+    assert_eq!(outcome.step, Some(3), "{outcome:#?}");
+    let message = outcome.message.unwrap_or_default();
+    assert!(
+        message.contains("the overlay does not offer Hidden"),
+        "{message}"
+    );
+}
+
+/// `act` at a row's `item` button sends its action's command with the row's binds (item 14).
+#[test]
+fn act_runs_a_rows_item_button() {
+    passed(&run_document(
+        PLACES,
+        "item_button",
+        &[
+            "open: items",
+            "act: pages/items/sections/list/rows/it-2/item/go",
+            "expect_command: {command: shelf.Ship, input: {id: it-2}}",
+        ],
+    ));
+}
+
+/// `act` at a row's expand action sends its command with its binds, a `state.<name>` bind at the
+/// state's value (item 25).
+#[test]
+fn act_runs_an_action_of_a_rows_expand() {
+    let expand = format!("select: {PLACES_ROWS}/it-1/expand");
+    let plain = format!("act: {PLACES_ROWS}/it-1/expand/actions/plain");
+    passed(&run_document(
+        PLACES,
+        "expand_action",
+        &[
+            "open: items",
+            &expand,
+            &plain,
+            "expect_command: {command: shelf.Plain, input: {id: it-1, mode: fast}}",
+        ],
+    ));
+}
+
+/// A drawer form's own action runs, and a drawer whose body is a collection draws its `actions`
+/// and runs one: `opens` shows the overlay it names (items 13 and 16).
+#[test]
+fn act_runs_a_drawer_forms_action_and_a_drawer_collections_action() {
+    let open = format!("act: {PLACES_ROWS}/it-1/row_actions/open");
+    passed(&run_document(
+        PLACES,
+        "drawer_form",
+        &[
+            "open: items",
+            &open,
+            "act: pages/items/overlays/edit/actions/void",
+            "expect_command: {command: shelf.Void}",
+        ],
+    ));
+    passed(&run_document(
+        PLACES,
+        "drawer_collection",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/lines",
+            "expect: {at: pages/items/overlays/lines, text: Add line}",
+            "act: pages/items/overlays/lines/actions/add",
+            "expect: {at: pages/items/overlays/create, text: Create line}",
+        ],
+    ));
+}
+
+/// `act` at a section's child button runs its action: `does` sends the command and `navigate`
+/// opens the page (item 15).
+#[test]
+fn act_runs_a_sections_child_button() {
+    passed(&run_document(
+        PLACES,
+        "child_button",
+        &[
+            "open: item",
+            "act: pages/item/sections/card/children/ping",
+            "expect_command: {command: shelf.Ping}",
+            "act: pages/item/sections/card/children/home",
+            "expect: {at: pages/items/sections/list, text: Anvil}",
+        ],
+    ));
+}
+
+/// The Playwright spec clicks each of those actions at its path.
+#[test]
+fn the_playwright_spec_clicks_each_action_at_its_path() {
+    let document = document_of(PLACES, "places_playwright");
+    let steps = [
+        "open: items",
+        "act: pages/items/sections/list/rows/it-2/item/go",
+        "act: pages/items/sections/list/rows/it-1/expand/actions/plain",
+        "act: pages/items/overlays/edit/actions/void",
+        "act: pages/items/overlays/lines/actions/add",
+        "open: item",
+        "act: pages/item/sections/card/children/ping",
+    ];
+    let mut text =
+        "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: spec\n  steps:\n".to_owned();
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let loaded = ess_ui::load_path(&document).expect("the document loads");
+    let spec = ess_ui_test::playwright(&[file], &loaded);
+    for path in [
+        "pages/items/sections/list/rows/it-2/item/go",
+        "pages/items/sections/list/rows/it-1/expand/actions/plain",
+        "pages/items/overlays/edit/actions/void",
+        "pages/items/overlays/lines/actions/add",
+        "pages/item/sections/card/children/ping",
+    ] {
+        let wanted = format!("[data-ui-path=\"{path}\"]').click();");
+        assert!(spec.contains(&wanted), "{wanted}\n{spec}");
+    }
+    assert!(!spec.contains("test.fixme"), "{spec}");
+}
+
+const PLACES_ROWS: &str = "pages/items/sections/list/rows";
+
+// ── every node the browser addresses has a terminal region (beyond10x/ess#722 items 12, 17,
+// 18 and 19) ─────────────────────────────────────────────────────────────────────────────────
+
+const REGIONS: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml, shelf.Kinds: views.yaml, shelf.Wide: regions.yaml, shelf.Widgets: regions.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items, board, wide]}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    header:
+      actions:
+        - {name: pick, opens: pick, label: Pick}
+        - {name: create, opens: create_stay, label: Create}
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+    overlays:
+      pick:
+        kind: dialog
+        component: collection
+        title: Pick a kind
+        reads: {view: shelf.Kinds, key: code}
+        selection: multiple
+        columns: [title]
+        row_actions: [{name: choose, does: shelf.Choose, bind: {code: row.code}, label: Choose}]
+      create_stay:
+        kind: drawer
+        component: form
+        title: Create
+        does: shelf.Create
+        fields: [name]
+        submit: {closes: false}
+        result: {name: done, primitive: text, text: Order created}
+  board:
+    kind: dashboard_page
+    shell: app
+    title: Board
+    sections:
+      - name: board
+        component: board
+        reads: {view: shelf.Widgets}
+        widget_by: type
+        widgets:
+          metric: {primitive: text, text: row.label}
+  wide:
+    kind: list_page
+    shell: app
+    title: Wide
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Wide}
+        columns: [c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13]
+";
+
+/// The rows of the `wide` table (13 columns of 26 characters) and the `board`'s widgets.
+fn regions_fixture() -> String {
+    use std::fmt::Write as _;
+    let mut row = "{id: o-1".to_owned();
+    for column in 1..=13 {
+        write!(row, ", c{column:02}: value-of-column-{column:02}-abcdefg")
+            .expect("a String takes the text");
+    }
+    row.push('}');
+    format!(
+        "views:\n  shelf.Wide:\n    rows:\n      - {row}\n  shelf.Widgets:\n    rows:\n      - {{widget: w-1, type: metric, label: STOCK-MARK}}\n      - {{widget: w-2, type: metric, label: OTHER-MARK}}\n"
+    )
+}
+
+fn run_regions(name: &str, steps: &[&str]) -> Outcome {
+    let document = document_of(REGIONS, name);
+    std::fs::write(document.with_file_name("regions.yaml"), regions_fixture())
+        .expect("the fixture is written");
+    let mut text =
+        format!("format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: {name}\n  steps:\n");
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let report = ess_ui_test::execute(&document, &[file]).unwrap_or_else(|error| panic!("{error}"));
+    report.tests.into_iter().next().expect("one outcome")
+}
+
+/// The rows of an overlay's collection are read, selected, marked and acted on at
+/// `…/overlays/<o>/rows/<key>` (item 12).
+#[test]
+fn an_overlays_collection_rows_are_addressed() {
+    passed(&run_regions(
+        "overlay_rows",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/pick",
+            "expect: {at: pages/items/overlays/pick, rows: [k1, k2, k3]}",
+            "expect: {at: pages/items/overlays/pick/rows/k2, text: Hammer}",
+            "select: pages/items/overlays/pick/rows/k3",
+            "mark: pages/items/overlays/pick/rows/k2",
+            "act: pages/items/overlays/pick/rows/k2/row_actions/choose",
+            "expect_command: {command: shelf.Choose, input: {code: k2}}",
+        ],
+    ));
+}
+
+/// A form's `result` is read on its own cells after a submit that keeps the overlay open
+/// (item 17).
+#[test]
+fn a_forms_result_is_read_at_its_path() {
+    passed(&run_regions(
+        "form_result",
+        &[
+            "open: items",
+            "act: pages/items/header/actions/create",
+            "type: {at: pages/items/overlays/create_stay/fields/name, text: Ada}",
+            "act: pages/items/overlays/create_stay",
+            "expect_command: {command: shelf.Create, input: {name: Ada}}",
+            "expect: {at: pages/items/overlays/create_stay/result, text: Order created}",
+        ],
+    ));
+}
+
+/// A board's placed widget is read at `<board>/rows/<key>`, the path the React project draws it
+/// at, and only its own text shows there (item 18).
+#[test]
+fn a_boards_widget_is_read_at_its_row() {
+    passed(&run_regions(
+        "board_widget",
+        &[
+            "open: board",
+            "expect: {at: pages/board/sections/board/rows/w-1, text: STOCK-MARK}",
+            "expect: {at: pages/board/sections/board/rows/w-1, not_text: OTHER-MARK}",
+            "expect: {at: pages/board/sections/board/rows/w-2, text: OTHER-MARK}",
+        ],
+    ));
+}
+
+/// A table wider than 160 cells draws every column headless: its last cell is read whole
+/// (item 19).
+#[test]
+fn every_column_of_a_wide_table_is_drawn() {
+    passed(&run_regions(
+        "wide_table",
+        &[
+            "open: wide",
+            "expect: {at: pages/wide/sections/list/rows/o-1/columns/c13, text: value-of-column-13-abcdefg}",
+            "expect: {at: pages/wide/sections/list/columns/c13, text: c13}",
+        ],
+    ));
+}
+
+// ── a server pager is driven through the states it names (beyond10x/ess#722 items 23, 24) ────
+
+const SERVER_PAGED: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Orders: orders.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+navigation:
+  home: orders
+  sections: [{name: all, pages: [orders]}]
+pages:
+  orders:
+    kind: list_page
+    shell: app
+    title: Orders
+    state:
+      status: {type: {list: {enum: [open, closed]}}, class: page_state, store: url}
+      page: {type: integer, class: page_state, default: 1}
+      size: {type: integer, class: page_state, default: 5}
+    header:
+      actions:
+        - {name: report, does: shelf.Report, bind: {page: state.page, size: state.size}, label: Report}
+    sections:
+      - name: filters
+        component: filter_bar
+        binds: [state.status]
+        choices: [{name: status, component: choice, multiple: true, options: [open, closed]}]
+      - name: list
+        component: collection
+        reads: {view: shelf.Orders, params: {status: state.status, at: state.page, per: state.size}, paging: server, pager: {page: at, size: per, sizes: [5, 10]}}
+        columns: [id, status]
+";
+
+/// Twelve orders: `o-1` to `o-8` open, `o-9` to `o-12` closed.
+fn server_paged(name: &str, steps: &[&str]) -> Outcome {
+    let document = document_of(SERVER_PAGED, name);
+    let rows: Vec<String> = (1..=12)
+        .map(|at| {
+            let status = if at <= 8 { "open" } else { "closed" };
+            format!("      - {{id: o-{at}, status: {status}}}\n")
+        })
+        .collect();
+    std::fs::write(
+        document.with_file_name("orders.yaml"),
+        format!("views:\n  shelf.Orders:\n    rows:\n{}", rows.concat()),
+    )
+    .expect("the fixture is written");
+    let mut text =
+        format!("format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: {name}\n  steps:\n");
+    for step in steps {
+        text.push_str("  - ");
+        text.push_str(step);
+        text.push('\n');
+    }
+    let file = ess_ui_test::parse_str(&text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let report = ess_ui_test::execute(&document, &[file]).unwrap_or_else(|error| panic!("{error}"));
+    report.tests.into_iter().next().expect("one outcome")
+}
+
+/// The collection shows the size its size state holds, `page` writes the page state the read is
+/// sent with, and an action binding `state.page` sends it (item 24).
+#[test]
+fn a_server_pager_pages_through_its_states() {
+    passed(&server_paged(
+        "server_pager_pages",
+        &[
+            "open: orders",
+            "expect: {at: pages/orders/sections/list, rows: [o-1, o-2, o-3, o-4, o-5]}",
+            "page: {at: pages/orders/sections/list, to: 2}",
+            "expect: {at: pages/orders/sections/list, rows: [o-6, o-7, o-8, o-9, o-10]}",
+            "act: pages/orders/header/actions/report",
+            "expect_command: {command: shelf.Report, input: {page: 2, size: 5}}",
+        ],
+    ));
+}
+
+/// A change to another param of the read returns the collection to page 1, the state included
+/// (item 23).
+#[test]
+fn a_server_pager_returns_to_page_one_when_another_param_changes() {
+    passed(&server_paged(
+        "server_pager_resets",
+        &[
+            "open: orders",
+            "page: {at: pages/orders/sections/list, to: 2}",
+            "choose: {at: pages/orders/sections/filters/choices/status, option: open}",
+            "expect: {at: pages/orders/sections/list, rows: [o-1, o-2, o-3, o-4, o-5]}",
+            "act: pages/orders/header/actions/report",
+            "expect_command: {command: shelf.Report, input: {page: 1, size: 5}}",
+        ],
+    ));
+}
+
+// ── a collection's `item` on every row, at `…/rows/<key>/item/<name>` (beyond10x/ess#722) ───
+
+const ITEMS: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items]}]
+widgets:
+  caption:
+    summary: A caption.
+    params: {label: {type: string, required: true, note: the text}}
+    body:
+      - {name: words, primitive: text, text: args.label}
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+        item:
+          - {name: kind, primitive: text, text: row.kind}
+          - {name: note, component: caption, args: {label: row.note}}
+";
+
+/// Every row draws its `item` nodes, read at `…/rows/<key>/item/<name>` with that node's text
+/// only; a node of a widget's body is read below it at `…/item/<name>/body/<node>`, the path the
+/// React project draws it at.
+#[test]
+fn every_rows_item_is_read_at_its_path() {
+    passed(&run_document(
+        ITEMS,
+        "row_items",
+        &[
+            "open: items",
+            "expect: {at: pages/items/sections/list/rows/it-1/item/kind, text: tools}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/kind, text: parts}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/kind, not_text: Bolt}",
+            "expect: {at: pages/items/sections/list/rows/it-3/item/note, text: Chisel note}",
+            "expect: {at: pages/items/sections/list/rows/it-3/item/note, not_text: tools}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/note/body/words, text: Bolt note}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/note/body/words, not_text: Anvil}",
+        ],
+    ));
+}
+
+// ── a field's `visible:` in a record overlay (beyond10x/ess#722 item 21) ─────────────────────
+
+const DETAIL: &str = r#"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml, shelf.ItemById: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items]}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+        row_actions: [{name: detail, opens: detail, label: Detail}]
+    overlays:
+      detail:
+        kind: drawer
+        component: record
+        title: Detail
+        params: {id: row.id}
+        reads: {view: shelf.ItemById, params: {id: params.id}}
+        fields: [id, {field: note, label: Secret note, visible: "row.id == it-2"}]
+"#;
+
+/// A record overlay draws a field only while its `visible:` holds for the overlay's row: the
+/// note of `it-1` is hidden, the note of `it-2` is drawn (item 21).
+#[test]
+fn a_record_overlay_draws_a_field_only_while_its_visible_holds() {
+    passed(&run_document(
+        DETAIL,
+        "record_overlay_hidden",
+        &[
+            "open: items",
+            "act: pages/items/sections/list/rows/it-1/row_actions/detail",
+            "expect: {at: pages/items/overlays/detail, text: it-1}",
+            "expect: {at: pages/items/overlays/detail, not_text: Anvil note}",
+            "expect: {at: pages/items/overlays/detail, not_text: Secret note}",
+        ],
+    ));
+    passed(&run_document(
+        DETAIL,
+        "record_overlay_shown",
+        &[
+            "open: items",
+            "act: pages/items/sections/list/rows/it-2/row_actions/detail",
+            "expect: {at: pages/items/overlays/detail, text: Bolt note}",
+        ],
+    ));
+}

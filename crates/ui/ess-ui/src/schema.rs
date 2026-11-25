@@ -20,6 +20,11 @@ impl Schema {
         Self { value }
     }
 
+    /// The glyph of the icon `name` (`constructs.icon.icons`), when it is a name of the vocabulary.
+    pub(crate) fn icon_glyph(&self, name: &str) -> Option<&'static str> {
+        self.value["constructs"]["icon"]["icons"][name]["glyph"].as_str()
+    }
+
     /// The `expands_to` of the `shorthands.index` entry for `construct` at `at` (`""` for none).
     ///
     /// Every shorthand the loader implements asks for its entry here, so an entry the schema drops

@@ -246,6 +246,30 @@
       "shape": "crates/generate/ess-synth/src/go/http.rs:1675-1689"
     },
     {
+      "case": "unauthenticated",
+      "status": 401,
+      "body": "{\"refused\":\"unauthenticated\"}",
+      "expected": {
+        "answer": "not_granted",
+        "actor": null
+      },
+      "source": "constructed",
+      "command": "POST without a credential to a route an `ess-http/1` binding guards with `authentication:` (ess/681); gatepass declares no scheme",
+      "shape": "crates/generate/ess-synth/src/rust/http/bound.rs:2536-2575"
+    },
+    {
+      "case": "unauthenticated-bare",
+      "status": 401,
+      "body": "",
+      "expected": {
+        "answer": "not_granted",
+        "actor": null
+      },
+      "source": "constructed",
+      "command": "POST without a credential to a route whose realization answers a bare 401 (a proxy in front of it, or a hand-written `authenticate`)",
+      "shape": "not a synthesized body: a 401 is read as no credential the route accepts, whatever its body (crates/ui/ess-ui/src/binding.rs, `classify`)"
+    },
+    {
       "case": "transport",
       "status": 502,
       "body": "<html><body><h1>502 Bad Gateway</h1></body></html>",

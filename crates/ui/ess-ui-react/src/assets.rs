@@ -29,6 +29,7 @@ macro_rules! module {
 
 const RUNTIME: &[Module] = &[
     module!("runtime/json", "ts"),
+    module!("runtime/compare", "ts"),
     module!("runtime/expr", "ts"),
     module!("runtime/data", "ts"),
     module!("runtime/answer", "ts"),

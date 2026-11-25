@@ -15,7 +15,9 @@ use std::io::{Read as _, Write as _};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
-use ess_ui::binding::{classify, Answer, Binding, CommandRoute, ServedComponent};
+use ess_ui::binding::{
+    classify, classify_declared, Answer, Binding, CommandRoute, ServedComponent,
+};
 use ess_yaml::Value;
 
 use crate::data::{DataAdapter, ReadRequest, ReadResult};
@@ -400,6 +402,13 @@ impl DataAdapter for HttpAdapter {
         }
         let method = route.method.as_deref().unwrap_or("GET");
         let (status, body) = self.exchange(base, method, &target, None)?;
+        // A `single` view's declared empty answer holds no row (beyond10x/ess#723).
+        if route.empty == Some(status) {
+            return Ok(ReadResult {
+                rows: Vec::new(),
+                total: None,
+            });
+        }
         if !(200..300).contains(&status) {
             let refused = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
@@ -414,6 +423,9 @@ impl DataAdapter for HttpAdapter {
         }
         let body: serde_json::Value = serde_json::from_str(&body)
             .map_err(|error| format!("{}: the answer is not JSON: {error}", request.view))?;
+        if let Some(form) = &route.answer {
+            return declared_rows(&request.view, form, route.member.as_deref(), &body);
+        }
         Ok(match body {
             serde_json::Value::Object(ref members)
                 if members.get("rows").is_some_and(serde_json::Value::is_array) =>
@@ -440,7 +452,10 @@ impl DataAdapter for HttpAdapter {
 
     fn run(&mut self, command: &str, input: &BTreeMap<String, Value>) -> Answer {
         match self.post(command, input) {
-            Ok((status, body)) => classify(status, &body),
+            Ok((status, body)) => route(&self.binding, command).map_or_else(
+                || classify(status, &body),
+                |route| classify_declared(status, &body, &route.answers),
+            ),
             Err(_) => Answer::Transport,
         }
     }
@@ -486,6 +501,30 @@ pub(crate) fn error_status(binding: &Binding, command: &str, error: &str) -> Opt
     route(binding, command)
         .and_then(|route| route.errors.get(error))
         .map(|error| error.status)
+}
+
+/// The rows of a view whose binding declares its answer `form` (`array` or `single`), under
+/// `member` where it wraps it (beyond10x/ess#723). An answer of another shape is refused, never
+/// guessed at.
+fn declared_rows(
+    view: &str,
+    form: &str,
+    member: Option<&str>,
+    body: &serde_json::Value,
+) -> Result<ReadResult, String> {
+    let value = match member {
+        Some(member) => body
+            .get(member)
+            .ok_or_else(|| format!("{view}: the answer has no member `{member}`"))?,
+        None => body,
+    };
+    let rows = match (form, value) {
+        ("array", serde_json::Value::Array(rows)) => rows.iter().map(to_yaml).collect(),
+        ("single", serde_json::Value::Null) => Vec::new(),
+        ("single", row @ serde_json::Value::Object(_)) => vec![to_yaml(row)],
+        _ => return Err(format!("{view}: the answer is not the declared `{form}`")),
+    };
+    Ok(ReadResult { rows, total: None })
 }
 
 /// The route `command` (as the document writes it) is sent on.

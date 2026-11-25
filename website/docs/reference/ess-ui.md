@@ -69,9 +69,11 @@ Expressions connect a node to state and data. They are short paths plus a few op
 | `url.query.<name>` | a query parameter (guards only) |
 | `actor.<field>` | the signed-in actor: user\_id, account\_id, roles, signed\_in, may(\<command\>) |
 | `widget.<field>` | the widget row inside a board |
+| `loads.<field>` | the first row the action's `loads` read answers, in that action's `bind`, `checked` and `visible`; absent until a row answers, while the action is drawn disabled, and read again after a command it sends; anywhere else refused (`expr_paths`) |
 | `same_as(<section>)` | the params of another section's read |
 | `matches(params)` | true when a live row satisfies the section's read params |
-| `operators` | ==, !=, in \[..\], not, and, or, literals |
+| `operators` | ==, !=, in \[..\], not, and, or, parentheses, literals; React and the terminal read them with one grammar |
+| `[<expr>, ...]` | a list of expressions, as a `bind` value only: sent as one list input of their values |
 
 ### Short forms
 
@@ -482,7 +484,7 @@ A section is a heading with pages under it — a fixed list, or entries generate
 |---|---|---|---|---|
 | `name` | `name` | yes |   | node name |
 | `label` | `string` |   |   | heading text |
-| `icon` | `string` |   |   | semantic icon name mapped by the renderer |
+| `icon` | `string` |   |   | a name of `icon.icons`, drawn before the label |
 | `pages` | one of: list of name of a [Page](#page) \| [DynamicNavEntries](#dynamicnaventries) | yes |   | fixed pages or entries from a view |
 
 **Example**
@@ -493,6 +495,12 @@ label: Billing
 icon: receipt
 pages: [invoices.list]
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 
 ### DynamicNavEntries
 
@@ -963,7 +971,7 @@ row_actions:
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 | `model_enum_values` | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
 | `group_order` | `**.group_order`, `**.show_empty_groups` | `{must: "they order the groups of group_by, so a collection that has them has group_by"}` | error |
 
@@ -1146,7 +1154,7 @@ actions: [{name: create, opens: create, label: New ticket}]
 |---|---|---|---|
 | `channel_refs` | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
-| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 | `header_record` | `**.header.title_from` | `{must: "title_from.section names a section that reads: the title's record is its first row"}` | error |
 
 ### overlay
@@ -1162,7 +1170,7 @@ Overlays hold forms, confirms and detail views opened by actions. They belong to
 | `kind` | one of: `drawer` \| `dialog` \| `fullscreen` \| `popover` | yes |   | presentation hint; a TUI uses a full-screen pane |
 | `component` | one of: name of a [Composite](#composite) \| name of a [Widget](#widget) | yes, unless the node is a [HostSlot](#hostslot) |   | what the overlay renders |
 | `title` | `string` |   |   | overlay title; a confirm shows it as its question |
-| `params` | map of `name` → `expr` |   |   | values passed by the opener |
+| `params` | map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) |   |   | values passed by the opener; `{value, when}` passes one only while `when` is truthy |
 | `state` | map of `name` → [State](#state) |   |   | overlay-local state |
 | `visible` | `expr` |   |   | shows the overlay only when true |
 | `degrades` | [Degrades](#degrades) |   |   | fallbacks for renderers lacking a capability |
@@ -1272,8 +1280,9 @@ A renderer without charts shows the series as a table (degrade no\_charts).
 |---|---|---|---|---|
 | `reads` | [Reads](#reads) | yes |   | the series |
 | `chart` | one of: `line` \| `bar` \| `doughnut` \| `pie` \| `polar` \| `single_number` \| `list` \| `table` \| record \{ `binds`: `expr`, `options`: list of `string` \} | yes |   | chart kind, fixed or chosen by data |
-| `x` | `name` |   |   | x-axis field |
-| `series` | list of `name` |   |   | y fields |
+| `x` | one of: `name` \| record \{ `field`: `name`, `label`: optional `string`, `as`: optional (one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes`), `unit`: optional (one of: `ms` \| `s` \| `m` \| `h`) \} |   |   | x-axis field: a name, or `{field, label, as, unit}` as a column takes it; `label` titles the axis and `as` formats each tick |
+| `series` | list of (one of: `name` \| record \{ `field`: `name`, `label`: optional `string`, `as`: optional (one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes`), `unit`: optional (one of: `ms` \| `s` \| `m` \| `h`) \}) |   |   | y fields, each a name or `{field, label, as, unit}`; `label` titles the series in the legend and the table |
+| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`) \} |   |   | the order the rows are drawn in, the collection's `by` and `dir` (default `asc`), applied after the live effects and `reads.filter`; absent, the rows as read and as the live effects leave them |
 
 **Example**
 
@@ -1538,7 +1547,7 @@ choice: {component: choice, options: PartnerTier}
 |---|---|---|---|
 | `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 | `suggests_needs_tags` | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
-| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 
 ### Tab
 
@@ -1816,10 +1825,44 @@ The renderer maps the semantic name to its icon set; a TUI shows a glyph or the 
 
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
-| `icon` | `string` | yes |   | semantic icon name |
+| `icon` | `string` | yes |   | a name of `icons`; another is warned (`icon_names`) and draws its label |
 | `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | colour role, and the tone of a value `tone_by` does not map |
 | `tone_by` | record \{ `value`: `expr`, `map`: optional (one of: map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \| record \{ `bands`: list of record \{ `from`: `number`, `tone`: (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`) \} \}), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out (exact values, or `bands`), or `tones` naming an entry of `tone_maps`; exactly one of the two |
 | `label` | `string` | yes |   | accessible text |
+
+**Icons**
+
+```yaml
+add: {glyph: +, meaning: add an item}
+edit: {glyph: ✎, meaning: change an item}
+delete: {glyph: ✕, meaning: remove an item for good}
+archive: {glyph: ▤, meaning: put an item away}
+copy: {glyph: ⧉, meaning: copy a value}
+download: {glyph: ⤓, meaning: save a file}
+upload: {glyph: ⤒, meaning: send a file}
+refresh: {glyph: ↻, meaning: read again}
+search: {glyph: ⌕, meaning: find by text}
+filter: {glyph: ∇, meaning: narrow what is shown}
+settings: {glyph: ⚙, meaning: change preferences}
+open: {glyph: ↗, meaning: open in full}
+close: {glyph: ×, meaning: close a pane or an overlay}
+check: {glyph: ✓, meaning: done or confirmed}
+warning: {glyph: ⚠, meaning: needs attention}
+info: {glyph: ℹ, meaning: more about this}
+arrow_up: {glyph: ↑, meaning: up}
+arrow_down: {glyph: ↓, meaning: down}
+arrow_left: {glyph: ←, meaning: back or left}
+arrow_right: {glyph: →, meaning: forward or right}
+home: {glyph: ⌂, meaning: the home page}
+user: {glyph: ☺, meaning: a person or the account}
+play: {glyph: ▶, meaning: start}
+pause: {glyph: ‖, meaning: pause}
+typing: {glyph: …, meaning: someone is writing}
+briefcase: {glyph: ⊞, meaning: work or business}
+receipt: {glyph: ▦, meaning: a bill or a payment}
+lifebuoy: {glyph: ⊕, meaning: help or support}
+bookmark: {glyph: ⚑, meaning: a saved or marked item}
+```
 
 **Example**
 
@@ -1837,6 +1880,7 @@ visible: channel.ticket_chat.typing
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `tone_map_refs` | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 | `tone_bands` | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 
 ### button
@@ -1852,7 +1896,7 @@ Use inside widgets and section children; page-level actions belong in the header
 | `label` | `string` | yes |   | button text |
 | `action` | [Action](#action) | yes |   | what the button does |
 | `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis |
-| `icon` | `string` |   |   | optional semantic icon |
+| `icon` | `string` |   |   | optional; a name of `icon.icons` |
 
 **Emphasis**
 
@@ -1873,6 +1917,12 @@ tone: primary
 action: {name: send, does: tickets.PostReply}
 ```
 
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
+
 ### link
 
 Text that navigates to a page or an external address.
@@ -1884,7 +1934,7 @@ Prefer `to` (a page of this app); `href` is for external addresses.
 | Property | Type | Required | Default | Note |
 |---|---|---|---|---|
 | `text` | `expr` | yes |   | link text |
-| `to` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to open |
+| `to` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) \} |   |   | page to open; `{value, when}` passes a param only while `when` is truthy |
 | `href` | `expr` |   |   | external address |
 
 **Exactly one of**
@@ -2050,7 +2100,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
 | `fixture` | `string` |   |   | fixture file answering the placeholder: in `fixtures.dir` when the document declares one (a path that starts with that directory names the same file), else relative to the document |
 | `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
-| `params` | map of `name` → `expr` |   |   | view params bound to state |
+| `params` | map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) |   |   | view params bound to state; `{value, when}` sends one only while `when` is truthy and leaves it out otherwise |
 | `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. `<a> contains <b>` keeps a row whose `<a>`, read as text, holds every whitespace-separated word of `<b>` in any case, and every row while `<b>` has none; a filter bar search bound to `<b>` is then drawn. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `pager` | record \{ `page`: optional `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the sizes offered and, with `paging: server`, the params of this read that carry the page (required) and the page size; with `paging: client`, `sizes` alone; only on a collection's `reads`; sizes default: `[25, 50, 100]` |
@@ -2119,18 +2169,20 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 |---|---|---|---|---|
 | `name` | `name` |   |   | node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name |
 | `does` | name of an ESS `command` |   |   | ESS command to run |
-| `bind` | map of `name` → `expr` |   |   | command input from row, selection or state |
+| `bind` | map of `name` → (one of: `expr` \| list of `expr` \| record \{ `value`: (one of: `expr` \| list of `expr`), `when`: `expr` \}) |   |   | command input from row, selection or state; a list of expressions is sent as one list input; `{value, when}` sends one only while `when` is truthy and leaves it out otherwise |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
-| `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
+| `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → (one of: `expr` \| record \{ `value`: `expr`, `when`: `expr` \}) \} |   |   | page to go to; `{value, when}` passes a param only while `when` is truthy |
 | `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
 | `upload` | record \{ `accept`: list of `string`, `does`: name of an ESS `command` \} |   |   | file picker feeding a command |
 | `copy` | `expr` |   |   | value copied to the clipboard |
 | `sets` | map of `expr` → (one of: `expr` \| exactly `toggle`) |   |   | UI state change only, never business data |
 | `label` | `string` |   |   | button or menu text |
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
+| `icon` | `string` |   |   | a name of `icon.icons`: an `as: icon` action draws its glyph alone, with the label as its accessible name; any other draws it before the label |
+| `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis, as a button's: React fills a `primary` action, draws a `danger` one destructive and a `ghost` one without border; the terminal draws `primary` bold, `danger` bold and underlined |
 | `choice` | [Node](#node) |   |   | options for as choice |
-| `loads` | [Reads](#reads) |   |   | a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state |
-| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read |
+| `loads` | [Reads](#reads) |   |   | a view the action reads, checked against the model and given fixture rows: `loads.<field>` in its `bind`, `checked` and `visible` reads the first row it answers, so a toggle bound `not loads.<field>` shows the loaded state; until a row answers, the action is drawn disabled |
+| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell, args or loads), and a toggle with `sets` the key it sets; a row field named like the action is never read |
 | `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
@@ -2175,10 +2227,11 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 |---|---|---|---|
 | `opens_resolves` | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
+| `icon_names` | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 | `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 | `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `toggle_state_unknown` | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
-| `checked_unreadable` | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
+| `checked_unreadable` | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args_loads]}` | warning |
 | `export_selection` | `**.export.params` | `{must: "an export's params read selection.<field> only on a bulk action, where the selection is in scope"}` | error |
 
 ### FixtureIndex
@@ -2304,7 +2357,7 @@ buffer: {type: {list: ChatEvent}, class: channel_buffer}
 
 How a section, or a nested composite that reads, applies a channel's events to its rows.
 
-`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all. A row path names one row: an `insert_top` event whose key the section already holds adds no second row, the held row takes the event's fields and moves to the top (`max_rows` then applies).
+`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all. A row path names one row: an `insert_top` event whose key the section already holds adds no second row, the held row takes the event's fields and moves to the top (`max_rows` then applies). An `insert_or_patch` or `insert_top` event puts a new row first; a collection's or a chart's declared `sort` orders the rows after the effect.
 
 **Properties**
 
@@ -2834,6 +2887,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
 | `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones`, `**.field.tone_by` | `{must_resolve: {ref: tone_map}}` | error |
 | `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+| `icon_names` | [NavSection](#navsection), [icon](#icon), [button](#button), [Action](#action) | `icon on a menu group, an icon, a button and an action` | `{must: be_a_name_of_icon_icons}` | warning |
 | `tone_bands` | [badge](#badge), [icon](#icon) | `tone_maps.*.bands`, `**.tone_by.map.bands` | `{must: ascend_strictly_by_from}` | error |
 | `label_map_refs` | [Field](#field), [badge](#badge) | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 | `label_map_unused` | [Document](#document) | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |
@@ -2852,11 +2906,11 @@ What a validator checks in a document, and the construct each check applies to. 
 | `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `suggests_needs_tags` | [Field](#field) | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 | `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
-| `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
+| `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args_loads]}` | warning |
 | `host_slots` | [HostSlot](#hostslot) | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
 | `hosts_registered` | every node | `**.host, for every name ess ui check --hosts lists` | `{must_resolve_in: ["**.host"]}` | error |
 | `board_widget_kinds` | every node | `**.board.reads fixture rows` | `{must: have_a_widget_by_field_that_names_an_entry_of_widgets}` | warning |
-| `expr_paths` | every node | `judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); params.<name> inside the params of a page overlay, values its opener passes, against every action of the page that opens it; and shell.<name> inside the rest of a shell (its regions and guards)`, `not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values` | `{must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"]}` | error |
+| `expr_paths` | every node | `judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); params.<name> inside the params of a page overlay, values its opener passes, against every action of the page that opens it; and shell.<name> inside the rest of a shell (its regions and guards); and loads.<field> everywhere, which only the bind, checked and visible of an action that declares loads read`, `not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values` | `{must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"]}` | error |
 | `expr_roots` | every node | `an unquoted dotted word inside an expr, outside the arguments of a call`, `not judged: a read's filter and a dynamic menu entry's filter (held by the filter_* checks), and a widget argument whose parameter the widget does not substitute into an expr, where the word is shown as text` | `{must: begin_with_a_root_of_expressions.forms_or_be_quoted}` | warning |
 | `document_loads` | every node | `every node` | `{must: the loader accepts the document; a refusal no other check names is reported under this id}` | error |
 | `layer_rules` | every node | `every node` | `{must: a node stands only where its layer may (layers)}` | error |
@@ -2874,7 +2928,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `read_params` | [Reads](#reads) | `pages.*.sections[].reads` | `{must: "with --model, a read binds only parameters its view declares and leaves no required one unbound"}` | error |
 | `type_in_model` | [Type](#type) | `pages.*.params.*` | `{must: "with --model, a page parameter's named type resolves in the document, the schema or the model"}` | error |
 | `field_in_model` | every node | `every form field, bind key, column and row.<field> path` | `{must: "with --model, form fields and bind keys are inputs of their command; columns, record fields and row.<field> paths are fields of the view read"}` | error |
-| `row_fields` | [collection](#collection), [Field](#field), [header](#header) | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | [collection](#collection), [Field](#field), [header](#header) | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 | `model_enum_values` | [collection](#collection), [choice](#choice) | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
 | `metric_aggregate` | [metric](#metric) | `**.aggregate` | `{must: "aggregate reads rows, so it needs reads; every aggregate but count needs a field, and field means nothing without an aggregate"}` | error |
 | `group_order` | [collection](#collection) | `**.group_order`, `**.show_empty_groups` | `{must: "they order the groups of group_by, so a collection that has them has group_by"}` | error |

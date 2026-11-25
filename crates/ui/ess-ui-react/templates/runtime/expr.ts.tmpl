@@ -20,6 +20,7 @@ export const ROOTS = [
   "url",
   "actor",
   "widget",
+  "loads",
   "same_as",
   "matches",
 ] as const;
@@ -297,6 +298,27 @@ export function truthy(value: unknown): boolean {
     return value.length > 0;
   }
   return Boolean(value);
+}
+
+/** A value the UI sends: written bare, or as `{value, when}` to be sent only while `when` is truthy. */
+export type Sent<T> = T | { value: T; when: string };
+
+/**
+ * The entries of `written` that are sent in `values`, each with its value as written: a bare one
+ * always, one written `{value, when}` only while `when` is truthy; the rest are left out.
+ */
+export function sent<T>(written: Record<string, Sent<T>> | undefined, values: Record<string, unknown>): Array<[string, T]> {
+  const entries: Array<[string, T]> = [];
+  for (const [name, entry] of Object.entries(written ?? {})) {
+    if (typeof entry === "object" && entry !== null && !Array.isArray(entry) && "when" in entry) {
+      if (truthy(evaluate(entry.when, values))) {
+        entries.push([name, entry.value]);
+      }
+    } else {
+      entries.push([name, entry as T]);
+    }
+  }
+  return entries;
 }
 
 function equal(left: unknown, right: unknown): boolean {

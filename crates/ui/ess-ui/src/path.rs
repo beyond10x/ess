@@ -465,6 +465,9 @@ pub(crate) fn check(document: &Document) -> Result<(), LoadError> {
             if let Composite::Metric(metric) = composite {
                 check_metric_format(&located.path, metric)?;
             }
+            if let Composite::Chart(chart) = composite {
+                check_chart_sort(&located.path, chart)?;
+            }
             if let Some((key, reads)) = composite_reads(composite) {
                 check_reads(&located.path.child(key), reads)?;
             }
@@ -494,6 +497,28 @@ fn check_host_slots(document: &Document) -> Result<(), LoadError> {
         declared.insert(&slot.host, path);
     }
     Ok(())
+}
+
+/// A chart's `sort` orders the rows it draws: `by` and `dir`. `allowed` and `mode` belong to a
+/// sort a user works through a control, which a chart does not draw (beyond10x/ess#723).
+fn check_chart_sort(path: &NodePath, chart: &crate::model::Chart) -> Result<(), LoadError> {
+    let Some(sort) = &chart.sort else {
+        return Ok(());
+    };
+    let refused = if sort.allowed.is_empty() {
+        sort.mode.as_ref().map(|_| "mode")
+    } else {
+        Some("allowed")
+    };
+    match refused {
+        Some(key) => Err(LoadError::new(
+            path.child("sort").child(key),
+            format!(
+                "a chart's `sort` takes `by` and `dir`, not `{key}`: a chart draws no sort control"
+            ),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// A `unit` counts an `as: duration` value, so a field that is no duration refuses one. A field

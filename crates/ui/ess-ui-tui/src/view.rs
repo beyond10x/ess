@@ -19,14 +19,14 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::{Frame, Terminal};
 
 use ess_ui::{
-    Body, ChartKind, Composite, Field, Form, HostSlot, MetricFormat, Node, NodePath, Primitive,
-    TabFields, TextFormat, TextStyle, Tone,
+    Action, Body, ChartKind, Composite, Field, Form, HostSlot, MetricFormat, Node, NodePath,
+    Primitive, TabFields, TextFormat, TextStyle, Tone,
 };
 
 use crate::app::{
-    aggregate, bar_items, board_rows, client_sizes, columns_of, form_fields, graph_collection,
-    group_names, paged, references_collection, App, BarItem, Ctx, Focus, Lifecycle, Mark, Prompt,
-    ReadState, Region,
+    aggregate, bar_items, board_rows, client_sizes, columns_of, compare, form_fields,
+    graph_collection, group_names, paged, references_collection, App, At, BarItem, Ctx, Focus,
+    Lifecycle, Mark, Prompt, ReadState, Region,
 };
 use crate::expr::{display, field_path, reads_row, row_key, truthy};
 
@@ -113,6 +113,10 @@ struct Place<'a> {
     /// Whether a collection drawn right here records its rows and cells ([`crate::Region`]): only
     /// a section's or an overlay's own body, whose lines are placed as they are.
     record: bool,
+    /// For the collection of a record's `item` ([`ess_ui::Record::item_collection`]): the keys
+    /// the record's own actions took, which its row actions leave to them. It offers no section
+    /// child button, which the record offers.
+    taken: Option<&'a str>,
 }
 
 /// A section's lines, ready to be placed.
@@ -124,6 +128,10 @@ struct SectionBlock {
     lines: Vec<Line<'static>>,
     marks: Vec<Mark>,
 }
+
+/// An action on a hint line: its key, the path it is recorded at with the row it is under (none
+/// where the hint records nothing), and the action.
+type Hinted = (char, Option<(String, Option<String>)>, Action);
 
 /// What a refusal shown in a view was sent by.
 #[derive(Clone, Copy)]
@@ -158,6 +166,7 @@ impl App {
             row,
             area,
             text,
+            key: None,
         });
     }
 
@@ -192,6 +201,9 @@ impl App {
                 },
                 mark.text,
             );
+            if let Some(region) = self.regions.borrow_mut().last_mut() {
+                region.key = mark.key;
+            }
         }
     }
 
@@ -539,6 +551,7 @@ impl App {
                 focused: false,
                 width,
                 record: false,
+                taken: None,
             };
             let spans: Vec<Span<'static>> = header
                 .metrics
@@ -551,9 +564,20 @@ impl App {
                 .collect();
             lines.push(Line::from(spans));
         }
-        if !header.actions.is_empty() {
-            let labels: Vec<String> = header
-                .actions
+        // A header action whose `visible:` is false is not drawn, as the palette offers it not
+        // (beyond10x/ess#722).
+        let shown: Vec<&ess_ui::Action> = header
+            .actions
+            .iter()
+            .filter(|action| {
+                self.visible(
+                    action.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &Ctx::default(),
+                )
+            })
+            .collect();
+        if !shown.is_empty() {
+            let labels: Vec<String> = shown
                 .iter()
                 .map(|action| {
                     format!(
@@ -563,7 +587,7 @@ impl App {
                 })
                 .collect();
             let mut x = 0;
-            for (action, label) in header.actions.iter().zip(&labels) {
+            for (action, label) in shown.iter().zip(&labels) {
                 self.mark(Mark {
                     path: format!("{}/header/actions/{}", self.page_path(), action.name),
                     row: None,
@@ -572,6 +596,7 @@ impl App {
                     x,
                     width: Some(label.width()),
                     text: Some(browser_label(action)),
+                    key: None,
                 });
                 x += label.width() + 1;
             }
@@ -602,6 +627,7 @@ impl App {
             x: 0,
             width: None,
             text: Some(text.clone()),
+            key: None,
         });
         Line::styled(format!("? {text}"), dim())
     }
@@ -673,6 +699,7 @@ impl App {
                 x: 0,
                 width: None,
                 text: None,
+                key: None,
             });
             for mut mark in marks {
                 mark.line += start + 1;
@@ -800,6 +827,7 @@ impl App {
                     focused: Focus::Section(index) == self.focus,
                     width,
                     record: true,
+                    taken: None,
                 };
                 let mut lines = self.body_lines(&section.body, &place);
                 for child in &section.children {
@@ -813,6 +841,7 @@ impl App {
                             x: 0,
                             width: None,
                             text: None,
+                            key: None,
                         });
                     }
                     lines.extend(drawn);
@@ -858,6 +887,7 @@ impl App {
             focused: true,
             width: area.width.saturating_sub(2) as usize,
             record: true,
+            taken: None,
         };
         let mut lines = vec![Line::styled(title.clone(), bold()), Line::raw("")];
         self.marks.borrow_mut().clear();
@@ -1116,17 +1146,74 @@ impl App {
                                 x: 0,
                                 width: None,
                                 text: None,
+                                key: None,
                             });
                         }
                         lines.extend(drawn);
                         lines.extend(self.live_stale(node));
                     }
                 }
+                // A section's or an overlay's own record records each action it offers at its
+                // path with its key, and offers its section's child buttons too.
+                let children = if place.record {
+                    self.own_children(place.ctx.section)
+                } else {
+                    Vec::new()
+                };
+                let offers = record_offers(record, tab, &children);
+                let keyed = self.keyed_offers(&offers, &inner.ctx, "");
+                let taken: String = keyed.iter().map(|(key, _, _)| *key).collect();
+                // A section's record gives the collection of its `item` a cursor and rows at
+                // `<record>/item/<name>/rows/<key>`, as React draws them (beyond10x/ess#722).
+                let driven = record
+                    .item_collection()
+                    .filter(|_| place.record && place.ctx.section.is_some());
                 for node in &record.item {
-                    lines.extend(self.node_lines(node, &inner));
+                    let Some((name, collection)) = driven.filter(|(name, _)| {
+                        node.common.name.as_deref() == Some(*name)
+                            && self.visible(
+                                node.common.visible.as_ref().map(|expr| expr.0.as_str()),
+                                &inner.ctx,
+                            )
+                    }) else {
+                        lines.extend(self.node_lines(node, &inner));
+                        continue;
+                    };
+                    let path = place.path.child("item").child(name);
+                    let ui = crate::app::item_ui(place.ui, name);
+                    let nested = Place {
+                        path: &path,
+                        ui: &ui,
+                        ctx: Ctx {
+                            owner: Some(&path),
+                            ..inner.ctx
+                        },
+                        record: true,
+                        taken: Some(&taken),
+                        ..*place
+                    };
+                    let before = self.marks.borrow().len();
+                    let at = lines.len();
+                    let drawn = self.collection_lines(collection, &nested, Some("row_actions"));
+                    for mark in self.marks.borrow_mut().iter_mut().skip(before) {
+                        mark.line += at;
+                    }
+                    lines.extend(drawn);
+                    lines.extend(self.live_stale(node));
                 }
-                let actions = record_actions(record, tab);
-                lines.extend(self.action_hint(&actions, &inner.ctx, ""));
+                let keyed: Vec<_> = keyed
+                    .into_iter()
+                    .map(|(key, at, action)| {
+                        let path = match at {
+                            At::Row(suffix) | At::View(suffix) => {
+                                place.path.to_string() + "/" + &suffix
+                            }
+                        };
+                        (key, place.record.then_some((path, None)), action)
+                    })
+                    .collect();
+                lines.extend(self.offer_hint(&keyed, &inner.ctx, lines.len()));
+                let actions: Vec<Action> = offers.into_iter().map(|(_, action)| action).collect();
                 lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&actions)));
                 lines
             }
@@ -1160,6 +1247,7 @@ impl App {
                     } else {
                         bold()
                     };
+                    let start = lines.len();
                     // A row without the field that picks its widget says so, as one whose kind
                     // no widget names does.
                     let heading = if kind.is_empty() {
@@ -1181,9 +1269,30 @@ impl App {
                             ui: "board-widget",
                             focused: false,
                             record: false,
+                            // The widget reads its row, as React scopes it (`row`).
+                            ctx: Ctx {
+                                row: Some(row),
+                                ..place.ctx
+                            },
                             ..*place
                         };
                         lines.extend(self.body_lines(&node.body, &inner));
+                    }
+                    // A section's or an overlay's own board records each placed widget on its
+                    // lines, at `<board>/rows/<widget>`, the path React draws it at
+                    // (beyond10x/ess#722).
+                    if place.record {
+                        let key = display(&row["widget"]);
+                        self.mark(Mark {
+                            path: format!("{}/rows/{key}", place.path),
+                            row: Some(key),
+                            line: start,
+                            height: lines.len() - start,
+                            x: 0,
+                            width: None,
+                            text: None,
+                            key: None,
+                        });
                     }
                 }
                 let row = rows.get(cursor);
@@ -1231,6 +1340,7 @@ impl App {
                         view: view.clone(),
                         fixture: None,
                         params: std::collections::BTreeMap::new(),
+                        pager: None,
                     };
                     if let Some(result) = self.rows_of(&request) {
                         let labels: Vec<String> = result
@@ -1257,10 +1367,9 @@ impl App {
 
     /// Records each row action a recorded row offers at `<rows>/<key>/<segment>/<name>`, carrying
     /// the label its control shows in the generated React project, which renders the actions on
-    /// every row. The cursor row's actions are placed on their entry in the hint line drawn at
-    /// `hint_line` ([`App::action_hint`]); another row's, which the terminal offers once its
-    /// row has the cursor, on that row's line.
-    #[allow(clippy::too_many_arguments)]
+    /// every row. The cursor row's are placed on the hint line with their keys
+    /// ([`App::offer_hint`]); another row's, which the terminal offers once its row has the
+    /// cursor, on that row's line.
     fn mark_row_actions(
         &self,
         actions: &[ess_ui::Action],
@@ -1268,42 +1377,29 @@ impl App {
         segment: &str,
         recorded: &[(String, usize, &Value)],
         cursor_key: Option<&str>,
-        hint_line: usize,
         place: &Place<'_>,
     ) {
         for (key, line, row) in recorded {
+            if cursor_key == Some(key.as_str()) {
+                continue;
+            }
             let ctx = Ctx {
                 row: Some(row),
                 ..place.ctx
             };
-            // Where each keyed action's label starts in the hint: `<key> <switch><label>`, joined
-            // by ` · `.
-            let mut hinted = std::collections::BTreeMap::new();
-            if cursor_key == Some(key.as_str()) {
-                let mut x = 0;
-                for (letter, action) in self.action_keys(actions, &ctx) {
-                    let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
-                    let start = x + letter.len_utf8() + 1 + self.switch_mark(&action, &ctx).width();
-                    hinted.insert(action.name.clone(), (start, shown.width()));
-                    x = start + shown.width() + " · ".width();
-                }
-            }
             for action in actions {
                 if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), &ctx) {
                     continue;
                 }
-                let (line, x, width) = match hinted.get(&action.name) {
-                    Some((x, width)) => (hint_line, *x, Some(*width)),
-                    None => (*line, 0, None),
-                };
                 self.mark(Mark {
                     path: format!("{rows_path}/{key}/{segment}/{}", action.name),
                     row: Some(key.clone()),
-                    line,
+                    line: *line,
                     height: 1,
-                    x,
-                    width,
+                    x: 0,
+                    width: None,
                     text: Some(browser_label(action)),
+                    key: None,
                 });
             }
         }
@@ -1344,21 +1440,69 @@ impl App {
         ctx: &Ctx<'_>,
         view_keys: &str,
     ) -> Vec<Line<'static>> {
-        let keyed = self.action_keys_besides(actions, ctx, view_keys);
+        let keyed: Vec<Hinted> = self
+            .action_keys_besides(actions, ctx, view_keys)
+            .into_iter()
+            .map(|(key, action)| (key, None, action))
+            .collect();
+        self.offer_hint(&keyed, ctx, 0)
+    }
+
+    /// The hint line of `keyed` actions, `<glyph> <key> <switch><label>` joined by ` · `. An
+    /// entry with a path (and the row it is under) is recorded there with its key and its label's cells, as the hint is
+    /// drawn at `line`, so a test presses the key the terminal offers the action under
+    /// (beyond10x/ess#722).
+    fn offer_hint(&self, keyed: &[Hinted], ctx: &Ctx<'_>, line: usize) -> Vec<Line<'static>> {
         if keyed.is_empty() {
             return Vec::new();
         }
-        let hint: Vec<String> = keyed
-            .iter()
-            .map(|(key, action)| {
-                format!(
-                    "{key} {}{}",
-                    self.switch_mark(action, ctx),
-                    action.label.clone().unwrap_or_else(|| action.name.clone())
-                )
-            })
-            .collect();
-        vec![Line::styled(hint.join(" · "), dim())]
+        let mut spans = Vec::new();
+        let mut x = 0;
+        for (at, (key, path, action)) in keyed.iter().enumerate() {
+            if at > 0 {
+                spans.push(Span::styled(" · ", dim()));
+                x += " · ".width();
+            }
+            // An action's icon glyph goes before its key, and its tone is drawn as emphasis
+            // (beyond10x/ess#723).
+            let glyph = action
+                .icon
+                .as_deref()
+                .and_then(ess_ui::icon_glyph)
+                .map(|glyph| format!("{glyph} "))
+                .unwrap_or_default();
+            // An action whose loaded row has not answered is drawn disabled: dim, with `·` where
+            // its key goes; its key runs nothing until the row answers (beyond10x/ess#723).
+            let waiting = self.waits_for_row(action, ctx);
+            let style = match action.tone {
+                _ if waiting => dim(),
+                Some(ess_ui::ButtonTone::Primary) => bold(),
+                Some(ess_ui::ButtonTone::Danger) => bold().add_modifier(Modifier::UNDERLINED),
+                _ => dim(),
+            };
+            let drawn_key = if waiting { '·' } else { *key };
+            let switch = self.switch_mark(action, ctx);
+            let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
+            let start = x + glyph.width() + drawn_key.to_string().width() + 1 + switch.width();
+            if let Some((path, row)) = path {
+                self.mark(Mark {
+                    path: path.clone(),
+                    row: row.clone(),
+                    line,
+                    height: 1,
+                    x: start,
+                    width: Some(shown.width()),
+                    text: Some(browser_label(action)),
+                    key: Some(*key),
+                });
+            }
+            x = start + shown.width();
+            spans.push(Span::styled(
+                format!("{glyph}{drawn_key} {switch}{shown}"),
+                style,
+            ));
+        }
+        vec![Line::from(spans)]
     }
 
     /// A toggle's on/off mark before its label in the hint (`[x] ` or `[ ] `, as a toggle column
@@ -1400,7 +1544,7 @@ impl App {
             .collect();
         // Filtered and sorted once: the page shown and the footer's row count both read it.
         let arranged = self.arranged_rows(place.ui, collection, all);
-        let (rows, pages) = self.page_of(place.ui, collection, &arranged);
+        let (rows, pages) = self.page_of(place.ui, collection, &arranged, &place.ctx);
         let state = self.ui(place.ui);
         let cursor = state.cursor.min(rows.len().saturating_sub(1));
         let cards = matches!(
@@ -1502,6 +1646,7 @@ impl App {
                             x: *x,
                             width: Some(*width),
                             text: Some(browser_field_label(field)),
+                            key: None,
                         });
                     }
                 }
@@ -1567,11 +1712,14 @@ impl App {
             } else {
                 Style::default()
             };
+            // The row's `item` nodes, drawn on its line after its cells, as the generated React
+            // project draws them in every row (beyond10x/ess#722).
+            let items = self.row_items(collection, place, row);
             if place.record {
                 let key = row_key(row, &key_field);
                 // The row's and each cell's whole text: the screen cuts a cell at its column's
                 // width and a line at the box's, the generated React project does not.
-                let whole = if cards {
+                let mut whole = if cards {
                     text.clone()
                 } else {
                     columns
@@ -1580,6 +1728,38 @@ impl App {
                         .collect::<Vec<_>>()
                         .join("  ")
                 };
+                // Each item is a region at `…/rows/<key>/item/<name>`, and a node of a widget's
+                // body one at `…/item/<name>/body/<node>`, the paths React draws them at.
+                let mut x = 2 + text.width();
+                for item in &items {
+                    x += 2;
+                    whole.push_str("  ");
+                    whole.push_str(&item.text);
+                    let at = format!("{container}/rows/{key}/item/{}", item.name);
+                    for (part, offset, shown) in &item.parts {
+                        self.mark(Mark {
+                            path: format!("{at}/body/{part}"),
+                            row: Some(key.clone()),
+                            line: lines.len(),
+                            height: 1,
+                            x: x + offset,
+                            width: Some(shown.width()),
+                            text: Some(shown.clone()),
+                            key: None,
+                        });
+                    }
+                    self.mark(Mark {
+                        path: at,
+                        row: Some(key.clone()),
+                        line: lines.len(),
+                        height: 1,
+                        x,
+                        width: Some(item.text.width()),
+                        text: Some(item.text.clone()),
+                        key: None,
+                    });
+                    x += item.text.width();
+                }
                 self.mark(Mark {
                     path: format!("{container}/rows/{key}"),
                     row: Some(key.clone()),
@@ -1588,6 +1768,7 @@ impl App {
                     x: 0,
                     width: None,
                     text: Some(whole),
+                    key: None,
                 });
                 recorded.push((key.clone(), lines.len(), row));
                 let mut x = 2;
@@ -1615,6 +1796,7 @@ impl App {
                             x: at,
                             width: Some(cells),
                             text: Some(shown),
+                            key: None,
                         });
                     }
                 }
@@ -1643,6 +1825,10 @@ impl App {
                     ));
                 }
             }
+            for item in items {
+                spans.push(Span::raw("  "));
+                spans.extend(item.spans);
+            }
             lines.push(Line::from(truncate_spans(spans, place.width)).style(style));
         }
         if collection.group_by.is_some() && state.page.min(pages - 1) + 1 == pages {
@@ -1658,24 +1844,16 @@ impl App {
                 record: false,
                 ..*place
             };
-            if !collection.item.is_empty() {
-                let spans: Vec<Span<'static>> = collection
-                    .item
-                    .iter()
-                    .flat_map(|node| {
-                        let mut spans = flatten(self.node_lines(node, &inner));
-                        spans.push(Span::raw("  "));
-                        spans
-                    })
-                    .collect();
-                let mut line = vec![Span::styled("▸ ", dim())];
-                line.extend(spans);
-                lines.push(Line::from(line));
-            }
             if state.expanded {
                 if let Some(expand) = &collection.expand {
                     let start = lines.len();
-                    for line in self.node_lines(expand, &inner) {
+                    // Its actions are offered on the collection's hint line, under keys of the
+                    // collection's key space ([`collection_offers`]).
+                    let mut expand = (**expand).clone();
+                    if let Body::Composite(Composite::Record(record)) = &mut expand.body {
+                        record.actions.clear();
+                    }
+                    for line in self.node_lines(&expand, &inner) {
                         let mut spans = vec![Span::raw("    ")];
                         spans.extend(line.spans);
                         lines.push(Line::from(spans));
@@ -1693,13 +1871,17 @@ impl App {
                                 x: 0,
                                 width: None,
                                 text: None,
+                                key: None,
                             });
                         }
                     }
                 }
             }
         }
-        let page = state.page.min(pages - 1);
+        let page = self
+            .server_page(collection, &place.ctx)
+            .map_or(state.page, |(page, _)| page)
+            .min(pages - 1);
         let mut footer = vec![format!("page {}/{pages}", page + 1)];
         footer.push(format!("{} rows", arranged.len()));
         // A paged read's footer shows the rows drawn as a range of all of them, as React's
@@ -1755,12 +1937,39 @@ impl App {
                 segment,
                 &recorded,
                 cursor_key.as_deref(),
-                lines.len(),
                 place,
             );
         }
-        lines.extend(self.action_hint(&collection.row_actions, &row_ctx, ""));
-        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&collection.row_actions)));
+        // The cursor row's actions, its item's buttons and its expand's actions, and the
+        // collection's own actions and its section's child buttons: one hint, each entry recorded
+        // at its path with its key when this is a section's or an overlay's own collection.
+        let children = if place.record && place.taken.is_none() {
+            self.own_children(place.ctx.section)
+        } else {
+            Vec::new()
+        };
+        let offers = collection_offers(collection, state.expanded, &children);
+        let cursor_key = rows.get(cursor).map(|row| row_key(row, &key_field));
+        let marked = row_actions_at.is_some();
+        let keyed: Vec<_> = self
+            .keyed_offers(&offers, &row_ctx, place.taken.unwrap_or_default())
+            .into_iter()
+            .map(|(key, at, action)| {
+                let path = match at {
+                    At::Row(suffix) => cursor_key.as_ref().map(|row| {
+                        (
+                            format!("{container}/rows/{row}/{suffix}"),
+                            Some(row.clone()),
+                        )
+                    }),
+                    At::View(suffix) => Some((format!("{container}/{suffix}"), None)),
+                };
+                (key, path.filter(|_| marked), action)
+            })
+            .collect();
+        lines.extend(self.offer_hint(&keyed, &row_ctx, lines.len()));
+        let offered: Vec<Action> = offers.into_iter().map(|(_, action)| action).collect();
+        lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&offered)));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
             let offered: Vec<String> = bulk
@@ -1839,6 +2048,26 @@ fn labelled_cell(field: &Field, value: &Value) -> Option<String> {
         Some("choice") => Some(format!("‹{label}›")),
         Some("tags" | "secret" | "toggle" | "json") => None,
         _ => Some(label.to_owned()),
+    }
+}
+
+/// A chart axis written as a bare name.
+fn bare_field(name: &str) -> Field {
+    ess_yaml::from_value(Value::String(name.to_owned())).expect("a bare name is a field")
+}
+
+/// A chart axis's title: its label, else its field.
+fn axis_title(axis: &Field) -> String {
+    axis.label.clone().unwrap_or_else(|| axis.field.clone())
+}
+
+/// A chart axis's value in `row`: drawn by its `as` when it has one, else as before.
+fn axis_value(axis: &Field, row: &Value) -> String {
+    let value = &row[axis.field.as_str()];
+    if axis.field_as.is_some() {
+        cell_value(axis, value)
+    } else {
+        display(value)
     }
 }
 
@@ -2206,6 +2435,7 @@ impl App {
                     x: 0,
                     width: None,
                     text: Some(format!("{} {read}", label_of(field))),
+                    key: None,
                 });
             }
             let style = if current {
@@ -2237,14 +2467,37 @@ impl App {
             dim(),
         ));
         lines.extend(self.refusal_lines(place.ui, Refusing::Form));
-        lines.extend(self.action_hint(&form.actions, &place.ctx, crate::app::FORM_KEYS));
+        let keyed: Vec<_> = self
+            .action_keys_besides(&form.actions, &place.ctx, crate::app::FORM_KEYS)
+            .into_iter()
+            .map(|(key, action)| {
+                let path = format!("{}/actions/{}", place.path, action.name);
+                (key, place.record.then_some((path, None)), action)
+            })
+            .collect();
+        lines.extend(self.offer_hint(&keyed, &place.ctx, lines.len()));
         lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&form.actions)));
         for group in &form.groups {
             lines.extend(self.action_hint(&group.actions, &place.ctx, crate::app::FORM_KEYS));
             lines.extend(self.refusal_lines(place.ui, Refusing::Actions(&group.actions)));
         }
         if let Some(result) = &form.result {
+            let start = lines.len();
             lines.extend(self.node_lines(result, place));
+            // A section's or an overlay's own form records its result on lines of its own, at the
+            // path React renders it at (beyond10x/ess#722).
+            if place.record && lines.len() > start {
+                self.mark(Mark {
+                    path: format!("{}/result", place.path),
+                    row: None,
+                    line: start,
+                    height: lines.len() - start,
+                    x: 0,
+                    width: None,
+                    text: None,
+                    key: None,
+                });
+            }
         }
         lines
     }
@@ -2386,6 +2639,7 @@ impl App {
                 view: view.clone(),
                 fixture: None,
                 params: self.overlay_params(),
+                pager: None,
             };
             lines.push(Line::styled(format!("Used by ({view}):"), bold()));
             match self.read_state(&request) {
@@ -2556,11 +2810,73 @@ impl App {
         lines
     }
 
+    /// The `item` nodes of `row`, each drawn as one run of spans in `row`'s context; a node that
+    /// draws nothing (its `visible:` does not hold) is left out. A widget instance names where
+    /// each named node of its body starts in that run, as the widget draws them one after the
+    /// other.
+    fn row_items(
+        &self,
+        collection: &ess_ui::Collection,
+        place: &Place<'_>,
+        row: &Value,
+    ) -> Vec<RowItem> {
+        let inner = Place {
+            ctx: Ctx {
+                row: Some(row),
+                ..place.ctx
+            },
+            record: false,
+            ..*place
+        };
+        let text_of = |spans: &[Span<'static>]| -> String {
+            spans.iter().map(|span| span.content.as_ref()).collect()
+        };
+        collection
+            .item
+            .iter()
+            .filter_map(|node| {
+                let spans = flatten(self.node_lines(node, &inner));
+                let text = text_of(&spans);
+                if text.trim().is_empty() {
+                    return None;
+                }
+                let mut parts = Vec::new();
+                if let Body::Widget(widget) = &node.body {
+                    let column = self
+                        .doc
+                        .widgets
+                        .get(&widget.component)
+                        .and_then(|widget| widget.arrange.as_ref())
+                        == Some(&ess_ui::Arrange::Column);
+                    let mut offset = 0;
+                    for part in &widget.body {
+                        let lines = self.node_lines(part, &inner);
+                        if column && lines.is_empty() {
+                            continue;
+                        }
+                        let shown = text_of(&flatten(lines));
+                        if let Some(name) = &part.common.name {
+                            parts.push((name.clone(), offset, shown.clone()));
+                        }
+                        offset += shown.width() + 1;
+                    }
+                }
+                Some(RowItem {
+                    name: node.common.name.clone().unwrap_or_default(),
+                    text,
+                    spans,
+                    parts,
+                })
+            })
+            .collect()
+    }
+
     #[allow(clippy::too_many_lines)] // sparkline, table and metric forms
     fn chart_lines(&self, chart: &ess_ui::Chart, place: &Place<'_>) -> Vec<Line<'static>> {
         let Some(result) = self.read_rows(&chart.reads, &place.ctx) else {
             return vec![Line::styled("loading…", dim())];
         };
+        let rows = chart_rows(chart, &result.rows);
         let kind = match &chart.chart {
             ChartKind::Fixed(kind) => kind.clone(),
             ChartKind::Chosen(chosen) => self
@@ -2571,34 +2887,40 @@ impl App {
                 .unwrap_or_else(|| "line".into()),
         };
         let fallback = self.plan.fallback(place.path, "no_charts");
-        let series: Vec<String> = if chart.series.is_empty() {
-            vec!["value".into()]
+        // An axis is a field as a column takes it: its label titles it, its `as` draws each value
+        // (beyond10x/ess#723).
+        let axes: Vec<Field> = if chart.series.is_empty() {
+            vec![bare_field("value")]
         } else {
             chart.series.clone()
         };
-        let x = chart.x.clone().unwrap_or_else(|| "x".into());
+        let series: Vec<String> = axes.iter().map(|axis| axis.field.clone()).collect();
+        let titles: Vec<String> = axes.iter().map(axis_title).collect();
+        let x_axis = chart
+            .x
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| bare_field("x"));
+        let x_title = axis_title(&x_axis);
         let as_table = matches!(kind.as_str(), "table" | "list") || fallback == Some("table");
         if fallback == Some("metric") || kind == "single_number" {
-            let last = result
-                .rows
+            let last = rows
                 .last()
                 .map_or(Value::Null, |row| row[series[0].as_str()].clone());
             return vec![Line::from(vec![
-                Span::raw(format!("{}: ", series[0])),
+                Span::raw(format!("{}: ", titles[0])),
                 Span::styled(display(&last), bold()),
             ])];
         }
         if as_table {
-            let mut fields = vec![x.clone()];
-            fields.extend(series);
+            let mut fields = vec![(x_axis.clone(), x_title.clone())];
+            fields.extend(axes.iter().cloned().zip(titles.iter().cloned()));
             let widths: Vec<usize> = fields
                 .iter()
-                .map(|field| {
-                    result
-                        .rows
-                        .iter()
-                        .map(|row| display(&row[field.as_str()]).width())
-                        .chain(std::iter::once(field.width()))
+                .map(|(field, title)| {
+                    rows.iter()
+                        .map(|row| axis_value(field, row).width())
+                        .chain(std::iter::once(title.width()))
                         .max()
                         .unwrap_or(0)
                 })
@@ -2607,28 +2929,27 @@ impl App {
                 fields
                     .iter()
                     .zip(&widths)
-                    .map(|(field, width)| pad(field, *width))
+                    .map(|((_, title), width)| pad(title, *width))
                     .collect::<Vec<_>>()
                     .join("  "),
                 bold(),
             )];
-            for row in &result.rows {
+            for row in &rows {
                 lines.push(Line::from(
                     fields
                         .iter()
                         .zip(&widths)
-                        .map(|(field, width)| pad(&display(&row[field.as_str()]), *width))
+                        .map(|((field, _), width)| pad(&axis_value(field, row), *width))
                         .collect::<Vec<_>>()
                         .join("  "),
                 ));
             }
             return lines;
         }
-        let width = series.iter().map(|name| name.width()).max().unwrap_or(0);
+        let width = titles.iter().map(|title| title.width()).max().unwrap_or(0);
         let mut lines = Vec::new();
-        for name in &series {
-            let values: Vec<f64> = result
-                .rows
+        for (name, title) in series.iter().zip(&titles) {
+            let values: Vec<f64> = rows
                 .iter()
                 .map(|row| row[name.as_str()].as_f64().unwrap_or(0.0))
                 .collect();
@@ -2642,23 +2963,21 @@ impl App {
                 })
                 .collect();
             lines.push(Line::from(vec![
-                Span::raw(format!("{} ", pad(name, width))),
+                Span::raw(format!("{} ", pad(title, width))),
                 Span::styled(spark, bold()),
                 Span::styled(format!("  max {}", trim_float(max)), dim()),
             ]));
         }
-        let first = result
-            .rows
+        let first = rows
             .first()
-            .map(|row| display(&row[x.as_str()]))
+            .map(|row| axis_value(&x_axis, row))
             .unwrap_or_default();
-        let last = result
-            .rows
+        let last = rows
             .last()
-            .map(|row| display(&row[x.as_str()]))
+            .map(|row| axis_value(&x_axis, row))
             .unwrap_or_default();
         lines.push(Line::styled(
-            format!("{kind} · {x}: {first} … {last}"),
+            format!("{kind} · {x_title}: {first} … {last}"),
             dim(),
         ));
         lines
@@ -2703,13 +3022,11 @@ impl App {
                 vec![Span::styled(format!("[{shown}]"), bold())]
             }
             Primitive::Icon(icon) => {
-                let glyph = match icon.icon.as_str() {
-                    "home" => "⌂",
-                    "typing" => "…",
-                    "settings" => "⚙",
-                    _ => "•",
-                };
-                vec![Span::raw(format!("{glyph} {}", icon.label))]
+                // A name of the vocabulary draws its glyph; another draws its label alone.
+                vec![Span::raw(match ess_ui::icon_glyph(&icon.icon) {
+                    Some(glyph) => format!("{glyph} {}", icon.label),
+                    None => icon.label.clone(),
+                })]
             }
             Primitive::Button(button) => {
                 vec![Span::styled(format!("[ {} ]", button.label), bold())]
@@ -2755,6 +3072,33 @@ impl App {
             }
         }
     }
+}
+
+/// A chart's rows in the order its `sort` declares, after the live effects and `reads.filter`,
+/// stably and as a collection compares; without one, as read (beyond10x/ess#723).
+fn chart_rows(chart: &ess_ui::Chart, rows: &[Value]) -> Vec<Value> {
+    let mut rows = rows.to_vec();
+    if let Some(sort) = &chart.sort {
+        let descending = sort.dir == Some(ess_ui::SortDir::Desc);
+        rows.sort_by(|left, right| {
+            let order = compare(&field_path(left, &sort.by), &field_path(right, &sort.by));
+            if descending {
+                order.reverse()
+            } else {
+                order
+            }
+        });
+    }
+    rows
+}
+
+/// One `item` node as a row draws it: its name, its text, its spans, and for a widget instance
+/// each named body node with its offset in that text and its own text.
+struct RowItem {
+    name: String,
+    text: String,
+    spans: Vec<Span<'static>>,
+    parts: Vec<(String, usize, String)>,
 }
 
 fn flatten(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
@@ -2820,16 +3164,89 @@ fn labelled(field: &Field, row: &Value) -> Line<'static> {
     ])
 }
 
-/// The actions a record offers on the tab shown: its own, then the tab's `form` when that is an
-/// action. Drawing and key handling read the same list, so a hint's key runs its action.
-pub(crate) fn record_actions(record: &ess_ui::Record, tab: usize) -> Vec<ess_ui::Action> {
-    let mut actions = record.actions.clone();
-    if let Some(ess_ui::TabForm::Action(action)) =
-        record.tabs.get(tab).and_then(|tab| tab.form.as_ref())
-    {
-        actions.push((**action).clone());
+/// The actions of the button nodes in `nodes`, each at `<under>/<name>` and shown with its
+/// button's label, as the generated app draws it.
+fn button_offers(nodes: &[Node], under: &str, at: fn(String) -> At) -> Vec<(At, Action)> {
+    nodes
+        .iter()
+        .filter_map(|node| match (&node.common.name, &node.body) {
+            (Some(name), Body::Primitive(Primitive::Button(button))) => {
+                let mut action = button.action.clone();
+                action.label = Some(button.label.clone());
+                Some((at(format!("{under}/{name}")), action))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The actions of an expand that is a record, which the collection offers for its cursor row.
+fn expand_actions(collection: &ess_ui::Collection) -> &[Action] {
+    match collection.expand.as_deref().map(|node| &node.body) {
+        Some(Body::Composite(Composite::Record(record))) => &record.actions,
+        _ => &[],
     }
-    actions
+}
+
+/// What a collection offers under its keys, in key order: the cursor row's actions, its `item`
+/// buttons, its expand's actions while `expanded`, the collection's own `actions`, and the
+/// buttons of `children`, its section's child nodes (beyond10x/ess#722 items 14, 16 and 25).
+pub(crate) fn collection_offers(
+    collection: &ess_ui::Collection,
+    expanded: bool,
+    children: &[Node],
+) -> Vec<(At, Action)> {
+    let mut offers: Vec<(At, Action)> = collection
+        .row_actions
+        .iter()
+        .map(|action| {
+            (
+                At::Row(format!("row_actions/{}", action.name)),
+                action.clone(),
+            )
+        })
+        .collect();
+    offers.extend(button_offers(&collection.item, "item", At::Row));
+    if expanded {
+        offers.extend(expand_actions(collection).iter().map(|action| {
+            (
+                At::Row(format!("expand/actions/{}", action.name)),
+                action.clone(),
+            )
+        }));
+    }
+    offers.extend(
+        collection
+            .actions
+            .iter()
+            .map(|action| (At::View(format!("actions/{}", action.name)), action.clone())),
+    );
+    offers.extend(button_offers(children, "children", At::View));
+    offers
+}
+
+/// What a record offers under its keys: its actions and its tab's action,
+/// then the buttons of `children`, its section's child nodes (beyond10x/ess#722 item 15).
+pub(crate) fn record_offers(
+    record: &ess_ui::Record,
+    tab: usize,
+    children: &[Node],
+) -> Vec<(At, Action)> {
+    let mut offers: Vec<(At, Action)> = record
+        .actions
+        .iter()
+        .map(|action| (At::View(format!("actions/{}", action.name)), action.clone()))
+        .collect();
+    if let Some(tab) = record.tabs.get(tab) {
+        if let Some(ess_ui::TabForm::Action(action)) = &tab.form {
+            offers.push((
+                At::View(format!("tabs/{}/form", tab.name)),
+                (**action).clone(),
+            ));
+        }
+    }
+    offers.extend(button_offers(children, "children", At::View));
+    offers
 }
 
 impl App {
@@ -2850,6 +3267,7 @@ impl App {
             x: 0,
             width: None,
             text: Some(format!("{} │{}│", label_of(field), host_label(slot))),
+            key: None,
         });
     }
 
@@ -2869,6 +3287,7 @@ impl App {
                 x,
                 width: Some(width),
                 text: Some(label),
+                key: None,
             });
             x += width + 1;
         }

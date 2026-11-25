@@ -228,7 +228,7 @@ pub(super) fn server_crate(
 fn http_text(ir: &EssIr, server: &Server<'_>, provenance: &Provenance) -> String {
     if let Some(binding) = server.binding {
         format!(
-            "{}{}{QUERY}{}{}{}{}{}",
+            "{}{}{QUERY}{}{}{}{}{}{}",
             provenance.commented_for("//", REGENERATE),
             bound::served_http_module(HTTP, server.capped),
             bound::BOUND,
@@ -249,6 +249,11 @@ fn http_text(ir: &EssIr, server: &Server<'_>, provenance: &Provenance) -> String
             },
             if bound::reads_query_beside_body(binding) {
                 bound::QUERIED
+            } else {
+                ""
+            },
+            if bound::authenticates(binding) {
+                bound::CREDENTIALS
             } else {
                 ""
             }

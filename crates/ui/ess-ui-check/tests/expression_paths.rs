@@ -164,6 +164,33 @@ fn an_unknown_root_is_a_warning_naming_the_roots_and_the_quoted_form() {
     }
 }
 
+/// `loads.<field>` reads the first row of an action's own `loads` read, in that action's `bind`,
+/// `checked` and `visible` (beyond10x/ess#723, C17): in a read's params and in an action that
+/// declares no `loads` it reads nothing and is an error; in a toggle that loads its row it
+/// resolves, and the toggle names its state.
+#[test]
+fn a_loaded_row_is_read_only_inside_the_action_that_loads_it() {
+    found_at_both_sites(
+        "loads.paused",
+        "expr_paths",
+        Severity::Error,
+        &["`loads.<field>`", "`loads`"],
+    );
+    let text = document("section.deals.selection.id", "section.deals.selection.id").replace(
+        "row_actions: [",
+        "actions: [{name: paused, as: toggle, does: t.SetPaused, loads: {view: t.Settings}, \
+         bind: {paused: not loads.paused}, visible: loads.ready}], row_actions: [",
+    );
+    let report = run(&text);
+    assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
+    assert!(
+        of(&report, "toggle_state_unknown").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
 #[test]
 fn a_domain_name_is_a_warning_and_stays_text() {
     found_at_both_sites(
@@ -372,6 +399,30 @@ fn an_overlays_params_are_judged_where_its_opener_stands() {
     let report = run(&with_overlays(EDIT_OPENS_CREATE_CHILD));
     assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
     assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+/// One action of an overlay reads both `params.id`, which its opener passes, and `loads.mode`,
+/// from the row its own `loads` read answers (beyond10x/ess#723); without `loads` the same bind
+/// is refused for `loads.mode` alone.
+#[test]
+fn an_overlays_action_reads_its_openers_params_and_the_row_it_loads() {
+    let overlay = "edit: {kind: drawer, component: record, title: E, params: {id: row.id}, \
+         reads: {view: t.ById, params: {id: params.id}}, fields: [id], \
+         actions: [{name: close, label: Close, does: t.Close, loads: {view: t.Settings}, \
+         bind: {issue: params.id, mode: loads.mode}}]}";
+    let report = run(&with_overlays(overlay));
+    assert!(story_findings(&report).is_empty(), "{:#?}", report.findings);
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+    let report = run(&with_overlays(
+        &overlay.replace("loads: {view: t.Settings}, ", ""),
+    ));
+    let found = of(&report, "expr_paths");
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert!(
+        found[0].message.contains("`loads.<field>`")
+            && found[0].message.contains("(in `bind/mode`)"),
+        "{found:#?}"
+    );
 }
 
 /// An overlay opened from the page and from another overlay is held to every opener's scope:
