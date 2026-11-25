@@ -386,6 +386,41 @@ default, `refuse`, keeps ESS's closed bodies. A key whose percent-decoding fails
 because every declared name is UTF-8, so it is unknown: ignored with its value under `ignore`, and
 malformed under `refuse`.
 
+A route may write a list as one comma-joined value instead
+(`story:a-query-list-may-travel-comma-joined`, AE-D13 A), for a filter like `?kinds=opened,closed`:
+
+```yaml
+  - view: tickets.desk.Changes
+    method: get
+    path: /changes
+    lists: {kinds: comma}
+```
+
+- `lists` maps an input field of the command or a parameter of the view, by its declared name, to
+  `comma`, the only form. The name is a `List` of scalars, `Optional` or not, that the query string
+  or a `form` body carries: a view's parameter, or a command's field on a route encoded `form` or
+  `query`, or one `request.query` lists. Everything else is refused at `routes[i].lists.<name>`
+  (`ESS-HTTP-021`): a name the command or view does not declare, one named twice, one the path
+  carries, one of another type, a list in a `json` or `multipart` body, which carries a list in its
+  own form, and a form other than `comma`. `lists: {}` is refused at `routes[i].lists`.
+- The value is the elements' texts joined by `,`, and the key appears once: a second occurrence is
+  malformed, as for a scalar. The empty value is the empty list; an absent key is an absent
+  `Optional` list and malformed for a list that is not `Optional`. An element holding `,` cannot be
+  written, and a server reading an element split by a comma reads two elements, as RFC 3986 permits
+  for a comma in a query value. No leniency is stated: a strict writer stays readable by a lenient
+  server, and the contract names the form a caller must send.
+- Compiled IR writes `lists` in name order and only where declared, so a binding without it
+  compiles to the bytes it did. No format version moves: an older reader refuses `lists` by name.
+  The reader refuses a name the path carries and, on a command, a name neither a `form` or `query`
+  encoding nor `request.query` carries. A refinement restates the `lists` of every route it restates
+  (`ESS-HTTP-012`).
+- The OpenAPI document writes such a query parameter with `style: form, explode: false` (OpenAPI
+  3.1 § 4.8.12.4), required unless it is `Optional`, and a `form` body's list with the same `style` and `explode` in the media type's
+  Encoding Object under its wire name; the body's description names it.
+- The protocol kind is not touched: a protocol model keeps taking the filter's verdict as an input,
+  and the binding owns the text form. The generated servers and apps do not read `lists` yet
+  (`ae12a-servers-and-apps-split-and-join-a-comma-list`).
+
 `unknown: ignore` is admitted beside `json` too (beyond10x/ess#752,
 `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`), for a client that
 reads a resource, changes one member and sends the whole object back. One rule holds for all three

@@ -940,3 +940,130 @@ fn a_cors_policy_of_any_origin_none_or_a_routes_own_writes_its_own_headers() {
         assert!(!text.contains(absent), "{absent}");
     }
 }
+
+// --- `lists` (`ae12a-a-query-list-may-travel-comma-joined`) ---
+
+/// The catalog with a view whose parameter is a list and three accepted commands carrying a list:
+/// in the query string, in a form body, and in the query string beside a `json` body.
+fn listing_model() -> EssIr {
+    let command = |name: &str| {
+        format!(
+            "  - name: catalog.items.{name}
+    input:
+      - {{name: item_id, type: catalog.items.ItemId}}
+      - {{name: labels, type: List<String>}}
+    outcomes:
+      - name: done
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {{item_id: input.item_id}}
+"
+        )
+    };
+    let commands: String = ["FindItems", "FileItems", "SeekItems"]
+        .map(command)
+        .concat();
+    let text = MODEL
+        .replace(
+            "  - name: catalog.items.PurgeItems\n",
+            &format!("{commands}  - name: catalog.items.PurgeItems\n"),
+        )
+        .replace(
+            "components:\n",
+            "  - name: catalog.items.ByTitles
+    source: catalog.items.Item
+    params:
+      - {name: titles, type: List<String>}
+    filter: {exists: {in: param.titles, as: t, that: title == t}}
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: title, type: String}
+components:\n",
+        )
+        .replace(
+            "accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}",
+            "accepts: {commands: [catalog.items.FileItems, catalog.items.FindItems, catalog.items.ListItem, catalog.items.SeekItems, catalog.items.TouchItem]}",
+        );
+    model_of(&[("catalog.yaml", &text)])
+}
+
+/// The listing routes, each with `lists` when `comma` holds.
+fn listing_routes(comma: bool) -> String {
+    let lists = |name: &str| {
+        if comma {
+            format!("    lists: {{{name}: comma}}\n")
+        } else {
+            String::new()
+        }
+    };
+    format!(
+        "routes:
+  - view: catalog.items.ByTitles
+    method: get
+    path: /titles
+{}  - command: catalog.items.FindItems
+    method: get
+    path: /find
+    request: {{encoding: query}}
+{}  - command: catalog.items.FileItems
+    method: post
+    path: /file
+    request: {{encoding: form}}
+{}  - command: catalog.items.SeekItems
+    method: post
+    path: /seek
+    request: {{query: [input.labels]}}
+{}",
+        lists("titles"),
+        lists("labels"),
+        lists("labels"),
+        lists("labels")
+    )
+}
+
+/// `name`'s `style`, `explode` and `required` in `operation`'s query parameters.
+fn list_style<'a>(operation: &'a Value, name: &str) -> (&'a Value, &'a Value, &'a Value) {
+    let parameter = query_parameters(operation)
+        .into_iter()
+        .find(|parameter| parameter["name"] == name)
+        .unwrap_or_else(|| panic!("{name}: {operation}"));
+    (
+        &parameter["style"],
+        &parameter["explode"],
+        &parameter["required"],
+    )
+}
+
+#[test]
+fn a_comma_list_is_a_form_parameter_that_does_not_explode() {
+    let ir = listing_model();
+    for (comma, explode) in [(true, false), (false, true)] {
+        let written = documents(&ir, binding(&ir, &listing_routes(comma)));
+        let document = as_json(&written["openapi/items-service.yaml"]);
+        let paths = &document["paths"];
+        // A view parameter is required unless `Optional`; a command's repeated list never is, and a
+        // comma-joined one is one value, required as a scalar is.
+        for (path, method, name, required) in [
+            ("/titles", "get", "titles", true),
+            ("/find", "get", "labels", comma),
+            ("/seek", "post", "labels", comma),
+        ] {
+            assert_eq!(
+                list_style(&paths[path][method], name),
+                (&json!("form"), &json!(explode), &json!(required)),
+                "{path}: comma {comma}"
+            );
+        }
+        let form =
+            &paths["/file"]["post"]["requestBody"]["content"]["application/x-www-form-urlencoded"];
+        if comma {
+            assert_eq!(
+                form["encoding"],
+                json!({"labels": {"style": "form", "explode": false}}),
+                "{form}"
+            );
+        } else {
+            assert!(form.get("encoding").is_none(), "{form}");
+        }
+    }
+}

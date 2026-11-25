@@ -156,6 +156,12 @@ The document follows those keys on the routes that use them:
   on a `get` or a `delete` command, removes the request body, and each input field the path does
   not carry becomes an `in: query` parameter under its wire name (a `List` repeats its key,
   `style: form`, `explode: true`, and is not required: an absent key is the empty list).
+- `lists: {<name>: comma}` on a route writes one list as a single comma-joined value instead,
+  `?kinds=opened,closed`: a view's parameter, or a command's field under `encoding: form` or
+  `query` or listed in `request.query`. The parameter gets `style: form`, `explode: false`, and is
+  required unless it is `Optional`; the empty value is the empty list, and an element cannot hold a
+  comma. A list in a `json` or `multipart` body, one the path carries, or a name that is no list of
+  scalars is refused (`ESS-HTTP-021`). Only the OpenAPI document reads `lists` so far.
 - `body: input.<field>` beside `encoding: json` (or no `encoding`) sends that one input field as
   the whole request body, bare: the request body's schema is the field's own, a list
   `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,

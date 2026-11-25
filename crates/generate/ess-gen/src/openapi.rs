@@ -214,6 +214,7 @@
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
 //! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
 //! | `request: {query: [input.<field>, …]}` beside a body | each listed field is an `in: query` parameter under its wire name, in the order listed, by the rules of `encoding: query`, and is in neither the request body nor `{command}.Input` (beyond10x/ess#754) |
+//! | `lists: {<name>: comma}` | the `List` query parameter `<name>` has `style: form` and `explode: false`, one comma-joined value, required unless `Optional`; a `form` body's list has the same in the media type's `encoding` under its wire name, and the body's description names it |
 //! | `request: {unknown: ignore}` beside `json` or `form` | `{command}.Input` is `additionalProperties: true`, and the request body says that what no field names is ignored and what the path carries must equal the path's value |
 //! | `request: {members: {<field>: <member.path>}}` beside `json` | `{command}.Input` is nested: each mapped field's property under its member path, each object a path opens `{type: object, properties, required, additionalProperties}`, required when it holds a required property and open under `unknown: ignore` |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
@@ -1392,9 +1393,9 @@ fn operation(
         )
     });
     if request.encoding == ess_http::Encoding::Query {
-        parameters.extend(query_parameters(command, &carried));
+        parameters.extend(query_parameters(command, &carried, declared));
     }
-    parameters.extend(listed_parameters(command, &request));
+    parameters.extend(listed_parameters(command, &request, declared));
     // What the path or the query string carries is not in the body.
     let mut outside = carried.clone();
     outside.extend(queried.iter().copied());
@@ -1469,8 +1470,13 @@ fn operation(
 /// A field is required unless it is `Optional` or a `List`, or the command declares
 /// `input_absent:`, whose branch answers a request that carries no input at all. A `List` repeats
 /// its key once per element (`style: form`, `explode: true`), the rule a view's parameters follow,
-/// and an absent key is the empty list, as both generated servers read it.
-fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<Parameter> {
+/// and an absent key is the empty list, as both generated servers read it; one the route's `lists`
+/// names is one comma-joined value, required as a scalar is ([`list_style`], [`repeated`]).
+fn query_parameters(
+    command: &ResolvedCommand,
+    carried: &BTreeSet<&str>,
+    declared: Option<&ess_http::Route>,
+) -> Vec<Parameter> {
     let answers_absent = command
         .outcomes
         .iter()
@@ -1489,18 +1495,45 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
                     field.name
                 )
             }),
-            required: !field.type_ref.is_optional() && !is_list(&field.type_ref) && !answers_absent,
-            style: is_list(&field.type_ref).then_some("form"),
-            explode: is_list(&field.type_ref).then_some(true),
+            required: !field.type_ref.is_optional()
+                && !repeated(&field.type_ref, &field.name, declared)
+                && !answers_absent,
+            style: list_style(&field.type_ref, &field.name, declared).0,
+            explode: list_style(&field.type_ref, &field.name, declared).1,
             schema: embedded(&types::field(field)),
         })
         .collect()
 }
 
+/// A query parameter's `style` and `explode`: none for a parameter that is no list; for a list,
+/// `form` repeating its key once per element (`explode: true`), or one comma-joined value
+/// (`explode: false`, `OpenAPI` 3.1 § 4.8.12.4) when the bound route's `lists` names it.
+fn list_style(
+    type_ref: &ResolvedTypeRef,
+    name: &str,
+    declared: Option<&ess_http::Route>,
+) -> (Option<&'static str>, Option<bool>) {
+    if !is_list(type_ref) {
+        return (None, None);
+    }
+    (Some("form"), Some(repeated(type_ref, name, declared)))
+}
+
+/// Whether a parameter is a list that repeats its key once per element: a list the bound route's
+/// `lists` does not name. Such a list is never required, its absent key the empty list; a
+/// comma-joined one is one value, required unless it is `Optional`.
+fn repeated(type_ref: &ResolvedTypeRef, name: &str, declared: Option<&ess_http::Route>) -> bool {
+    is_list(type_ref) && !declared.is_some_and(|route| route.lists.contains_key(name))
+}
+
 /// The input fields a route's `request.query` reads beside its body (beyond10x/ess#754), each an
 /// `in: query` parameter under its wire name, in the order the binding lists them, by the rules of
 /// [`query_parameters`]: required as the field is, a `List` repeating its key once per element.
-fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> Vec<Parameter> {
+fn listed_parameters(
+    command: &ResolvedCommand,
+    request: &ess_http::Request,
+    declared: Option<&ess_http::Route>,
+) -> Vec<Parameter> {
     request
         .query_fields()
         .filter_map(|name| command.input.iter().find(|field| field.name == name))
@@ -1513,9 +1546,10 @@ fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> 
                     field.name
                 )
             }),
-            required: !field.type_ref.is_optional() && !is_list(&field.type_ref),
-            style: is_list(&field.type_ref).then_some("form"),
-            explode: is_list(&field.type_ref).then_some(true),
+            required: !field.type_ref.is_optional()
+                && !repeated(&field.type_ref, &field.name, declared),
+            style: list_style(&field.type_ref, &field.name, declared).0,
+            explode: list_style(&field.type_ref, &field.name, declared).1,
             schema: embedded(&types::field(field)),
         })
         .collect()
@@ -1586,7 +1620,7 @@ fn query(
             param.name
         )
     });
-    parameters.extend(view_parameters(view, &carried(declared)));
+    parameters.extend(view_parameters(view, &carried(declared), declared));
     let domain = ir.domain(&view.domain);
     // A read-granted view on a surface that checks grants answers the standard refusal too
     // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
@@ -1969,17 +2003,13 @@ fn request_body(
         ess_http::Encoding::Multipart => {
             return multipart(ir, command, carried, request, declared, &ignored("part"));
         }
-        ess_http::Encoding::Form => (
-            format!(
-                "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, \
-                 each field under its wire name, a list repeating its key once per element.{}",
-                command.name,
-                ignored("parameter")
-            ),
-            content_as(FORM_MEDIA_TYPE, schema),
-        ),
+        ess_http::Encoding::Form => form_body(command, carried, declared, schema, &ignored),
         ess_http::Encoding::Json | ess_http::Encoding::Query => (
-            format!("The input `{}` declares.{}", command.name, ignored("member")),
+            format!(
+                "The input `{}` declares.{}",
+                command.name,
+                ignored("member")
+            ),
             content(schema),
         ),
     };
@@ -1989,6 +2019,63 @@ fn request_body(
         required: http::body_required_without(command, carried),
         content,
     })
+}
+
+/// A `form` route's request body's description and content: each field under its wire name, a list
+/// repeating its key once per element, except a list in the body the route's `lists` names, which
+/// is one comma-joined value, stated in the media type's `encoding` (`style: form`,
+/// `explode: false`).
+fn form_body(
+    command: &ResolvedCommand,
+    carried: &BTreeSet<&str>,
+    declared: Option<&ess_http::Route>,
+    schema: Value,
+    ignored: &dyn Fn(&str) -> String,
+) -> (String, BTreeMap<String, MediaType>) {
+    let joined: Vec<&str> = command
+        .input
+        .iter()
+        .filter(|field| {
+            !carried.contains(field.name.as_str())
+                && declared.is_some_and(|route| route.lists.contains_key(&field.name))
+        })
+        .map(types::wire_name)
+        .collect();
+    let lists = if joined.is_empty() {
+        "a list repeating its key once per element".to_owned()
+    } else {
+        let named: Vec<String> = joined.iter().map(|wire| format!("`{wire}`")).collect();
+        format!(
+            "a list repeating its key once per element, except {}, one comma-joined value",
+            list(&named)
+        )
+    };
+    let description = format!(
+        "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, each \
+         field under its wire name, {lists}.{}",
+        command.name,
+        ignored("parameter")
+    );
+    let mut content = content_as(FORM_MEDIA_TYPE, schema);
+    if !joined.is_empty() {
+        let encoding = joined
+            .into_iter()
+            .map(|wire| {
+                (
+                    wire.to_owned(),
+                    PartEncoding {
+                        content_type: None,
+                        style: Some("form"),
+                        explode: Some(false),
+                    },
+                )
+            })
+            .collect();
+        if let Some(media) = content.get_mut(FORM_MEDIA_TYPE) {
+            media.encoding = Some(encoding);
+        }
+    }
+    (description, content)
 }
 
 /// A `multipart` route's request body (beyond10x/ess#754): `multipart/form-data` holding an object
@@ -2053,7 +2140,9 @@ fn multipart(
             encoding.insert(
                 wire.to_owned(),
                 PartEncoding {
-                    content_type: part.media_types.join(", "),
+                    content_type: Some(part.media_types.join(", ")),
+                    style: None,
+                    explode: None,
                 },
             );
         }
@@ -4754,12 +4843,17 @@ struct MediaType {
     encoding: Option<BTreeMap<String, PartEncoding>>,
 }
 
-/// One part's Encoding Object: the media types it may carry, comma-separated (`OpenAPI` 3.1
-/// § 4.8.15).
+/// One property's Encoding Object (`OpenAPI` 3.1 § 4.8.15): a `multipart` part's media types,
+/// comma-separated, or a `form` body list's `style` and `explode` when it is one comma-joined
+/// value.
 #[derive(Debug, serde::Serialize)]
 struct PartEncoding {
-    #[serde(rename = "contentType")]
-    content_type: String,
+    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
+    content_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    style: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explode: Option<bool>,
 }
 
 /// Everything the document's `$ref`s resolve against.
@@ -4791,8 +4885,14 @@ struct BindingAccessor {
 /// type it is declared at, because `paging:` declares that a read sending neither answers every row.
 /// A `List<T>` parameter repeats its key once per element, `queues=1&queues=2` (beyond10x/ess#438):
 /// `style: form` and `explode: true` are `OpenAPI`'s default for a query parameter, stated so that no
-/// reader settles on `queues=1,2`, which is ambiguous for an element holding a comma.
-fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Parameter> {
+/// reader settles on `queues=1,2`, which is ambiguous for an element holding a comma. A parameter
+/// the bound route's `lists` names is that one comma-joined value, `explode: false`
+/// ([`list_style`]).
+fn view_parameters(
+    view: &ResolvedView,
+    carried: &BTreeSet<&str>,
+    declared: Option<&ess_http::Route>,
+) -> Vec<Parameter> {
     view.params
         .iter()
         .filter(|param| !carried.contains(param.name.as_str()))
@@ -4831,8 +4931,8 @@ fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Paramet
                         )
                     }),
                     required: !matches!(param.type_ref, ResolvedTypeRef::Optional { .. }),
-                    style: is_list(&param.type_ref).then_some("form"),
-                    explode: is_list(&param.type_ref).then_some(true),
+                    style: list_style(&param.type_ref, &param.name, declared).0,
+                    explode: list_style(&param.type_ref, &param.name, declared).1,
                     schema: embedded(&types::field(param)),
                 },
             }

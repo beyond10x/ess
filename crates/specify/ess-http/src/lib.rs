@@ -2239,6 +2239,12 @@ fn canonical_redirect_parameters<'de, D: serde::Deserializer<'de>>(
     canonical_map(deserializer, "parameters")
 }
 
+fn canonical_lists<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, ListForm>, D::Error> {
+    canonical_map(deserializer, "lists")
+}
+
 /// Why `status` is no status any outcome may answer, whatever it reports: outside `100..=599`, a
 /// `1xx`, or a `3xx` other than the [`REDIRECTS`].
 fn status_reason(status: i64) -> Option<String> {
@@ -2317,6 +2323,12 @@ pub struct RouteSpec {
     /// refused with a code and a path (`ESS-HTTP-020`).
     #[serde(default)]
     pub select: Option<serde_json::Value>,
+    /// The `List` input fields or view parameters the route writes as one comma-joined value, each
+    /// name mapped to `comma`; absent, a list repeats its key once per element. Kept as written, so
+    /// that a name written twice or a word other than `comma` is refused with a code and a path
+    /// (`ESS-HTTP-021`).
+    #[serde(default)]
+    pub lists: Option<Entries<String>>,
     /// A command's answer per outcome, keyed by the outcome's local name; an outcome not listed
     /// keeps its derived status and the envelope.
     #[serde(default)]
@@ -3043,6 +3055,44 @@ impl fmt::Display for Operation {
     }
 }
 
+/// How a route writes one `List` in the query string or a `form` body other than by repeating its
+/// key once per element.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+// One byte, so that a map to the form is no map to a zero-sized value while `comma` is the only one.
+#[repr(u8)]
+pub enum ListForm {
+    /// One key, its value the elements' texts joined by `,`: the empty value is the empty list, an
+    /// absent key an absent `Optional` list, and a second occurrence of the key is malformed. An
+    /// element holding `,` cannot be written.
+    Comma,
+}
+
+impl ListForm {
+    /// Every form, in the order the format lists them.
+    pub const ALL: [Self; 1] = [Self::Comma];
+
+    /// The form as a binding spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Comma => "comma",
+        }
+    }
+
+    /// The form a binding spells `text`, if it is one: exactly, in lower case.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|form| form.as_str() == text)
+    }
+}
+
+impl fmt::Display for ListForm {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// A resolved route.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -3079,6 +3129,14 @@ pub struct Route {
     /// do not select (the catch-all), or it shares its template with none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub select: Option<Selection>,
+    /// The `List` input fields or view parameters written as one comma-joined value, by name in
+    /// name order. Absent when empty: every list then repeats its key once per element.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_lists"
+    )]
+    pub lists: BTreeMap<String, ListForm>,
     /// A command's answer for each outcome the binding lists, keyed by the outcome's local name in
     /// name order. Absent when empty, and always absent on a view; an outcome not listed keeps its
     /// derived status and the envelope.
@@ -3900,7 +3958,7 @@ impl HttpIr {
     /// outside the four, with an `api_key` name its location cannot carry or a `basic` realm no
     /// quoted string carries, `schemes` out of name order or empty, and an
     /// `authentication.required` or a route's `authentication` naming a scheme not declared or
-    /// one twice (beyond10x/ess#681); and a `cors` policy, the binding's or a route's own, holding `any` beside credentials, an empty `origins`, an origin that is not `scheme://host[:port]` or one twice, a header name that is not a token or one twice, an `expose` name no covered route declares, or a `max_age` over one day, and a route `cors` other than `none` or a policy. Beyond these, it refuses, naming
+    /// one twice (beyond10x/ess#681); and a `cors` policy, the binding's or a route's own, holding `any` beside credentials, an empty `origins`, an origin that is not `scheme://host[:port]` or one twice, a header name that is not a token or one twice, an `expose` name no covered route declares, or a `max_age` over one day, and a route `cors` other than `none` or a policy; and a route's `lists` out of name order, empty, with a form other than `comma`, naming a source a path variable reads, or naming on a command a field neither a `form` or `query` encoding nor `request.query` carries. Beyond these, it refuses, naming
     /// the key, any IR that would not write back what it was given: a key compiled IR omits,
     /// written as an empty map or list, a `null` or a default.
     ///
@@ -4209,6 +4267,7 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
     if let Some(request) = &route.request {
         request_invariants(route, request, at)?;
     }
+    lists_invariants(route, at)?;
     if let Some(limits) = &route.limits {
         if !route.reads_body() {
             return Err(format!(
@@ -4220,6 +4279,39 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
     }
     representations_invariants(route, &variables, at)?;
     answer_invariants(route, at)
+}
+
+/// Holds a route's compiled `lists` to what compiling guarantees without the specification: no
+/// name a variable of the path reads, and on a command only a name the query string or a `form`
+/// body carries, the route encoded `form` or `query` or the name listed in `request.query`.
+fn lists_invariants(route: &Route, at: &str) -> Result<(), String> {
+    let request = route.request.as_ref();
+    let encoding = request.map_or(Encoding::Json, |request| request.encoding);
+    for name in route.lists.keys() {
+        let key = format!("{at}.lists.{name}");
+        if route
+            .parameters
+            .values()
+            .any(|source| source.field() == name.as_str())
+        {
+            return Err(format!(
+                "`{key}` is carried by the path, which holds one value and no list"
+            ));
+        }
+        let queried =
+            request.is_some_and(|request| request.query_fields().any(|field| field == name));
+        if matches!(route.operation, Operation::Command(_))
+            && !queried
+            && matches!(encoding, Encoding::Json | Encoding::Multipart)
+        {
+            return Err(format!(
+                "`{key}` travels in a `{}` body; compiled IR writes comma-joined only a list the \
+                 query string or a `form` body carries",
+                encoding.as_str()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Holds a route's compiled `representations` to what compiling guarantees without the
@@ -4965,7 +5057,7 @@ impl Refusals {
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
 /// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field neither the path nor `request.query` carries; at `routes[i].request.query`: `query` beside `encoding: query`, on a `get` command, or written empty, an entry that is not `input.<field>` naming an input field of the command, one listed twice, and one the path, the bare `body` or a part of a `multipart` request carries; at `routes[i].request.members`: `members` written empty; at `routes[i].request.members.<field>`: `members` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a key that is not an input field of the command, a field the path or `request.query` carries, a path that is not one or more non-empty member names joined by `.`, two fields on one path, one path an object above another, and a path starting at the top-level member an unmapped input field is carried under (its wire name); at `routes[i].select`: `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a value that is not a map or a list of maps, an empty map or list, a member path with an empty name, a literal that is not a string, a Boolean or an integer, two members one an object above the other, a literal the type of the input field on that member does not admit (naming the field and its type), a member above or inside the member an input field is read from, and two alternatives of one route that meet |
-/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried; at `routes[i].request.query`: a field `query` lists whose type has no flat spelling, beside any encoding |
+/// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried; at `routes[i].request.query`: a field `query` lists whose type has no flat spelling, beside any encoding; at `routes[i].lists.<name>`: a name that is no input field of the command or parameter of the view, one named twice, one the path carries, one whose type is not a `List` of scalars (`Optional` or not), a command's field carried in a `json` or `multipart` body rather than the query string or a `form` body, or a form other than `comma`; at `routes[i].lists`: `lists` written empty |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
 /// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
@@ -5013,7 +5105,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].request.members`: a refined route's `members` added, dropped or restated with another path; at `routes[i].select`: a refined route's `select` added, dropped or written otherwise; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration; at `cors` or `cors.origins`, and at `routes[i].cors` or `routes[i].cors.origins` where either binding gives the route its own: a policy where the refined binding has none, none where it has one, an origin it does not list (`any` over a list included), or `credentials`, `headers`, `expose` or `max_age` restated otherwise |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].request.members`: a refined route's `members` added, dropped or restated with another path; at `routes[i].select`: a refined route's `select` added, dropped or written otherwise; at `routes[i].lists`: a refined route's `lists` added, dropped or restated with another name or form, the order written not counting; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration; at `cors` or `cors.origins`, and at `routes[i].cors` or `routes[i].cors.origins` where either binding gives the route its own: a policy where the refined binding has none, none where it has one, an origin it does not list (`any` over a list included), or `credentials`, `headers`, `expose` or `max_age` restated otherwise |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -6770,6 +6862,23 @@ fn request_changes(
             ),
         );
     }
+    let lists = |route: &RouteSpec| {
+        let mut lists: BTreeMap<String, String> = BTreeMap::new();
+        for (name, form) in route.lists.iter().flat_map(|lists| &lists.0) {
+            lists.entry(name.clone()).or_insert_with(|| form.clone());
+        }
+        lists
+    };
+    if lists(route) != lists(fixed) {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].lists"),
+            format!(
+                "{operation} writes other `lists` here than the refined binding fixes at \
+                 `routes[{at}]`; a refinement restates the lists of every route it restates"
+            ),
+        );
+    }
     let members = |route: &RouteSpec| {
         route
             .request
@@ -7136,7 +7245,8 @@ impl Target<'_> {
 /// Within one route the refusals come in this order: the operation's shape (`004`), the method
 /// (`006`), the path's grammar (`007`), the operation's existence and surface (`004`, `013`), the
 /// mapping of variables (`008`), the sources (`009`), the request (`020`), the spelling of each
-/// field it carries (`021`), the unmapped `get` input (`014`), the answers (each listed outcome's
+/// field it carries (`021`), the unmapped `get` input (`014`), the `lists` (`021`), the answers
+/// (each listed outcome's
 /// name `022`, status `023`, body `024`, headers `026` and `027` and redirect `028` in document
 /// order, then `025`; a view's `outcomes`
 /// `022`, `body` `024`, `empty` `030` and identity `031`), the representations (`035`, their headers
@@ -7193,6 +7303,7 @@ fn routes(
             &path,
             refusals,
         );
+        let sources = sources.zip(lists(spec, target.as_ref(), &mapped, &path, refusals));
         let route_limits = route_limits(spec, &operation, method, &request, &path, refusals);
         let cors = route_cors(spec, &path, refusals);
         let own = self::standard(
@@ -7213,7 +7324,7 @@ fn routes(
         routed_once(&mut first_route, &operation, index, refusals);
         let claim = claim_of(method, segments.as_ref(), spec.path.as_ref());
         let route = match (target, method, segments, sources, request, answers) {
-            (Some(_), Some(method), Some(_), Some(sources), Ok(request), Ok(answers)) => {
+            (Some(_), Some(method), Some(_), Some((sources, lists)), Ok(request), Ok(answers)) => {
                 Some(Route {
                     operation: operation.clone(),
                     operation_id: spec.operation_id.clone(),
@@ -7223,6 +7334,7 @@ fn routes(
                     parameters: sources,
                     request,
                     select: select.compiled(),
+                    lists,
                     outcomes: answers.outcomes,
                     errors: answers.errors,
                     alike: answers.alike,
@@ -7600,6 +7712,115 @@ fn sources(
         resolved.insert(name.clone(), source);
     }
     (!refused).then_some(resolved)
+}
+
+/// A route's `lists`, compiled by name, or `None` when one is refused (`ESS-HTTP-021`, at
+/// `routes[i].lists.<name>`, or at `routes[i].lists` when written empty): each name an input field
+/// of the command or a parameter of the view, named once, that the path does not carry (`mapped`),
+/// of a `List` of scalars, `Optional` or not, and carried in the query string or a `form` body (a
+/// view's parameter, or a command's field on a route encoded `form` or `query` or listed in
+/// `request.query`); and its form `comma`. Without a `target`, which is refused already, `None`.
+fn lists(
+    spec: &RouteSpec,
+    target: Option<&Target<'_>>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<BTreeMap<String, ListForm>> {
+    let Some(written) = &spec.lists else {
+        return Some(BTreeMap::new());
+    };
+    if written.0.is_empty() {
+        refusals.refuse(
+            "ESS-HTTP-021",
+            format!("{path}.lists"),
+            "`lists` is empty: it names at least one list written comma-joined, and is left out \
+             to repeat the key of every list",
+        );
+        return None;
+    }
+    let target = target?;
+    let (namespace, kind, what) = if target.is_command() {
+        ("input", "command", "input field")
+    } else {
+        ("param", "view", "parameter")
+    };
+    let encoding = match spec
+        .request
+        .as_ref()
+        .and_then(|request| request.encoding.as_deref())
+    {
+        None => Some(Encoding::default()),
+        Some(text) => Encoding::parse(text),
+    };
+    let queried = |name: &str| {
+        spec.request
+            .iter()
+            .flat_map(|request| request.query.iter().flatten())
+            .filter_map(|text| Source::parse(text))
+            .any(|source| matches!(source, Source::Input(_)) && source.field() == name)
+    };
+    let mut compiled = BTreeMap::new();
+    let mut refused = false;
+    for (position, (name, word)) in written.0.iter().enumerate() {
+        let field = target.fields.iter().find(|field| field.name == *name);
+        let rule = match field {
+            _ if written.0[..position]
+                .iter()
+                .any(|(earlier, _)| earlier == name) =>
+            {
+                format!("`{name}` is named twice, and a list is written in one form")
+            }
+            None => format!("`{name}` names no {what}: the {kind} declares no {what} `{name}`"),
+            Some(_) if mapped.contains(&format!("{namespace}.{name}")) => format!(
+                "`{name}` is carried by the path, which holds one value and no list; `lists` \
+                 names a list carried in the query string or a `form` body"
+            ),
+            Some(field) if !scalar_list(&field.type_ref, target.ir) => format!(
+                "{what} `{name}` has type `{}`, which is not a `List` of scalars: `lists` names a \
+                 `List` or an `Optional` `List` of a primitive other than `Json`, an enum, or a \
+                 newtype of a scalar",
+                field.type_ref
+            ),
+            Some(_)
+                if target.is_command()
+                    && !queried(name)
+                    && matches!(encoding, Some(Encoding::Json | Encoding::Multipart)) =>
+            {
+                format!(
+                    "input field `{name}` travels in a `{}` body, which carries a list in its own \
+                     form; `lists` names a list carried in the query string or a `form` body: \
+                     encode the request `form` or `query`, or list `input.{name}` in \
+                     `request.query`",
+                    encoding.map_or("json", Encoding::as_str)
+                )
+            }
+            Some(_) => match ListForm::parse(word) {
+                Some(form) => {
+                    compiled.insert(name.clone(), form);
+                    continue;
+                }
+                None => format!(
+                    "`{word}` is not a list form: `{name}` is written `comma`, one key whose value \
+                     joins the elements with `,`"
+                ),
+            },
+        };
+        refusals.refuse("ESS-HTTP-021", format!("{path}.lists.{name}"), rule);
+        refused = true;
+    }
+    (!refused).then_some(compiled)
+}
+
+/// Whether `type_ref` is a `List` of scalars, `Optional` or not.
+fn scalar_list(type_ref: &ResolvedTypeRef, ir: &EssIr) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } => {
+            matches!(&**of, ResolvedTypeRef::List { of } if scalar(of, ir))
+        }
+        ResolvedTypeRef::List { of } => scalar(of, ir),
+        _ => false,
+    }
 }
 
 /// A route's request or the input it carries earned a refusal, already reported.

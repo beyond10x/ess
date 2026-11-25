@@ -5,6 +5,7 @@
 ### Added
 
 - `ess-http/1`: `cors:` states which origins may read a binding's answers, with credentials, request and exposed headers and the preflight's lifetime; OpenAPI writes the preflight `options` operation.
+- `ess-http/1`: `lists: {<name>: comma}` writes a query, form or view-parameter list as one comma-joined value; OpenAPI states `explode: false`.
 - `ess generate synthesize --http`, the generated UIs with `--http` and `ess generate types --http` refuse a binding whose routes carry `request.members` or `select`, naming the route, the key and the target; only OpenAPI reads them yet.
 - OpenAPI with `--http` writes a route shared by body selection as one operation: its request body `oneOf` each command's body with the selecting members `const`, and `x-ess-operations` naming every command.
 - `ess-http/1`: command routes of one component may share a method and path, each chosen by `select:`, literal values of members of the JSON body; a body no select matches is `malformed` unless a route without `select` takes it.
