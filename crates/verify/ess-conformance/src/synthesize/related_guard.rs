@@ -2844,28 +2844,34 @@ thread_local! {
     /// open at once ([`own_scenario_work`]).
     static OWN_WORK: std::cell::Cell<(u64, u64, usize)> =
         const { std::cell::Cell::new((0, 0, 0)) };
-    /// How many own-scenario arrangements carried chosen values, and how many setup runs with
-    /// chosen values were stopped by the nesting bound ([`own_overlay_work`]).
-    static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64)> =
-        const { std::cell::Cell::new((0, 0)) };
+    /// How many own-scenario arrangements carrying chosen values were built, how many setup runs
+    /// with chosen values were stopped by the nesting bound, and how many own-scenario
+    /// arrangements carrying chosen values were asked for ([`own_overlay_work`]).
+    static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64, u64)> =
+        const { std::cell::Cell::new((0, 0, 0)) };
 }
 
 /// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
-/// this thread while it ran, and how many setup runs with chosen values reached the fallback after
-/// the strict search failed and were stopped by [`OWN_NESTING`].
-pub(super) fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+/// this thread while it ran, how many setup runs with chosen values reached the fallback after
+/// the strict search failed and were stopped by [`OWN_NESTING`], and how many own-scenario
+/// arrangements carrying chosen values were asked for.
+pub(super) fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, u64)) {
     let before = OWN_OVERLAY_WORK.with(std::cell::Cell::get);
     let out = run();
     let after = OWN_OVERLAY_WORK.with(std::cell::Cell::get);
-    (out, (after.0 - before.0, after.1 - before.1))
+    (
+        out,
+        (after.0 - before.0, after.1 - before.1, after.2 - before.2),
+    )
 }
 
-/// Counts own-scenario arrangements with chosen values (`built`) and chosen-values runs stopped
-/// by the nesting bound (`stopped`).
-fn overlay_worked(built: u64, stopped: u64) {
+/// Counts own-scenario arrangements with chosen values built (`built`), chosen-values runs
+/// stopped by the nesting bound (`stopped`) and own-scenario arrangements with chosen values asked
+/// for (`asked`).
+fn overlay_worked(built: u64, stopped: u64, asked: u64) {
     OWN_OVERLAY_WORK.with(|work| {
-        let (b, s) = work.get();
-        work.set((b + built, s + stopped));
+        let (b, s, a) = work.get();
+        work.set((b + built, s + stopped, a + asked));
     });
 }
 
@@ -3002,7 +3008,7 @@ fn drive_several(
                 && own_depth() >= OWN_NESTING
                 && own_scenario_applies(driver, bound, arranging) =>
         {
-            overlay_worked(0, 1);
+            overlay_worked(0, 1, 0);
             Err(cause)
         }
         other => other,
@@ -3029,6 +3035,9 @@ fn own_scenario_applies(
 /// `distinction`: the rows the arrangement names joined to `bound`, its steps first, then the
 /// send of the input it chose. Refused where the same arrangement is already open
 /// ([`own_opening`]) or names a row through a field `bound` already binds.
+///
+/// Built once per model and context, and answered from memory when asked again
+/// ([`super::created_memo::own_arranged`]).
 fn as_own_scenario(
     ir: &EssIr,
     driver: &super::Driver<'_>,
@@ -3041,9 +3050,29 @@ fn as_own_scenario(
 ) -> Result<super::Invocation, RefusalCause> {
     let _open = own_opening(ir, driver).ok_or_else(unarranged)?;
     own_worked(1, 0);
-    if chosen.is_some_and(|chosen| !chosen.is_empty()) {
-        overlay_worked(1, 0);
+    let carries = chosen.is_some_and(|chosen| !chosen.is_empty());
+    if carries {
+        overlay_worked(0, 0, 1);
     }
+    super::created_memo::own_arranged(ir, driver, actors, distinction, (bound, chosen), || {
+        if carries {
+            overlay_worked(1, 0, 0);
+        }
+        own_built(ir, driver, actors, distinction, (bound, chosen))
+    })
+}
+
+/// The run of `driver` arranged as its own scenario, built ([`as_own_scenario`]).
+fn own_built(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, chosen): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        Option<&BTreeMap<String, Node>>,
+    ),
+) -> Result<super::Invocation, RefusalCause> {
     let models = super::caller::InvocationModels::plain(ir);
     let (setup, input, _) = arranged_choosing(
         &models,
@@ -4370,6 +4399,48 @@ fn absent_at(
     Ok((setup, input))
 }
 
+/// The branch of `command` the precedence plan answers before `outcome` that refuses wherever the
+/// subject's stored link differs from `input.<field>`: a `when_subject:` predicate without an input
+/// guard that is `<link> != input.<field>`, or a disjunction holding one. `account_id !=
+/// input.account_id` beside a `when_related:` read through `input.account_id`: the related row is
+/// arranged apart from the subject, so the send naming it is answered by that refusal first.
+fn subject_link_refuses<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    field: &str,
+) -> Option<&'c ResolvedOutcome> {
+    fn differs(predicate: &Predicate, field: &str) -> bool {
+        match predicate {
+            Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(left),
+                op: ess_primitives::predicate::CompareOp::Ne,
+                right: ess_primitives::predicate::Operand::Fact(right),
+                ..
+            } => [(left, right), (right, left)]
+                .into_iter()
+                .any(|(link, sent)| {
+                    link.segments().len() == 1
+                        && link.namespace() != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && sent.segments().len() == 2
+                        && sent.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && sent.segments()[1] == field
+                }),
+            Predicate::Any(children) => children.iter().any(|child| differs(child, field)),
+            _ => false,
+        }
+    }
+    super::precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .find(|first| {
+            matches!(
+                &first.condition,
+                ResolvedCondition::SubjectPredicate { predicate, input: None }
+                    if differs(predicate, field)
+            )
+        })
+}
+
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
 #[allow(
     clippy::too_many_lines,
@@ -4409,6 +4480,27 @@ fn arranged_at(
     });
     if names_subject || setup.bound.contains_key(field) {
         return Err(unarranged());
+    }
+    // The row the input names, and every row beside it, is arranged apart from the subject, so a
+    // held-state refusal answered first that compares the subject's stored link with the input
+    // naming one of them would answer instead.
+    let read = std::iter::once((field, entity))
+        .chain(others.iter().map(|other| (other.via.field(), other.entity)));
+    for (named, of) in read {
+        if let Some(first) = subject_link_refuses(ir, command, outcome, named) {
+            return Err(RefusalCause::GuardUnsatisfiable {
+                predicate: format!(
+                    "`{}/{}` refuses first wherever the subject's stored link differs from \
+                     `input.{named}`, and the row of `{}` the arrangement names through \
+                     `input.{named}` is not the one the subject is linked to",
+                    command.name,
+                    first.name,
+                    of.name()
+                ),
+                tried: 0,
+                cut: 0,
+            });
+        }
     }
     place_beside(ir, outcome, &mut setup, others);
     let mut steps = Vec::new();
@@ -5155,18 +5247,19 @@ pub(super) fn add_own_work(more: (u64, u64, usize)) {
     });
 }
 
-/// The own-scenario arrangements carrying chosen values and the chosen-values runs the nesting
-/// bound stopped on this thread ([`OWN_OVERLAY_WORK`]).
-pub(super) fn taken_own_overlay_work() -> (u64, u64) {
+/// The own-scenario arrangements carrying chosen values built, the chosen-values runs the nesting
+/// bound stopped, and the arrangements carrying chosen values asked for, on this thread
+/// ([`OWN_OVERLAY_WORK`]).
+pub(super) fn taken_own_overlay_work() -> (u64, u64, u64) {
     OWN_OVERLAY_WORK.with(std::cell::Cell::get)
 }
 
-/// Adds `more`, the arrangements built and the runs stopped, to [`OWN_OVERLAY_WORK`] on this
-/// thread.
-pub(super) fn add_own_overlay_work(more: (u64, u64)) {
+/// Adds `more`, the arrangements built, the runs stopped and the arrangements asked for, to
+/// [`OWN_OVERLAY_WORK`] on this thread.
+pub(super) fn add_own_overlay_work(more: (u64, u64, u64)) {
     OWN_OVERLAY_WORK.with(|work| {
-        let (built, stopped) = work.get();
-        work.set((built + more.0, stopped + more.1));
+        let (built, stopped, asked) = work.get();
+        work.set((built + more.0, stopped + more.1, asked + more.2));
     });
 }
 

@@ -6835,6 +6835,19 @@ pub(super) fn held_key(ir: &EssIr) -> String {
     })
 }
 
+/// The rows of `ir` held on this thread ([`holding`]) of an entity in `within`, as [`held_key`]
+/// writes them: the key of what a search reaching no other entity made.
+pub(super) fn held_key_within(ir: &EssIr, within: &BTreeSet<QualifiedName>) -> String {
+    HELD.with(|held| {
+        held.borrow()
+            .iter()
+            .filter(|(model, entity, _)| std::ptr::eq(*model, ir) && within.contains(entity.name()))
+            .map(|(_, entity, row)| format!("{entity:?}={row:?}"))
+            .collect::<Vec<_>>()
+            .join(";")
+    })
+}
+
 /// The held row of `entity` named `instance` ([`holding`]), as the steps so far leave it.
 pub(super) fn held(
     ir: &EssIr,

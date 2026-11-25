@@ -6142,8 +6142,10 @@ fn the_check_task_runs_the_slow_lane_after_the_tests() {
 // ---- hotfix-scope.sh: how much of the gate a patch tag runs ------------------------------------
 
 /// What `.github/scripts/hotfix-scope.sh` prints for the patch tag `1.0.1` of a small workspace
-/// whose change since `1.0.0` is `changes`: crates `low`, `high` (depending on `low`) and `ess-ui`,
-/// with a `cargo` stub on `PATH` that answers `metadata` with their JSON, so no cargo runs.
+/// whose change since `1.0.0` is `changes`: crates `low`, `high` (depending on `low`), `ess-ui`,
+/// `ess-conformance`, `ess-gen` with its dependent `ess-cli`, and `ess-service-contract` with its
+/// dependent `ess-entity-runtime`, with a `cargo` stub on `PATH` that answers `metadata` with their
+/// JSON, so no cargo runs.
 fn hotfix_scope(case: &str, changes: &[(&str, &str)]) -> BTreeMap<String, String> {
     let scratch = Scratch::new(&format!("hotfix-scope-{case}"));
     let repo = scratch.0.join("repo");
@@ -6154,15 +6156,32 @@ fn hotfix_scope(case: &str, changes: &[(&str, &str)]) -> BTreeMap<String, String
         ("low", "crates/low", None),
         ("high", "crates/high", Some("low")),
         ("ess-ui", "crates/ui/ess-ui", None),
+        ("ess-conformance", "crates/verify/ess-conformance", None),
+        ("ess-gen", "crates/generate/ess-gen", None),
+        ("ess-cli", "crates/edge/ess-cli", Some("ess-gen")),
+        (
+            "ess-service-contract",
+            "crates/specify/ess-service-contract",
+            None,
+        ),
+        (
+            "ess-entity-runtime",
+            "crates/generate/ess-entity-runtime",
+            Some("ess-service-contract"),
+        ),
     ];
     let write = |path: &str, contents: &str| {
         let file = repo.join(path);
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, contents).unwrap();
     };
+    let members: Vec<String> = crates
+        .iter()
+        .map(|(_, dir, _)| format!("\"{dir}\""))
+        .collect();
     write(
         "Cargo.toml",
-        "[workspace]\nmembers = [\"crates/low\", \"crates/high\", \"crates/ui/ess-ui\"]\n",
+        &format!("[workspace]\nmembers = [{}]\n", members.join(", ")),
     );
     write("CHANGELOG.md", "# Changelog\n");
     write("schemas/ui/ess-ui.schema.yaml", "type: object\n");
@@ -6270,6 +6289,56 @@ fn a_patch_tag_of_the_ess_ui_schema_runs_the_targeted_gate_of_ess_ui() {
         scope["packages"]
             .split(' ')
             .any(|package| package == "ess-ui"),
+        "{scope:?}"
+    );
+}
+
+/// 0.99.3 changed `ess-conformance`; its targeted job selected `ess-cli`, `ess-conformance` and
+/// `ess-synth` among seven crates and was cancelled at its 60-minute limit with 2,734 of 8,685
+/// tests run. A patch tag whose selected set holds one of those three runs the full gate, and the
+/// reason names the crate, whether the tag changed it or it was selected as a direct dependent.
+#[test]
+fn a_patch_tag_that_selects_a_large_crate_runs_the_full_gate() {
+    let notes = [
+        ("CHANGELOG.md", "# Changelog\n\n## [1.0.1]\n\n- Fixed.\n"),
+        ("release-notes/1.0.1.md", "A fix.\n"),
+    ];
+    let mut changed = notes.to_vec();
+    changed.push((
+        "crates/verify/ess-conformance/src/lib.rs",
+        "pub fn one() -> u8 { 2 }\n",
+    ));
+    let scope = hotfix_scope("large-changed", &changed);
+    assert_eq!(scope["scope"], "full", "{scope:?}");
+    assert!(scope["reason"].contains("ess-conformance"), "{scope:?}");
+    let mut dependent = notes.to_vec();
+    dependent.push((
+        "crates/generate/ess-gen/src/lib.rs",
+        "pub fn one() -> u8 { 2 }\n",
+    ));
+    let scope = hotfix_scope("large-dependent", &dependent);
+    assert_eq!(scope["scope"], "full", "{scope:?}");
+    assert!(scope["reason"].contains("ess-cli"), "{scope:?}");
+}
+
+/// A patch tag of a crate whose selected set holds none of the three large crates keeps the
+/// targeted gate: `ess-service-contract` and its dependent `ess-entity-runtime`.
+#[test]
+fn a_patch_tag_that_selects_no_large_crate_stays_targeted() {
+    let scope = hotfix_scope(
+        "small",
+        &[
+            (
+                "crates/specify/ess-service-contract/src/lib.rs",
+                "pub fn one() -> u8 { 2 }\n",
+            ),
+            ("CHANGELOG.md", "# Changelog\n\n## [1.0.1]\n\n- Fixed.\n"),
+            ("release-notes/1.0.1.md", "A fix.\n"),
+        ],
+    );
+    assert_eq!(scope["scope"], "targeted", "{scope:?}");
+    assert_eq!(
+        scope["packages"], "ess-entity-runtime ess-service-contract",
         "{scope:?}"
     );
 }

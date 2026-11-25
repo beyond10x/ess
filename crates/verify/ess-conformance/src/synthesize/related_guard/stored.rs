@@ -94,6 +94,36 @@ fn checks(ir: &EssIr, command: &ResolvedCommand, writer: &ResolvedOutcome, input
         })
 }
 
+/// Whether `command` reads, before `writer` stores it, the row `input` names together with another
+/// input, or another row together with `input`: a `when_related:` predicate over a row named by
+/// another input that reads `input.<input>`, or one over the row `input` names that reads any input.
+/// A creating act sent with `input` rewritten to name another row is then answered by that guard
+/// against rows its own arrangement related to the old value (the clerk filed under one desk, the
+/// grant sent for another), and may be refused where the scenario expects it to store the row.
+fn relates(ir: &EssIr, command: &ResolvedCommand, writer: &ResolvedOutcome, input: &str) -> bool {
+    let reads_input = |predicate: &ess_primitives::predicate::Predicate, any: bool| {
+        predicate.fact_paths().into_iter().any(|path| {
+            path.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                && (any || path.segments().get(1).is_some_and(|named| named == input))
+        })
+    };
+    let relating = |via: &ResolvedRelatedVia, predicate: &ess_primitives::predicate::Predicate| {
+        let names_input = matches!(via, ResolvedRelatedVia::Input { field, .. } if field == input);
+        reads_input(predicate, names_input)
+    };
+    crate::synthesize::precedence::answers_before(ir.format(), command, writer)
+        .into_iter()
+        .any(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                via, test, also, ..
+            } => {
+                matches!(test, ResolvedRelatedTest::Holds { predicate } if relating(via, predicate))
+                    || also.iter().any(|row| relating(&row.via, &row.predicate))
+            }
+            _ => false,
+        })
+}
+
 /// Why no run holds, in `field` of a `subject` row, an identity no `far` row carries — the proof
 /// validation reads from `ess/30` (`ess-domain`'s `command::reference_integrity`,
 /// beyond10x/ess#509): every act writing the field stores nothing, the row's own value or an input
@@ -254,6 +284,15 @@ fn relink(
                 return Err(gap("the act creating the subject requires it"));
             }
             None
+        }
+        // The creating act may have been arranged against the old value (as its own scenario,
+        // where its guards relate rows to it): pointed elsewhere, its own guards would refuse it.
+        Link::Row(_) if relates(ir, command, creating, &input) => {
+            return Err(gap(&format!(
+                "`{}` relates the row `input.{input}` names to another of its inputs before \
+                 storing it, and the arrangement created the subject naming another row",
+                command.name
+            )));
         }
         Link::Row(row) => Some(ScenarioValue::instance((*row).clone())),
         Link::Fresh(far) => {

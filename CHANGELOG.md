@@ -37,6 +37,21 @@
 - `ess ui test` reads and drives the rows of an overlay's collection (`expect rows`, `select`, `mark`, `act` at a row action), reads a form's `result` and a board's placed widget at `<board>/rows/<widget>`, the paths the generated React project draws them at, and grows its headless screen past 160 cells until no row or column is cut, so the last column of a wide table is read (beyond10x/ess#722).
 - The terminal pages a server-paged collection with a `pager` through the states its params bind: it shows the size its size state holds (else the first of `sizes`), `n`, `p` and the `page` step of `ess ui test` write the page state, so the read and an action binding it are sent with that page, and a change to another param of the read returns it to page 1; the fixture adapter answers such a read with the slice the pager's params name. In the `ess-ui-tui` library `ReadRequest` has a new field `pager` of the new type `PagerParams` (beyond10x/ess#722).
 
+## [0.99.4] — 2026-11-25
+
+### Fixed
+
+- `ess verify conform synthesize` sends an input's `example:` on a further instance also at a leaf the command stores into a field that another command's guard reads only for presence (`defined(…)`), as it does for a leaf the command's own guard reads only for presence. Releases 0.99.0 to 0.99.3 sent the example at every other leaf of such an input and the type placeholder (`<path>-<n>`) at that one; before 0.99.0 the whole input was placeholders. The leaf keeps the further witness where the example leaves it out and the witness holds it, or the reverse. A pinned suite of such a model moves when it is synthesized again: a further instance sends the example at a leaf only presence reads touch.
+- `ess verify conform synthesize` no longer writes scenarios that their own model refuses in two guard shapes, which `ess verify conform run --target interpreted` reported as failed: 25 of 201 scenarios of one reported model failed, none fails after the fix. A command whose `when_subject:` refusal compares the row's stored link with an input, such as `account_id != input.account_id`, beside `when_related:` guards reading the row that input or another input names, got its later branches sent a row other than the linked one, so the link refusal answered instead; this part is older than 0.97.4, every release from 0.97.4 to 0.99.3 carries it, and these branches are now refused by synthesis. A command reading a related row through a stored field of its subject, whose creating command relates the row it stores to another of its inputs, such as a clerk's desk compared with the desk sent, got scenarios whose setup creation its own guards refuse; this part is in every release from 0.98.0 to 0.99.3, and these scenarios are now refused by synthesis, as on 0.97.4. A pinned suite of such a model moves when it is synthesized again: scenarios whose setup the model itself refused are no longer written, and the refusals stand in their place.
+
+Neither fix changes a format key.
+
+## [0.99.3] — 2026-11-25
+
+### Fixed
+
+- `ess verify conform synthesize` builds the setup of a creating command that reads several related rows once for each set of field values and rows it is asked with, not once for every scenario that asks. Releases 0.99.0 to 0.99.2 rebuilt it for every scenario needing such a row with field values of its own: on a model of two domains and about 200 scenarios whose creating command many other commands read, synthesis took 196 s and takes 59 s, about three times faster, with one job and with eight. Synthesis of such a model is still slower than on 0.98.2, which took 6 s; the rest is tracked. No suite's bytes and no format key change.
+
 ## [0.99.2] — 2026-11-25
 
 ### Fixed

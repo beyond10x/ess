@@ -3582,10 +3582,11 @@ pub fn own_scenario_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, usize)) {
 }
 
 /// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
-/// this thread while it ran, and how many setup runs with chosen values the nesting bound
-/// stopped: the work a test bounds. Not part of the suite.
+/// this thread while it ran, how many setup runs with chosen values the nesting bound stopped, and
+/// how many own-scenario arrangements carrying chosen values were asked for: the work a test
+/// bounds. Not part of the suite.
 #[doc(hidden)]
-pub fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+pub fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, u64)) {
     related_guard::own_overlay_work(run)
 }
 
@@ -9280,10 +9281,12 @@ fn with_listed(
 ///   through `defined(…)` takes the example's (beyond10x/ess#736 widened per leaf);
 /// - a leaf the branch copies into a field that is the identity, read by a view over the entity
 ///   (filter, order, grouping, aggregate input, computed field or reference), where further rows
-///   are told apart, ranked or counted, or read by any command's branch decision over a stored row
-///   of the entity (a uniqueness check's row selection, a related-row or subject predicate,
-///   [`decided_by`]) keeps the further witness's value: a search may have chosen that value to
-///   take or pass over such a branch, and the plain value could take the other side;
+///   are told apart, ranked or counted, or read by value by any command's branch decision over a
+///   stored row of the entity (a uniqueness check's row selection, a related-row or subject
+///   predicate, [`decided_by`]) keeps the further witness's value: a search may have chosen that
+///   value to take or pass over such a branch, and the plain value could take the other side;
+/// - a leaf copied only into fields such decisions read through `defined(…)` alone takes the
+///   example's where the example and the further witness both hold it or both leave it out;
 /// - the value so made keeps the branch ([`keeps_branch`]).
 ///
 /// What the branch's `sets:` leave is read again from the input sent.
@@ -9326,7 +9329,7 @@ fn exampled(
         .flat_map(read_by_value)
         .map(guard_input_path)
         .collect();
-    kept.extend(told_apart(ir, entity, creator.outcome));
+    kept.extend(told_apart(ir, entity, creator.outcome, (&plain, &own)));
     let decided = decision_inputs(command);
     let mut swapped: BTreeSet<&str> = BTreeSet::new();
     for field in command.examples.keys() {
@@ -9403,15 +9406,23 @@ fn exampled(
 /// The input paths a creating branch copies into a field that tells its rows apart, dotted from
 /// the input field (`layout.style`, or `layout` for the whole input): the identity, a field a view
 /// over `entity` reads in its filter, order, grouping, aggregate input, computed fields or
-/// references, or a field some command's branch decision reads of a stored row ([`decided_by`]).
-fn told_apart(ir: &EssIr, entity: &EntityHandle, outcome: &ResolvedOutcome) -> BTreeSet<String> {
+/// references, or a field some command's branch decision reads of a stored row by value
+/// ([`decided_by`]). A path copied only into fields that branch decisions read through
+/// `defined(…)` alone is told apart only where the example and the further witness (`sent`, in
+/// that order) disagree on whether it is there.
+fn told_apart(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    outcome: &ResolvedOutcome,
+    sent: (&BTreeMap<String, Node>, &BTreeMap<String, Node>),
+) -> BTreeSet<String> {
     let identity = &ir.entity(entity).identity.name;
     let views: Vec<&ResolvedView> = ir
         .views()
         .values()
         .filter(|view| view.source == *entity)
         .collect();
-    let decided = decided_by(ir, entity);
+    let (decided, present) = decided_by(ir, entity);
     let read = |target: &str| {
         target == identity
             || decided.contains(target)
@@ -9446,6 +9457,22 @@ fn told_apart(ir: &EssIr, entity: &EntityHandle, outcome: &ResolvedOutcome) -> B
     for set in outcome.sets.iter().filter(|set| read(&set.target)) {
         inputs_read(&set.value, &mut told);
     }
+    let mut tested = BTreeSet::new();
+    for set in outcome
+        .sets
+        .iter()
+        .filter(|set| !read(&set.target) && present.contains(set.target.as_str()))
+    {
+        inputs_read(&set.value, &mut tested);
+    }
+    let held = |input: &BTreeMap<String, Node>, leaf: &str| {
+        ess_compiler::ir::read_input(input, leaf).is_some_and(|value| *value != Node::Null)
+    };
+    told.extend(
+        tested
+            .into_iter()
+            .filter(|leaf| held(sent.0, leaf) != held(sent.1, leaf)),
+    );
     told
 }
 
@@ -9679,11 +9706,24 @@ enum StoredGuard<'c> {
     Predicate(&'c Predicate),
 }
 
-/// Every stored field of `entity` some command's branch decision reads ([`stored_guards`]): a
-/// further row carrying the plain row's value there could take the other side of that decision,
-/// so the value the search gave it stays.
-fn decided_by<'i>(ir: &'i EssIr, entity: &EntityHandle) -> BTreeSet<&'i str> {
+/// Every stored field of `entity` some command's branch decision reads ([`stored_guards`]), as
+/// two sets. The first holds the fields read by value: a further row carrying the plain row's
+/// value there could take the other side of that decision, so the value the search gave it
+/// stays. The second holds the fields read only through `defined(…)` ([`read_by_value`]): a
+/// further row decides such a read as the plain row does wherever both hold the field or both
+/// leave it out.
+fn decided_by<'i>(ir: &'i EssIr, entity: &EntityHandle) -> (BTreeSet<&'i str>, BTreeSet<&'i str>) {
+    let stored = |paths: Vec<&'i FactPath>| {
+        paths
+            .into_iter()
+            .map(FactPath::namespace)
+            .filter(|root| {
+                *root != ess_domain::command::subject_fact::INPUT_NAMESPACE && *root != "subject"
+            })
+            .collect::<Vec<_>>()
+    };
     let mut read = BTreeSet::new();
+    let mut present = BTreeSet::new();
     for command in ir.commands().values() {
         for (at, guard) in stored_guards(command) {
             if at != entity {
@@ -9694,21 +9734,14 @@ fn decided_by<'i>(ir: &'i EssIr, entity: &EntityHandle) -> BTreeSet<&'i str> {
                     read.insert(field);
                 }
                 StoredGuard::Predicate(predicate) => {
-                    read.extend(
-                        predicate
-                            .fact_paths()
-                            .into_iter()
-                            .map(FactPath::namespace)
-                            .filter(|root| {
-                                *root != ess_domain::command::subject_fact::INPUT_NAMESPACE
-                                    && *root != "subject"
-                            }),
-                    );
+                    read.extend(stored(read_by_value(predicate)));
+                    present.extend(stored(predicate.fact_paths()));
                 }
             }
         }
     }
-    read
+    present.retain(|field| !read.contains(field));
+    (read, present)
 }
 
 /// `input` with the identity an arranging creation names its new row by moved to `distinction`'s
@@ -9874,6 +9907,7 @@ fn invoke_with(
 }
 
 /// One invoked branch: the steps that run it, what they depend on, and what they left behind.
+#[derive(Clone)]
 struct Invocation {
     /// The steps, in order.
     steps: Vec<ScenarioStep>,
