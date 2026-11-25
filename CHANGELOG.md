@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` writes the caller-swapped half of an `invariant-wrapped` scenario at a view so that it selects its row by the view's identity field, as the first half does. Where the first half sent an identity as the literal of its own field name and the model has an identity input typed `String`, the swapped half named its witness row by a column `<identity>-<n>`, selected no row, and `ess verify conform run --target interpreted` failed the scenario with no reason printed; every release from 0.63.0 to 0.99.3 carries it. A pinned suite of such a model moves when it is synthesized again: the swapped half's selector names the identity field.
+
 ## [0.99.4] — 2026-11-25
 
 ### Fixed
