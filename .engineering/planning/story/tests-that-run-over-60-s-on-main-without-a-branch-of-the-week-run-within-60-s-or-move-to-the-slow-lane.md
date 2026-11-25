@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - derived_from: story:the-test-step-meets-the-test-budget
 - informed_by: story:three-adversary-targets-run-a-reduced-sweep-in-the-test-step-and-the-full-sweep-in-the-slow-lane
-revision: 2
+revision: 3
 ---
 ## Summary
 
@@ -88,3 +88,6 @@ slowest 170.2 s.
   and 7 jobs) ran 156 s in the first gate run and 119 s in the re-run, a single test over the 60 s
   bound in both. Its test name is not recorded in the gate log read for this entry; the lane's
   first step is to name it.
+
+- `tutorial_page` ran 118 to 126 s, and the slow-jobs lane of `synthesis_suite_bytes_table` ran
+  150 s, in three gates of 2026-11-25 (compile time included in the first).

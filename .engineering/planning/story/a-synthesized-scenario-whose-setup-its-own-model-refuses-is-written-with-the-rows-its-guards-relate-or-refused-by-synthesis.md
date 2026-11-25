@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 1
+revision: 3
 ---
 ## Summary
 
@@ -111,3 +111,16 @@ Both red tests are on the branch `fix/n88-n89-2026-11-25` (pushed at `a8d35b75de
 
 - None open. The release route of the fixes (after 0.99.3, a release of its own) follows from the
   moved suites.
+
+## Delivery
+
+Branch `fix/n88-a-synthesized-setup-is-accepted-by-its-own-model`, head
+`090b691e2dc686620b0940243b297885a6d3c67b`, pushed: the group 3 fix `39f1b33bc3`, a third red test
+`4eb8a5a6a3` (`a_link_guard_on_the_input_naming_a_row_beside_passes_its_own_model`), and the group
+1 fix `090b691e2d`. On the reported model 0 of 178 scenarios fail (25 of 201 on 0.99.2). 23
+scenarios are no longer written; each of them failed before, and none that passed was lost. No
+committed byte table moved. The gate ran every step with exit 0.
+
+## Left open
+
+The 23 scenarios are refused by synthesis and not arranged; arranging them is not built.

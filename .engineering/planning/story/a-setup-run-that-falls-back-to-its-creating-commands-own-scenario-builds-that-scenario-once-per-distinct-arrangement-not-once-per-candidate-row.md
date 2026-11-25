@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 - informed_by: story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path
-revision: 2
+revision: 4
 ---
 ## Summary
 
@@ -134,7 +134,12 @@ The slow byte lanes of the fix's gate ran one test for 156 s in the first gate r
 re-run (the lane of the 1, 2 and 7 job byte comparison), both over the 60 s bound of a single
 test. That test is an item for `story:tests-that-run-over-60-s-on-main-without-a-branch-of-the-week-run-within-60-s-or-move-to-the-slow-lane`.
 
+About 1,300 to 1,500 distinct own-scenario arrangements with chosen values are still built once
+each, at about 34 ms each (about 44 to 50 s); 0.98.2 refused these runs and did not build them.
+The profile puts the time in `with_row_where` (86 % inclusive) and `evaluate_row_flat` (63 %).
+
 ## Delivery
 
 Red test `95de3d821f`, fix `bba4a140ad` on `fix/n89-a-setup-run-rebuilds-its-creating-scenario-once`,
-pushed; the gate of the branch green. The release 0.99.3 and its tag are not made yet.
+pushed; the gate of the branch green. Tagged 0.99.3 on `e0f8d1d3b2`, pull request 831; the release
+run was in progress on 2026-11-25.

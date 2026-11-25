@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:a-synthesized-scenario-whose-setup-its-own-model-refuses-is-written-with-the-rows-its-guards-relate-or-refused-by-synthesis
-revision: 1
+revision: 2
 ---
 ## Summary
 
@@ -57,3 +57,8 @@ into refusals on the repository's fixtures are open.
 ## Decisions
 
 - Not built with the N88 fixes; cost facts first (coordinator, D125).
+
+## Cost facts
+
+Synthesis runs no interpreter per scenario today. One interpreted run of the whole suite of the
+reported model takes 0.64 s against 194 s of synthesis (measured 2026-11-25).
