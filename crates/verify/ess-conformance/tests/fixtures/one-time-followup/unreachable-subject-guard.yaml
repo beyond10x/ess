@@ -1,0 +1,111 @@
+format: ess/36
+system: depot
+version: v1
+domain: depot.yard
+
+types:
+  - name: depot.yard.CrateMode
+    kind: enum
+    variants: [Loose, Sealed]
+
+entities:
+  - name: depot.yard.Pass
+    identity: {name: pass_id, type: Uuid}
+    fields:
+      - {name: holder, type: String}
+    lifecycle: {initial: Valid, states: [Valid], terminal: [Valid]}
+
+  - name: depot.yard.Marker
+    identity: {name: marker_id, type: String}
+    fields:
+      - {name: colour, type: String}
+    lifecycle: {initial: Valid, states: [Valid], terminal: [Valid]}
+
+  - name: depot.yard.Crate
+    identity: {name: crate_id, type: Uuid}
+    fields:
+      - {name: mode, type: depot.yard.CrateMode}
+      - {name: markers, type: "List<String>"}
+    relations:
+      - {name: markers, kind: references, target: depot.yard.Marker, cardinality: many, via: markers}
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored]}
+
+actors:
+  - name: depot.yard.Clerk
+    may: [depot.yard.IssuePass, depot.yard.AddMarker, depot.yard.StoreCrate, depot.yard.RelabelCrate]
+
+errors:
+  - {name: depot.yard.SealedCrate, summary: The crate is sealed.}
+  - {name: depot.yard.MissingMarker, summary: A marker does not exist.}
+  - {name: depot.yard.CrateNotFound, summary: No crate has this id.}
+
+commands:
+  - name: depot.yard.IssuePass
+    input:
+      - {name: pass_id, type: Uuid}
+      - {name: holder, type: String}
+    response:
+      - {name: code, type: String}
+    outcomes:
+      - name: issued
+        creates: depot.yard.Pass
+        instance: pass_id
+        sets: {holder: input.holder}
+        returns: true
+        one_time_response: [code]
+        emits: [depot.yard.PassIssued]
+        payload:
+          depot.yard.PassIssued: {pass_id: input.pass_id}
+
+  - name: depot.yard.AddMarker
+    input:
+      - {name: marker_id, type: String}
+      - {name: colour, type: String}
+    outcomes:
+      - name: added
+        creates: depot.yard.Marker
+        instance: marker_id
+        sets: {colour: input.colour}
+        emits: [depot.yard.MarkerAdded]
+        payload:
+          depot.yard.MarkerAdded: {marker_id: input.marker_id}
+
+  - name: depot.yard.StoreCrate
+    input:
+      - {name: markers, type: "List<String>"}
+    outcomes:
+      - name: stored
+        creates: depot.yard.Crate
+        instance: crate_id
+        sets: {mode: Loose, markers: input.markers}
+        emits: [depot.yard.CrateStored]
+        payload:
+          depot.yard.CrateStored: {crate_id: {generated: true}}
+
+  - name: depot.yard.RelabelCrate
+    input:
+      - {name: crate_id, type: Uuid}
+      - {name: markers, type: "List<String>"}
+    outcomes:
+      - name: sealed
+        when_subject: {predicate: mode == Sealed}
+        error: depot.yard.SealedCrate
+      - name: missing-marker
+        when_related: {via: input.markers, exists: false}
+        error: depot.yard.MissingMarker
+      - name: relabelled
+        updates: depot.yard.Crate
+        instance: crate_id
+        sets: {markers: input.markers}
+        emits: [depot.yard.CrateRelabelled]
+        payload:
+          depot.yard.CrateRelabelled: {crate_id: input.crate_id}
+      - name: not-found
+        unknown_instance: true
+        error: depot.yard.CrateNotFound
+
+events:
+  - {name: depot.yard.PassIssued, fields: [{name: pass_id, type: Uuid}]}
+  - {name: depot.yard.MarkerAdded, fields: [{name: marker_id, type: String}]}
+  - {name: depot.yard.CrateStored, fields: [{name: crate_id, type: Uuid}]}
+  - {name: depot.yard.CrateRelabelled, fields: [{name: crate_id, type: Uuid}]}

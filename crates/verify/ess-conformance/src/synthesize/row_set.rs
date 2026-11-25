@@ -497,17 +497,217 @@ fn scoped_at(
             })
     };
     let reads_any = |path: &FactPath| named(path) || published(path);
-    conjuncts.iter().any(|conjunct| {
-        matches!(
-            conjunct,
-            Predicate::Compare {
+    conjuncts.iter().any(|conjunct| match conjunct {
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq,
+            right: Operand::Fact(right),
+            ..
+        } => (field(left) && reads_any(right)) || (field(right) && reads_any(left)),
+        // Membership in an input list, `exists: {in: input.<list>, as: x, that: <field> == x}`,
+        // is that equality with each element the scenario sends.
+        Predicate::Exists(quantified) if members => {
+            let element = |path: &FactPath| path.namespace() == quantified.bind;
+            quantified.over.fact().is_some_and(|over| {
+                over.segments().len() > 1
+                    && over.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+            }) && matches!(
+                &quantified.body,
+                Predicate::Compare {
+                    left: Operand::Fact(left),
+                    op: CompareOp::Eq,
+                    right: Operand::Fact(right),
+                    ..
+                } if (field(left) && element(right)) || (field(right) && element(left))
+            )
+        }
+        _ => false,
+    })
+}
+
+/// What [`listed`] asks of the send's input lists, as the command's own guards read the input.
+#[derive(Default)]
+struct Listing {
+    /// Each list holds each literal: one guard per literal.
+    holding: Vec<Predicate>,
+    /// Each list holds an element none of its literals is: one guard per list.
+    other: Vec<Predicate>,
+    /// The input fields those lists are, where a list is a whole field.
+    fields: Vec<String>,
+}
+
+/// What an input list a selector reads by membership, `exists: {in: input.<list>, as: x, that:
+/// <field> == x}`, holds where the selector also pins that field to a literal, `<field> ==
+/// "<value>"`: every such literal, and an element that is none of them. A row the literal names can
+/// then be selected, and a row holding the other element is a decoy refuting the literal alone.
+fn listed(ir: &EssIr, selections: &[&ResolvedRowSelection]) -> Listing {
+    let mut listing = Listing::default();
+    if !subject_fact::identity_selectors(ir) {
+        return listing;
+    }
+    for selection in selections {
+        let conjuncts: Vec<&Predicate> = match &selection.filter {
+            Predicate::All(children) => children.iter().collect(),
+            other => vec![other],
+        };
+        let pinned = |field: &FactPath| -> Vec<Operand> {
+            conjuncts
+                .iter()
+                .filter_map(|conjunct| match conjunct {
+                    Predicate::Compare {
+                        left,
+                        op: CompareOp::Eq,
+                        right,
+                        ..
+                    } => [(left, right), (right, left)]
+                        .into_iter()
+                        .find_map(|(fact, value)| {
+                            (matches!(fact, Operand::Fact(path) if path == field)
+                                && matches!(value, Operand::Literal(_)))
+                            .then(|| value.clone())
+                        }),
+                    _ => None,
+                })
+                .collect()
+        };
+        for conjunct in &conjuncts {
+            let Predicate::Exists(quantified) = conjunct else {
+                continue;
+            };
+            // The input as the command's own guards read it, the input namespace left off.
+            let Some(over) = quantified.over.fact().and_then(|over| {
+                let (root, rest) = over.segments().split_first()?;
+                (root == ess_domain::command::subject_fact::INPUT_NAMESPACE && !rest.is_empty())
+                    .then(|| FactPath::from_segments(rest))
+            }) else {
+                continue;
+            };
+            let element = FactPath::from_segments([quantified.bind.as_str()]);
+            let Predicate::Compare {
                 left: Operand::Fact(left),
                 op: CompareOp::Eq,
                 right: Operand::Fact(right),
                 ..
-            } if (field(left) && reads_any(right)) || (field(right) && reads_any(left))
-        )
-    })
+            } = &quantified.body
+            else {
+                continue;
+            };
+            let field = if *right == element {
+                left
+            } else if *left == element {
+                right
+            } else {
+                continue;
+            };
+            let values = pinned(field);
+            if values.is_empty() {
+                continue;
+            }
+            let compare = |op: CompareOp, value: &Operand| Predicate::Compare {
+                left: Operand::Fact(element.clone()),
+                op,
+                right: value.clone(),
+                kind: ess_primitives::predicate::CompareKind::Value,
+            };
+            let holding = |body: Predicate| {
+                Predicate::Exists(Box::new(ess_primitives::predicate::Quantified {
+                    over: ess_primitives::predicate::Collection::Fact(over.clone()),
+                    bind: quantified.bind.clone(),
+                    body,
+                }))
+            };
+            for value in &values {
+                listing.holding.push(holding(compare(CompareOp::Eq, value)));
+            }
+            if let [field] = over.segments() {
+                listing.fields.push(field.clone());
+            }
+            listing.other.push(holding(Predicate::All(
+                values
+                    .iter()
+                    .map(|value| compare(CompareOp::Ne, value))
+                    .collect(),
+            )));
+        }
+    }
+    listing
+}
+
+/// `predicate` with every quantifier over an input list the send holds written out element by
+/// element, each element's value in place of the name the body reads it under: `exists` as `any`,
+/// `forall` as `all`. A row's truth then reads no input. A quantifier whose body reads an element
+/// it cannot write in, or over a list the send does not hold, is kept.
+fn elementwise_input(predicate: &Predicate, input: &BTreeMap<String, Node>) -> Predicate {
+    let each = |children: &[Predicate]| {
+        children
+            .iter()
+            .map(|child| elementwise_input(child, input))
+            .collect::<Vec<_>>()
+    };
+    match predicate {
+        Predicate::All(children) => Predicate::All(each(children)),
+        Predicate::Any(children) => Predicate::Any(each(children)),
+        Predicate::Not(inner) => Predicate::Not(Box::new(elementwise_input(inner, input))),
+        Predicate::Exists(quantified) | Predicate::Forall(quantified) => {
+            let items = quantified
+                .over
+                .fact()
+                .filter(|path| {
+                    path.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                })
+                .and_then(|path| {
+                    let (_, rest) = path.segments().split_first()?;
+                    let (first, rest) = rest.split_first()?;
+                    let mut node = input.get(first)?;
+                    for segment in rest {
+                        let Node::Map(entries) = node else {
+                            return None;
+                        };
+                        node = entries.get(segment)?;
+                    }
+                    match node {
+                        Node::Seq(items) => Some(items),
+                        _ => None,
+                    }
+                });
+            let Some(items) = items else {
+                return predicate.clone();
+            };
+            let bind = &quantified.bind;
+            let written = items
+                .iter()
+                .map(|item| {
+                    let body = written_in(&quantified.body, &|path| {
+                        let (root, rest) = path.segments().split_first()?;
+                        if root != bind {
+                            return None;
+                        }
+                        let mut node = item;
+                        for segment in rest {
+                            let Node::Map(entries) = node else {
+                                return None;
+                            };
+                            node = entries.get(segment)?;
+                        }
+                        super::fact_value(node)
+                    });
+                    (!body
+                        .fact_paths()
+                        .iter()
+                        .any(|path| path.namespace() == bind))
+                    .then_some(body)
+                })
+                .collect::<Option<Vec<_>>>();
+            match written {
+                Some(written) if matches!(predicate, Predicate::Exists(_)) => {
+                    Predicate::Any(written)
+                }
+                Some(written) => Predicate::All(written),
+                None => predicate.clone(),
+            }
+        }
+        other => other.clone(),
+    }
 }
 
 /// Whether the selector reads a member of a struct identity no declared creation publishes from
@@ -629,6 +829,45 @@ pub(super) fn input_for(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    input_toward(ir, command, outcome, distinction, &[])
+}
+
+/// [`input_for`], on which every one of `steer` holds too.
+fn input_toward(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
+    steer: &[Predicate],
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    let (own, refute) = input_guards(ir, command, outcome);
+    let mut guards: Vec<&Predicate> = own.into_iter().collect();
+    guards.extend(refute.iter().copied());
+    guards.extend(steer);
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    let tried = inputs.len();
+    for input in inputs {
+        if reaches(ir, command, outcome, &input, steer)? {
+            return Ok(input);
+        }
+    }
+    Err(RefusalCause::GuardUnsatisfiable {
+        predicate: guards
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+        tried,
+        cut: 0,
+    })
+}
+
+/// The input guard [`input_for`] holds for `outcome`, and those it refutes.
+fn input_guards<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> (Option<&'c Predicate>, Vec<&'c Predicate>) {
     let own: Option<&Predicate> = match &outcome.condition {
         ResolvedCondition::When { predicate } => Some(predicate),
         // The `when:` beside a row set, or beside a refusal over a row the input names
@@ -643,28 +882,65 @@ pub(super) fn input_for(
         .into_iter()
         .filter_map(when)
         .collect();
-    let mut guards: Vec<&Predicate> = own.into_iter().collect();
-    guards.extend(refute.iter().copied());
-    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
-    let tried = inputs.len();
-    for input in inputs {
-        let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
-        let holds = own.is_none_or(|guard| facts.decide(guard) == Decision::Satisfied);
-        let refuted = refute
-            .iter()
-            .all(|guard| matches!(facts.decide(guard), Decision::Refuted(_)));
-        if holds && refuted {
-            return Ok(input);
+    (own, refute)
+}
+
+/// Whether `input` reaches `outcome` as far as its input decides it ([`input_for`]), every one of
+/// `steer` holding too.
+fn reaches(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    steer: &[Predicate],
+) -> Result<bool, RefusalCause> {
+    let (own, refute) = input_guards(ir, command, outcome);
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    let holds = own
+        .into_iter()
+        .chain(steer)
+        .all(|guard| facts.decide(guard) == Decision::Satisfied);
+    let refuted = refute
+        .iter()
+        .all(|guard| matches!(facts.decide(guard), Decision::Refuted(_)));
+    Ok(holds && refuted)
+}
+
+/// The input of a [`Arranging::LISTED`] attempt: one whose lists hold the literals [`listed`]
+/// names, each list then given the elements none of them is that an input holding such an element
+/// carries, where the input still reaches the branch with them.
+fn listed_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    listing: &Listing,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    let input = input_toward(ir, command, outcome, Distinction::PLAIN, &listing.holding)?;
+    let Ok(more) = input_toward(ir, command, outcome, Distinction::PLAIN, &listing.other) else {
+        return Ok(input);
+    };
+    let mut merged = input.clone();
+    for field in &listing.fields {
+        if let (Some(Node::Seq(items)), Some(Node::Seq(extra))) =
+            (merged.get_mut(field), more.get(field))
+        {
+            for item in extra {
+                if !items.contains(item) {
+                    items.push(item.clone());
+                }
+            }
         }
     }
-    Err(RefusalCause::GuardUnsatisfiable {
-        predicate: guards
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", "),
-        tried,
-        cut: 0,
+    let both: Vec<Predicate> = listing
+        .holding
+        .iter()
+        .chain(&listing.other)
+        .cloned()
+        .collect();
+    Ok(if reaches(ir, command, outcome, &merged, &both)? {
+        merged
+    } else {
+        input
     })
 }
 
@@ -909,6 +1185,11 @@ impl<'a> Reading<'a> {
         // beyond10x/ess#429) — leaves the rest of the input unflattened, and the literal it compares
         // with would read nothing. From `ess/23` only: an older document keeps the suite it had.
         let literal_input = subject_fact::identity_selectors(self.ir);
+        let predicate = &if literal_input {
+            elementwise_input(predicate, &self.input)
+        } else {
+            predicate.clone()
+        };
         let written = written_in(predicate, &|path| {
             subject_value(path, subject).or_else(|| {
                 literal_input
@@ -3382,6 +3663,14 @@ fn prepared(
                 .find_map(|selection| related_link(models.arrangement, command, selection))
         })
     };
+    // The send's input lists filled toward the literals a selector pins its membership to, where
+    // one does ([`listed`]): a branch the plain input selects no row on.
+    let listing = || {
+        selections_of(command)
+            .ok()
+            .filter(|selections| !listed(models.arrangement, selections).holding.is_empty())
+            .map(|_| prepare_with(models, command, outcome, actors, Arranging::LISTED))
+    };
     let refused = match prepare_with(models, command, outcome, actors, Arranging::default()) {
         Ok((prepared, true)) => return Ok(prepared),
         // Standing only where the selector selects no row, it is kept unless the related rows
@@ -3406,11 +3695,17 @@ fn prepared(
                     }
                 }
             }
+            if let Some(Ok((listed, true))) = listing() {
+                return Ok(listed);
+            }
             return Ok(unselected.unwrap_or(prepared));
         }
         Err(refused) => match unselected {
             Some(prepared) => return Ok(prepared),
-            None => refused,
+            None => match listing() {
+                Some(Ok((listed, _))) => return Ok(listed),
+                _ => refused,
+            },
         },
     };
     let Some(link) = link() else {
@@ -3496,6 +3791,20 @@ struct Arranging {
     /// Which rows the creator of a selector's rows names in every other field it sets from an input
     /// naming a row ([`linked`]).
     others: Others,
+    /// What the send's input lists hold.
+    lists: Lists,
+}
+
+/// What the send's input lists hold in one arrangement of [`prepare_with`].
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Lists {
+    /// What the plain input holds ([`input_for`]).
+    #[default]
+    Plain,
+    /// Every input list a selector reads by membership holds the literals the selector pins its
+    /// compared field to, beside an element that is none of them ([`listed`]). Tried after the
+    /// plain input stood with no selected row, or not at all.
+    Literals,
 }
 
 /// The rows a selector's rows name in every field their creator sets from an input naming a row,
@@ -3527,6 +3836,14 @@ impl Arranging {
         eager: false,
         held_under: false,
         others: Others::Own,
+        lists: Lists::Plain,
+    };
+
+    /// The plain arrangement, the send's input lists filled toward a selector's literals.
+    const LISTED: Self = Self {
+        link: false,
+        lists: Lists::Literals,
+        ..Self::LINKED
     };
 
     /// [`Self::LINKED`], the rows under the addressed subject steered on it.
@@ -3564,6 +3881,7 @@ fn beside_attempts(
             eager: true,
             held_under: false,
             others: Others::Own,
+            lists: Lists::Plain,
         }));
     }
     if outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
@@ -3576,6 +3894,7 @@ fn beside_attempts(
                 eager: false,
                 held_under: false,
                 others: Others::Own,
+                lists: Lists::Plain,
             }));
             attempts.push(Arranging {
                 later,
@@ -3745,7 +4064,11 @@ fn prepare_with(
         decidable(ir, command, selection).map_err(|reason| gap(at(), reason))?;
         related_rows::untied(ir, &at(), &selection.filter)?;
     }
-    let mut input = input_for(ir, command, outcome, Distinction::PLAIN)?;
+    let mut input = if attempt.lists == Lists::Literals {
+        listed_input(ir, command, outcome, &listed(ir, &selections))?
+    } else {
+        input_for(ir, command, outcome, Distinction::PLAIN)?
+    };
     let mut setup = subject_setup(ir, command, outcome, actors)?;
     // A row the branch refuses as missing is named by an identity no row carries (ess/32).
     if let Some(via) =
@@ -3816,7 +4139,14 @@ fn prepare_with(
     if !sends_when(ir, command, outcome, &input, &supplied) {
         return Err(gap(at(), WHEN_UNSENT));
     }
+    // As the reader decides the send ([`Reader::closed`]), from `ess/23`.
+    let elementwise = subject_fact::identity_selectors(ir);
     let closed = |predicate: &Predicate| {
+        let predicate = &if elementwise {
+            elementwise_input(predicate, &input)
+        } else {
+            predicate.clone()
+        };
         written_in(predicate, &|path| {
             input_value(path, &input).or_else(|| subject_value(path, &setup.settled))
         })
