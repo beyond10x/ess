@@ -13,7 +13,22 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table
 - informed_by: story:a-shorthand-struct-binary64-location-resolves
-revision: 3
+scope:
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/generate/ess-synth/src/failure.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/lib.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/mod.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests
+- confidence: inferred
+  path: website/docs/guides/synthesize.md
+revision: 11
 ---
 ## Need
 
@@ -70,6 +85,16 @@ target keeps its output.
 
 - TD-D8: A, taken by the coordinator on 2026-11-25 (D114), agreed by the operator session: the encoder always writes the object; the decoder reads both spellings.
 
+- SB-D1: A: a value that is neither an object nor the shorthand field's scalar is refused by the shorthand field's own decoder at the value path; no new refusal text, taken by the coordinator on 2026-11-25 (D121); reversible until the release that carries it
+
+- SB-D2: A: the served round trip extends the `json_body_closure` harness fixture; no new harness and no new Taskfile step, taken by the coordinator on 2026-11-25 (D121); reversible until the release that carries it
+
+- SB-D3: A: the build with warnings denied is one shorthand model in the crate-layout build of `single_crate_layout.rs`; the Taskfile's harness builds keep their flags, taken by the coordinator on 2026-11-25 (D121); reversible until the release that carries it
+
+- SB-D4: A: the Rust target decodes a numeric shorthand field (Integer, Decimal, Binary64) in the short form; the serde limit of `generate types` does not apply to the synthesized reader, taken by the coordinator on 2026-11-25 (D121); reversible until the release that carries it
+
+- Build order beside the typed-decoders story: its first two units first, then this story's lift-and-decoder unit, the served round trip after it, the crate-layout unit after the typed-decoders story's last unit, the words last, taken by the coordinator on 2026-11-25 (D121); reversible until the release that carries it
+
 ## Acceptance
 
 - both_spellings_decode: for a struct with `shorthand: requirement`, the typed decoder reads `"name"` and `{requirement: "name"}` to the
@@ -80,6 +105,51 @@ target keeps its output.
 
 ## Scope
 
-- cited: `crates/generate/ess-synth/src/failure.rs` (`shorthand`, 369-398), `crates/generate/ess-synth/src/rust/wire.rs`
-  (`struct_body`, 328), `crates/generate/ess-synth/src/rust/mod.rs` (`emitted`, 196), `crates/generate/ess-synth/src/lib.rs` (491)
-- inferred: `crates/generate/ess-synth/tests/`, `website/docs/guides/synthesize.md`, `CHANGELOG.md`
+Derived 2026-11-25 by `story-scoper`, read against tag `0.99.1`. Every line is **cited** (read from the story or the tree) or **inferred**. SA = `story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table`.
+
+- **Primary surface:** `crates/generate/ess-synth` (`src/failure.rs`, `src/rust/wire.rs`, two call lines) — cited
+- **The refusal, three call sites:** — cited
+  - `failure.rs:376` (`shorthand`) returns early only for `Target::Clap` (`:381`). Caller `lib.rs:491` (in `emit`, every target), `rust/mod.rs:196` (in `emitted`), `go/mod.rs:324`, `web/mod.rs:304`.
+  - TD-D7 A: Rust skips the refusal, Go and web keep it by name. The `lib.rs:491` call is shared, so it must skip Rust too, not only `rust/mod.rs:196`.
+- **The decoder:** `rust/wire.rs:251` (`type_decoder`, Struct arm) calls `struct_body` (`:328`). It reads members in order, `closure` (`:343`), `model_name_refusals`, then `broken_constraint` when `declared.body.is_constrained()` (`:366`). It has no shorthand branch. — cited
+  - Where the shorthand field is known: `EssIr::shorthand(&QualifiedName)` (`ess-compiler/src/ir.rs:3542`). The wire name is `ess_gen::schema::wire_field_name`.
+  - The short form is any JSON value that is not `json::Value::Object` (`json.rs:53`). `ess-domain/src/shorthand.rs:21-24` restricts the field to a scalar on the wire, so object versus scalar decides and nothing is guessed. The value of the field is read with `decode_value(surface, "value", "at", type, 0)` (`wire.rs`, below `decode_member` `:957`; the call `newtype_body` makes at `:210`). Every other field is `Optional` (`shorthand.rs:233-250`) and becomes `None`. The invariant check (`:366`) runs on the short value too, as `shorthand.rs:7` says.
+  - Encoder: unchanged (TD-D8 A). `type_encoder` (`wire.rs`, above `type_decoder`) writes the object.
+  - `Surface` impls: `Server` (`rust/http.rs:75`) and `Bridge` (`web/mod.rs:255`). The edit is inside `struct_body`, so both get it. The web target still refuses (`web/mod.rs:304`), so its output keeps its bytes.
+- **Siblings (question: do Go and TypeScript already accept both?):** no. — cited
+  - Go: the refusal at `go/mod.rs:324`; its struct codecs `go/http.rs:670,763` hold no shorthand branch (`git grep shorthand` finds none in `go/` or `web/` outside the refusal).
+  - Web: `web/mod.rs:304`; `web/catalog.rs:469` has no shorthand branch.
+  - `generate types` already accepts both spellings on Rust, Go and TypeScript (`schema-contract/src/realize/{rust.rs:952,go.rs:275,ts.rs:26}`), but `rust.rs:504` refuses a numeric shorthand (`rust_shorthand_number`, a serde limit). `ess-synth`s own `Value::Number` is a distinct variant, so that limit does not apply here.
+  - The published schema and OpenAPI are already `oneOf [field, object]` (`ess-gen/src/types.rs:1029-1034`): no change there.
+- **Units (each red test first; the lift and the decoder land together, because a lifted refusal over an object-only decoder is the silent hole `failure.rs:371-374` exists to prevent):**
+  - **SB-U1 lift and decoder.** Red: new cases in `ess-synth/tests/refusal_policy/shorthand.rs` (already a module of the `refusal_policy` binary, so no new test binary): Rust synthesizes the model in both layouts and the served `wire.rs` text holds the short-form branch; Go and web still name the struct. The existing `synthesis_refuses_a_shorthand_struct_by_name` is narrowed to Go and web. Touches `failure.rs`, `lib.rs:491`, `rust/mod.rs:196`, `rust/wire.rs` (`struct_body`).
+  - **SB-U2 served round trip.** Red: `json_body_closure` (harness fixture `fixtures/json-body-closure/`): add a shorthand struct to `model.yaml.in`, requests in both spellings to `REQUESTS`, a refusal case; `http.yaml.in` carries the model `source_digest` and is re-pinned. No new Taskfile step (SB-D2 A).
+  - **SB-U3 typed decoder in the crate layout.** Red: the round-trip fixture SA-U4 adds, extended with one shorthand struct (both spellings decode to one value); and one shorthand model in `single_crate_layout.rs` (builds with `-D warnings`, `:328`) per SB-D3.
+  - **SB-U4 words.** `CHANGELOG.md` (the 0.99.1 text at `:1194-1200` says synthesis refuses such a struct), the doc comment `failure.rs:369-374`, `refusal_policy/shorthand.rs:1-4`, `wire.rs` module doc, and `website/docs/guides/synthesize.md` if it lists refusals (not found by `git grep`).
+- **Byte pins that move:** none — cited-by-absence. Rust refused every shorthand model, so no Rust output with one exists; `git grep -c shorthand 0.99.1 -- generated` is empty; the new branch is emitted only where `ir.shorthand(name)` is `Some`. `served_codec_names`, `go`, `adversary_ess_issues_2_u6`, `synthesis_suite_bytes_table*`, `string_alphabet_and_length`, `tutorial_page`, `feasibility`, `adv319`, `http_binding_rust` compare models with no shorthand. Unproven.
+- **Format, code, schema:** no format step (the key exists since `ess/27`), no `ValidationCode`, no `RawSpecFile`, no public API. Extra gate steps: none beyond the touched-crate gates (`ess-synth`, and `ess-cli` only if its `Synthesize` surface changed, which this story does not).
+- **Shared with SA and build order:** — cited
+  - Same file, different hunks: `rust/wire.rs` (SA `module` `:63-104`, `Surface` `:1098`; SB `struct_body` `:328`).
+  - Same lines or function: `rust/mod.rs` `emitted` (SA `:187-283`; SB removes `:196`) and `lib.rs` `emit` (SA `:430-511`; SB `:491`). Same file: `single_crate_layout.rs` (SA-U2, SB-U3), the SA-U4 fixture (SB-U3), `CHANGELOG.md` and the guide (both).
+  - Disjoint: `failure.rs`, `refusal_policy/shorthand.rs`, the `json-body-closure` fixture.
+  - Order: SA-U1, SA-U2 first (they own `lib.rs`, `rust/mod.rs`, `single.rs`); then SB-U1, which may run beside SA-U3 (`wire.rs` hunks differ); SB-U2 any time after SB-U1; SB-U3 after SA-U4 and SA-U2; SB-U4 last.
+- **Decisions:** SB-D1 to SB-D4 and the build order are in `## Decisions` above, each with its pick.
+- **Documents:** `CHANGELOG.md`, `website/docs/guides/synthesize.md` — inferred
+- **Confidence:** high for the surface (the story cites it and the tree confirms); medium for the unit split (it rests on SA unit boundaries SA still has open).
+- **Would collide with:** any unit touching `ess-synth` `rust/wire.rs`, `rust/mod.rs` `emitted`, `lib.rs` `emit`, or `single_crate_layout.rs`.
+- **Safety fact:** the output of every model without a shorthand is byte-identical because the new branch sits behind `ir.shorthand(&declared.name)` in `struct_body` and the refusal change affects only `Target::Rust` models that declare one — `wire.rs:328`, `failure.rs:385`, pointed at the lines, unproven.
+
+### Not verified by the scoper
+
+- Line numbers inside struct_body (closure about :343, broken_constraint about :366) come from the neighbouring scope and the story, not from a line-numbered read of wire.rs at 0.99.1. The function body was read, not its numbers.
+- go/http.rs:670 and :763 and web/catalog.rs:469 were found by grep on ResolvedBody::Struct and not read; that they hold no shorthand branch rests on git grep -i shorthand finding nothing in go/ and web/ outside the refusal calls.
+- That `ess generate synthesize` for the Rust target has no other struct reader of JSON than wire.rs. closed_at and members_at were grepped outside wire.rs and json.rs and found none, but rust/http.rs form and query decoding for a struct typed input was not read.
+- That the served OpenAPI document of a shorthand struct is already oneOf. ess-gen/src/types.rs:1029-1034 (the published schema) was read, not the OpenAPI path in ess-synth or ess-gen::openapi.
+- That a Binary64 shorthand field passes failure::binary64 (rust::binary64::CARRIED) and decodes through binary64_at in the short branch. binary64.rs was not read.
+- That no committed Rust output holds a shorthand struct: inferred from the Rust refusal plus an empty git grep of generated/. Not every repository-wide byte pin model was opened; ess-conformance/tests/view_grant_denied.rs mentions shorthand and was not read.
+- That the json_body_closure binding digest re-pin is the only side effect of changing its model.yaml.in (binding() holds source_digest to MODEL, per the test header; http.yaml.in and the digest check were not read).
+- That single_crate_layout.rs builds with RUSTFLAGS -D warnings for every model it generates (only :328 was seen, from grep), and its run time against the 60 s bound.
+- The SA unit boundaries (SA-U1..U4) are taken from the typed-decoders story's scope and its decisions TD-D13 to TD-D17, not re-derived; the SA-U4 fixture name does not exist yet.
+- website/docs/guides/synthesize.md: git grep for shorthand found no mention, so the guide edit is optional and inferred.
+- Whether `ess verify`, `ess-conformance` synthesized suites or the UI crates read ess-synth refusal text (the refusal text is pinned only by refusal_policy/shorthand.rs as far as searched).
+- Story text: read through `aep plan artifact show` (revision 3, status draft) and the typed-decoders story's decisions the same way; DECISIONS.md and .engineering/ were not read for later decisions.
