@@ -791,3 +791,170 @@ fn an_overflowing_field_is_refused_only_for_the_value_types_it_reaches() {
     );
     assert_no_authored_invariant_check(overflow[0].1);
 }
+
+/// A shelf whose items hold a `Label`, read through a view by its store and its own identity.
+/// `OpenStore` takes a `String` identity, so every `String` field name is one a caller-swapped
+/// half redraws a copied identity under (`name` among them); `CreateShelf` refuses more than 50
+/// items, so the shelf is created empty and `UpdateShelf` arranges the list the view publishes.
+const SHELF: &str = r#"format: ess/33
+system: demo
+version: v1
+domain: demo.shop
+conversions:
+  - from: demo.shop.NewShelfId
+    to: demo.shop.ShelfId
+    because: a created shelf is named by the id its create carried.
+types:
+  - {name: demo.shop.ShelfId, kind: newtype, of: String}
+  - {name: demo.shop.NewShelfId, kind: newtype, of: String, invariants: [value.count <= 128]}
+  - {name: demo.shop.Label, kind: newtype, of: String, invariants: [value.count <= 256]}
+  - name: demo.shop.Item
+    kind: struct
+    fields:
+      - {name: label, type: demo.shop.Label}
+      - {name: note, type: String}
+entities:
+  - name: demo.shop.Store
+    identity: {name: store_id, type: String}
+    fields:
+      - {name: owner, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.shop.Shelf
+    identity: {name: shelf_id, type: demo.shop.ShelfId}
+    fields:
+      - {name: store_id, type: String}
+      - {name: owner, type: String}
+      - {name: name, type: String}
+      - {name: items, type: List<demo.shop.Item>}
+    relations:
+      - {name: store, kind: references, target: demo.shop.Store, cardinality: one, via: store_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - name: demo.shop.Clerk
+    attributes:
+      - {name: owner, type: String}
+    may: [demo.shop.OpenStore, demo.shop.CreateShelf, demo.shop.UpdateShelf, demo.shop.ShelfById]
+events:
+  - name: demo.shop.StoreOpened
+    fields:
+      - {name: store_id, type: String}
+  - name: demo.shop.ShelfCreated
+    fields:
+      - {name: shelf_id, type: demo.shop.ShelfId}
+      - {name: store_id, type: String}
+  - name: demo.shop.ShelfUpdated
+    fields:
+      - {name: shelf_id, type: demo.shop.ShelfId}
+errors:
+  - {name: demo.shop.NoStore, fields: []}
+  - {name: demo.shop.NoShelf, fields: []}
+  - {name: demo.shop.TooMany, fields: []}
+commands:
+  - name: demo.shop.OpenStore
+    input:
+      - {name: store_id, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.shop.Store
+        instance: store_id
+        sets: {owner: {caller: owner}}
+        emits: [demo.shop.StoreOpened]
+        payload:
+          demo.shop.StoreOpened: {store_id: input.store_id}
+  - name: demo.shop.CreateShelf
+    input:
+      - {name: store_id, type: String}
+      - {name: shelf_id, type: demo.shop.NewShelfId}
+      - {name: name, type: String}
+      - {name: items, type: List<demo.shop.Item>}
+    outcomes:
+      - name: too-many
+        when: items.count > 50
+        error: demo.shop.TooMany
+      - name: no-store
+        when_related: {via: input.store_id, exists: false}
+        error: demo.shop.NoStore
+      - name: created
+        creates: demo.shop.Shelf
+        instance: shelf_id
+        sets: {store_id: input.store_id, owner: {caller: owner}, name: input.name, items: input.items}
+        emits: [demo.shop.ShelfCreated]
+        payload:
+          demo.shop.ShelfCreated: {shelf_id: input.shelf_id, store_id: input.store_id}
+  - name: demo.shop.UpdateShelf
+    input:
+      - {name: shelf_id, type: demo.shop.ShelfId}
+      - {name: name, type: String}
+      - {name: items, type: List<demo.shop.Item>}
+    outcomes:
+      - name: updated
+        updates: demo.shop.Shelf
+        instance: shelf_id
+        sets: {name: input.name, items: input.items}
+        emits: [demo.shop.ShelfUpdated]
+        payload:
+          demo.shop.ShelfUpdated: {shelf_id: input.shelf_id}
+      - name: missing
+        unknown_instance: true
+        error: demo.shop.NoShelf
+views:
+  - name: demo.shop.ShelfById
+    source: demo.shop.Shelf
+    consistency: read_your_writes
+    params:
+      - {name: store_id, type: String}
+      - {name: shelf_id, type: demo.shop.ShelfId}
+    filter:
+      all: [shelf_id == param.shelf_id, store_id == param.store_id]
+    fields:
+      - {name: store_id, type: String}
+      - {name: shelf_id, type: demo.shop.ShelfId}
+      - {name: name, type: String}
+      - {name: items, type: List<demo.shop.Item>}
+"#;
+
+/// The caller-swapped half of an `invariant-wrapped` scenario selects its witness row by the
+/// identity field the view projects, as the first half does (adopter report N91). The first half
+/// sends the shelf's identity as the literal `shelf_id`, the field's own name; the swapped half
+/// draws a fresh one, and the redraw rewrote that string wherever a redrawn name held it, the
+/// selector's declared identity field `{name: shelf_id}` included. The runner then looked for a
+/// column `shelf_id-<n>`, selected no row, and failed a scenario its own model passes.
+#[test]
+fn a_swapped_half_selects_its_witness_row_by_the_identity_field_and_passes() {
+    use ess_conformance::value_invariant::{Selector, Witness};
+    let ir = ir(SHELF);
+    let synthesis = synthesis(&ir);
+    let (_, scenario) = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| {
+            id.to_string()
+                .starts_with("demo.shop.Label/invariant-wrapped/")
+        })
+        .unwrap_or_else(|| panic!("{:#?}", synthesis.suite.scenarios.keys()));
+    let selected: Vec<&str> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView {
+                expectation: ViewExpectation::ValueInvariants(observed),
+                ..
+            } => match &observed.witness {
+                Witness::ArrangedRow {
+                    selector: Selector::ProjectedIdentity { identity, .. },
+                } => Some(identity.name.as_str()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        selected,
+        ["shelf_id", "shelf_id"],
+        "both halves select by the identity field"
+    );
+    let report = run(&synthesis.suite, &Interpreted::for_model(ir.clone()));
+    let (status, about) = status_of(&report, "demo.shop.Label/");
+    assert_eq!(status, Status::Passed, "{about}");
+}
