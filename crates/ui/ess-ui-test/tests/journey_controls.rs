@@ -1398,3 +1398,65 @@ fn every_rows_item_is_read_at_its_path() {
         ],
     ));
 }
+
+// ── a field's `visible:` in a record overlay (beyond10x/ess#722 item 21) ─────────────────────
+
+const DETAIL: &str = r#"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml, shelf.ItemById: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+      overlay: {kind: overlay_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items]}]
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+        row_actions: [{name: detail, opens: detail, label: Detail}]
+    overlays:
+      detail:
+        kind: drawer
+        component: record
+        title: Detail
+        params: {id: row.id}
+        reads: {view: shelf.ItemById, params: {id: params.id}}
+        fields: [id, {field: note, label: Secret note, visible: "row.id == it-2"}]
+"#;
+
+/// A record overlay draws a field only while its `visible:` holds for the overlay's row: the
+/// note of `it-1` is hidden, the note of `it-2` is drawn (item 21).
+#[test]
+fn a_record_overlay_draws_a_field_only_while_its_visible_holds() {
+    passed(&run_document(
+        DETAIL,
+        "record_overlay_hidden",
+        &[
+            "open: items",
+            "act: pages/items/sections/list/rows/it-1/row_actions/detail",
+            "expect: {at: pages/items/overlays/detail, text: it-1}",
+            "expect: {at: pages/items/overlays/detail, not_text: Anvil note}",
+            "expect: {at: pages/items/overlays/detail, not_text: Secret note}",
+        ],
+    ));
+    passed(&run_document(
+        DETAIL,
+        "record_overlay_shown",
+        &[
+            "open: items",
+            "act: pages/items/sections/list/rows/it-2/row_actions/detail",
+            "expect: {at: pages/items/overlays/detail, text: Bolt note}",
+        ],
+    ));
+}
