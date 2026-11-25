@@ -3277,15 +3277,15 @@ impl App {
         let overlay = target == Target::Overlay;
         match composite {
             Composite::Collection(collection) => {
-                self.collection_key(&ui, &collection, section.as_deref(), overlay, key);
+                self.collection_key(&ui, &collection, section.as_deref(), overlay, None, key);
             }
             Composite::GraphEditor(editor) => {
                 let collection = graph_collection(&editor);
-                self.collection_key(&ui, &collection, section.as_deref(), overlay, key);
+                self.collection_key(&ui, &collection, section.as_deref(), overlay, None, key);
             }
             Composite::References(references) => {
                 let collection = references_collection(&references);
-                self.collection_key(&ui, &collection, section.as_deref(), overlay, key);
+                self.collection_key(&ui, &collection, section.as_deref(), overlay, None, key);
             }
             Composite::Form(form) => self.form_key(target, &ui, &form, &draft, key),
             Composite::FilterBar(bar) => self.bar_key(&ui, &bar, section.as_deref(), key),
@@ -3353,11 +3353,16 @@ impl App {
         collection: &ess_ui::Collection,
         section: Option<&str>,
         overlay: bool,
+        record: Option<(&Value, &str)>,
         key: KeyEvent,
     ) {
+        // The collection of a record's `item` reads in the record's row, and its row actions
+        // leave the record's own keys to it ([`item_ui`]).
+        let (outer, taken) = record.map_or((None, ""), |(row, taken)| (Some(row), taken));
         let ctx = Ctx {
             section,
             overlay,
+            row: outer,
             ..Ctx::default()
         };
         let (rows, pages) = self.page_rows(ui, collection, &ctx);
@@ -3367,13 +3372,13 @@ impl App {
             ..ctx
         };
         let actions = self.action_keys(&collection.row_actions, &row_ctx);
-        let children = if overlay {
+        let children = if overlay || record.is_some() {
             Vec::new()
         } else {
             self.own_children(section)
         };
         let offers = crate::view::collection_offers(collection, self.ui(ui).expanded, &children);
-        let keyed = self.keyed_offers(&offers, &row_ctx, "");
+        let keyed = self.keyed_offers(&offers, &row_ctx, taken);
         let path = section.map(|section| self.section_path(section));
         let moves = path
             .as_ref()
@@ -3580,35 +3585,64 @@ impl App {
     ) {
         let tabs = record.tabs.len().max(1);
         let tab = self.ui(ui).tab.min(tabs - 1);
-        match key.code {
-            KeyCode::Char(']') => self.ui_mut(ui).tab = (tab + 1) % tabs,
-            KeyCode::Char('[') => self.ui_mut(ui).tab = (tab + tabs - 1) % tabs,
-            KeyCode::Char(letter) => {
-                let ctx = Ctx {
-                    section,
-                    overlay,
-                    ..Ctx::default()
-                };
-                let row = self.record_row(record, &ctx);
-                let row_ctx = Ctx {
-                    row: row.as_ref(),
-                    ..ctx
-                };
-                let children = if overlay {
-                    Vec::new()
-                } else {
-                    self.own_children(section)
-                };
-                let offers = crate::view::record_offers(record, tab, &children);
-                if let Some((_, _, action)) = self
-                    .keyed_offers(&offers, &row_ctx, "")
-                    .into_iter()
-                    .find(|(key, _, _)| *key == letter)
-                {
-                    self.run_action_at(ui, &action, row);
-                }
+        if matches!(key.code, KeyCode::Char(']')) {
+            self.ui_mut(ui).tab = (tab + 1) % tabs;
+            return;
+        }
+        if matches!(key.code, KeyCode::Char('[')) {
+            self.ui_mut(ui).tab = (tab + tabs - 1) % tabs;
+            return;
+        }
+        let ctx = Ctx {
+            section,
+            overlay,
+            ..Ctx::default()
+        };
+        let row = self.record_row(record, &ctx);
+        let row_ctx = Ctx {
+            row: row.as_ref(),
+            ..ctx
+        };
+        let children = if overlay {
+            Vec::new()
+        } else {
+            self.own_children(section)
+        };
+        let offers = crate::view::record_offers(record, tab, &children);
+        let keyed = self.keyed_offers(&offers, &row_ctx, "");
+        if let KeyCode::Char(letter) = key.code {
+            if let Some((_, _, action)) = keyed.iter().find(|(key, _, _)| *key == letter) {
+                let action = action.clone();
+                self.run_action_at(ui, &action, row);
+                return;
             }
-            _ => {}
+        }
+        // Every other key moves through the collection of a section's record's `item`, as it
+        // does through a section's own collection (beyond10x/ess#722).
+        let shown = record.item.iter().any(|node| {
+            record
+                .item_collection()
+                .is_some_and(|(name, _)| node.common.name.as_deref() == Some(name))
+                && self.visible(
+                    node.common.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &row_ctx,
+                )
+        });
+        if let Some((name, collection)) = record
+            .item_collection()
+            .filter(|_| shown && !overlay && section.is_some())
+        {
+            let taken: String = keyed.iter().map(|(key, _, _)| *key).collect();
+            let row = row.unwrap_or(Value::Null);
+            let collection = collection.clone();
+            self.collection_key(
+                &item_ui(ui, name),
+                &collection,
+                section,
+                overlay,
+                Some((&row, &taken)),
+                key,
+            );
         }
     }
 
@@ -5512,6 +5546,12 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         help: None,
         host: None,
     }
+}
+
+/// The view state of the collection of a record's `item` named `name`, in the record's view `ui`:
+/// its cursor, page and selection are its own.
+pub(crate) fn item_ui(ui: &str, name: &str) -> String {
+    format!("{ui}/item/{name}")
 }
 
 /// A graph editor degraded to a collection of its nodes: label, kind, and its actions.

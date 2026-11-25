@@ -113,6 +113,10 @@ struct Place<'a> {
     /// Whether a collection drawn right here records its rows and cells ([`crate::Region`]): only
     /// a section's or an overlay's own body, whose lines are placed as they are.
     record: bool,
+    /// For the collection of a record's `item` ([`ess_ui::Record::item_collection`]): the keys
+    /// the record's own actions took, which its row actions leave to them. It offers no section
+    /// child button, which the record offers.
+    taken: Option<&'a str>,
 }
 
 /// A section's lines, ready to be placed.
@@ -547,6 +551,7 @@ impl App {
                 focused: false,
                 width,
                 record: false,
+                taken: None,
             };
             let spans: Vec<Span<'static>> = header
                 .metrics
@@ -822,6 +827,7 @@ impl App {
                     focused: Focus::Section(index) == self.focus,
                     width,
                     record: true,
+                    taken: None,
                 };
                 let mut lines = self.body_lines(&section.body, &place);
                 for child in &section.children {
@@ -881,6 +887,7 @@ impl App {
             focused: true,
             width: area.width.saturating_sub(2) as usize,
             record: true,
+            taken: None,
         };
         let mut lines = vec![Line::styled(title.clone(), bold()), Line::raw("")];
         self.marks.borrow_mut().clear();
@@ -1146,9 +1153,6 @@ impl App {
                         lines.extend(self.live_stale(node));
                     }
                 }
-                for node in &record.item {
-                    lines.extend(self.node_lines(node, &inner));
-                }
                 // A section's or an overlay's own record records each action it offers at its
                 // path with its key, and offers its section's child buttons too.
                 let children = if place.record {
@@ -1157,8 +1161,47 @@ impl App {
                     Vec::new()
                 };
                 let offers = record_offers(record, tab, &children);
-                let keyed: Vec<_> = self
-                    .keyed_offers(&offers, &inner.ctx, "")
+                let keyed = self.keyed_offers(&offers, &inner.ctx, "");
+                let taken: String = keyed.iter().map(|(key, _, _)| *key).collect();
+                // A section's record gives the collection of its `item` a cursor and rows at
+                // `<record>/item/<name>/rows/<key>`, as React draws them (beyond10x/ess#722).
+                let driven = record
+                    .item_collection()
+                    .filter(|_| place.record && place.ctx.section.is_some());
+                for node in &record.item {
+                    let Some((name, collection)) = driven.filter(|(name, _)| {
+                        node.common.name.as_deref() == Some(*name)
+                            && self.visible(
+                                node.common.visible.as_ref().map(|expr| expr.0.as_str()),
+                                &inner.ctx,
+                            )
+                    }) else {
+                        lines.extend(self.node_lines(node, &inner));
+                        continue;
+                    };
+                    let path = place.path.child("item").child(name);
+                    let ui = crate::app::item_ui(place.ui, name);
+                    let nested = Place {
+                        path: &path,
+                        ui: &ui,
+                        ctx: Ctx {
+                            owner: Some(&path),
+                            ..inner.ctx
+                        },
+                        record: true,
+                        taken: Some(&taken),
+                        ..*place
+                    };
+                    let before = self.marks.borrow().len();
+                    let at = lines.len();
+                    let drawn = self.collection_lines(collection, &nested, Some("row_actions"));
+                    for mark in self.marks.borrow_mut().iter_mut().skip(before) {
+                        mark.line += at;
+                    }
+                    lines.extend(drawn);
+                    lines.extend(self.live_stale(node));
+                }
+                let keyed: Vec<_> = keyed
                     .into_iter()
                     .map(|(key, at, action)| {
                         let path = match at {
@@ -1900,7 +1943,7 @@ impl App {
         // The cursor row's actions, its item's buttons and its expand's actions, and the
         // collection's own actions and its section's child buttons: one hint, each entry recorded
         // at its path with its key when this is a section's or an overlay's own collection.
-        let children = if place.record {
+        let children = if place.record && place.taken.is_none() {
             self.own_children(place.ctx.section)
         } else {
             Vec::new()
@@ -1909,7 +1952,7 @@ impl App {
         let cursor_key = rows.get(cursor).map(|row| row_key(row, &key_field));
         let marked = row_actions_at.is_some();
         let keyed: Vec<_> = self
-            .keyed_offers(&offers, &row_ctx, "")
+            .keyed_offers(&offers, &row_ctx, place.taken.unwrap_or_default())
             .into_iter()
             .map(|(key, at, action)| {
                 let path = match at {

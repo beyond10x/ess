@@ -24,6 +24,7 @@
 - The terminal draws no header action whose `visible:` is false, as its palette already offered none, and reads `selection.<field>` in a bulk action as the list of that field over the selected rows, where it sent the text `selection.id` (beyond10x/ess#722).
 - A generated UI reads a command answered `401` as not signed in (`not_granted` with no actor), whatever its body, in `ess_ui::binding::classify` and the React port, where it read it as no answer from the server (beyond10x/ess#723).
 - The terminal draws a collection's `item` nodes on every row's line, after its cells, as React draws them in every row, where it drew only the cursor row's on a line below the rows; `ess ui test` reads each at `…/rows/<key>/item/<name>` and a node of a widget instance's body at `…/item/<name>/body/<node>`, the paths React draws them at (beyond10x/ess#722).
+- The terminal drives the first named collection in a section record's `item` as it drives a section's own: a cursor, row actions and row regions at `…/sections/<s>/item/<name>/rows/<key>`, the paths React draws them at, so `ess ui test` reads and drives its rows (`expect rows`, `select`, `act`) in both renderers where it refused every step there, and refuses `mark`, `move` and `page` there in both (beyond10x/ess#722).
 
 ### Fixed
 

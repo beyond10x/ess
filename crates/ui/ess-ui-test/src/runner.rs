@@ -118,10 +118,16 @@ impl<'d> Runner<'d> {
             }
             Step::Mark { at } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::item_rows(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.mark(&target)
             }
             Step::Move { at, up } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::item_rows(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.move_row(&target, *up)
             }
             Step::Upload { at, file } => {
@@ -156,6 +162,9 @@ impl<'d> Runner<'d> {
             }
             Step::Page { at, to } => {
                 let target = self.acting(at)?;
+                if let Some(reason) = crate::parity::item_rows(self.doc, &target) {
+                    return Err(reason);
+                }
                 self.page(&target, *to)
             }
             Step::Expect { at, checks } => {
@@ -683,7 +692,7 @@ impl<'d> Runner<'d> {
         }
         let action = self.action(target)?;
         let lines: Vec<String> = match row_home(target, row)? {
-            RowHome::Section(section) => self
+            RowHome::Section(section) | RowHome::Item(section) => self
                 .section_box(&section)?
                 .lines
                 .into_iter()
@@ -818,6 +827,10 @@ impl<'d> Runner<'d> {
         let body = match &home {
             RowHome::Section(section) => self.section_def(section)?.body.clone(),
             RowHome::Overlay => self.overlay_body(&row.container)?,
+            RowHome::Item(_) => {
+                return Err(crate::parity::item_rows(self.doc, target)
+                    .unwrap_or_else(|| format!("{}: not a markable row", target.written)))
+            }
         };
         let selects = match &body {
             Body::Composite(Composite::Collection(collection)) => !matches!(
@@ -959,6 +972,12 @@ impl<'d> Runner<'d> {
                 let shown = screen.rows(&row.container).len();
                 footer.map_or((shown, 1), |(pages, rows)| (rows.max(shown), pages))
             }
+            // The record's keys move through the collection of its `item`: its rows are those
+            // the screen records at its path.
+            RowHome::Item(section) => {
+                self.app.focus_section(&section);
+                (self.screen().rows(&row.container).len(), 1)
+            }
         };
         self.app.keys(&"p".repeat(pages));
         for page in 0..pages {
@@ -1001,6 +1020,13 @@ impl<'d> Runner<'d> {
                 }
                 self.require_overlay(target)?;
                 path
+            }
+            // The collection of a section's record's `item` (beyond10x/ess#722).
+            _ if target.row.is_none()
+                && crate::parity::record_item_collection(self.doc, &target.node).is_some() =>
+            {
+                self.require_no_overlay(target)?;
+                target.node.clone()
             }
             _ => {
                 let section = self.collection_section(target)?;
@@ -1501,6 +1527,9 @@ enum RowHome {
     Section(String),
     /// The body of the open overlay.
     Overlay,
+    /// The collection of the named section's record's `item`, which the record's keys move
+    /// through (beyond10x/ess#722).
+    Item(String),
 }
 
 /// The page count and the row count a collection's footer shows: `page 1/2 · 14 rows`.
@@ -1519,6 +1548,10 @@ fn row_home(target: &Target, row: &Row) -> Result<RowHome, String> {
         .is_some_and(|(_, path)| path == row.container)
     {
         return Ok(RowHome::Overlay);
+    }
+    let segments: Vec<&str> = row.container.split('/').collect();
+    if let ["pages", _, "sections", section, "item", _] = segments.as_slice() {
+        return Ok(RowHome::Item((*section).to_owned()));
     }
     row_section(target, row).map(RowHome::Section)
 }

@@ -1651,6 +1651,22 @@ pub struct Record {
     pub actions: Vec<Action>,
 }
 
+impl Record {
+    /// The collection of `item` a renderer gives a cursor and rows at `<record>/item/<name>`:
+    /// the first named node of `item` whose body is a collection, with its name. Every renderer
+    /// and `ess ui test` take it from here (beyond10x/ess#722).
+    pub fn item_collection(&self) -> Option<(&str, &Collection)> {
+        self.item
+            .iter()
+            .find_map(|node| match (&node.common.name, &node.body) {
+                (Some(name), Body::Composite(Composite::Collection(collection))) => {
+                    Some((name.as_str(), collection))
+                }
+                _ => None,
+            })
+    }
+}
+
 /// Inputs bound to one ESS command's input.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
