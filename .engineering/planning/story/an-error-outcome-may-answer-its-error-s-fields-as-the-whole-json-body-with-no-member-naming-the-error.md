@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -160,3 +160,27 @@ answer), default A.
 ## Size
 
 M, about 400 lines with tests.
+
+## Related (2026-11-25)
+
+A second adopter reports two error bodies of this class on 0.99.0 (twentieth gap report, shape 2): a
+service answers `{error_message, error_detail}` or `{success: false, message, errors}` with the right
+status, and the binding gives the status but answers ESS's own error object. Both are this story's
+third case: an object of the error's own fields with no member that holds the error's wire name.
+
+- `{<member>: error}` writes the wire name under `<member>` beside the error's fields
+  (`docs/design/http-presentation-binding.md`, "Response body per outcome", the row `{<member>: error}`).
+  For `{success: false, message, errors}` no member can hold the name: `success` is a boolean. For
+  `{error_message, error_detail}` the idiom writes `error_message` as the error's fixed wire name, which
+  fits a message that is a fixed text per error class and not one the service composes.
+- The literal `success: false` is an error field filled with a literal in the outcome's error
+  `payload:`, as the story states for `success` beside `{error: error}`. So with `body: error` the
+  fixtures read: an error with fields `success: Boolean`, `message: String`, `errors: List<…>`, and an
+  error with fields `error_message: String`, `error_detail: String`; each answered at its status.
+- The success side of the same services, `{success: true, item}` and `{success, items, total}`, is
+  `story:a-wrapped-answer-carries-literal-members-and-paging-facts`.
+
+Two lines join the acceptance: (7) the fixture `http_binding_rust` carries the two error shapes above,
+and the Rust and Go servers answer the same bytes for both; (8) the compiled IR of a binding that
+names both keeps every existing byte. The decision AE-D6 is unchanged, and the report is a second
+adopter of its option A.
