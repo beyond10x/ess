@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` sends an input's `example:` on a further instance also at a leaf the command stores into a field that another command's guard reads only for presence (`defined(…)`), as it does for a leaf the command's own guard reads only for presence. Releases 0.99.0 to 0.99.3 sent the example at every other leaf of such an input and the type placeholder (`<path>-<n>`) at that one; before 0.99.0 the whole input was placeholders. The leaf keeps the further witness where the example leaves it out and the witness holds it, or the reverse. A pinned suite of such a model moves when it is synthesized again. No format key changes.
+
 ## [0.99.3] — 2026-11-25
 
 ### Fixed
