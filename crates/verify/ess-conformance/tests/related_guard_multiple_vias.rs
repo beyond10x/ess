@@ -892,3 +892,213 @@ fn the_chosen_values_are_arranged_in_counted_work() {
     assert!(own_wider.2 <= 1, "the nesting bound: open {}", own_wider.2);
     assert!(own_wider.0 >= built_wider);
 }
+
+/// A grant created through a desk and a clerk that must work at it (`elsewhere`), and revoked
+/// only while the desk it names is open: the revoke's scenarios arrange the grant's desk open or
+/// frozen, and the setup run creating the grant is arranged as its own scenario.
+const STAFF: &str = r"
+format: ess/29
+system: shop
+version: v1
+domain: shop.staff
+types:
+  - {name: shop.staff.DeskId, kind: newtype, of: Uuid}
+  - {name: shop.staff.ClerkId, kind: newtype, of: Uuid}
+  - {name: shop.staff.GrantId, kind: newtype, of: Uuid}
+errors:
+  - {name: shop.staff.NoDesk, summary: No desk., fields: []}
+  - {name: shop.staff.NoClerk, summary: No clerk., fields: []}
+  - {name: shop.staff.NoGrant, summary: No grant., fields: []}
+  - {name: shop.staff.Frozen, summary: Frozen., fields: []}
+  - {name: shop.staff.Elsewhere, summary: The clerk works elsewhere., fields: []}
+  - {name: shop.staff.WrongState, summary: Not now., fields: []}
+entities:
+  - name: shop.staff.Desk
+    identity: {name: desk_id, type: shop.staff.DeskId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states:
+        - Open
+        - Frozen
+      terminal:
+        - Frozen
+      transitions:
+        - name: freeze
+          from:
+            - Open
+          to: Frozen
+    relations:
+      - {name: clerks, kind: owns, target: shop.staff.Clerk, cardinality: many, via: desk_id}
+  - name: shop.staff.Clerk
+    identity: {name: clerk_id, type: shop.staff.ClerkId}
+    fields:
+      - {name: desk_id, type: shop.staff.DeskId}
+    lifecycle: {initial: Hired, states: [Hired], terminal: [Hired]}
+    relations:
+      - {name: grants, kind: owns, target: shop.staff.Grant, cardinality: many, via: clerk_id}
+  - name: shop.staff.Grant
+    identity: {name: grant_id, type: shop.staff.GrantId}
+    fields:
+      - {name: clerk_id, type: shop.staff.ClerkId}
+      - {name: desk_id, type: shop.staff.DeskId}
+    relations:
+      - {name: desk, kind: references, target: shop.staff.Desk, cardinality: one, via: desk_id}
+    lifecycle:
+      initial: Granted
+      states: [Granted, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: revoke, from: [Granted], to: Revoked}
+events:
+  - name: shop.staff.DeskOpened
+    fields: [{name: desk_id, type: shop.staff.DeskId}]
+  - name: shop.staff.DeskFrozen
+    fields: [{name: desk_id, type: shop.staff.DeskId}]
+  - name: shop.staff.ClerkHired
+    fields: [{name: clerk_id, type: shop.staff.ClerkId}]
+  - name: shop.staff.RoleGranted
+    fields: [{name: grant_id, type: shop.staff.GrantId}]
+  - name: shop.staff.RoleRevoked
+    fields: [{name: grant_id, type: shop.staff.GrantId}]
+actors:
+  - {name: shop.staff.Manager, may: [shop.staff.OpenDesk, shop.staff.FreezeDesk, shop.staff.HireClerk, shop.staff.GrantRole, shop.staff.RevokeGrant]}
+commands:
+  - name: shop.staff.OpenDesk
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: shop.staff.Desk
+        instance: desk_id
+        sets: {label: input.label}
+        emits: [shop.staff.DeskOpened]
+        payload:
+          shop.staff.DeskOpened: {desk_id: {generated: true}}
+  - name: shop.staff.FreezeDesk
+    input: [{name: desk_id, type: shop.staff.DeskId}]
+    outcomes:
+      - name: frozen
+        moves: shop.staff.Desk.freeze
+        instance: desk_id
+        emits: [shop.staff.DeskFrozen]
+        payload:
+          shop.staff.DeskFrozen: {desk_id: input.desk_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.staff.WrongState
+  - name: shop.staff.HireClerk
+    input: [{name: desk_id, type: shop.staff.DeskId}]
+    outcomes:
+      - name: no-desk
+        when_related: {via: input.desk_id, exists: false}
+        error: shop.staff.NoDesk
+      - name: frozen
+        when_related: {via: input.desk_id, predicate: state == Frozen}
+        error: shop.staff.Frozen
+      - name: hired
+        creates: shop.staff.Clerk
+        instance: clerk_id
+        sets: {desk_id: input.desk_id}
+        emits: [shop.staff.ClerkHired]
+        payload:
+          shop.staff.ClerkHired: {clerk_id: {generated: true}}
+  - name: shop.staff.GrantRole
+    input:
+      - {name: desk_id, type: shop.staff.DeskId}
+      - {name: clerk_id, type: shop.staff.ClerkId}
+    outcomes:
+      - name: no-desk
+        when_related: {via: input.desk_id, exists: false}
+        error: shop.staff.NoDesk
+      - name: no-clerk
+        when_related: {via: input.clerk_id, exists: false}
+        error: shop.staff.NoClerk
+      - name: frozen
+        when_related: {via: input.desk_id, predicate: state == Frozen}
+        error: shop.staff.Frozen
+      - name: elsewhere
+        when_related: {via: input.clerk_id, predicate: desk_id != input.desk_id}
+        error: shop.staff.Elsewhere
+      - name: granted
+        creates: shop.staff.Grant
+        instance: grant_id
+        sets:
+          clerk_id: input.clerk_id
+          desk_id: input.desk_id
+        emits: [shop.staff.RoleGranted]
+        payload:
+          shop.staff.RoleGranted: {grant_id: {generated: true}}
+  - name: shop.staff.RevokeGrant
+    input: [{name: grant_id, type: shop.staff.GrantId}]
+    outcomes:
+      - name: no-grant
+        unknown_instance: true
+        error: shop.staff.NoGrant
+      - name: no-desk
+        when_related: {via: desk_id, exists: false}
+        error: shop.staff.NoDesk
+      - name: frozen
+        when_related: {via: desk_id, predicate: state == Frozen}
+        error: shop.staff.Frozen
+      - name: revoked
+        moves: shop.staff.Grant.revoke
+        instance: grant_id
+        emits: [shop.staff.RoleRevoked]
+        payload:
+          shop.staff.RoleRevoked: {grant_id: input.grant_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.staff.WrongState
+views:
+  - name: shop.staff.Desks
+    source: shop.staff.Desk
+    consistency: read_your_writes
+    fields:
+      - {name: desk_id, type: shop.staff.DeskId}
+      - {name: label, type: String}
+      - {name: state, type: shop.staff.Desk.State}
+  - name: shop.staff.Clerks
+    source: shop.staff.Clerk
+    consistency: read_your_writes
+    fields:
+      - {name: clerk_id, type: shop.staff.ClerkId}
+      - {name: desk_id, type: shop.staff.DeskId}
+      - {name: state, type: shop.staff.Clerk.State}
+  - name: shop.staff.Grants
+    source: shop.staff.Grant
+    consistency: read_your_writes
+    fields:
+      - {name: grant_id, type: shop.staff.GrantId}
+      - {name: clerk_id, type: shop.staff.ClerkId}
+      - {name: desk_id, type: shop.staff.DeskId}
+      - {name: state, type: shop.staff.Grant.State}
+";
+
+/// RED (a downstream report, 2026-11-25): the `revoked` and `frozen` scenarios of `RevokeGrant`,
+/// and the transition and wrong-state scenarios built on them, send `GrantRole` the desk arranged
+/// for the revoke's `frozen` guard beside the clerk its own-scenario arrangement hired at another
+/// desk, so the setup step is answered `elsewhere` and the grant is never created. Synthesis
+/// re-points one input of a setup run arranged as its own scenario (`as_own_scenario`, from
+/// 0.98.0) without the guard relating that row to the other row the run reads.
+#[test]
+fn a_setup_run_arranged_as_its_own_scenario_keeps_the_rows_its_guards_relate() {
+    let model = ir(STAFF);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let failed: BTreeMap<String, Status> = Runner::for_suite(&result.suite)
+        .run_admitted(
+            &AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}")),
+            &Interpreted::for_model(model),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .filter(|run| run.status != Status::Passed)
+        .map(|run| (run.scenario.to_string(), run.status))
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "the declared interpreter passes every scenario: {failed:#?}"
+    );
+}
