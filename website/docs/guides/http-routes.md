@@ -352,6 +352,34 @@ routes:
 - The OpenAPI document names the bound of each such operation under `x-ess-request-max-bytes` and
   lists the answer as one more response.
 
+### Let pages on other origins read the answers
+
+A binding may state which browser origins may read its answers, once for every route:
+
+```yaml
+cors:
+  origins: [https://desk.example.test]
+  headers: [Authorization]
+  max_age: 600
+routes:
+  - {view: catalog.orders.OpenOrders, method: get, path: /orders}
+  - {command: catalog.orders.PurgeOrders, method: post, path: /orders/purge, cors: none}
+```
+
+- `origins` is `any` or a list of origins, each `scheme://host` or `scheme://host:port` with no
+  path, not even a trailing `/`. `credentials: true` lets a page send credentials and needs listed
+  origins: `any` beside it is refused. `headers` lists the request headers a page may send,
+  `expose` the response headers it may read, each one a covered route declares. `max_age` is at
+  most 86400 seconds.
+- It covers every route, derived ones too. `cors: none` on a route takes it out, and a route's own
+  `cors:` map replaces the binding's on that route. A binding without `cors` admits no
+  cross-origin read.
+- A server binding may list fewer origins than its protocol binding, never more, and restates the
+  other keys (`ESS-HTTP-012`). Every other mistake is `ESS-HTTP-038`, at its key.
+- The OpenAPI document states the policy under `x-ess-cors`, adds an `options` operation answering
+  the preflight `204` on each covered path, and an `Access-Control-Allow-Origin` header to each
+  covered answer.
+
 ### Operation ids and servers
 
 A route may name the `operationId` a protocol or a client generator expects, and a binding may name

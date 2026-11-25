@@ -1420,3 +1420,293 @@ fn ess_http_026_content_encoding_content_length_and_connection_are_reserved() {
         HttpIr::from_json(&json.to_string()).expect_err(name);
     }
 }
+
+// --- `cors:` (`ae3a-a-binding-declares-which-origins-may-read-its-answers`) ---
+
+/// The `ReadPrivateItem` route with the bearer challenge, under the binding-level `cors`.
+fn cors_document(cors: &str) -> String {
+    format!("{cors}{}", read_private(BEARER))
+}
+
+#[test]
+fn cors_states_which_origins_may_read_and_is_written_only_where_declared() {
+    let ir = model();
+    // The reproduction: any origin may read every route's answers.
+    let http = compiled(&ir, &cors_document("cors: {origins: any}\n"))
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let json = ir_json(&http);
+    assert_eq!(json["cors"], json!({"origins": "any"}));
+    assert!(json["routes"][0].get("cors").is_none(), "{json}");
+    let back = HttpIr::from_json(&http.to_canonical_json()).expect("reads back");
+    assert_eq!(back.to_canonical_json(), http.to_canonical_json());
+    // Every key, the origins and the headers in the order written.
+    let full = "cors:
+  origins: [https://desk.example.test, http://localhost:8080]
+  credentials: true
+  headers: [Authorization, X-Request-Id]
+  expose: [WWW-Authenticate]
+  max_age: 600
+";
+    let http = compiled(&ir, &cors_document(full)).unwrap_or_else(|errors| panic!("{errors}"));
+    assert_eq!(
+        ir_json(&http)["cors"],
+        json!({
+            "origins": ["https://desk.example.test", "http://localhost:8080"],
+            "credentials": true,
+            "headers": ["Authorization", "X-Request-Id"],
+            "expose": ["WWW-Authenticate"],
+            "max_age": 600
+        })
+    );
+    let route = http.routes().first().expect("one route");
+    assert_eq!(http.cors_on(Some(route)), http.cors());
+    assert_eq!(http.cors_on(None), http.cors());
+    HttpIr::from_json(&http.to_canonical_json()).expect("reads back");
+    // A route states `none`, or its own policy in place of the binding's.
+    let none = read_private(BEARER).replace(
+        "    parameters: {item_id: input.item_id}\n",
+        "    parameters: {item_id: input.item_id}\n    cors: none\n",
+    );
+    let http = compiled(&ir, &format!("cors: {{origins: any}}\n{none}"))
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    assert_eq!(ir_json(&http)["routes"][0]["cors"], json!("none"));
+    assert_eq!(http.cors_on(http.routes().first()), None);
+    assert!(
+        http.cors_on(None).is_some(),
+        "a derived route keeps the binding's"
+    );
+    HttpIr::from_json(&http.to_canonical_json()).expect("reads back");
+    let own = read_private(BEARER).replace(
+        "    parameters: {item_id: input.item_id}\n",
+        "    parameters: {item_id: input.item_id}\n    cors: {origins: [https://desk.example.test], max_age: 0}\n",
+    );
+    let http = compiled(&ir, &own).unwrap_or_else(|errors| panic!("{errors}"));
+    let json = ir_json(&http);
+    assert!(json.get("cors").is_none(), "{json}");
+    assert_eq!(
+        json["routes"][0]["cors"],
+        json!({"origins": ["https://desk.example.test"], "max_age": 0})
+    );
+    HttpIr::from_json(&http.to_canonical_json()).expect("reads back");
+    // Without `cors` nothing is written.
+    let http = compiled(&ir, &read_private(BEARER)).expect("compiles");
+    assert!(!http.to_canonical_json().contains("cors"));
+    assert_eq!(http.cors_on(http.routes().first()), None);
+}
+
+/// The `ReadPrivateItem` route with the bearer challenge, stating `cors: <value>` of its own.
+fn route_cors(value: &str) -> String {
+    read_private(BEARER).replace(
+        "    parameters: {item_id: input.item_id}\n",
+        &format!("    parameters: {{item_id: input.item_id}}\n    cors: {value}\n"),
+    )
+}
+
+#[test]
+fn ess_http_038_a_cors_policy_outside_its_rules_is_refused_at_its_key() {
+    let ir = model();
+    let cases: Vec<(String, &str)> = vec![
+        (
+            cors_document("cors: {origins: any, credentials: true}\n"),
+            "cors.credentials",
+        ),
+        (cors_document("cors: {origins: all}\n"), "cors.origins"),
+        (cors_document("cors: {origins: []}\n"), "cors.origins"),
+        (
+            cors_document("cors: {origins: ['https://desk.example.test/']}\n"),
+            "cors.origins[0]",
+        ),
+        (
+            cors_document("cors: {origins: ['https://desk.example.test/app']}\n"),
+            "cors.origins[0]",
+        ),
+        (
+            cors_document("cors: {origins: ['https://desk.example.test?a=1']}\n"),
+            "cors.origins[0]",
+        ),
+        (
+            cors_document("cors: {origins: ['https://desk.example.test#top']}\n"),
+            "cors.origins[0]",
+        ),
+        (
+            cors_document("cors: {origins: ['https://user@desk.example.test']}\n"),
+            "cors.origins[0]",
+        ),
+        (
+            cors_document("cors: {origins: ['https://*.example.test']}\n"),
+            "cors.origins[0]",
+        ),
+        (cors_document("cors: {origins: ['*']}\n"), "cors.origins[0]"),
+        (
+            cors_document("cors: {origins: [desk.example.test]}\n"),
+            "cors.origins[0]",
+        ),
+        (
+            cors_document("cors: {origins: ['https://desk.example.test:99999']}\n"),
+            "cors.origins[0]",
+        ),
+        (cors_document("cors: {origins: [3]}\n"), "cors.origins[0]"),
+        (
+            cors_document(
+                "cors: {origins: ['https://desk.example.test', 'https://desk.example.test']}\n",
+            ),
+            "cors.origins[1]",
+        ),
+        (
+            cors_document("cors: {origins: any, headers: ['X Y']}\n"),
+            "cors.headers[0]",
+        ),
+        (
+            cors_document("cors: {origins: any, headers: [Authorization, authorization]}\n"),
+            "cors.headers[1]",
+        ),
+        (
+            cors_document("cors: {origins: any, expose: [X-Nobody-Declares]}\n"),
+            "cors.expose[0]",
+        ),
+        (
+            cors_document("cors: {origins: any, expose: [WWW-Authenticate, www-authenticate]}\n"),
+            "cors.expose[1]",
+        ),
+        (
+            cors_document("cors: {origins: any, max_age: 86401}\n"),
+            "cors.max_age",
+        ),
+        (
+            cors_document("cors: {origins: any, max_age: -1}\n"),
+            "cors.max_age",
+        ),
+        (route_cors("all"), "routes[0].cors"),
+        (route_cors("3"), "routes[0].cors"),
+        (route_cors("{origins: any, colour: red}"), "routes[0].cors"),
+        (
+            route_cors("{origins: ['https://desk.example.test/']}"),
+            "routes[0].cors.origins[0]",
+        ),
+        (
+            route_cors("{origins: any, expose: [X-Nobody-Declares]}"),
+            "routes[0].cors.expose[0]",
+        ),
+    ];
+    for (document, at) in cases {
+        assert_eq!(
+            located(compiled(&ir, &document)),
+            [refused("ESS-HTTP-038", at)],
+            "{document}"
+        );
+    }
+}
+
+#[test]
+fn ess_http_038_cors_expose_names_a_header_a_covered_route_declares() {
+    let ir = model();
+    // The messages say why.
+    let shown = worded(compiled(
+        &ir,
+        &cors_document("cors: {origins: any, credentials: true}\n"),
+    ));
+    assert!(shown[0].contains("credentials"), "{shown:?}");
+    // A header a covered route declares may be exposed; a route under its own policy is not
+    // covered by the binding's.
+    let mine = route_cors("{origins: any}");
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &format!("cors: {{origins: any, expose: [WWW-Authenticate]}}\n{mine}")
+        )),
+        [refused("ESS-HTTP-038", "cors.expose[0]")]
+    );
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &route_cors("{origins: any, expose: [www-authenticate]}")
+        )),
+        []
+    );
+}
+
+#[test]
+fn compiled_ir_with_a_cors_policy_compiling_refuses_is_refused() {
+    let ir = model();
+    let http = compiled(
+        &ir,
+        &cors_document("cors: {origins: [https://desk.example.test]}\n"),
+    )
+    .expect("compiles");
+    let canonical = ir_json(&http);
+    for (named, cors) in [
+        (
+            "credentials",
+            json!({"origins": "any", "credentials": true}),
+        ),
+        ("origin", json!({"origins": ["https://desk.example.test/"]})),
+        (
+            "twice",
+            json!({"origins": ["https://a.test", "https://a.test"]}),
+        ),
+        ("empty", json!({"origins": []})),
+        ("token", json!({"origins": "any", "headers": ["X Y"]})),
+        ("max_age", json!({"origins": "any", "max_age": 86401})),
+        (
+            "credentials",
+            json!({"origins": "any", "credentials": false}),
+        ),
+    ] {
+        let mut json = canonical.clone();
+        json["cors"] = cors;
+        let error = HttpIr::from_json(&json.to_string())
+            .expect_err(named)
+            .to_string();
+        assert!(error.contains(named), "{named}: {error}");
+        let mut json = canonical.clone();
+        json["routes"][0]["cors"] = json!("all");
+        HttpIr::from_json(&json.to_string()).expect_err("a route `cors` of `none` or a map");
+    }
+}
+
+#[test]
+fn ess_http_012_a_refinement_may_narrow_the_cors_origins_and_restates_the_rest() {
+    let ir = model();
+    let protocol = header(&ir)
+        + &cors_document(
+            "cors: {origins: ['https://a.example.test', 'https://b.example.test'], headers: [Authorization]}\n",
+        );
+    let refined = Refined::from_yaml(protocol.as_bytes()).expect("parses");
+    let refining = |cors: &str| {
+        let text = (header(&ir) + &cors_document(cors)).replacen(
+            "routes:",
+            &format!("refines: {}\nroutes:", refined.digest()),
+            1,
+        );
+        let spec = HttpSpec::from_yaml(&text).expect("parses");
+        located(compile_refining(&spec, Some(&refined), &ir, &derived(&ir)))
+    };
+    assert_eq!(
+        refining("cors: {origins: ['https://b.example.test'], headers: [Authorization]}\n"),
+        []
+    );
+    for (cors, at) in [
+        (
+            "cors: {origins: ['https://a.example.test', 'https://c.example.test'], headers: [Authorization]}\n",
+            "cors.origins",
+        ),
+        ("cors: {origins: any, headers: [Authorization]}\n", "cors.origins"),
+        ("cors: {origins: ['https://a.example.test']}\n", "cors"),
+        ("", "cors"),
+    ] {
+        assert_eq!(refining(cors), [refused("ESS-HTTP-012", at)], "{cors}");
+    }
+    // A binding with no policy is refined by one with none; one that adds a policy widens it.
+    let closed = header(&ir) + &read_private(BEARER);
+    let refined = Refined::from_yaml(closed.as_bytes()).expect("parses");
+    let text = (header(&ir) + &cors_document("cors: {origins: any}\n")).replacen(
+        "routes:",
+        &format!("refines: {}\nroutes:", refined.digest()),
+        1,
+    );
+    let spec = HttpSpec::from_yaml(&text).expect("parses");
+    assert_eq!(
+        located(compile_refining(&spec, Some(&refined), &ir, &derived(&ir))),
+        [refused("ESS-HTTP-012", "cors")]
+    );
+}

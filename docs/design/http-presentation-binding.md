@@ -785,6 +785,7 @@ and its answers.
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 | `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
 | `ESS-HTTP-036` | `parts` beside an encoding other than `multipart`; a `parts` key that is not a `Bytes` input field (or an `Optional` one, or a newtype of either), or an entry stating nothing; a `filename` or `media_type` that is not `input.<field>` naming a `String` input field, or one the path, a part or another attribute carries; an empty `media_types`, an entry that is not an RFC 6838 `type/subtype`, or one entry twice | `routes[i].request.parts`, `….parts.<field>`, `….parts.<field>.filename`, `….media_type` or `….media_types` |
+| `ESS-HTTP-038` | `origins: any` beside `credentials: true`; `origins` neither `any` nor a list of strings, or empty; an origin that is not `scheme://host[:port]`, or one given twice; a `headers` or `expose` name that is not a token, or one given twice ignoring case; an `expose` name no covered route declares; `max_age` outside `0..=86400`; a route `cors` other than `none` or a map ("Cross-origin reads") | `cors.<key>` or `routes[i].cors.<key>`, `routes[i].cors` |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
 missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
@@ -1245,6 +1246,54 @@ routes:
   by name, in name order, and `required` when not empty) after `servers`, and each route's
   `authentication` after its `operation_id`, both absent when not declared, so every binding
   without them compiles to the same bytes.
+
+## Cross-origin reads
+
+Which browser pages on other origins may read a route's answers is a policy of the server, not a
+header an author copies onto every outcome (`ae3a-a-binding-declares-which-origins-may-read-its-answers`,
+decision S6, option A). The binding states it once:
+
+```yaml
+cors:
+  origins: [https://desk.example.test]   # or `any`
+  credentials: false                       # default false
+  headers: [Authorization]                 # request headers a page may send; default none
+  expose: [X-Response-Time]                # response headers a page may read; default none
+  max_age: 600                             # seconds; default absent
+routes:
+  - {view: tickets.desk.OpenTickets, method: get, path: /tickets}
+  - {command: tickets.desk.CloseTicket, method: post, path: /tickets/close, cors: none}
+```
+
+- **Which routes.** The top-level `cors` applies to every route, derived ones included. A route's
+  `cors: none` takes that route out; a route's own `cors:` map stands in its place on that route.
+  Absent `cors`, no cross-origin read: no CORS answer, as before.
+- **Methods.** The preflight's methods are derived: on a path, the methods of the routes the policy
+  covers.
+- **What compiling checks.** `ESS-HTTP-038`, each at its key: `origins: any` beside
+  `credentials: true` (the Fetch standard forbids the wildcard with credentials); an `origins` that
+  is neither `any` nor a list of strings, or an empty list; an origin that is not
+  `scheme://host[:port]` (a path, a trailing `/` included, a query, a fragment, userinfo or a `*`
+  in it), or one given twice; a header name in `headers` or `expose` that is not an RFC 9110
+  token, or one given twice ignoring case; an `expose` name no covered route declares (its
+  outcomes, `errors`, refusals or representations); `max_age` outside `0..=86400`; a route `cors`
+  other than `none` or a map.
+- **Refinement.** A server binding may list fewer origins than the protocol binding, on the
+  binding's policy and on each route's, and may not widen them: a policy where the refined binding
+  has none, one left out where it has one, an origin it does not list, or `any` over a list is
+  `ESS-HTTP-012` at `cors`, `cors.origins`, `routes[i].cors` or `routes[i].cors.origins`.
+  `credentials`, `headers`, `expose` and `max_age` are restated exactly.
+- **What OpenAPI writes.** `x-ess-cors` holds the binding's policy on the document. Each covered
+  path gains an `options` operation answering `204` with `Access-Control-Allow-Origin`,
+  `Access-Control-Allow-Methods` and, where the policy states them, `Access-Control-Allow-Headers`,
+  `Access-Control-Allow-Credentials`, `Access-Control-Max-Age` and `Vary: Origin`; its
+  `x-ess-cors` holds the policy of each method. Each answer of a covered operation gains
+  `Access-Control-Allow-Origin`, and `Vary: Origin` when the origins are listed.
+- **What the servers and apps do.** The generated servers and apps do not read `cors` yet
+  (`ae3b`).
+- **Format.** `ess-http/1` and `ess-http-ir/1` gain the optional key `cors`, at the top after
+  `authentication` and on a route after `limits`, written only where declared; every binding
+  without it compiles to the same bytes.
 
 ## Still refused
 

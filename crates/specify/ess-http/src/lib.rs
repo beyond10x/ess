@@ -66,6 +66,7 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-035",
     "ESS-HTTP-036",
     "ESS-HTTP-037",
+    "ESS-HTTP-038",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -2342,6 +2343,11 @@ pub struct RouteSpec {
     /// the binding's. Only a command route that reads a body takes it.
     #[serde(default)]
     pub limits: Option<LimitsSpec>,
+    /// Which origins may read this route's answers: `none`, or a policy in place of the binding's
+    /// `cors`; absent, the binding's. Read as any value, so that one outside its rules is refused
+    /// with a code and a path (`ESS-HTTP-038`).
+    #[serde(default)]
+    pub cors: Option<serde_json::Value>,
     /// A view route's other representations of its rows, each selected by one literal value of one
     /// query parameter (beyond10x/ess#753); absent, the route answers its `body` only.
     #[serde(default)]
@@ -2406,6 +2412,32 @@ pub struct LimitsSpec {
     /// The largest request body, in bytes, from 1 to [`MAX_REQUEST_BYTES`]; required.
     pub request_bytes: i64,
 }
+
+/// A `cors:` policy, as written: which origins may read a route's answers
+/// (`docs/design/http-presentation-binding.md`, "Cross-origin reads").
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CorsSpec {
+    /// `any`, or the origins, each `scheme://host[:port]`; required. Read as any value, so that one
+    /// outside its rules is refused with a code and a path (`ESS-HTTP-038`).
+    pub origins: serde_json::Value,
+    /// Whether a page may send credentials and read the answer; absent, `false`.
+    #[serde(default)]
+    pub credentials: Option<bool>,
+    /// The request headers a page may send; absent, none.
+    #[serde(default)]
+    pub headers: Option<Vec<String>>,
+    /// The response headers a page may read; absent, none.
+    #[serde(default)]
+    pub expose: Option<Vec<String>>,
+    /// How long, in seconds, a preflight answer is held, from 0 to [`MAX_CORS_AGE`]; absent, the
+    /// browser's own.
+    #[serde(default)]
+    pub max_age: Option<i64>,
+}
+
+/// The longest a preflight answer may be held, in seconds: one day.
+pub const MAX_CORS_AGE: u32 = 86_400;
 
 /// A route's `parameters`, as written: every entry in document order, a key written twice kept
 /// twice, so that [`compile`] refuses a variable mapped twice with a code (`ESS-HTTP-008`) rather
@@ -2767,6 +2799,10 @@ pub struct HttpSpec {
     /// How a caller proves who it is; absent, every route is open.
     #[serde(default)]
     pub authentication: Option<AuthenticationSpec>,
+    /// Which origins may read the answers of every route that states no policy of its own;
+    /// absent, no cross-origin read.
+    #[serde(default)]
+    pub cors: Option<CorsSpec>,
     /// One route per bound command or view, in document order.
     pub routes: Vec<RouteSpec>,
 }
@@ -3088,6 +3124,10 @@ pub struct Route {
     /// Absent when the binding's stands, and always absent on a route that reads no body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limits: Option<Limits>,
+    /// Which origins may read this route's answers, in place of the binding's [`HttpIr::cors`]:
+    /// `none` or its own policy. Absent when the binding's stands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cors: Option<RouteCors>,
     /// A `rows` or `array` view route's other representations of its rows, in the order written,
     /// each selected by one value of one query parameter (beyond10x/ess#753). Absent when empty,
     /// and always absent on a command; without the parameter the route answers its `body`.
@@ -3105,6 +3145,319 @@ pub struct Route {
 pub struct Limits {
     /// The largest request body, in bytes, from 1 to [`MAX_REQUEST_BYTES`].
     pub request_bytes: u64,
+}
+
+/// The origins a compiled `cors` policy admits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origins {
+    /// Every origin, written `any`; never beside credentials.
+    Any,
+    /// These origins, each `scheme://host[:port]`, in the order written, none twice.
+    Listed(Vec<String>),
+}
+
+impl Origins {
+    /// Whether every origin `other` admits, this admits too.
+    pub fn covers(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Any, _) => true,
+            (Self::Listed(_), Self::Any) => false,
+            (Self::Listed(mine), Self::Listed(theirs)) => {
+                theirs.iter().all(|origin| mine.contains(origin))
+            }
+        }
+    }
+}
+
+impl serde::Serialize for Origins {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Any => serializer.serialize_str("any"),
+            Self::Listed(origins) => origins.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Origins {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match serde_json::Value::deserialize(deserializer)? {
+            serde_json::Value::String(word) if word == "any" => Ok(Self::Any),
+            value => serde_json::from_value::<Vec<String>>(value)
+                .map(Self::Listed)
+                .map_err(|_| {
+                    serde::de::Error::custom("`origins` is `any` or a list of origin strings")
+                }),
+        }
+    }
+}
+
+/// A compiled `cors` policy: which origins may read a route's answers, and what the preflight
+/// answers (`docs/design/http-presentation-binding.md`, "Cross-origin reads").
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Cors {
+    /// The origins that may read the answers.
+    pub origins: Origins,
+    /// Whether a page may send credentials and read the answer. Absent when `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub credentials: bool,
+    /// The request headers a page may send, in the order written. Absent when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<String>,
+    /// The response headers a page may read, in the order written, each one a covered route
+    /// declares. Absent when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expose: Vec<String>,
+    /// How long, in seconds, a preflight answer is held. Absent when not declared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age: Option<u32>,
+}
+
+/// Whether `value` is `false`, the default a compiled policy omits.
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's `skip_serializing_if` passes a reference
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// A route's own compiled `cors`, in place of the binding's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RouteCors {
+    /// `none`: no origin but the route's own may read its answers.
+    None,
+    /// This policy.
+    Own(Cors),
+}
+
+impl serde::Serialize for RouteCors {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::None => serializer.serialize_str("none"),
+            Self::Own(cors) => cors.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RouteCors {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match serde_json::Value::deserialize(deserializer)? {
+            serde_json::Value::String(word) if word == "none" => Ok(Self::None),
+            value @ serde_json::Value::Object(_) => serde_json::from_value(value)
+                .map(Self::Own)
+                .map_err(serde::de::Error::custom),
+            _ => Err(serde::de::Error::custom(
+                "a route's `cors` is `none` or a policy",
+            )),
+        }
+    }
+}
+
+/// Why `origin` is not an origin a policy lists: `scheme://host` or `scheme://host:port`, with no
+/// path, query, fragment, userinfo or `*`.
+fn origin_reason(origin: &str) -> Option<String> {
+    origin_fault(origin).map(|why| {
+        format!(
+            "`{origin}` is not an origin: {why}; an origin is `scheme://host` or \
+             `scheme://host:port`, as a browser sends it in `Origin`"
+        )
+    })
+}
+
+/// What keeps `origin` from being `scheme://host[:port]`.
+fn origin_fault(origin: &str) -> Option<String> {
+    let Some((scheme, rest)) = origin.split_once("://") else {
+        return Some("it has no `scheme://`".to_owned());
+    };
+    let scheme_char = |c: char| c.is_ascii_alphanumeric() || "+-.".contains(c);
+    if !scheme.starts_with(|c: char| c.is_ascii_alphabetic()) || !scheme.chars().all(scheme_char) {
+        return Some(format!("`{scheme}` is no scheme"));
+    }
+    for (c, what) in [
+        ('/', "a path"),
+        ('?', "a query"),
+        ('#', "a fragment"),
+        ('@', "userinfo"),
+        ('*', "a `*`"),
+    ] {
+        if rest.contains(c) {
+            return Some(format!("it holds {what}"));
+        }
+    }
+    if rest.chars().any(|c| !c.is_ascii_graphic()) {
+        return Some("it holds a character outside visible US-ASCII".to_owned());
+    }
+    let (host, port) = match rest.strip_prefix('[') {
+        Some(bracketed) => {
+            let Some((inner, after)) = bracketed.split_once(']') else {
+                return Some("its IPv6 host has no `]`".to_owned());
+            };
+            if after.is_empty() {
+                (inner, None)
+            } else if let Some(port) = after.strip_prefix(':') {
+                (inner, Some(port))
+            } else {
+                return Some("text follows its IPv6 host".to_owned());
+            }
+        }
+        None => match rest.rsplit_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (rest, None),
+        },
+    };
+    if host.is_empty() {
+        return Some("it has no host".to_owned());
+    }
+    if !rest.starts_with('[') && host.contains(':') {
+        return Some("its host holds `:`".to_owned());
+    }
+    if let Some(port) = port {
+        let number = (port.len() <= 5 && port.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| port.parse::<u32>().ok())
+            .flatten();
+        if number.is_none_or(|number| number > 65_535) {
+            return Some(format!("`{port}` is no port"));
+        }
+    }
+    None
+}
+
+/// What breaks the rules of `cors` that need no route: each with the key under the policy it is at
+/// (`credentials`, `origins`, `origins[j]`, `headers[j]`, `expose[j]`, `max_age`) and why.
+fn cors_problems(cors: &Cors) -> Vec<(String, String)> {
+    let mut problems = Vec::new();
+    match &cors.origins {
+        Origins::Any if cors.credentials => problems.push((
+            "credentials".to_owned(),
+            "`credentials: true` beside `origins: any` is refused: the Fetch standard forbids the \
+             wildcard origin on an answer a page reads with credentials; list the origins"
+                .to_owned(),
+        )),
+        Origins::Any => {}
+        Origins::Listed(origins) => {
+            if origins.is_empty() {
+                problems.push((
+                    "origins".to_owned(),
+                    "`origins` is empty: list one origin or more, or leave `cors` out, which \
+                     admits no cross-origin read"
+                        .to_owned(),
+                ));
+            }
+            for (index, origin) in origins.iter().enumerate() {
+                if let Some(reason) = origin_reason(origin) {
+                    problems.push((format!("origins[{index}]"), reason));
+                } else if origins[..index]
+                    .iter()
+                    .any(|earlier| earlier.eq_ignore_ascii_case(origin))
+                {
+                    problems.push((
+                        format!("origins[{index}]"),
+                        format!("the origin `{origin}` is given twice"),
+                    ));
+                }
+            }
+        }
+    }
+    for (key, names) in [("headers", &cors.headers), ("expose", &cors.expose)] {
+        for (index, name) in names.iter().enumerate() {
+            if !is_token(name) {
+                problems.push((
+                    format!("{key}[{index}]"),
+                    format!("{name:?} is not a header name: a header name is an RFC 9110 token"),
+                ));
+            } else if same_header(name, names[..index].iter().map(String::as_str)).is_some() {
+                problems.push((
+                    format!("{key}[{index}]"),
+                    format!("the header `{name}` is given twice, ignoring case"),
+                ));
+            }
+        }
+    }
+    if let Some(max_age) = cors.max_age.filter(|age| *age > MAX_CORS_AGE) {
+        problems.push(("max_age".to_owned(), max_age_reason(i64::from(max_age))));
+    }
+    problems
+}
+
+/// Why `max_age` is refused.
+fn max_age_reason(max_age: i64) -> String {
+    format!(
+        "`max_age` {max_age} is outside 0 to {MAX_CORS_AGE} seconds, the longest a preflight \
+         answer is held"
+    )
+}
+
+/// Every header name `route` declares: on its outcomes, its `errors`, its own refusals and its
+/// representations.
+fn route_headers(route: &Route) -> impl Iterator<Item = &str> {
+    route
+        .outcomes
+        .values()
+        .chain(route.errors.iter())
+        .flat_map(|outcome| outcome.headers.keys())
+        .chain(
+            route
+                .refusals
+                .values()
+                .flat_map(|refusal| refusal.headers.keys()),
+        )
+        .chain(
+            route
+                .representations
+                .iter()
+                .flat_map(|representation| representation.headers.keys()),
+        )
+        .map(String::as_str)
+}
+
+/// Each name an `expose` lists that no route its policy covers declares, with its key and why: the
+/// binding's `cors` (at `cors`) covers every route that states no policy of its own, a route's own
+/// (at `routes[i].cors`, `at` naming the route) covers that route. A standard refusal the binding
+/// overrides answers on every route that declares one.
+fn unexposed<'a>(
+    cors: Option<&Cors>,
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    routes: impl Iterator<Item = (String, &'a Route)>,
+) -> Vec<(String, String)> {
+    let binding: Vec<&str> = standard
+        .values()
+        .flat_map(|refusal| refusal.headers.keys().map(String::as_str))
+        .collect();
+    let mut problems = Vec::new();
+    let check =
+        |policy: &Cors, declared: &[&str], at: &str, problems: &mut Vec<(String, String)>| {
+            for (index, name) in policy.expose.iter().enumerate() {
+                if same_header(name, declared.iter().copied()).is_none() {
+                    problems.push((
+                        format!("{at}.expose[{index}]"),
+                        format!(
+                            "`{name}` is exposed, and no route this policy covers declares it; \
+                         `expose` names a header a covered route answers with"
+                        ),
+                    ));
+                }
+            }
+        };
+    let mut covered: Vec<&str> = Vec::new();
+    for (at, route) in routes {
+        match &route.cors {
+            None => {
+                if covered.is_empty() {
+                    covered.extend(binding.iter().copied());
+                }
+                covered.extend(route_headers(route));
+            }
+            Some(RouteCors::None) => {}
+            Some(RouteCors::Own(own)) => {
+                let declared: Vec<&str> = route_headers(route)
+                    .chain(binding.iter().copied())
+                    .collect();
+                check(own, &declared, &format!("{at}.cors"), &mut problems);
+            }
+        }
+    }
+    if let Some(cors) = cors {
+        check(cors, &covered, "cors", &mut problems);
+    }
+    problems
 }
 
 /// A compiled representation of a view route's rows: what answers when the query holds its
@@ -3377,6 +3730,10 @@ pub struct HttpIr {
     /// How a caller of the routes proves who it is. Absent when not declared.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     authentication: Option<Authentication>,
+    /// Which origins may read the answers of every route without its own policy. Absent when not
+    /// declared: no cross-origin read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cors: Option<Cors>,
     routes: Vec<Route>,
     /// Ordered by component, then path, then method, then operation. Absent when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3441,6 +3798,23 @@ impl HttpIr {
     /// How a caller proves who it is, if the binding declares it.
     pub fn authentication(&self) -> Option<&Authentication> {
         self.authentication.as_ref()
+    }
+
+    /// Which origins may read the answers of every route without its own policy, if the binding
+    /// declares it.
+    pub fn cors(&self) -> Option<&Cors> {
+        self.cors.as_ref()
+    }
+
+    /// The policy that stands on `route`, a declared route or `None` for a derived one: the
+    /// route's own, none under `cors: none`, else the binding's [`HttpIr::cors`]. `None` means no
+    /// cross-origin read.
+    pub fn cors_on<'a>(&'a self, route: Option<&'a Route>) -> Option<&'a Cors> {
+        match route.and_then(|route| route.cors.as_ref()) {
+            Some(RouteCors::None) => None,
+            Some(RouteCors::Own(cors)) => Some(cors),
+            None => self.cors.as_ref(),
+        }
     }
 
     /// The schemes a caller of `route` authenticates with, any one of them sufficing: the route's
@@ -3526,7 +3900,7 @@ impl HttpIr {
     /// outside the four, with an `api_key` name its location cannot carry or a `basic` realm no
     /// quoted string carries, `schemes` out of name order or empty, and an
     /// `authentication.required` or a route's `authentication` naming a scheme not declared or
-    /// one twice (beyond10x/ess#681). Beyond these, it refuses, naming
+    /// one twice (beyond10x/ess#681); and a `cors` policy, the binding's or a route's own, holding `any` beside credentials, an empty `origins`, an origin that is not `scheme://host[:port]` or one twice, a header name that is not a token or one twice, an `expose` name no covered route declares, or a `max_age` over one day, and a route `cors` other than `none` or a policy. Beyond these, it refuses, naming
     /// the key, any IR that would not write back what it was given: a key compiled IR omits,
     /// written as an empty map or list, a `null` or a default.
     ///
@@ -3606,6 +3980,23 @@ impl HttpIr {
             for (key, refusal) in &route.refusals {
                 refusal_invariants(*key, refusal, &format!("{at}.refusals"))?;
             }
+            if let Some(RouteCors::Own(cors)) = &route.cors {
+                cors_invariants(cors, &format!("{at}.cors"))?;
+            }
+        }
+        if let Some(cors) = &self.cors {
+            cors_invariants(cors, "cors")?;
+        }
+        let indexed = self
+            .routes
+            .iter()
+            .enumerate()
+            .map(|(index, route)| (format!("routes[{index}]"), route));
+        if let Some((at, why)) = unexposed(self.cors.as_ref(), &self.refusals, indexed)
+            .into_iter()
+            .next()
+        {
+            return Err(format!("`{at}`: {why}"));
         }
         for (index, derived) in self.derived_routes.iter().enumerate() {
             let at = format!("derived_routes[{index}]");
@@ -3888,6 +4279,14 @@ fn representations_invariants(route: &Route, variables: &[String], at: &str) -> 
         }
     }
     Ok(())
+}
+
+/// The rules of a compiled policy at `at` that need no route ([`cors_problems`]).
+fn cors_invariants(cors: &Cors, at: &str) -> Result<(), String> {
+    match cors_problems(cors).into_iter().next() {
+        Some((key, why)) => Err(format!("`{at}.{key}`: {why}")),
+        None => Ok(()),
+    }
 }
 
 /// Holds a compiled `limits` to its range.
@@ -4583,6 +4982,7 @@ impl Refusals {
 /// | `ESS-HTTP-035` | at `routes[i].representations`: `representations` on a command route, on a `single` view or on a paged view, or an empty list; at `routes[i].representations[j].query`: a `query` holding other than exactly one parameter, a parameter other than the first representation's, a value an earlier representation has, a parameter name that is a view parameter's wire name or a path variable or is not RFC 3986 `unreserved` characters, or a value that is empty or not `unreserved` characters; at `routes[i].representations[j].encoding.csv.separator`: a separator other than `","`, `";"` and `"\t"`; at `routes[i].representations[j].encoding`: a view field whose type has no flat spelling (a struct, a union, a `List`, a `Map`, `Json`), naming the field (beyond10x/ess#753) |
 /// | `ESS-HTTP-036` | at `routes[i].request.parts`: `parts` beside an encoding other than `multipart`; at `routes[i].request.parts.<field>`: a key naming no input field, or one whose type is not `Bytes` (a newtype of it, or an `Optional` of either), or a part stating nothing; at `routes[i].request.parts.<field>.filename` or `….media_type`: a source that is not `input.<field>` naming a `String` input field (a newtype of it, or an `Optional` of either), or one the path carries, that is a part, or that another attribute reads; at `routes[i].request.parts.<field>.media_types`: an empty list, an entry that is not an RFC 6838 `type/subtype`, or one entry twice (beyond10x/ess#754) |
 /// | `ESS-HTTP-037` | at `authentication`: `authentication` over a specification that declares no actor; at `authentication.schemes`: no scheme declared; at `authentication.schemes.<name>`: a name that is not an RFC 9110 token, one declared twice, or one no route requires (its own `authentication` or, where it states none, `authentication.required`); at `….<name>.kind`: a kind outside `bearer`, `basic`, `api_key` and `mutual_tls` (`oauth2` and `open_id_connect` named as not yet admitted); at `….<name>.in`, `….name` or `….realm`: a key the kind does not take, one it requires missing (`realm` for `basic`, `in` and `name` for `api_key`), an `in` outside `header`, `query` and `cookie`, a header or cookie name that is not a token, a query name that is not RFC 3986 `unreserved` characters, or a realm no quoted string carries; at `authentication.required` or `routes[i].authentication`: a scheme no `authentication.schemes` declares, or one listed twice; at `routes[i].authentication`: a route requiring only schemes without a challenge (`api_key`, `mutual_tls`) and no `refusals.unauthenticated`, its own or the binding's (beyond10x/ess#681) |
+/// | `ESS-HTTP-038` | at `cors.credentials` or `routes[i].cors.credentials`: `credentials: true` beside `origins: any`; at `….origins`: a value that is neither `any` nor a list, or an empty list; at `….origins[j]`: an entry that is not a string, an origin that is not `scheme://host[:port]` (a path, a trailing `/` included, a query, a fragment, userinfo or a `*` in it, no host, or a port outside `0..=65535`), or one an earlier entry gives, ignoring case; at `….headers[j]` or `….expose[j]`: a name that is not an RFC 9110 token, or one given twice ignoring case; at `….expose[j]`: a name no route the policy covers declares (the binding's `cors` covers every route without its own, a route's own covers that route); at `….max_age`: a value outside `0..=86400`; at `routes[i].cors`: a value other than `none` or a map, or a map that is no policy |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -4613,7 +5013,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].request.members`: a refined route's `members` added, dropped or restated with another path; at `routes[i].select`: a refined route's `select` added, dropped or written otherwise; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].request.members`: a refined route's `members` added, dropped or restated with another path; at `routes[i].select`: a refined route's `select` added, dropped or written otherwise; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration; at `cors` or `cors.origins`, and at `routes[i].cors` or `routes[i].cors.origins` where either binding gives the route its own: a policy where the refined binding has none, none where it has one, an origin it does not list (`any` over a list included), or `credentials`, `headers`, `expose` or `max_age` restated otherwise |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -4631,14 +5031,26 @@ pub fn compile_refining(
     let mut refusals = Refusals(Vec::new());
     let standard = envelope(spec, ir, &mut refusals);
     let limits = limits(spec.limits.as_ref(), "limits", &mut refusals);
+    let cors = spec
+        .cors
+        .as_ref()
+        .and_then(|written| self::cors(written, "cors", &mut refusals));
     let compared = refinement(spec, refined, ir, derived, &mut refusals);
     let (routes, derived_routes) = body(spec, ir, derived, &standard, &mut refusals);
+    for (at, why) in unexposed(
+        cors.as_ref(),
+        &standard,
+        routes.iter().map(|route| (declared_at(spec, route), route)),
+    ) {
+        refusals.refuse(CORS_CODE, at, why);
+    }
     let servers = presentation(spec, ir, &mut refusals);
     let authentication = authentication(spec, ir, &mut refusals);
     if let Some(refined) = compared {
         changes(spec, refined, &mut refusals);
         operation_id_changes(spec, refined, &mut refusals);
         authentication_changes(spec, refined, &mut refusals);
+        cors_changes(spec, refined, &mut refusals);
     }
     if refusals.0.is_empty() {
         Ok(HttpIr {
@@ -4649,6 +5061,7 @@ pub fn compile_refining(
             refusals: standard,
             servers,
             authentication,
+            cors,
             routes,
             derived_routes,
         })
@@ -4711,6 +5124,250 @@ fn limits(written: Option<&LimitsSpec>, at: &str, refusals: &mut Refusals) -> Op
         return None;
     };
     Some(Limits { request_bytes })
+}
+
+/// The code of a `cors` policy outside its rules.
+const CORS_CODE: &str = "ESS-HTTP-038";
+
+/// `routes[i]`, `i` the index in `spec` of the route that compiled to `route`.
+fn declared_at(spec: &HttpSpec, route: &Route) -> String {
+    let index = spec
+        .routes
+        .iter()
+        .position(|written| named(written).as_ref() == Some(&route.operation))
+        .unwrap_or_default();
+    format!("routes[{index}]")
+}
+
+/// The policy `written` states, if it can be read as one: `origins` `any` or a list of strings,
+/// and `max_age` in range. Nothing else is checked.
+fn written_cors(written: &CorsSpec) -> Option<Cors> {
+    let origins = match &written.origins {
+        serde_json::Value::String(word) if word == "any" => Origins::Any,
+        value => Origins::Listed(serde_json::from_value(value.clone()).ok()?),
+    };
+    let max_age = match written.max_age {
+        Some(age) => Some(u32::try_from(age).ok().filter(|age| *age <= MAX_CORS_AGE)?),
+        None => None,
+    };
+    Some(Cors {
+        origins,
+        credentials: written.credentials.unwrap_or(false),
+        headers: written.headers.clone().unwrap_or_default(),
+        expose: written.expose.clone().unwrap_or_default(),
+        max_age,
+    })
+}
+
+/// Holds a written policy at `at` to the rules that need no route (`ESS-HTTP-038`); `None` when
+/// refused. Which names `expose` may list is checked against the routes ([`unexposed`]).
+fn cors(written: &CorsSpec, at: &str, refusals: &mut Refusals) -> Option<Cors> {
+    let mut refused = false;
+    let origins_read = match &written.origins {
+        serde_json::Value::String(word) if word == "any" => true,
+        serde_json::Value::Array(items) => {
+            for (index, item) in items
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| !item.is_string())
+            {
+                refusals.refuse(
+                    CORS_CODE,
+                    format!("{at}.origins[{index}]"),
+                    format!(
+                        "`{item}` is not an origin: an origin is a string `scheme://host[:port]`"
+                    ),
+                );
+                refused = true;
+            }
+            !refused
+        }
+        other => {
+            refusals.refuse(
+                CORS_CODE,
+                format!("{at}.origins"),
+                format!("`{other}` is not `any` or a list of origins"),
+            );
+            refused = true;
+            false
+        }
+    };
+    if let Some(age) = written
+        .max_age
+        .filter(|age| u32::try_from(*age).map_or(true, |age| age > MAX_CORS_AGE))
+    {
+        refusals.refuse(CORS_CODE, format!("{at}.max_age"), max_age_reason(age));
+        refused = true;
+    }
+    let checked = Cors {
+        origins: if origins_read {
+            match &written.origins {
+                serde_json::Value::Array(items) => Origins::Listed(
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_owned))
+                        .collect(),
+                ),
+                _ => Origins::Any,
+            }
+        } else {
+            Origins::Listed(Vec::new())
+        },
+        credentials: written.credentials.unwrap_or(false),
+        headers: written.headers.clone().unwrap_or_default(),
+        expose: written.expose.clone().unwrap_or_default(),
+        max_age: written
+            .max_age
+            .and_then(|age| u32::try_from(age).ok())
+            .filter(|age| *age <= MAX_CORS_AGE),
+    };
+    for (key, why) in cors_problems(&checked) {
+        if !origins_read && key == "origins" {
+            continue;
+        }
+        refusals.refuse(CORS_CODE, format!("{at}.{key}"), why);
+        refused = true;
+    }
+    (!refused).then_some(checked)
+}
+
+/// Holds a route's written `cors` at `{path}.cors`: `none`, or a policy held as [`cors`] holds the
+/// binding's (`ESS-HTTP-038`); `None` when absent or refused.
+fn route_cors(spec: &RouteSpec, path: &str, refusals: &mut Refusals) -> Option<RouteCors> {
+    let at = format!("{path}.cors");
+    match spec.cors.as_ref()? {
+        serde_json::Value::String(word) if word == "none" => Some(RouteCors::None),
+        value @ serde_json::Value::Object(_) => {
+            match serde_json::from_value::<CorsSpec>(value.clone()) {
+                Ok(written) => cors(&written, &at, refusals).map(RouteCors::Own),
+                Err(error) => {
+                    refusals.refuse(
+                        CORS_CODE,
+                        at,
+                        format!("a route's `cors` policy is not one: {error}"),
+                    );
+                    None
+                }
+            }
+        }
+        other => {
+            refusals.refuse(
+                CORS_CODE,
+                at,
+                format!(
+                    "`{other}` is not a route's `cors`: it is `none`, or a policy in place of \
+                     the binding's"
+                ),
+            );
+            None
+        }
+    }
+}
+
+/// What may read a route's answers, as the written bindings state it, for comparing a refinement.
+enum Reads {
+    /// No cross-origin read.
+    Closed,
+    /// This policy.
+    Open(Cors),
+    /// A policy that is no policy, refused where it is written.
+    Unread,
+}
+
+impl Reads {
+    fn of(written: Option<&CorsSpec>) -> Self {
+        match written {
+            None => Self::Closed,
+            Some(written) => written_cors(written).map_or(Self::Unread, Self::Open),
+        }
+    }
+
+    /// What stands on `route` of `binding`: its own `cors`, else the binding's.
+    fn on(binding: &HttpSpec, route: &RouteSpec) -> Self {
+        match &route.cors {
+            None => Self::of(binding.cors.as_ref()),
+            Some(serde_json::Value::String(word)) if word == "none" => Self::Closed,
+            Some(value) => serde_json::from_value::<CorsSpec>(value.clone())
+                .ok()
+                .and_then(|written| written_cors(&written))
+                .map_or(Self::Unread, Self::Open),
+        }
+    }
+
+    /// Why `self` is not the refined binding's `old` or a narrowing of it, and whether the
+    /// origins are why: a refinement lists the same origins or fewer and restates every other
+    /// key.
+    fn widens(&self, old: &Self) -> Option<(bool, String)> {
+        match (self, old) {
+            (Self::Unread, _) | (_, Self::Unread) | (Self::Closed, Self::Closed) => None,
+            (Self::Open(_), Self::Closed) => Some((
+                false,
+                "a policy admits cross-origin reads here, and the refined binding admits none; a \
+                 refinement may narrow the origins and may not widen them"
+                    .to_owned(),
+            )),
+            (Self::Closed, Self::Open(_)) => Some((
+                false,
+                "no policy stands here, and the refined binding states one; a refinement \
+                 restates `cors`, with the same origins or fewer"
+                    .to_owned(),
+            )),
+            (Self::Open(new), Self::Open(old)) => {
+                if !old.origins.covers(&new.origins) {
+                    Some((
+                        true,
+                        "the origins admit one the refined binding does not; a refinement may \
+                         narrow the origins and may not widen them"
+                            .to_owned(),
+                    ))
+                } else if (new.credentials, &new.headers, &new.expose, new.max_age)
+                    != (old.credentials, &old.headers, &old.expose, old.max_age)
+                {
+                    Some((
+                        false,
+                        "the policy is restated otherwise than the refined binding's: a \
+                         refinement restates `credentials`, `headers`, `expose` and `max_age` \
+                         exactly"
+                            .to_owned(),
+                    ))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+/// Refuses (`ESS-HTTP-012`) a refinement whose policies widen the refined binding's or restate
+/// them otherwise: the binding's `cors` at `cors`, and, for each route either binding gives a
+/// policy of its own, the policy that stands on the route at `routes[i].cors` (`.origins` when the
+/// origins widen).
+fn cors_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    let refuse = |at: String, (origins, why): (bool, String), refusals: &mut Refusals| {
+        let at = if origins { format!("{at}.origins") } else { at };
+        refusals.refuse("ESS-HTTP-012", at, why);
+    };
+    if let Some(widened) = Reads::of(spec.cors.as_ref()).widens(&Reads::of(refined.cors.as_ref())) {
+        refuse("cors".to_owned(), widened, refusals);
+    }
+    for (index, route) in spec.routes.iter().enumerate() {
+        let Some(operation) = named(route) else {
+            continue;
+        };
+        let Some(old) = refined
+            .routes
+            .iter()
+            .find(|old| named(old).as_ref() == Some(&operation))
+        else {
+            continue;
+        };
+        if route.cors.is_none() && old.cors.is_none() {
+            continue;
+        }
+        if let Some(widened) = Reads::on(spec, route).widens(&Reads::on(refined, old)) {
+            refuse(format!("routes[{index}].cors"), widened, refusals);
+        }
+    }
 }
 
 /// Whether an operation reads a request body: a command whose method is not `get` and whose
@@ -6537,6 +7194,7 @@ fn routes(
             refusals,
         );
         let route_limits = route_limits(spec, &operation, method, &request, &path, refusals);
+        let cors = route_cors(spec, &path, refusals);
         let own = self::standard(
             spec.refusals.as_ref(),
             &format!("{path}.refusals"),
@@ -6572,6 +7230,7 @@ fn routes(
                     empty: answers.empty,
                     refusals: own,
                     limits: route_limits,
+                    cors,
                     representations: answers.representations,
                 })
             }

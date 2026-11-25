@@ -506,6 +506,7 @@ fn document(
             .and_then(|binding| binding.ir().servers().get(component.name.as_str()))
             .cloned()
             .unwrap_or_default(),
+        cors: binding.and_then(|binding| binding.ir().cors()).cloned(),
         tags: tags(ir, component),
         paths: paths(ir, component, binding),
         components: Components {
@@ -818,6 +819,7 @@ fn paths(
 
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
     let mut groups: Vec<(String, http::Method, Sharing<'_>)> = Vec::new();
+    let mut preflights: BTreeMap<String, Vec<(http::Method, &ess_http::Cors)>> = BTreeMap::new();
     for route in http::bound_routes(ir, component, binding) {
         // A standard refusal's override applies to the routes the binding names, never to a
         // derived one (decided for stage 2, answer 17). A route's own override stands in place of
@@ -849,6 +851,13 @@ fn paths(
             ),
         };
         served.security = security_of(binding, route.declared);
+        if let Some(cors) = binding.and_then(|binding| binding.ir().cors_on(route.declared)) {
+            origin_headers(&mut served.responses, cors);
+            preflights
+                .entry(route.path.clone())
+                .or_default()
+                .push((route.method, cors));
+        }
         match groups
             .iter_mut()
             .find(|(path, method, _)| *path == route.path && *method == route.method)
@@ -865,7 +874,166 @@ fn paths(
         };
         *out.entry(path).or_default().slot(method) = Some(served);
     }
+    for (path, covered) in preflights {
+        out.entry(path).or_default().options = Some(preflight(&covered));
+    }
     out
+}
+
+/// The `Access-Control-Allow-Origin` header of an answer `cors` covers, as its schema states it:
+/// `*` for any origin, else one of the origins listed.
+fn allow_origin(cors: &ess_http::Cors) -> Value {
+    match &cors.origins {
+        ess_http::Origins::Any => json!({"type": "string", "const": "*"}),
+        ess_http::Origins::Listed(origins) => json!({"type": "string", "enum": origins}),
+    }
+}
+
+/// Adds to each of `responses` the headers an answer `cors` covers carries
+/// (`ae3a-a-binding-declares-which-origins-may-read-its-answers`): `Access-Control-Allow-Origin`,
+/// and `Vary: Origin` when the origins are listed, since the answer then depends on `Origin`. A
+/// header the binding declares itself is kept.
+fn origin_headers(responses: &mut BTreeMap<String, Response>, cors: &ess_http::Cors) {
+    for response in responses.values_mut() {
+        response
+            .headers
+            .entry("Access-Control-Allow-Origin".to_owned())
+            .or_insert_with(|| ResponseHeader {
+                description: "The origin that may read this answer, written when the request's \
+                              `Origin` is one the policy admits (`x-ess-cors`)."
+                    .to_owned(),
+                required: None,
+                schema: written(allow_origin(cors)),
+            });
+        if matches!(cors.origins, ess_http::Origins::Listed(_)) {
+            response
+                .headers
+                .entry("Vary".to_owned())
+                .or_insert_with(|| ResponseHeader {
+                    description: "The answer depends on the request's `Origin`.".to_owned(),
+                    required: None,
+                    schema: written(json!({"type": "string", "const": "Origin"})),
+                });
+        }
+    }
+}
+
+/// The schema of the preflight's `Access-Control-Allow-Origin` on a path whose `covered`
+/// operations stand under these policies: `*` when one admits any origin, else one of the origins
+/// they list, each once, in the order first listed.
+fn preflight_origins(covered: &[(http::Method, &ess_http::Cors)]) -> Value {
+    if covered
+        .iter()
+        .any(|(_, cors)| cors.origins == ess_http::Origins::Any)
+    {
+        return json!({"type": "string", "const": "*"});
+    }
+    let mut listed: Vec<&String> = Vec::new();
+    for (_, cors) in covered {
+        if let ess_http::Origins::Listed(origins) = &cors.origins {
+            for origin in origins {
+                if !listed.contains(&origin) {
+                    listed.push(origin);
+                }
+            }
+        }
+    }
+    json!({"type": "string", "enum": listed})
+}
+
+/// The `options` operation of a path whose `covered` operations, each by its method and the policy
+/// that stands on it, a page on another origin may read: the preflight, answered `204` with the
+/// `Access-Control-Allow-*` headers. The methods are the covered ones; where every covered
+/// operation stands under one policy each header states its value, and otherwise its type, the
+/// policy of each method being in `x-ess-cors`.
+fn preflight(covered: &[(http::Method, &ess_http::Cors)]) -> Value {
+    let methods: BTreeSet<&str> = covered.iter().map(|(method, _)| method.as_str()).collect();
+    let one = covered
+        .windows(2)
+        .all(|pair| pair[0].1 == pair[1].1)
+        .then(|| covered.first().map(|(_, cors)| *cors))
+        .flatten();
+    let header =
+        |description: &str, schema: Value| json!({"description": description, "schema": schema});
+    let mut headers = Map::new();
+    headers.insert(
+        "Access-Control-Allow-Origin".to_owned(),
+        header(
+            "The origin that may read the answers of this path.",
+            preflight_origins(covered),
+        ),
+    );
+    headers.insert(
+        "Access-Control-Allow-Methods".to_owned(),
+        header(
+            "The methods a page on another origin may send on this path.",
+            json!({"type": "string", "const": methods.into_iter().collect::<Vec<_>>().join(", ")}),
+        ),
+    );
+    let stated = |text: Option<String>, kind: &str| match text {
+        Some(text) => json!({"type": kind, "const": text}),
+        None => json!({"type": kind}),
+    };
+    if covered.iter().any(|(_, cors)| !cors.headers.is_empty()) {
+        headers.insert(
+            "Access-Control-Allow-Headers".to_owned(),
+            header(
+                "The request headers a page on another origin may send.",
+                stated(one.map(|cors| cors.headers.join(", ")), "string"),
+            ),
+        );
+    }
+    if covered.iter().any(|(_, cors)| cors.credentials) {
+        headers.insert(
+            "Access-Control-Allow-Credentials".to_owned(),
+            header(
+                "A page may send credentials and read the answer.",
+                json!({"type": "string", "const": "true"}),
+            ),
+        );
+    }
+    if covered.iter().any(|(_, cors)| cors.max_age.is_some()) {
+        let schema = match one.and_then(|cors| cors.max_age) {
+            Some(age) => json!({"type": "integer", "const": age}),
+            None => json!({"type": "integer"}),
+        };
+        headers.insert(
+            "Access-Control-Max-Age".to_owned(),
+            header(
+                "How long, in seconds, a browser may hold this answer.",
+                schema,
+            ),
+        );
+    }
+    if covered
+        .iter()
+        .any(|(_, cors)| matches!(cors.origins, ess_http::Origins::Listed(_)))
+    {
+        headers.insert(
+            "Vary".to_owned(),
+            header(
+                "The answer depends on the request's `Origin`.",
+                json!({"type": "string", "const": "Origin"}),
+            ),
+        );
+    }
+    let policies: Map<String, Value> = covered
+        .iter()
+        .map(|(method, cors)| {
+            (
+                method.keyword().to_owned(),
+                serde_json::to_value(cors).unwrap_or_default(),
+            )
+        })
+        .collect();
+    json!({
+        "summary": "The cross-origin preflight of this path.",
+        "description": "A browser asks before a page on another origin sends a request it may \
+                        not send unasked; the answer states what the policy of each method admits \
+                        (`x-ess-cors`).",
+        "x-ess-cors": policies,
+        "responses": {"204": {"description": "What a page on another origin may send and read.", "headers": headers}}
+    })
 }
 
 /// ESS's own answer to a `malformed` request, where the binding declares none.
@@ -4338,6 +4506,10 @@ struct Document {
     /// the first is the default. Absent without them: the model has no URL for a component.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     servers: Vec<ess_http::Server>,
+    /// Which origins an `ess-http/1` binding lets read the answers of every route that states no
+    /// policy of its own; absent without one.
+    #[serde(rename = "x-ess-cors", skip_serializing_if = "Option::is_none")]
+    cors: Option<ess_http::Cors>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<Tag>,
     paths: BTreeMap<String, PathItem>,
@@ -4400,6 +4572,10 @@ struct PathItem {
     post: Option<Operation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delete: Option<Operation>,
+    /// The cross-origin preflight, on a path a `cors` policy covers ([`preflight`]); absent
+    /// everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     patch: Option<Operation>,
 }

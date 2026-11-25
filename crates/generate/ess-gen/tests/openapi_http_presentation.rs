@@ -772,3 +772,171 @@ fn a_binding_without_authentication_projects_no_security() {
         }
     }
 }
+
+// --- `cors:` (`ae3a-a-binding-declares-which-origins-may-read-its-answers`) ---
+
+const CORS_ROUTES: &str = "routes:
+  - command: catalog.items.ListItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+  - view: catalog.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters: {item_id: param.item_id}
+";
+
+fn cors_document(ir: &EssIr, keys: &str) -> (String, Value) {
+    let written = documents(ir, binding(ir, keys));
+    let text = written["openapi/items-service.yaml"].clone();
+    let document = as_json(&text);
+    (text, document)
+}
+
+/// The `const` or `enum` of one header of `response`.
+fn header_schema<'a>(response: &'a Value, name: &str) -> &'a Value {
+    &response["headers"][name]["schema"]
+}
+
+#[test]
+fn a_cors_policy_writes_the_preflight_and_the_origin_header_of_each_covered_answer() {
+    let ir = model_of(&[("catalog.yaml", MODEL)]);
+    let policy = "cors:
+  origins: [https://desk.example.test]
+  credentials: true
+  headers: [Authorization]
+  max_age: 600
+";
+    let (_, document) = cors_document(&ir, &format!("{policy}{CORS_ROUTES}"));
+    assert_eq!(
+        document["x-ess-cors"],
+        json!({
+            "origins": ["https://desk.example.test"],
+            "credentials": true,
+            "headers": ["Authorization"],
+            "max_age": 600
+        })
+    );
+    let item = &document["paths"]["/items/{item_id}"];
+    let preflight = &item["options"]["responses"]["204"];
+    assert!(preflight.is_object(), "{item}");
+    assert!(item["options"].get("operationId").is_none(), "{item}");
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Methods")["const"],
+        "GET, PUT"
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Origin")["enum"],
+        json!(["https://desk.example.test"])
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Headers")["const"],
+        "Authorization"
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Credentials")["const"],
+        "true"
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Max-Age")["const"],
+        600
+    );
+    assert_eq!(header_schema(preflight, "Vary")["const"], "Origin");
+    for method in ["put", "get"] {
+        let responses = item[method]["responses"].as_object().expect("responses");
+        assert!(!responses.is_empty());
+        for (status, response) in responses {
+            assert_eq!(
+                header_schema(response, "Access-Control-Allow-Origin")["enum"],
+                json!(["https://desk.example.test"]),
+                "{method} {status}"
+            );
+            assert_eq!(
+                header_schema(response, "Vary")["const"],
+                "Origin",
+                "{method} {status}"
+            );
+        }
+    }
+    // The binding's policy covers a derived route too.
+    let derived = &document["paths"]["/items/commands/TouchItem"];
+    assert_eq!(
+        header_schema(
+            &derived["options"]["responses"]["204"],
+            "Access-Control-Allow-Methods"
+        )["const"],
+        "POST"
+    );
+}
+
+#[test]
+fn a_cors_policy_of_any_origin_none_or_a_routes_own_writes_its_own_headers() {
+    let ir = model_of(&[("catalog.yaml", MODEL)]);
+    // Any origin: `*`, and no `Vary`.
+    let (_, document) = cors_document(&ir, &format!("cors: {{origins: any}}\n{CORS_ROUTES}"));
+    let item = &document["paths"]["/items/{item_id}"];
+    let answer = item["put"]["responses"]
+        .as_object()
+        .and_then(|responses| responses.values().next())
+        .expect("an answer");
+    assert_eq!(
+        header_schema(answer, "Access-Control-Allow-Origin")["const"],
+        "*"
+    );
+    assert!(answer["headers"].get("Vary").is_none(), "{answer}");
+    let preflight = &item["options"]["responses"]["204"];
+    for absent in [
+        "Access-Control-Allow-Headers",
+        "Access-Control-Allow-Credentials",
+        "Access-Control-Max-Age",
+        "Vary",
+    ] {
+        assert!(preflight["headers"].get(absent).is_none(), "{absent}");
+    }
+    // A route under `cors: none` gets no header and leaves the preflight's methods.
+    let closed = CORS_ROUTES.replace(
+        "    parameters: {item_id: param.item_id}\n",
+        "    parameters: {item_id: param.item_id}\n    cors: none\n",
+    );
+    let (_, document) = cors_document(&ir, &format!("cors: {{origins: any}}\n{closed}"));
+    let item = &document["paths"]["/items/{item_id}"];
+    assert_eq!(
+        header_schema(
+            &item["options"]["responses"]["204"],
+            "Access-Control-Allow-Methods"
+        )["const"],
+        "PUT"
+    );
+    assert!(
+        item["get"]["responses"]["200"]["headers"]
+            .get("Access-Control-Allow-Origin")
+            .is_none(),
+        "{item}"
+    );
+    // A route's own policy only: the document states no binding policy, the path of the route
+    // alone has a preflight.
+    let own = CORS_ROUTES.replace(
+        "    parameters: {item_id: input.item_id}\n",
+        "    parameters: {item_id: input.item_id}\n    cors: {origins: any}\n",
+    );
+    let (_, document) = cors_document(&ir, &own);
+    assert!(document.get("x-ess-cors").is_none(), "{document}");
+    assert!(
+        document["paths"]["/items/commands/TouchItem"]
+            .get("options")
+            .is_none(),
+        "{document}"
+    );
+    assert_eq!(
+        header_schema(
+            &document["paths"]["/items/{item_id}"]["options"]["responses"]["204"],
+            "Access-Control-Allow-Methods"
+        )["const"],
+        "PUT"
+    );
+    // Without `cors`, no CORS byte.
+    let (text, _) = cors_document(&ir, CORS_ROUTES);
+    for absent in ["Access-Control", "x-ess-cors", "options:", "Vary"] {
+        assert!(!text.contains(absent), "{absent}");
+    }
+}
