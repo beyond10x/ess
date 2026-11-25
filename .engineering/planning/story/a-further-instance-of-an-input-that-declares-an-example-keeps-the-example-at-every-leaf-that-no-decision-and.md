@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -406,3 +406,6 @@ Gate of the branch, third run: every step exit 0 (stamp, `task fmt-check`, clipp
 `subject_fact_complete_refusal`, `declared_behaviour`, `synthesis`); no committed byte row moved.
 No pull request yet. A pinned suite of a model with this shape moves when it is synthesized
 again.
+
+Tagged 0.99.4 on `daae8ebd1d` (branch `hotfix/0.99.4`, release commit `78c4ba842c`); the tag's
+release run 45621137834 takes the full gate and was in progress when this was written.

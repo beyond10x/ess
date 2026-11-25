@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 3
+revision: 4
 ---
 ## Summary
 
@@ -120,6 +120,9 @@ Branch `fix/n88-a-synthesized-setup-is-accepted-by-its-own-model`, head
 1 fix `090b691e2d`. On the reported model 0 of 178 scenarios fail (25 of 201 on 0.99.2). 23
 scenarios are no longer written; each of them failed before, and none that passed was lost. No
 committed byte table moved. The gate ran every step with exit 0.
+
+Tagged 0.99.4 on `daae8ebd1d` (branch `hotfix/0.99.4`, release commit `78c4ba842c`); the tag's
+release run 45621137834 takes the full gate and was in progress when this was written.
 
 ## Left open
 

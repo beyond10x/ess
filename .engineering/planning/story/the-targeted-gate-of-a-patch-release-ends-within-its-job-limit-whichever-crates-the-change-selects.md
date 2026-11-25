@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:tests-that-run-over-60-s-on-main-without-a-branch-of-the-week-run-within-60-s-or-move-to-the-slow-lane
-revision: 1
+revision: 4
 ---
 ## Finding
 
@@ -49,6 +49,22 @@ limits, or the full gate.
   - C: a longer job limit (not a fix under the test-budget rule).
   - Recommended: A.
 
+- HG-D1 = A (D140, the coordinator, 2026-11-25)
+
 ## Not covered
 
 The compile cache of a tag run (tags save none by design).
+
+## Delivery
+
+Commit `405ac20ce3` (red test `a_patch_tag_that_selects_a_large_crate_runs_the_full_gate` in
+`ci_lanes.rs`). Five crates stay targeted:
+`billing-realization`, `ess-entity-runtime`, `ess-service-contract`, `ess-xtask` and
+`gatepass-realization`. Merged into `hotfix/0.99.4` as `daae8ebd1d` and in the 0.99.4 tag.
+
+The second release run for tag 0.99.3 (45610533532) was cancelled on 2026-11-25 before its test
+jobs started, so that 0.99.4, which holds everything 0.99.3 holds, is gated first; the full gate for
+0.99.3 is dispatched again after 0.99.4 is published (the operator session, D144 part 2 = A). The
+tag did not move.
+
+Not verified: the targeted job's time for the largest set that stays targeted.
