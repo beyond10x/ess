@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:an-error-outcome-or-a-standard-refusal-may-answer-plain-text
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -152,6 +152,10 @@ task test-xtask
 
 Accept, redesigned (two shapes declined with the idiom). **AE-D6** (SECURITY: what generated servers
 answer), default A.
+
+- S7: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Size
 

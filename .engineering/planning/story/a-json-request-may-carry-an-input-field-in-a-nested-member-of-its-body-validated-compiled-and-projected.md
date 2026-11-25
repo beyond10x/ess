@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -151,6 +151,10 @@ ignored).
 ## Decisions
 
 Accept, redesigned. **AE-D4**, default A.
+
+- S5: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Size
 

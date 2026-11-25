@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-json-request-may-carry-an-input-field-in-a-nested-member-of-its-body-validated-compiled-and-projected
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -206,6 +206,10 @@ landed first).
 
 Accept, redesigned (the reporter named the need, and the shape is new). **AE-D2**, default A.
 **AE-D1** (the crossed-templates story has no finding behind it).
+
+- S4: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Size
 

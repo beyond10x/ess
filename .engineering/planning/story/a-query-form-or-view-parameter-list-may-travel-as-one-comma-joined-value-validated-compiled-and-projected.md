@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Need
 
@@ -143,6 +143,10 @@ rebase.
 Accept, redesigned. **AE-D13** (SECURITY: what generated servers parse), default A.
 
 Asked again by a ninth report, 2026-11-24; open with the owner.
+
+- S12: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Size
 

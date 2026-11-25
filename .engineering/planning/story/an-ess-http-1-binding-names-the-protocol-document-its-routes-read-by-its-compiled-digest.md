@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:an-ess-protospec-1-message-declares-header-fields-absent-fields-fixed-values-and-an-application-body
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -137,3 +137,7 @@ unless it names its time with `slot --timeout` (at most 30 minutes).
 
 - PR-D1 and PR-D2 (architecture).
 - PR-D6 (default A) is recorded on the design page.
+
+- PR-D2: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
