@@ -2844,28 +2844,34 @@ thread_local! {
     /// open at once ([`own_scenario_work`]).
     static OWN_WORK: std::cell::Cell<(u64, u64, usize)> =
         const { std::cell::Cell::new((0, 0, 0)) };
-    /// How many own-scenario arrangements carried chosen values, and how many setup runs with
-    /// chosen values were stopped by the nesting bound ([`own_overlay_work`]).
-    static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64)> =
-        const { std::cell::Cell::new((0, 0)) };
+    /// How many own-scenario arrangements carrying chosen values were built, how many setup runs
+    /// with chosen values were stopped by the nesting bound, and how many own-scenario
+    /// arrangements carrying chosen values were asked for ([`own_overlay_work`]).
+    static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64, u64)> =
+        const { std::cell::Cell::new((0, 0, 0)) };
 }
 
 /// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
-/// this thread while it ran, and how many setup runs with chosen values reached the fallback after
-/// the strict search failed and were stopped by [`OWN_NESTING`].
-pub(super) fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+/// this thread while it ran, how many setup runs with chosen values reached the fallback after
+/// the strict search failed and were stopped by [`OWN_NESTING`], and how many own-scenario
+/// arrangements carrying chosen values were asked for.
+pub(super) fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, u64)) {
     let before = OWN_OVERLAY_WORK.with(std::cell::Cell::get);
     let out = run();
     let after = OWN_OVERLAY_WORK.with(std::cell::Cell::get);
-    (out, (after.0 - before.0, after.1 - before.1))
+    (
+        out,
+        (after.0 - before.0, after.1 - before.1, after.2 - before.2),
+    )
 }
 
-/// Counts own-scenario arrangements with chosen values (`built`) and chosen-values runs stopped
-/// by the nesting bound (`stopped`).
-fn overlay_worked(built: u64, stopped: u64) {
+/// Counts own-scenario arrangements with chosen values built (`built`), chosen-values runs
+/// stopped by the nesting bound (`stopped`) and own-scenario arrangements with chosen values asked
+/// for (`asked`).
+fn overlay_worked(built: u64, stopped: u64, asked: u64) {
     OWN_OVERLAY_WORK.with(|work| {
-        let (b, s) = work.get();
-        work.set((b + built, s + stopped));
+        let (b, s, a) = work.get();
+        work.set((b + built, s + stopped, a + asked));
     });
 }
 
@@ -3002,7 +3008,7 @@ fn drive_several(
                 && own_depth() >= OWN_NESTING
                 && own_scenario_applies(driver, bound, arranging) =>
         {
-            overlay_worked(0, 1);
+            overlay_worked(0, 1, 0);
             Err(cause)
         }
         other => other,
@@ -3042,7 +3048,7 @@ fn as_own_scenario(
     let _open = own_opening(ir, driver).ok_or_else(unarranged)?;
     own_worked(1, 0);
     if chosen.is_some_and(|chosen| !chosen.is_empty()) {
-        overlay_worked(1, 0);
+        overlay_worked(1, 0, 1);
     }
     let models = super::caller::InvocationModels::plain(ir);
     let (setup, input, _) = arranged_choosing(
@@ -5155,18 +5161,19 @@ pub(super) fn add_own_work(more: (u64, u64, usize)) {
     });
 }
 
-/// The own-scenario arrangements carrying chosen values and the chosen-values runs the nesting
-/// bound stopped on this thread ([`OWN_OVERLAY_WORK`]).
-pub(super) fn taken_own_overlay_work() -> (u64, u64) {
+/// The own-scenario arrangements carrying chosen values built, the chosen-values runs the nesting
+/// bound stopped, and the arrangements carrying chosen values asked for, on this thread
+/// ([`OWN_OVERLAY_WORK`]).
+pub(super) fn taken_own_overlay_work() -> (u64, u64, u64) {
     OWN_OVERLAY_WORK.with(std::cell::Cell::get)
 }
 
-/// Adds `more`, the arrangements built and the runs stopped, to [`OWN_OVERLAY_WORK`] on this
-/// thread.
-pub(super) fn add_own_overlay_work(more: (u64, u64)) {
+/// Adds `more`, the arrangements built, the runs stopped and the arrangements asked for, to
+/// [`OWN_OVERLAY_WORK`] on this thread.
+pub(super) fn add_own_overlay_work(more: (u64, u64, u64)) {
     OWN_OVERLAY_WORK.with(|work| {
-        let (built, stopped) = work.get();
-        work.set((built + more.0, stopped + more.1));
+        let (built, stopped, asked) = work.get();
+        work.set((built + more.0, stopped + more.1, asked + more.2));
     });
 }
 

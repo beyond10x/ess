@@ -3582,10 +3582,11 @@ pub fn own_scenario_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, usize)) {
 }
 
 /// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
-/// this thread while it ran, and how many setup runs with chosen values the nesting bound
-/// stopped: the work a test bounds. Not part of the suite.
+/// this thread while it ran, how many setup runs with chosen values the nesting bound stopped, and
+/// how many own-scenario arrangements carrying chosen values were asked for: the work a test
+/// bounds. Not part of the suite.
 #[doc(hidden)]
-pub fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+pub fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, u64)) {
     related_guard::own_overlay_work(run)
 }
 

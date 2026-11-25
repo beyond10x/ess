@@ -870,7 +870,7 @@ fn the_chosen_values_are_arranged_in_counted_work() {
         });
         (overlay, own)
     };
-    let ((built, asked), own) = work(CHOSEN);
+    let ((built, asked, _), own) = work(CHOSEN);
     // No model found asks a chosen-values run at the nesting bound: five models tried.
     assert_eq!(asked, 0, "chosen-values runs stopped by the bound");
     assert!(built >= 1, "the overlay is used: built {built}");
@@ -883,7 +883,7 @@ fn the_chosen_values_are_arranged_in_counted_work() {
         "variants: [chat, mail, push]",
         "variants: [chat, mail, push, pull, peek, poke]",
     );
-    let ((built_wider, asked_wider), own_wider) = work(&wider);
+    let ((built_wider, asked_wider, _), own_wider) = work(&wider);
     assert_eq!(asked_wider, 0, "chosen-values runs stopped by the bound");
     assert!(
         built_wider <= 2 * built + 2,
