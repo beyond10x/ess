@@ -1342,3 +1342,59 @@ fn a_server_pager_returns_to_page_one_when_another_param_changes() {
         ],
     ));
 }
+
+// ── a collection's `item` on every row, at `…/rows/<key>/item/<name>` (beyond10x/ess#722) ───
+
+const ITEMS: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Items: views.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+navigation:
+  home: items
+  sections: [{name: all, pages: [items]}]
+widgets:
+  caption:
+    summary: A caption.
+    params: {label: {type: string, required: true, note: the text}}
+    body:
+      - {name: words, primitive: text, text: args.label}
+pages:
+  items:
+    kind: list_page
+    shell: app
+    title: Items
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns: [name]
+        item:
+          - {name: kind, primitive: text, text: row.kind}
+          - {name: note, component: caption, args: {label: row.note}}
+";
+
+/// Every row draws its `item` nodes, read at `…/rows/<key>/item/<name>` with that node's text
+/// only; a node of a widget's body is read below it at `…/item/<name>/body/<node>`, the path the
+/// React project draws it at.
+#[test]
+fn every_rows_item_is_read_at_its_path() {
+    passed(&run_document(
+        ITEMS,
+        "row_items",
+        &[
+            "open: items",
+            "expect: {at: pages/items/sections/list/rows/it-1/item/kind, text: tools}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/kind, text: parts}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/kind, not_text: Bolt}",
+            "expect: {at: pages/items/sections/list/rows/it-3/item/note, text: Chisel note}",
+            "expect: {at: pages/items/sections/list/rows/it-3/item/note, not_text: tools}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/note/body/words, text: Bolt note}",
+            "expect: {at: pages/items/sections/list/rows/it-2/item/note/body/words, not_text: Anvil}",
+        ],
+    ));
+}

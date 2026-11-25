@@ -209,7 +209,7 @@ Checks a node. Every key given must hold.
 
 | Key | Holds when |
 |---|---|
-| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, the header's help its line, a section's child its own place |
+| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, the header's help its line, a section's child its own place, a row's `item` node its run of the row's line |
 | `not_text` | the node does not show the text |
 | `rows` | a count: the collection shows that many rows; a list: it shows the rows with these keys, in this order |
 | `state` | the section is `loading`, `empty`, `stale`, `failed`, `ready` or `not_loaded` |
@@ -408,7 +408,9 @@ The terminal renderer records where each frame drew each node, by path (`ess_ui_
 the page header, its actions and its help, section boxes and their children, the open overlay, and for a
 section's or an overlay's collection a table's column headers, each row line keyed by the row's
 key, each cell, and each row action a row offers, the `result` of a section's or an overlay's own form,
-and each widget a board places, at `<board>/rows/<widget>`. Cards, a list or a tree with an `item`
+each widget a board places, at `<board>/rows/<widget>`, and each row's `item` node, drawn on the
+row's line, at `…/rows/<key>/item/<name>`, with each node of a widget instance's body at
+`…/item/<name>/body/<node>`. Cards, a list or a tree with an `item`
 have no cell regions. The headless screen is 160 cells wide and grows until no row or column is cut,
 so every column of a wide table has cells of its own, as in the browser's scrolling frame.
 

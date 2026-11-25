@@ -10,7 +10,8 @@
 //! their own (`ess_ui_tui::Region`):
 //!
 //! - a collection that is a section's or an overlay's body draws its rows, their row actions, a
-//!   table's column headers, and a row's cells, except in cards, a list or a tree with an `item`,
+//!   table's column headers, a row's `item` nodes and the body nodes of a widget instance among
+//!   them, and a row's cells, except in cards, a list or a tree with an `item`,
 //!   where React renders the item instead of the cells;
 //! - a references list's rows are not addressed by React, so a path into them is refused;
 //! - `text` reads a node that has cells of its own: the page, a section, an overlay, the page
@@ -338,6 +339,18 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
             // A row's expanded detail is drawn on lines of its own below the rows.
             [] | ["expand"] => None,
             _ if is_column(&rest) => None,
+            // A row's `item` node is drawn on the row's line, and so is each node of a widget
+            // instance's body (beyond10x/ess#722).
+            ["item", name] if collection.item.iter().any(|node| named(node, name)) => None,
+            ["item", name, "body", part] => collection
+                .item
+                .iter()
+                .find(|node| named(node, name))
+                .and_then(|node| match &node.body {
+                    Body::Widget(widget) => widget.body.iter().find(|inner| named(inner, part)),
+                    _ => None,
+                })
+                .map_or_else(|| Some(own_cells()), |_| None),
             ["row_actions", name] => collection
                 .row_actions
                 .iter()
@@ -579,4 +592,9 @@ fn style_name(collection: &Collection) -> &'static str {
         Some(ess_ui::CollectionStyle::Tree) => "tree",
         _ => "table",
     }
+}
+
+/// Whether `node` is named `name`.
+fn named(node: &ess_ui::Node, name: &str) -> bool {
+    node.common.name.as_deref() == Some(name)
 }

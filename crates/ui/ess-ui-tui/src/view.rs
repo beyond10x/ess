@@ -1661,11 +1661,14 @@ impl App {
             } else {
                 Style::default()
             };
+            // The row's `item` nodes, drawn on its line after its cells, as the generated React
+            // project draws them in every row (beyond10x/ess#722).
+            let items = self.row_items(collection, place, row);
             if place.record {
                 let key = row_key(row, &key_field);
                 // The row's and each cell's whole text: the screen cuts a cell at its column's
                 // width and a line at the box's, the generated React project does not.
-                let whole = if cards {
+                let mut whole = if cards {
                     text.clone()
                 } else {
                     columns
@@ -1674,6 +1677,38 @@ impl App {
                         .collect::<Vec<_>>()
                         .join("  ")
                 };
+                // Each item is a region at `…/rows/<key>/item/<name>`, and a node of a widget's
+                // body one at `…/item/<name>/body/<node>`, the paths React draws them at.
+                let mut x = 2 + text.width();
+                for item in &items {
+                    x += 2;
+                    whole.push_str("  ");
+                    whole.push_str(&item.text);
+                    let at = format!("{container}/rows/{key}/item/{}", item.name);
+                    for (part, offset, shown) in &item.parts {
+                        self.mark(Mark {
+                            path: format!("{at}/body/{part}"),
+                            row: Some(key.clone()),
+                            line: lines.len(),
+                            height: 1,
+                            x: x + offset,
+                            width: Some(shown.width()),
+                            text: Some(shown.clone()),
+                            key: None,
+                        });
+                    }
+                    self.mark(Mark {
+                        path: at,
+                        row: Some(key.clone()),
+                        line: lines.len(),
+                        height: 1,
+                        x,
+                        width: Some(item.text.width()),
+                        text: Some(item.text.clone()),
+                        key: None,
+                    });
+                    x += item.text.width();
+                }
                 self.mark(Mark {
                     path: format!("{container}/rows/{key}"),
                     row: Some(key.clone()),
@@ -1739,6 +1774,10 @@ impl App {
                     ));
                 }
             }
+            for item in items {
+                spans.push(Span::raw("  "));
+                spans.extend(item.spans);
+            }
             lines.push(Line::from(truncate_spans(spans, place.width)).style(style));
         }
         if collection.group_by.is_some() && state.page.min(pages - 1) + 1 == pages {
@@ -1754,20 +1793,6 @@ impl App {
                 record: false,
                 ..*place
             };
-            if !collection.item.is_empty() {
-                let spans: Vec<Span<'static>> = collection
-                    .item
-                    .iter()
-                    .flat_map(|node| {
-                        let mut spans = flatten(self.node_lines(node, &inner));
-                        spans.push(Span::raw("  "));
-                        spans
-                    })
-                    .collect();
-                let mut line = vec![Span::styled("▸ ", dim())];
-                line.extend(spans);
-                lines.push(Line::from(line));
-            }
             if state.expanded {
                 if let Some(expand) = &collection.expand {
                     let start = lines.len();
@@ -2734,25 +2759,73 @@ impl App {
         lines
     }
 
+    /// The `item` nodes of `row`, each drawn as one run of spans in `row`'s context; a node that
+    /// draws nothing (its `visible:` does not hold) is left out. A widget instance names where
+    /// each named node of its body starts in that run, as the widget draws them one after the
+    /// other.
+    fn row_items(
+        &self,
+        collection: &ess_ui::Collection,
+        place: &Place<'_>,
+        row: &Value,
+    ) -> Vec<RowItem> {
+        let inner = Place {
+            ctx: Ctx {
+                row: Some(row),
+                ..place.ctx
+            },
+            record: false,
+            ..*place
+        };
+        let text_of = |spans: &[Span<'static>]| -> String {
+            spans.iter().map(|span| span.content.as_ref()).collect()
+        };
+        collection
+            .item
+            .iter()
+            .filter_map(|node| {
+                let spans = flatten(self.node_lines(node, &inner));
+                let text = text_of(&spans);
+                if text.trim().is_empty() {
+                    return None;
+                }
+                let mut parts = Vec::new();
+                if let Body::Widget(widget) = &node.body {
+                    let column = self
+                        .doc
+                        .widgets
+                        .get(&widget.component)
+                        .and_then(|widget| widget.arrange.as_ref())
+                        == Some(&ess_ui::Arrange::Column);
+                    let mut offset = 0;
+                    for part in &widget.body {
+                        let lines = self.node_lines(part, &inner);
+                        if column && lines.is_empty() {
+                            continue;
+                        }
+                        let shown = text_of(&flatten(lines));
+                        if let Some(name) = &part.common.name {
+                            parts.push((name.clone(), offset, shown.clone()));
+                        }
+                        offset += shown.width() + 1;
+                    }
+                }
+                Some(RowItem {
+                    name: node.common.name.clone().unwrap_or_default(),
+                    text,
+                    spans,
+                    parts,
+                })
+            })
+            .collect()
+    }
+
     #[allow(clippy::too_many_lines)] // sparkline, table and metric forms
     fn chart_lines(&self, chart: &ess_ui::Chart, place: &Place<'_>) -> Vec<Line<'static>> {
         let Some(result) = self.read_rows(&chart.reads, &place.ctx) else {
             return vec![Line::styled("loading…", dim())];
         };
-        // A declared `sort` orders the rows after the live effects and `reads.filter`, stably and
-        // as a collection compares; without one, the rows as read (beyond10x/ess#723).
-        let mut rows = result.rows.clone();
-        if let Some(sort) = &chart.sort {
-            let descending = sort.dir == Some(ess_ui::SortDir::Desc);
-            rows.sort_by(|left, right| {
-                let order = compare(&field_path(left, &sort.by), &field_path(right, &sort.by));
-                if descending {
-                    order.reverse()
-                } else {
-                    order
-                }
-            });
-        }
+        let rows = chart_rows(chart, &result.rows);
         let kind = match &chart.chart {
             ChartKind::Fixed(kind) => kind.clone(),
             ChartKind::Chosen(chosen) => self
@@ -2948,6 +3021,33 @@ impl App {
             }
         }
     }
+}
+
+/// A chart's rows in the order its `sort` declares, after the live effects and `reads.filter`,
+/// stably and as a collection compares; without one, as read (beyond10x/ess#723).
+fn chart_rows(chart: &ess_ui::Chart, rows: &[Value]) -> Vec<Value> {
+    let mut rows = rows.to_vec();
+    if let Some(sort) = &chart.sort {
+        let descending = sort.dir == Some(ess_ui::SortDir::Desc);
+        rows.sort_by(|left, right| {
+            let order = compare(&field_path(left, &sort.by), &field_path(right, &sort.by));
+            if descending {
+                order.reverse()
+            } else {
+                order
+            }
+        });
+    }
+    rows
+}
+
+/// One `item` node as a row draws it: its name, its text, its spans, and for a widget instance
+/// each named body node with its offset in that text and its own text.
+struct RowItem {
+    name: String,
+    text: String,
+    spans: Vec<Span<'static>>,
+    parts: Vec<(String, usize, String)>,
 }
 
 fn flatten(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
