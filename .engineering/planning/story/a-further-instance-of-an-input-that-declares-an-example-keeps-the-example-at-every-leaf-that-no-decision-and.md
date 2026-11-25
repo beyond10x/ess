@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -409,3 +409,9 @@ again.
 
 Tagged 0.99.4 on `daae8ebd1d` (branch `hotfix/0.99.4`, release commit `78c4ba842c`); the tag's
 release run 45621137834 takes the full gate and was in progress when this was written.
+
+0.99.4 is released (2026-11-25): the tag's release run 45621137834 took the full gate and ended in
+success; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.4 with four
+archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
+`hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
+written.

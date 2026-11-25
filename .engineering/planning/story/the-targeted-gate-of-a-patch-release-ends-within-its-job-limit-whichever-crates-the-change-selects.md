@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:tests-that-run-over-60-s-on-main-without-a-branch-of-the-week-run-within-60-s-or-move-to-the-slow-lane
-revision: 4
+revision: 5
 ---
 ## Finding
 
@@ -68,3 +68,9 @@ jobs started, so that 0.99.4, which holds everything 0.99.3 holds, is gated firs
 tag did not move.
 
 Not verified: the targeted job's time for the largest set that stays targeted.
+
+0.99.4 is released (2026-11-25): the tag's release run 45621137834 took the full gate and ended in
+success; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.4 with four
+archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
+`hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
+written.

@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-swapped-caller-run-renames-only-the-names-it-binds
 - informed_by: story:a-caller-swap-redraw-keeps-unread-members-and-related-ties
-revision: 1
+revision: 2
 ---
 ## Finding
 
@@ -117,3 +117,7 @@ The text run did not say why either scenario failed: see
 
 - None open. Ships as 0.99.5 with a full gate of its own (the operator session, 2026-11-25, D144
   part 1 = B), because the build node was down when 0.99.4 was tagged.
+
+## Delivery
+
+Carried by the branch `hotfix/0.99.5`, in preparation on 2026-11-25 when this was written.

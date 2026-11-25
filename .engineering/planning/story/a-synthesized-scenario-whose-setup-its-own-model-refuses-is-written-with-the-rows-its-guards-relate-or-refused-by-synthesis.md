@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 4
+revision: 5
 ---
 ## Summary
 
@@ -123,6 +123,12 @@ committed byte table moved. The gate ran every step with exit 0.
 
 Tagged 0.99.4 on `daae8ebd1d` (branch `hotfix/0.99.4`, release commit `78c4ba842c`); the tag's
 release run 45621137834 takes the full gate and was in progress when this was written.
+
+0.99.4 is released (2026-11-25): the tag's release run 45621137834 took the full gate and ended in
+success; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.4 with four
+archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
+`hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
+written.
 
 ## Left open
 

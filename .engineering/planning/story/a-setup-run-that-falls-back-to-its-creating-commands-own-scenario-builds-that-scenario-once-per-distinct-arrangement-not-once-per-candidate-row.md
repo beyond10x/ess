@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 - informed_by: story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path
-revision: 7
+revision: 8
 ---
 ## Summary
 
@@ -184,3 +184,12 @@ single cost is over a third of what is left, so no second round was made.
 
 The red test is committed locally and the fix is written but not committed: the build node ended on
 2026-11-25 before its gate ran; nothing is pushed.
+
+The second finding's fix is committed and pushed (2026-11-25): branch
+`fix/n89-an-own-scenario-arrangement-is-cheap-to-build`, red test `bfcf715890`
+(`an_input_the_chosen_values_make_equal_is_tried_once`), fix `04bbe7fa6e` (a row search with chosen
+values tries each input once). One reported model: 52.78 s before, 18.21 s after with `--jobs 1`;
+57.25 s and 17.44 s with `--jobs 8`; its suites are byte-identical. It is planned for 0.99.5
+(branch `hotfix/0.99.5`, in preparation when this was written). The full gate for tag 0.99.3 was
+dispatched again as run 45653752956 after 0.99.4 was published; it was in progress when this was
+written.
