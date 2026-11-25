@@ -594,6 +594,18 @@ fn drive_terminal(
     reads: &[&str],
 ) -> (Vec<u16>, Vec<usize>) {
     let binding: Binding = serde_json::from_value(table("tui", out)).expect("a binding");
+    // Each command's declared answers, which the adapter reads its answer by, as `run` does.
+    let declared: BTreeMap<String, Vec<ess_ui::binding::DeclaredAnswer>> = binding
+        .components
+        .get(component)
+        .map(|served| {
+            served
+                .commands
+                .iter()
+                .map(|(name, route)| (name.clone(), route.answers.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
     let bases = BTreeMap::from([(component.to_owned(), base.to_owned())]);
     let adapter = ess_ui_tui::HttpAdapter::new(binding, &bases, Some(CLERK.to_owned()))
         .expect("the adapter is built");
@@ -603,8 +615,12 @@ fn drive_terminal(
         let (status, body) = adapter
             .post(command, &input)
             .unwrap_or_else(|error| panic!("{STORY}: terminal {command}: {error}"));
+        let answer = match declared.get(*command) {
+            Some(answers) => ess_ui::binding::classify_declared(status, &body, answers),
+            None => ess_ui::binding::classify(status, &body),
+        };
         assert_eq!(
-            ess_ui::binding::classify(status, &body),
+            answer,
             ess_ui::binding::Answer::Accepted,
             "{STORY}: terminal {command}: {status} {body}"
         );
@@ -686,6 +702,9 @@ fn generated(dir: &Path, toy: Toy, http: &Path) -> (PathBuf, PathBuf) {
     (outs.pop().expect("the terminal app"), react)
 }
 
+/// The shelf binding declares answers (beyond10x/ess#723): `AllStamps` answers a bare array and
+/// `AddStamp`'s `added` a `204` with no body. Both generated UIs send through the server generated
+/// with that binding, read each `204` as accepted and read the stamps back from the array.
 #[test]
 fn both_generated_uis_reach_the_server_generated_with_the_same_binding() {
     let dir = scratch("served-shelf");
@@ -710,9 +729,10 @@ fn both_generated_uis_reach_the_server_generated_with_the_same_binding() {
         ],
         &["shelf.items.AllItems", "shelf.items.AllStamps"],
     );
-    for status in &statuses {
-        assert!(matches!(status, 200 | 202), "{STORY}: {statuses:?}");
-    }
+    assert!(
+        matches!(statuses.as_slice(), [200 | 202, 204]),
+        "{STORY}: AddStamp answers its declared 204: {statuses:?}"
+    );
     assert_eq!(
         rows,
         [1, 1],
@@ -749,8 +769,13 @@ fn both_generated_uis_reach_the_server_generated_with_the_same_binding() {
         "{STORY}: {calls:?}"
     );
     for (method, path, status) in &calls {
+        let declared = if path == "/stamps" && method == "POST" {
+            204
+        } else {
+            200
+        };
         assert!(
-            matches!(status, 200 | 202),
+            *status == declared || (declared == 200 && *status == 202),
             "{STORY}: {method} {path}: {status}"
         );
     }

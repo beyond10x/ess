@@ -682,3 +682,262 @@ fn a_bindings_declared_answers_reach_the_route_table() {
         "{refusals:#?}"
     );
 }
+
+/// Every answer form `ess specify http compile` accepts is either carried into the route table or
+/// refused naming the route, the form and the binding's file (beyond10x/ess#723): a view's `rows`,
+/// `array` and `single`, bare or under a member, and each outcome body (`none`, `response`,
+/// `response.<field>`, each under a member, `{<member>: error}`, `encoding: text`) and a redirect.
+/// The cases are listed by an exhaustive match on the compiled forms, so a form `ess-http/1` adds
+/// fails to compile here until a case shows what a generated UI does with it.
+#[test]
+#[allow(clippy::too_many_lines)] // one table of every form
+fn every_compiled_answer_form_is_carried_or_refused() {
+    use ess_gen::ess_http::{Body, Operation, ResponseEncoding, ViewBody};
+    // The case that witnesses each compiled form: no wildcard arm.
+    fn view_case(form: ViewBody, member: bool) -> &'static str {
+        match (form, member) {
+            (ViewBody::Rows, false) => "rows",
+            // `ess specify http compile` refuses `{<member>: rows}` (ESS-HTTP-024).
+            (ViewBody::Rows, true) => "never compiled",
+            (ViewBody::Array, false) => "array",
+            (ViewBody::Array, true) => "{items: array}",
+            (ViewBody::Single, false) => "single",
+            (ViewBody::Single, true) => "{items: single}",
+        }
+    }
+    // The view a case routes: `single` answers one row, so it routes the view by identity.
+    fn viewed(view: &str) -> &'static str {
+        if view.contains("single") {
+            "ItemById"
+        } else {
+            "Items"
+        }
+    }
+    fn outcome_case(body: &Body, encoding: ResponseEncoding) -> &'static str {
+        match (body, encoding) {
+            (Body::Envelope, _) => "{status: 200, body: envelope}",
+            (Body::None, _) => "{status: 204, body: none}",
+            (Body::Response, _) => "{status: 200, body: response}",
+            (Body::ResponseField(_), ResponseEncoding::Json) => {
+                "{status: 200, body: response.label}"
+            }
+            (Body::ResponseField(_), ResponseEncoding::Text) => {
+                "{status: 200, body: response.label, encoding: text}"
+            }
+            (Body::Wrapped { field: None, .. }, _) => "{status: 200, body: {data: response}}",
+            (Body::Wrapped { field: Some(_), .. }, _) => {
+                "{status: 200, body: {data: response.label}}"
+            }
+            (Body::Error { .. }, _) => "{status: 409, body: {error: error}}",
+        }
+    }
+    let mut sources = shop_with_components(&[]);
+    let stock = &mut sources
+        .iter_mut()
+        .find(|(name, _)| name == "domains/stock.yaml")
+        .expect("the stock domain")
+        .1;
+    stock.push_str(
+        "  - name: shop.stock.ItemById\n    source: shop.stock.Item\n    consistency: read_your_writes\n    \
+         params:\n      - name: id\n        type: shop.stock.ItemId\n    filter: item_id == param.id\n    \
+         fields:\n      - name: item_id\n        type: shop.stock.ItemId\n      - name: label\n        type: String\n",
+    );
+    *stock = stock
+        .replace(
+            "actors:\n",
+            "errors:\n  - name: shop.stock.Full\n    naming: {wire: full}\n\nactors:\n",
+        )
+        .replace(
+            "        type: String\n    outcomes:\n      - name: added\n",
+            "        type: String\n    response:\n      - {name: item_id, type: shop.stock.ItemId}\n      \
+             - {name: label, type: String}\n    outcomes:\n      - name: full\n        \
+             when: label == \"\"\n        error: shop.stock.Full\n      - name: added\n        \
+             returns: true\n",
+        );
+    // A typed response and a direct return need `ess/17`.
+    let system = &mut sources
+        .iter_mut()
+        .find(|(name, _)| name == "system.yaml")
+        .expect("the system")
+        .1;
+    *system = system.replace("format: ess/1\n", "format: ess/17\n");
+    for (file, field, mapped) in [
+        (
+            "domains/stock.yaml",
+            "            label: input.label\n",
+            "item_id",
+        ),
+        (
+            "domains/audit.yaml",
+            "            note: input.note\n",
+            "entry_id",
+        ),
+    ] {
+        let source = &mut sources
+            .iter_mut()
+            .find(|(name, _)| name == file)
+            .expect("the domain")
+            .1;
+        *source = source.replace(
+            field,
+            &format!("{field}            {mapped}: {{generated: true}}\n"),
+        );
+    }
+    let ir = compile_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let text = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: summary, reads: stock.Items}, \
+          {name: one, component: record, reads: {view: stock.ItemById, params: {id: params.id}}, fields: [label]}, \
+          {name: add, component: form, does: stock.AddItem, fields: [label]}]}",
+    );
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    // What the route table holds for `view` and `answer` (the outcome `outcome` answers), or the
+    // refusal's messages.
+    let bind = |view: &str, outcome: &str, answer: &str| {
+        // The case's form on the view it routes; the other view answers `rows`.
+        let (items, one) = if view.contains("single") {
+            ("rows".to_owned(), format!("{view}, empty: {{status: 404}}"))
+        } else {
+            (view.to_owned(), "rows".to_owned())
+        };
+        let declared = format!(
+            "type: ess-http/1\nspecification:\n  system: shop\n  version: v1\n  source_digest: \
+             sha256:{}\nroutes:\n  - {{view: shop.stock.Items, method: get, path: /items, body: {items}}}\n  \
+             - {{view: shop.stock.ItemById, method: get, path: /item, body: {one}}}\n  \
+             - command: shop.stock.AddItem\n    method: post\n    path: /items\n    outcomes:\n      \
+             {outcome}: {answer}\n",
+            ir.source_digest(),
+        );
+        let spec = ess_gen::ess_http::HttpSpec::from_yaml(&declared)
+            .unwrap_or_else(|error| panic!("{error}\n{declared}"));
+        let compiled =
+            ess_gen::ess_http::compile(&spec, &ir, &http::derived(&ir)).unwrap_or_else(|refused| {
+                panic!("ess specify http compile accepts it: {refused}\n{declared}")
+            });
+        let route = compiled
+            .routes()
+            .iter()
+            .find(|route| {
+                matches!(&route.operation, Operation::View(name) if *name == format!("shop.stock.{}", viewed(view)))
+            })
+            .expect("the view route");
+        let listed = compiled
+            .routes()
+            .iter()
+            .find_map(|route| route.answer(outcome, outcome == "full"))
+            .expect("the outcome's answer");
+        // The case this form is written as is the one the exhaustive match names.
+        assert_eq!(
+            view_case(route.body.form, route.body.member.is_some()),
+            view
+        );
+        // A redirect is an outcome's `redirect`, beside its body: refused below, whatever the body.
+        if listed.redirect.is_none() {
+            assert_eq!(outcome_case(&listed.body, listed.encoding), answer);
+        }
+        let binding = http::Binding::new(compiled).expect("every route has a path");
+        let over = ess_ui_check::HttpBinding {
+            path: Path::new("shop-http.yaml"),
+            binding: &binding,
+        };
+        ess_ui_check::binding_over(&document, &sources, Some(over)).map_err(|error| match error {
+            BindingError::Refused(refusals) => refusals
+                .iter()
+                .map(|refusal| refusal.message.clone())
+                .collect::<Vec<_>>(),
+            other @ BindingError::Model(_) => panic!("{other}"),
+        })
+    };
+    for (view, carried) in [
+        ("rows", (None, None)),
+        ("array", (Some("array"), None)),
+        ("{items: array}", (Some("array"), Some("items"))),
+        ("single", (Some("single"), None)),
+        ("{items: single}", (Some("single"), Some("items"))),
+    ] {
+        let bound = bind(view, "added", "{status: 204, body: none}")
+            .unwrap_or_else(|refusals| panic!("{view}: {refusals:#?}"));
+        let items = &bound.components["shop-service"].views
+            [format!("shop.stock.{}", viewed(view)).as_str()];
+        assert_eq!(
+            (items.answer.as_deref(), items.member.as_deref()),
+            carried,
+            "{view}"
+        );
+        assert_eq!(
+            items.empty,
+            view.contains("single").then_some(404),
+            "{view}"
+        );
+    }
+    for (outcome, answer, carried) in [
+        ("added", "{status: 200, body: envelope}", None),
+        (
+            "added",
+            "{status: 204, body: none}",
+            Some(("none", None, false)),
+        ),
+        (
+            "added",
+            "{status: 200, body: response}",
+            Some(("response", None, false)),
+        ),
+        (
+            "added",
+            "{status: 200, body: response.label}",
+            Some(("response.label", None, false)),
+        ),
+        (
+            "added",
+            "{status: 200, body: response.label, encoding: text}",
+            Some(("response.label", None, true)),
+        ),
+        (
+            "added",
+            "{status: 200, body: {data: response}}",
+            Some(("response", Some("data"), false)),
+        ),
+        (
+            "added",
+            "{status: 200, body: {data: response.label}}",
+            Some(("response.label", Some("data"), false)),
+        ),
+        (
+            "full",
+            "{status: 409, body: {error: error}}",
+            Some(("error", Some("error"), false)),
+        ),
+    ] {
+        let bound = bind("rows", outcome, answer)
+            .unwrap_or_else(|refusals| panic!("{answer}: {refusals:#?}"));
+        let answers = &bound.components["shop-service"].commands["shop.stock.AddItem"].answers;
+        let read: Vec<(&str, Option<&str>, bool)> = answers
+            .iter()
+            .filter(|declared| declared.outcome == outcome)
+            .map(|declared| {
+                (
+                    declared.body.as_str(),
+                    declared.member.as_deref(),
+                    declared.text,
+                )
+            })
+            .collect();
+        assert_eq!(read, carried.into_iter().collect::<Vec<_>>(), "{answer}");
+    }
+    let refusals = bind(
+        "rows",
+        "added",
+        "{status: 303, body: none, redirect: {location: input.label, mode: query}}",
+    )
+    .expect_err("a redirect is refused");
+    assert!(
+        refusals
+            .iter()
+            .any(|message| message.contains("shop.stock.AddItem")
+                && message.contains("redirect")
+                && message.contains("`added`")
+                && message.contains("shop-http.yaml")),
+        "{refusals:#?}"
+    );
+}

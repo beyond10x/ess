@@ -8,6 +8,6 @@ routes:
     method: post
     path: /items
     request: {encoding: json, unknown: refuse}
-  - {command: shelf.items.AddStamp, method: post, path: /stamps}
+  - {command: shelf.items.AddStamp, method: post, path: /stamps, outcomes: {added: {status: 204, body: none}}}
   - {view: shelf.items.AllItems, method: get, path: /items}
-  - {view: shelf.items.AllStamps, method: get, path: /stamps}
+  - {view: shelf.items.AllStamps, method: get, path: /stamps, body: array}
