@@ -9875,6 +9875,7 @@ fn invoke_with(
 }
 
 /// One invoked branch: the steps that run it, what they depend on, and what they left behind.
+#[derive(Clone)]
 struct Invocation {
     /// The steps, in order.
     steps: Vec<ScenarioStep>,

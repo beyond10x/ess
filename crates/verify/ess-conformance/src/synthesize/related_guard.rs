@@ -3035,6 +3035,9 @@ fn own_scenario_applies(
 /// `distinction`: the rows the arrangement names joined to `bound`, its steps first, then the
 /// send of the input it chose. Refused where the same arrangement is already open
 /// ([`own_opening`]) or names a row through a field `bound` already binds.
+///
+/// Built once per model and context, and answered from memory when asked again
+/// ([`super::created_memo::own_arranged`]).
 fn as_own_scenario(
     ir: &EssIr,
     driver: &super::Driver<'_>,
@@ -3047,9 +3050,29 @@ fn as_own_scenario(
 ) -> Result<super::Invocation, RefusalCause> {
     let _open = own_opening(ir, driver).ok_or_else(unarranged)?;
     own_worked(1, 0);
-    if chosen.is_some_and(|chosen| !chosen.is_empty()) {
-        overlay_worked(1, 0, 1);
+    let carries = chosen.is_some_and(|chosen| !chosen.is_empty());
+    if carries {
+        overlay_worked(0, 0, 1);
     }
+    super::created_memo::own_arranged(ir, driver, actors, distinction, (bound, chosen), || {
+        if carries {
+            overlay_worked(1, 0, 0);
+        }
+        own_built(ir, driver, actors, distinction, (bound, chosen))
+    })
+}
+
+/// The run of `driver` arranged as its own scenario, built ([`as_own_scenario`]).
+fn own_built(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, chosen): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        Option<&BTreeMap<String, Node>>,
+    ),
+) -> Result<super::Invocation, RefusalCause> {
     let models = super::caller::InvocationModels::plain(ir);
     let (setup, input, _) = arranged_choosing(
         &models,
