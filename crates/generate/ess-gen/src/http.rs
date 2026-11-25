@@ -483,6 +483,52 @@ impl Binding {
         }
     }
 
+    /// Every route carrying a key `target` does not read yet, with its operation, in route order:
+    /// `request.members`, a nested body member, and `select`, several routes on one method and path
+    /// (`docs/design/http-presentation-binding.md`, "Several operations on one route"). Only the
+    /// `OpenAPI` document reads them so far; output written from a binding without reading them
+    /// would decode a flat body or serve one of the sharing routes, so every other target refuses
+    /// the binding instead, `target` naming it.
+    ///
+    /// # Errors
+    ///
+    /// [`Unprojectable`] naming each such route and key, by [`Reason::Unread`].
+    pub fn read_by(&self, target: &'static str) -> Result<(), Unprojectable> {
+        let refused: Vec<(ess_http::Operation, Reason)> = self
+            .0
+            .routes()
+            .iter()
+            .flat_map(|route| {
+                let members = route
+                    .request
+                    .as_ref()
+                    .is_some_and(|request| !request.members.is_empty());
+                [
+                    (members, "request.members"),
+                    (route.select.is_some(), "select"),
+                ]
+                .into_iter()
+                .filter(|(carried, _)| *carried)
+                .map(move |(_, key)| {
+                    (
+                        route.operation.clone(),
+                        Reason::Unread {
+                            method: route.method,
+                            path: route.path.clone().unwrap_or_default(),
+                            key,
+                            target,
+                        },
+                    )
+                })
+            })
+            .collect();
+        if refused.is_empty() {
+            Ok(())
+        } else {
+            Err(Unprojectable(refused))
+        }
+    }
+
     /// The standard refusal `key` the binding answers its own way, if it overrides it.
     pub fn refusal(&self, key: ess_http::RefusalKey) -> Option<&ess_http::Refusal> {
         self.0.refusals().get(&key)
@@ -583,7 +629,7 @@ impl Binding {
 }
 
 /// Why a binding's route cannot be projected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reason {
     /// It has no path.
     Open,
@@ -594,6 +640,18 @@ pub enum Reason {
     /// Every scheme it requires is an API key in the query string, which a served surface does
     /// not read (beyond10x/ess#681).
     UnreadCredential,
+    /// It carries `key` (`request.members` or `select`), which `target` does not read yet
+    /// ([`Binding::read_by`]).
+    Unread {
+        /// The route's method.
+        method: ess_http::Method,
+        /// The route's path.
+        path: String,
+        /// The key it carries.
+        key: &'static str,
+        /// The target refusing it.
+        target: &'static str,
+    },
 }
 
 /// The routes of a binding [`Binding::new`] refuses, each with its operation, in route order.
@@ -627,6 +685,16 @@ impl std::fmt::Display for Unprojectable {
                     "{operation} requires only API keys in the query string, and a served surface \
                      reads no credential from the query; require a header, cookie or \
                      `Authorization` scheme beside it"
+                )?,
+                Reason::Unread {
+                    method,
+                    path,
+                    key,
+                    target,
+                } => write!(
+                    formatter,
+                    "{operation} at `{method} {path}` carries `{key}`, and the {target} does not \
+                     read it yet; only `ess generate --kind openapi --http` does"
                 )?,
             }
         }

@@ -164,7 +164,9 @@ The document follows those keys on the routes that use them:
   field from a nested member of the body, the path being member names joined by `.`; the input
   stays flat, and every other field stays a top-level member. `{command}.Input` is written nested,
   each object required when it holds a field that is not `Optional`. A required field under a
-  missing object is malformed; an `Optional` one reads as absent. `ESS-HTTP-020` refuses a key
+  missing object is malformed; an `Optional` one reads as absent. Only the OpenAPI document reads
+  `members` so far: the generated servers and UIs and `ess generate types --http` refuse a binding
+  that maps one, naming the route. `ESS-HTTP-020` refuses a key
   that is no input field, a field the path or `request.query` carries, `members` beside `form`,
   `query`, `multipart` or a bare `body`, on `get` or on a view, an empty name, two fields on one
   path, one path an object above another, and a path starting at an unmapped field's wire name:
@@ -288,6 +290,8 @@ routes:
   one top-level string member and no catch-all also writes a `discriminator`. Answers on one
   status are merged, and a set without a catch-all states that a body no route selects is
   `malformed`.
+- Only the OpenAPI document reads `select` so far: the generated servers and UIs and
+  `ess generate types --http` refuse a binding that carries it, naming the route.
 
 ### Answer a view as CSV
 

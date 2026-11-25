@@ -199,8 +199,9 @@ impl std::error::Error for LayoutRefusal {}
 pub enum BindingRefusal {
     /// The target serves no HTTP binding: only `rust` and `go` do.
     Target(&'static str),
-    /// A route the served surface cannot answer: it is open, or a request for `/openapi.json` or
-    /// `/docs` would match it.
+    /// A route the served surface cannot answer: it is open, a request for `/openapi.json` or
+    /// `/docs` would match it, or it carries `request.members` or `select`, which no server reads
+    /// yet.
     Unservable(ess_gen::http::Unprojectable),
 }
 
@@ -448,7 +449,8 @@ pub fn synthesize_laid_out(
 /// # Errors
 ///
 /// [`SynthesisFailure::Binding`] when the target serves no binding, or a route of it cannot be
-/// served ([`ess_gen::http::Binding::servable`]); otherwise as [`synthesize_laid_out`].
+/// served ([`ess_gen::http::Binding::servable`]) or carries a key the server does not read yet
+/// ([`ess_gen::http::Binding::read_by`]); otherwise as [`synthesize_laid_out`].
 pub fn synthesize_bound(
     ir: &EssIr,
     target: Target,
@@ -469,6 +471,13 @@ pub fn synthesize_bound(
         }
         binding
             .servable()
+            .and_then(|()| {
+                binding.read_by(if target == Target::Rust {
+                    "generated Rust server"
+                } else {
+                    "generated Go server"
+                })
+            })
             .map_err(|refused| SynthesisFailure::Binding(BindingRefusal::Unservable(refused)))?;
     }
     Ok(emit(ir, target, layout, http)?)

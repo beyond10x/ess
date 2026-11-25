@@ -219,7 +219,7 @@ The rule is the template rule of 0.89.0, applied to members:
   order and several as a list in the order written, so every binding without it compiles to the
   bytes it did. No format version: a reader without the key refuses `select` by name. A refinement
   restates `select` (`ESS-HTTP-012`).
-- OpenAPI writes the routes sharing a method and path as one operation ("What OpenAPI writes (k4)"). The generated servers and apps do not read `select` yet.
+- OpenAPI writes the routes sharing a method and path as one operation ("What OpenAPI writes (k4)"). The generated servers, the generated UIs and `ess generate types --http` refuse a binding whose routes carry `select`, naming the route, the key and the target, until they read it.
 
 ### Which operations a binding may name
 
@@ -527,7 +527,8 @@ stays flat, so a row is still addressed by a top-level input field; only the wir
 - OpenAPI writes `{command}.Input` nested: each object a path opens is
   `{type: object, properties, required, additionalProperties}`, required when it holds a field
   that is not `Optional`, and open under `unknown: ignore`.
-- The generated servers and apps do not read `members` yet.
+- The generated servers, the generated UIs and `ess generate types --http` refuse a binding whose
+  routes carry `request.members`, naming the route, the key and the target, until they read it.
 
 A command route on `post`, `put`, `patch` or `delete` may read chosen input fields from the query
 string beside its body: `request.query`, a list of `input.<field>`

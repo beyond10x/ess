@@ -472,3 +472,42 @@ fn adversary_a_refused_response_root_does_not_blame_answers_the_route_never_list
         }
     }
 }
+
+/// A binding whose routes carry `request.members` or `select` is refused, by the command, the route
+/// and the key, until the selection reads them: it would publish a flat `<command>.input`, and
+/// none of the members a shared route selects by.
+#[test]
+fn a_binding_with_members_or_select_is_refused_by_name() {
+    let ir = compiled();
+    for (routes, key, route) in [
+        (
+            "routes:\n  - command: demo.notes.Create\n    method: put\n    path: \
+             /notes/{note_id}\n    parameters: {note_id: input.note_id}\n    request: \
+             {members: {title: data.title}}\n",
+            "`request.members`",
+            "`put /notes/{note_id}`",
+        ),
+        (
+            "routes:\n  - {command: demo.notes.Create, method: post, path: /notes, select: \
+             {kind: create}}\n  - {command: demo.notes.Pin, method: post, path: /notes, \
+             select: {kind: pin}}\n",
+            "`select`",
+            "`post /notes`",
+        ),
+    ] {
+        let binding = bound_by(&ir, routes);
+        let Err(errors) =
+            ModelTypes::select_bound(&ir, &roots(&["demo.notes.Create.input"]), Some(&binding))
+        else {
+            panic!("model types were selected under a binding whose {key} they do not read");
+        };
+        assert!(
+            errors.iter().any(|error| error.name == "demo.notes.Create"
+                && error.rule == "unread_binding_key"
+                && error.detail.contains(route)
+                && error.detail.contains(key)
+                && error.detail.contains("does not read it yet")),
+            "{errors:#?}"
+        );
+    }
+}

@@ -4,6 +4,7 @@
 
 ### Added
 
+- `ess generate synthesize --http`, the generated UIs with `--http` and `ess generate types --http` refuse a binding whose routes carry `request.members` or `select`, naming the route, the key and the target; only OpenAPI reads them yet.
 - OpenAPI with `--http` writes a route shared by body selection as one operation: its request body `oneOf` each command's body with the selecting members `const`, and `x-ess-operations` naming every command.
 - `ess-http/1`: command routes of one component may share a method and path, each chosen by `select:`, literal values of members of the JSON body; a body no select matches is `malformed` unless a route without `select` takes it.
 - `ess-http/1`: a `json` request may read an input field from a nested body member, `request.members: {<field>: data.<member>}`; OpenAPI writes the nested request schema.

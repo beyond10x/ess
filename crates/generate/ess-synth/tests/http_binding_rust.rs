@@ -23,6 +23,9 @@ mod body_cap_rust;
 #[path = "http_binding/body_cap_go.rs"]
 mod body_cap_go;
 
+#[path = "http_binding/unread_keys.rs"]
+mod unread_keys;
+
 use ess_synth::{
     synthesize_bound, synthesize_laid_out, BindingRefusal, OutputLayout, SynthesisFailure, Target,
 };
