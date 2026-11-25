@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-diff/src/change.rs
 - confidence: inferred
   path: docs/design/value-wire-encodings.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:13Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:14Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -146,3 +146,20 @@ is declined as local policy.
 
 github:beyond10x/ess#758
 
+## Related (2026-11-25)
+
+A second adopter reports the case this story's reproduction shows, from the HTTP binding (twentieth gap
+report, shape 6): a view's time window is sent as epoch seconds in the query, and the binding cannot
+state that encoding of a date-time parameter. Read at tag 0.99.1: the binding states no wire encoding
+of a scalar parameter (a view parameter that stays in the query is named by its flat `wire:` and typed by
+the model, `docs/design/http-presentation-binding.md`, "Path templates", the last paragraph), and the
+model has none either, so a `Timestamp` parameter is an RFC 3339 `date-time` and an `Integer` is not
+comparable with a `Timestamp` (`ESS-VIEW-002`, this story's reproduction). The report is covered by this
+story's newtype, so no key is added to the binding. The query half is
+`story:projections-write-a-timestamp-in-its-declared-encoding` (the integer `in: query` parameter) and
+`story:generated-codecs-read-and-write-a-timestamp-in-its-declared-encoding` (the server reads
+`filters.created.from=1730851200` as the instant). None of the three is released at 0.99.1. A path
+segment of an encoded `Timestamp` is a source `ESS-HTTP-009` admits only for an unconstrained newtype,
+so the encoding newtype's admission as a path source is a question for the codecs story, not decided
+here. The text each reader admits for an RFC 3339 `Timestamp` is
+`story:the-interpreter-the-runners-and-the-generated-servers-admit-one-text-for-a-timestamp-and-for-a-duration`.
