@@ -418,7 +418,9 @@ A route may write a list as one comma-joined value instead
   3.1 § 4.8.12.4), required unless it is `Optional`, and a `form` body's list with the same `style` and `explode` in the media type's
   Encoding Object under its wire name; the body's description names it.
 - The protocol kind is not touched: a protocol model keeps taking the filter's verdict as an input,
-  and the binding owns the text form. The generated servers and apps do not read `lists` yet
+  and the binding owns the text form.
+- The generated servers, the generated UIs and `ess generate types --http` refuse a binding whose
+  routes carry `lists`, naming the route, the key and the target, until they read it
   (`ae12a-servers-and-apps-split-and-join-a-comma-list`).
 
 `unknown: ignore` is admitted beside `json` too (beyond10x/ess#752,
@@ -1324,8 +1326,12 @@ routes:
   `Access-Control-Allow-Credentials`, `Access-Control-Max-Age` and `Vary: Origin`; its
   `x-ess-cors` holds the policy of each method. Each answer of a covered operation gains
   `Access-Control-Allow-Origin`, and `Vary: Origin` when the origins are listed.
-- **What the servers and apps do.** The generated servers and apps do not read `cors` yet
-  (`ae3b`).
+- **What the servers and apps do.** The generated servers, the generated UIs and
+  `ess generate types --http` refuse a binding with `cors` until they read it (`ae3b`): a route's
+  own `cors`, `none` included, by the route and the key, and the binding's own `cors` by every
+  route it covers, derived ones included. `none` is refused too, though a target that answers no
+  cross-origin read honours it by doing nothing, so that no target states a policy it was not
+  built to state.
 - **Format.** `ess-http/1` and `ess-http-ir/1` gain the optional key `cors`, at the top after
   `authentication` and on a route after `limits`, written only where declared; every binding
   without it compiles to the same bytes.

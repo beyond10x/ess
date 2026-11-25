@@ -449,8 +449,9 @@ pub fn synthesize_laid_out(
 /// # Errors
 ///
 /// [`SynthesisFailure::Binding`] when the target serves no binding, or a route of it cannot be
-/// served ([`ess_gen::http::Binding::servable`]) or carries a key the server does not read yet
-/// ([`ess_gen::http::Binding::read_by`]); otherwise as [`synthesize_laid_out`].
+/// served ([`ess_gen::http::Binding::servable`]) or carries a key the server does not read yet,
+/// or is under the binding's own `cors` ([`ess_gen::http::Binding::read_by`]); otherwise as
+/// [`synthesize_laid_out`].
 pub fn synthesize_bound(
     ir: &EssIr,
     target: Target,

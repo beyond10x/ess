@@ -1,7 +1,9 @@
-//! A binding whose routes carry `request.members` or `select` is refused by both generated
-//! servers, naming the route, the key and the server, until they read them: a server written from
-//! it would decode a flat body and serve the first of the routes sharing a method and path
-//! (`docs/design/http-presentation-binding.md`, "Several operations on one route").
+//! A binding whose routes carry `request.members`, `select`, `lists` or `cors`, or which declares
+//! `cors` itself, is refused by both generated servers, naming the route, the key and the server,
+//! until they read them: a server written from it would decode a flat body, serve the first of the
+//! routes sharing a method and path, split no comma-joined list and answer no preflight
+//! (`docs/design/http-presentation-binding.md`, "Several operations on one route", "Request
+//! encoding", "Cross-origin reads").
 
 use ess_synth::{synthesize_bound, BindingRefusal, OutputLayout, SynthesisFailure, Target};
 
@@ -58,4 +60,68 @@ fn the_rust_server_refuses_a_binding_with_members_or_select_by_name() {
 #[test]
 fn the_go_server_refuses_a_binding_with_members_or_select_by_name() {
     assert_refused_by_name(Target::Go, "generated Go server");
+}
+
+/// `shop.items.Search` writes its `words` comma-joined.
+const LISTS: &str = "routes:
+  - command: shop.items.Search
+    method: get
+    path: /search
+    request: {encoding: query}
+    lists: {words: comma}
+";
+
+/// `shop.items.Order` admits no cross-origin read: the one form a server could honour by doing
+/// nothing, refused all the same, since a server that answers no preflight states no policy.
+const CORS_NONE: &str = "routes:
+  - {command: shop.items.Order, method: post, path: /orders, cors: none}
+";
+
+/// The binding's own policy, over `shop.items.Order` and every derived route.
+const CORS_BINDING: &str = "cors: {origins: [https://app.example]}
+routes:
+  - {command: shop.items.Order, method: post, path: /orders}
+";
+
+fn assert_lists_and_cors_refused_by_name(target: Target, server: &str) {
+    for (routes, operation, key, route) in [
+        (
+            LISTS,
+            "command `shop.items.Search`",
+            "`lists`",
+            "`get /search`",
+        ),
+        (
+            CORS_NONE,
+            "command `shop.items.Order`",
+            "`cors`",
+            "`post /orders`",
+        ),
+        (
+            CORS_BINDING,
+            "command `shop.items.Order`",
+            "the binding's `cors`",
+            "`post /orders`",
+        ),
+    ] {
+        let text = refused(target, routes);
+        assert!(
+            text.lines().any(|line| line.contains(operation)
+                && line.contains(route)
+                && line.contains(key)
+                && line.contains(server)
+                && line.contains("does not read it yet")),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn the_rust_server_refuses_a_binding_with_lists_or_cors_by_name() {
+    assert_lists_and_cors_refused_by_name(Target::Rust, "generated Rust server");
+}
+
+#[test]
+fn the_go_server_refuses_a_binding_with_lists_or_cors_by_name() {
+    assert_lists_and_cors_refused_by_name(Target::Go, "generated Go server");
 }

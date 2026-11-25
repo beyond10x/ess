@@ -484,44 +484,72 @@ impl Binding {
     }
 
     /// Every route carrying a key `target` does not read yet, with its operation, in route order:
-    /// `request.members`, a nested body member, and `select`, several routes on one method and path
-    /// (`docs/design/http-presentation-binding.md`, "Several operations on one route"). Only the
-    /// `OpenAPI` document reads them so far; output written from a binding without reading them
-    /// would decode a flat body or serve one of the sharing routes, so every other target refuses
-    /// the binding instead, `target` naming it.
+    /// `request.members`, a nested body member; `select`, several routes on one method and path
+    /// (`docs/design/http-presentation-binding.md`, "Several operations on one route"); `lists`, a
+    /// comma-joined list ("Request encoding"); and `cors`, a route's own policy or `none`
+    /// ("Cross-origin reads"). Then, under the binding's own `cors`, every route it covers: each
+    /// declared route without its own `cors`, then each derived route. Only the `OpenAPI` document
+    /// reads these so far; output written from a binding without reading them would decode a flat
+    /// body, serve one of the sharing routes, repeat a list's key or answer no preflight, so every
+    /// other target refuses the binding instead, `target` naming it. A route's `cors: none` is
+    /// refused too, though a target answering no cross-origin read honours it by doing nothing: the
+    /// target states no policy, so it is refused with the rest of the key until it reads it.
     ///
     /// # Errors
     ///
-    /// [`Unprojectable`] naming each such route and key, by [`Reason::Unread`].
+    /// [`Unprojectable`] naming each such route and key, by [`Reason::Unread`] for a key the route
+    /// carries and [`Reason::UnderBinding`] for the binding's own `cors`.
     pub fn read_by(&self, target: &'static str) -> Result<(), Unprojectable> {
-        let refused: Vec<(ess_http::Operation, Reason)> = self
-            .0
-            .routes()
-            .iter()
-            .flat_map(|route| {
-                let members = route
-                    .request
-                    .as_ref()
-                    .is_some_and(|request| !request.members.is_empty());
-                [
-                    (members, "request.members"),
-                    (route.select.is_some(), "select"),
-                ]
-                .into_iter()
-                .filter(|(carried, _)| *carried)
-                .map(move |(_, key)| {
-                    (
-                        route.operation.clone(),
-                        Reason::Unread {
-                            method: route.method,
-                            path: route.path.clone().unwrap_or_default(),
-                            key,
-                            target,
-                        },
-                    )
-                })
-            })
-            .collect();
+        let http = &self.0;
+        let mut refused: Vec<(ess_http::Operation, Reason)> = Vec::new();
+        for route in http.routes() {
+            let members = route
+                .request
+                .as_ref()
+                .is_some_and(|request| !request.members.is_empty());
+            let carried = [
+                (members, "request.members"),
+                (route.select.is_some(), "select"),
+                (!route.lists.is_empty(), "lists"),
+                (route.cors.is_some(), "cors"),
+            ];
+            for (_, key) in carried.into_iter().filter(|(carried, _)| *carried) {
+                refused.push((
+                    route.operation.clone(),
+                    Reason::Unread {
+                        method: route.method,
+                        path: route.path.clone().unwrap_or_default(),
+                        key,
+                        target,
+                    },
+                ));
+            }
+        }
+        if http.cors().is_some() {
+            let declared = http
+                .routes()
+                .iter()
+                .filter(|route| route.cors.is_none())
+                .map(|route| {
+                    let path = route.path.clone().unwrap_or_default();
+                    (route.operation.clone(), route.method, path)
+                });
+            let derived = http
+                .derived_routes()
+                .iter()
+                .map(|route| (route.operation.clone(), route.method, route.path.clone()));
+            for (operation, method, path) in declared.chain(derived) {
+                refused.push((
+                    operation,
+                    Reason::UnderBinding {
+                        method,
+                        path,
+                        key: "cors",
+                        target,
+                    },
+                ));
+            }
+        }
         if refused.is_empty() {
             Ok(())
         } else {
@@ -640,14 +668,26 @@ pub enum Reason {
     /// Every scheme it requires is an API key in the query string, which a served surface does
     /// not read (beyond10x/ess#681).
     UnreadCredential,
-    /// It carries `key` (`request.members` or `select`), which `target` does not read yet
-    /// ([`Binding::read_by`]).
+    /// It carries `key` (`request.members`, `select`, `lists` or `cors`), which `target` does not
+    /// read yet ([`Binding::read_by`]).
     Unread {
         /// The route's method.
         method: ess_http::Method,
         /// The route's path.
         path: String,
         /// The key it carries.
+        key: &'static str,
+        /// The target refusing it.
+        target: &'static str,
+    },
+    /// The binding's own `key` (`cors`) covers it, which `target` does not read yet
+    /// ([`Binding::read_by`]).
+    UnderBinding {
+        /// The route's method.
+        method: ess_http::Method,
+        /// The route's path.
+        path: String,
+        /// The binding's key that covers it.
         key: &'static str,
         /// The target refusing it.
         target: &'static str,
@@ -695,6 +735,16 @@ impl std::fmt::Display for Unprojectable {
                     formatter,
                     "{operation} at `{method} {path}` carries `{key}`, and the {target} does not \
                      read it yet; only `ess generate --kind openapi --http` does"
+                )?,
+                Reason::UnderBinding {
+                    method,
+                    path,
+                    key,
+                    target,
+                } => write!(
+                    formatter,
+                    "{operation} at `{method} {path}` is under the binding's `{key}`, and the \
+                     {target} does not read it yet; only `ess generate --kind openapi --http` does"
                 )?,
             }
         }

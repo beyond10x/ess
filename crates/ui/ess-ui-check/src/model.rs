@@ -1627,9 +1627,9 @@ pub struct HttpBinding<'a> {
 /// for; and a command whose route reads its input as anything but a JSON body (`form`, `query`),
 /// which no generated UI sends.
 ///
-/// A binding whose routes carry `request.members` or `select` is refused whole, before the
-/// document is read, one refusal per route and key at the binding's file: no generated UI reads
-/// them yet ([`http::Binding::read_by`]).
+/// A binding whose routes carry `request.members`, `select`, `lists` or `cors`, or which declares
+/// `cors` itself, is refused whole, before the document is read, one refusal per route and key at
+/// the binding's file: no generated UI reads them yet ([`http::Binding::read_by`]).
 pub fn binding_over(
     document: &Document,
     sources: &[(String, String)],

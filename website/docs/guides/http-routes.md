@@ -161,7 +161,9 @@ The document follows those keys on the routes that use them:
   `query` or listed in `request.query`. The parameter gets `style: form`, `explode: false`, and is
   required unless it is `Optional`; the empty value is the empty list, and an element cannot hold a
   comma. A list in a `json` or `multipart` body, one the path carries, or a name that is no list of
-  scalars is refused (`ESS-HTTP-021`). Only the OpenAPI document reads `lists` so far.
+  scalars is refused (`ESS-HTTP-021`). Only the OpenAPI document reads `lists` so far: the
+  generated servers and UIs and `ess generate types --http` refuse a binding that carries it,
+  naming the route.
 - `body: input.<field>` beside `encoding: json` (or no `encoding`) sends that one input field as
   the whole request body, bare: the request body's schema is the field's own, a list
   `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
@@ -385,6 +387,9 @@ routes:
 - The OpenAPI document states the policy under `x-ess-cors`, adds an `options` operation answering
   the preflight `204` on each covered path, and an `Access-Control-Allow-Origin` header to each
   covered answer.
+- Only the OpenAPI document reads `cors` so far: the generated servers and UIs and
+  `ess generate types --http` refuse a binding with `cors`, a route's `cors: none` included,
+  naming each route it covers.
 
 ### Operation ids and servers
 
