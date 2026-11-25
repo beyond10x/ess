@@ -21,7 +21,7 @@ scope:
   path: docs/design/http-presentation-binding.md
 - confidence: cited
   path: website/docs/guides/http-routes.md
-revision: 2
+revision: 3
 ---
 ## Summary
 
@@ -137,6 +137,10 @@ declined.
     wraps it itself.
   - Recommended A: the check is narrower than the reason it states (at most one row), and the case is
     the common one for a settings-style resource.
+
+- HB-D1: A (decline a route key that fixes a parameter, model the literal in the filter), taken by the coordinator on 2026-11-25 (D118); reversible until the release that carries it
+
+- HB-D2: A (`single` admits identity == literal), taken by the coordinator on 2026-11-25 (D118); reversible until the release that carries it
 
 ## Scope
 

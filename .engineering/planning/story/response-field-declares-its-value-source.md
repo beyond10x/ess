@@ -12,7 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -100,3 +100,9 @@ Decision HB-D5 (shape 4): where "answer the saved row" lives.
 - C. Decline: the consumer declares a response, a view answers the row, and the client issues the read.
 - Recommended A: the row a command answers is semantics, which the binding only presents. This story
   already designs it; the report is a third adopter.
+
+## Decisions
+
+- HB-D5: A (the model sources the response members, story #506, and `body: response` answers it), taken by the coordinator on 2026-11-25 (D118); reversible until the release that carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.

@@ -13,7 +13,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
 - depends_on: story:an-answer-may-be-wrapped-in-one-named-member
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:27:45Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:27:46Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
@@ -55,6 +55,10 @@ recommended. The two transitions carry the correlation `operator-2026-11-12-acce
 The fit review of `.agents/skills/assessing-external-requests/SKILL.md` is not written yet. It
 is owed before this story is dispatched and says which form of acceptance applies (as proposed
 or redesigned).
+
+- HB-D4: A (a count member beside the rows of an unpaged view), taken by the coordinator on 2026-11-25 (D118); reversible until the release that carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Related (2026-11-25)
 

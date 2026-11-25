@@ -22,7 +22,7 @@ scope:
   path: crates/specify/ess-http/src/lib.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
-revision: 2
+revision: 3
 ---
 ## Summary
 
@@ -120,6 +120,10 @@ does.
   - Recommended B. A specification records what a shipped service does, `ess:retrofitting` cites a
     source for every declaration, and `validate` names the ignored segment where a filter on
     the parent would claim a check the service does not make.
+
+- HB-D3: B (a mapping word `ignored`, recorded in the IR and OpenAPI, named by validate), taken by the coordinator on 2026-11-25 (D118); reversible until the release that carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Scope
 
