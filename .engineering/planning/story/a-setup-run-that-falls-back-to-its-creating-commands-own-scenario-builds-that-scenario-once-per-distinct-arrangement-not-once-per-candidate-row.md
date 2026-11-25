@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 - informed_by: story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path
-revision: 4
+revision: 5
 ---
 ## Summary
 
@@ -141,5 +141,7 @@ The profile puts the time in `with_row_where` (86 % inclusive) and `evaluate_row
 ## Delivery
 
 Red test `95de3d821f`, fix `bba4a140ad` on `fix/n89-a-setup-run-rebuilds-its-creating-scenario-once`,
-pushed; the gate of the branch green. Tagged 0.99.3 on `e0f8d1d3b2`, pull request 831; the release
-run was in progress on 2026-11-25.
+pushed; the gate of the branch green. Tagged 0.99.3 on `e0f8d1d3b2` (pull request 831). The tag's
+release run 45596324248 was cancelled on 2026-11-25 by the 60-minute limit of its targeted test job
+and published nothing. The release workflow was dispatched again for the same tag with the full
+gate (run 45610533532, in progress when this was written); the tag did not move.

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 3
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -372,3 +372,37 @@ Under `Fixed` (it moves to `Changed`, naming the rows, if a committed pin row mo
   for an open set of identifiers a leaf must differ in. (A) default, taken: not in this story; left out and deferred to the next source-format decision, as a
   `decision-blocker` for the next source-format decision, naming this story's evidence. (B) in this
   story, with its format step.
+
+## Reported after 0.99.0
+
+Reported 2026-11-25 on 0.99.0 and later: a further instance still sent a placeholder at a leaf that
+only presence reads touch. The leaf is read through `defined(…)` in the creating command's own
+guard and through `defined(…)` in another command's guard on the stored row.
+
+Cause. `decided_by` in `crates/verify/ess-conformance/src/synthesize.rs` counted a stored-row
+guard's `defined()`-only read as a read of the value, so the leaf was told apart and the further
+instance kept the search's witness there instead of the example. 0.99.0 narrowed the own-guard
+read only and left this one. Wrong since 0.99.0; a pinned suite of such a model moves when it is
+synthesized again.
+
+Red test `f103c32ea9`:
+`a_further_create_keeps_the_example_at_a_leaf_a_stored_row_guard_reads_only_for_presence`
+(`suffixed_instance_inputs.rs`).
+
+In the reported model every placeholder send sat in a setup step, none in the refusing step (the
+reporter, 2026-11-25).
+
+## Delivery
+
+Red test `f103c32ea9`, fix `0951bf9362864fce743a82adaf4db67cc5b44d36` on the branch
+`fix/n90-a-presence-read-keeps-the-example-at-a-further-instance`, pushed. `decided_by` now splits
+by-value reads from `defined()`-only reads; `told_apart` returns the presence-only copies apart;
+`exampled` keeps such a leaf only where the example and the further witness disagree on its
+presence. The red test is green (18 tests in the target).
+
+Gate of the branch, third run: every step exit 0 (stamp, `task fmt-check`, clippy,
+`suffixed_instance_inputs`, the bytes table and its slow models and components lanes, `cli_read`,
+`adversary_related_values_all_bytes`, `external_beside_held_guard`, `adversary_461_pass1`,
+`subject_fact_complete_refusal`, `declared_behaviour`, `synthesis`); no committed byte row moved.
+No pull request yet. A pinned suite of a model with this shape moves when it is synthesized
+again.
