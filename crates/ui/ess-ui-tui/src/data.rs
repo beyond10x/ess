@@ -543,6 +543,12 @@ impl DataAdapter for FixtureAdapter {
                 }
                 continue;
             }
+            // The rows a test declares for a view answer as written, chosen by `by_params` only,
+            // as the Playwright routes answer them: a child row keeps its own `id` beside a
+            // parent's `id` param.
+            if self.replaced.contains(&request.view) {
+                continue;
+            }
             // Any other param narrows the field of the same name, as the React output's
             // `matchesParams` does: compared as text, a list param (a multi-choice filter)
             // matching any of its items, a row without the field kept.
