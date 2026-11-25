@@ -1,4 +1,4 @@
-#	models=491	lines=674
+#	models=493	lines=676
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -320,6 +320,7 @@ crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	com
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/external-before-update.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unreachable-subject-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	components=0
@@ -366,6 +367,7 @@ crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-literal-and-input-list.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-the-addressed-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy-identity.yaml	components=0

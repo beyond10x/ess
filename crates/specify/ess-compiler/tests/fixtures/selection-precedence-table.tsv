@@ -1,4 +1,4 @@
-#	models=409	commands=852
+#	models=411	commands=858
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -870,6 +870,11 @@ crates/verify/ess-conformance/tests/fixtures/one-time-followup/external-before-u
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	ir=61bb22cfb19ecc11ead29a86aae021cad374ad37dd6e140f1792644045cae528:9064
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	devices.api.PairDevice	default: paired
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	devices.api.RenameDevice	existence: no-device | default: renamed
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unreachable-subject-guard.yaml	ir=902b6acc775d2bfa9efea3588033d2d15deeb71c9044e1840550e681c593f0e3:17725
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unreachable-subject-guard.yaml	depot.yard.AddMarker	default: added
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unreachable-subject-guard.yaml	depot.yard.IssuePass	default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unreachable-subject-guard.yaml	depot.yard.RelabelCrate	existence: not-found | held_state: sealed | present_related: missing-marker | default: relabelled
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unreachable-subject-guard.yaml	depot.yard.StoreCrate	default: stored
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	ir=9b757c3d248ef46e4aed82d7db3c8af8da25f2c1cc2c05c8cc982214671412e8:8523
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	devices.api.PairDevice	default: paired
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	devices.api.RetireDevice	held_state: not-active | default: retired
@@ -1009,6 +1014,9 @@ crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yam
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateChild	present_related: parent-not-found, other-tenant | default: created
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateParent	default: created
 crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.GetChild	present_related: child-not-found | default: found
+crates/verify/ess-conformance/tests/fixtures/row-set-literal-and-input-list.yaml	ir=b8f7fbccaccbb93df50353632c9f84f56a98518e63625b897ed288eb2630c92d:12812
+crates/verify/ess-conformance/tests/fixtures/row-set-literal-and-input-list.yaml	demo.shelf.AddGenre	default: added
+crates/verify/ess-conformance/tests/fixtures/row-set-literal-and-input-list.yaml	demo.shelf.Enrol	accepting: enrolled-featured | default: enrolled
 crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	ir=80d64be78135b90944185f8a2d2f11e6a8947ee75b25aa84323185b7fb325221:14771
 crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	shop.store.BuildShelf	existence: shelf-exists | default: built
 crates/verify/ess-conformance/tests/fixtures/row-set-refusal-beside-a-named-related-row.yaml	shop.store.ClearShelf	present_related: tickets-pinned | default: cleared
