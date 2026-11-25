@@ -15,7 +15,8 @@ use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_synth::{
-    synthesize_for, synthesize_laid_out, OutputLayout, Synthesis, SynthesisFailure, Target,
+    synthesize_crate, synthesize_for, synthesize_laid_out, CrateManifest, OutputLayout, Synthesis,
+    SynthesisFailure, Target,
 };
 
 /// An example directory, compiled where it lives.
@@ -134,6 +135,67 @@ types:
             .map(|(label, text)| ((*label).to_owned(), (*text).to_owned()))
             .collect::<Vec<_>>(),
     )
+}
+
+/// A consumer's model crate: one bounded context with a newtype, an enum, two structs (one with an
+/// `any:` invariant) and a provided entity with a one-state lifecycle, and no component, so no
+/// server is generated.
+fn shop() -> EssIr {
+    let documents = [
+        (
+            "system.yaml",
+            "format: ess/37
+system: shop
+version: v1
+domains: [shop.catalog]
+",
+        ),
+        (
+            "domains/catalog.yaml",
+            "domain: shop.catalog
+types:
+  - {name: shop.catalog.ItemId, kind: newtype, of: String}
+  - {name: shop.catalog.Mode, kind: enum, variants: [enforce, report]}
+  - name: shop.catalog.Limit
+    kind: struct
+    fields:
+      - {name: min, type: Optional<Decimal>}
+      - {name: max, type: Optional<Decimal>}
+    invariants:
+      - any: [\"defined(min)\", \"defined(max)\"]
+  - name: shop.catalog.Entry
+    kind: struct
+    fields:
+      - {name: item, type: shop.catalog.ItemId}
+      - {name: mode, type: shop.catalog.Mode}
+      - {name: limit, type: shop.catalog.Limit}
+      - {name: tags, type: List<String>}
+      - {name: labels, type: \"Optional<Map<String, String>>\"}
+entities:
+  - name: shop.catalog.Catalog
+    provided: true
+    identity: {name: project, type: String}
+    fields:
+      - {name: format, type: String}
+      - {name: entries, type: List<shop.catalog.Entry>}
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+",
+        ),
+    ];
+    compile(
+        &documents
+            .iter()
+            .map(|(label, text)| ((*label).to_owned(), (*text).to_owned()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// The crate layout with the consumer's manifest options.
+fn manifested(ir: &EssIr, manifest: &CrateManifest) -> Result<Synthesis, SynthesisFailure> {
+    synthesize_crate(ir, Target::Rust, OutputLayout::Crate, manifest, None)
 }
 
 /// Every model this file lays out as one crate, by name.
@@ -287,6 +349,222 @@ fn the_plan_names_the_crate_layout() {
             );
         }
     }
+}
+
+/// Every model of this file and the consumer's library model.
+fn all_models() -> Vec<(&'static str, EssIr)> {
+    let mut all = models();
+    all.push(("shop", shop()));
+    all
+}
+
+#[test]
+fn without_the_manifest_options_the_crate_is_byte_for_byte_as_before() {
+    for (name, ir) in all_models() {
+        let before = crate_layout(&ir);
+        let unnamed = manifested(&ir, &CrateManifest::default()).expect("synthesizes");
+        assert_eq!(
+            before.artifacts.keys().collect::<Vec<_>>(),
+            unnamed.artifacts.keys().collect::<Vec<_>>(),
+            "{name}"
+        );
+        for (path, artifact) in &before.artifacts {
+            assert_eq!(
+                artifact.contents, unnamed.artifacts[path].contents,
+                "{name}: {path}"
+            );
+        }
+        let manifest = &before.artifacts["Cargo.toml"].contents;
+        assert!(
+            manifest.contains(&format!("\nname = \"{name}\"\n")),
+            "{manifest}"
+        );
+        assert!(manifest.ends_with("\n[workspace]\n"), "{manifest}");
+        let plan = &before.artifacts["plan.json"].contents;
+        assert!(
+            !plan.contains("\"package\"") && !plan.contains("\"no_workspace_table\""),
+            "{name}: {plan}"
+        );
+    }
+}
+
+#[test]
+fn the_package_is_named_by_its_consumer() {
+    let mut used = false;
+    let options = CrateManifest {
+        package: Some("consumer-model".to_owned()),
+        no_workspace_table: false,
+    };
+    for (name, ir) in all_models() {
+        let synthesis = manifested(&ir, &options).expect("synthesizes");
+        let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+        assert!(
+            manifest.contains("\n[package]\nname = \"consumer-model\"\n"),
+            "{name}: {manifest}"
+        );
+        assert!(manifest.ends_with("\n[workspace]\n"), "{name}: {manifest}");
+        let plan: serde_json::Value =
+            serde_json::from_str(&synthesis.artifacts["plan.json"].contents).expect("plan.json");
+        assert_eq!(plan["scope"]["package"], "consumer-model", "{name}: {plan}");
+        assert!(
+            plan["scope"].get("no_workspace_table").is_none(),
+            "{name}: {plan}"
+        );
+        let command = "ess synthesize --layout crate --package consumer-model";
+        assert!(
+            synthesis.artifacts["PLAN.md"]
+                .contents
+                .contains(&format!("Regenerate with `{command}`.")),
+            "{name}"
+        );
+        for (path, artifact) in &synthesis.artifacts {
+            if matches!(extension(path), Some("rs" | "toml")) {
+                assert!(
+                    artifact
+                        .contents
+                        .contains(&format!("regenerate with `{command}`")),
+                    "{name}: {path} names the command that rewrites it"
+                );
+            }
+            if path.starts_with("src/bin/") {
+                let before = &crate_layout(&ir).artifacts[path].contents;
+                assert_eq!(
+                    artifact.contents,
+                    before
+                        .replace(&format!("{name}::"), "consumer_model::")
+                        .replace("`ess synthesize --layout crate`", &format!("`{command}`")),
+                    "{name}: {path} uses the library by the package's name"
+                );
+                used |= before.contains(&format!("{name}::"));
+            }
+        }
+    }
+    assert!(used, "a server binary that uses the library is covered");
+}
+
+#[test]
+fn the_workspace_table_is_left_out_on_request() {
+    let options = CrateManifest {
+        package: None,
+        no_workspace_table: true,
+    };
+    for (name, ir) in all_models() {
+        let before = crate_layout(&ir);
+        let synthesis = manifested(&ir, &options).expect("synthesizes");
+        let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+        assert!(!manifest.contains("[workspace]"), "{name}: {manifest}");
+        let command = "ess synthesize --layout crate --no-workspace-table";
+        assert_eq!(
+            format!("{manifest}\n[workspace]\n"),
+            before.artifacts["Cargo.toml"]
+                .contents
+                .replace("`ess synthesize --layout crate`", &format!("`{command}`")),
+            "{name}: only the table and the command differ"
+        );
+        let plan: serde_json::Value =
+            serde_json::from_str(&synthesis.artifacts["plan.json"].contents).expect("plan.json");
+        assert_eq!(plan["scope"]["no_workspace_table"], true, "{name}: {plan}");
+        assert!(plan["scope"].get("package").is_none(), "{name}: {plan}");
+        assert!(
+            synthesis.artifacts["PLAN.md"]
+                .contents
+                .contains(&format!("Regenerate with `{command}`.")),
+            "{name}"
+        );
+    }
+    let both = manifested(
+        &shop(),
+        &CrateManifest {
+            package: Some("shop_model".to_owned()),
+            no_workspace_table: true,
+        },
+    )
+    .expect("synthesizes");
+    assert!(both.artifacts["PLAN.md"].contents.contains(
+        "Regenerate with `ess synthesize --layout crate --package shop_model --no-workspace-table`."
+    ));
+}
+
+#[test]
+fn the_manifest_options_are_refused_outside_the_crate_layout_and_for_a_bad_name() {
+    let ir = shop();
+    for (option, manifest) in [
+        (
+            "--package",
+            CrateManifest {
+                package: Some("shop-model".to_owned()),
+                no_workspace_table: false,
+            },
+        ),
+        (
+            "--no-workspace-table",
+            CrateManifest {
+                package: None,
+                no_workspace_table: true,
+            },
+        ),
+    ] {
+        let Err(SynthesisFailure::Manifest(refusal)) =
+            synthesize_crate(&ir, Target::Rust, OutputLayout::Workspace, &manifest, None)
+        else {
+            panic!("the workspace layout must refuse `{option}`");
+        };
+        let message = refusal.to_string();
+        assert!(
+            message.contains(&format!("`{option}`")) && message.contains("`--layout crate`"),
+            "{message}"
+        );
+        let Err(SynthesisFailure::Layout(_)) =
+            synthesize_crate(&ir, Target::Go, OutputLayout::Crate, &manifest, None)
+        else {
+            panic!("`go` refuses the crate layout before `{option}`");
+        };
+    }
+    for bad in [
+        "",
+        "Shop",
+        "1shop",
+        "-shop",
+        "shop model",
+        "shop.model",
+        "crate",
+        "std",
+        "match",
+        "clap",
+    ] {
+        let Err(SynthesisFailure::Manifest(refusal)) = manifested(
+            &ir,
+            &CrateManifest {
+                package: Some(bad.to_owned()),
+                no_workspace_table: false,
+            },
+        ) else {
+            panic!("`{bad}` is not a package name the crate can take");
+        };
+        let message = refusal.to_string();
+        assert!(
+            message.contains(&format!("`{bad}`")) && message.contains("--package"),
+            "{message}"
+        );
+    }
+    manifested(
+        &ir,
+        &CrateManifest {
+            package: Some("x".repeat(64)),
+            no_workspace_table: false,
+        },
+    )
+    .expect("64 characters is a package name");
+    assert!(matches!(
+        manifested(
+            &ir,
+            &CrateManifest {
+                package: Some("x".repeat(65)),
+                no_workspace_table: false,
+            },
+        ),
+        Err(SynthesisFailure::Manifest(_))
+    ));
 }
 
 #[test]

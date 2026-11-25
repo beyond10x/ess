@@ -175,7 +175,7 @@ pub(crate) fn relayout(
             }
             Destination::Server if file.starts_with("bin/") => {
                 // A binary is a separate crate even in the one-package layout.
-                let library = Layout::crate_ident(&ir.system().segments().join("-"));
+                let library = Layout::crate_ident(&package_name(ir, plan));
                 let binary_paths = paths
                     .iter()
                     .map(|(name, path)| (name.clone(), path.replacen("crate", &library, 1)))
@@ -238,15 +238,16 @@ fn ports_module(
     Artifact::new("src/ports.rs", out)
 }
 
-/// The crate's manifest: its own workspace root, with executable dependencies gated behind
-/// `server` when there is an HTTP surface.
+/// The crate's manifest: its own workspace root unless the consumer leaves the table out
+/// (`--no-workspace-table`), with executable dependencies gated behind `server` when there is an
+/// HTTP surface.
 fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
     let mut out = plan.provenance.commented_for("#", &plan.regenerate());
     let _ = write!(
         out,
         "\n[package]\nname = \"{}\"\ndescription = \"The `{}` specification, {}, synthesised as \
          one crate{}.\"\nversion = \"{}.0.0\"\nedition = \"{EDITION}\"\n",
-        ir.system().segments().join("-"),
+        package_name(ir, plan),
         ir.system(),
         ir.version(),
         if server {
@@ -266,8 +267,18 @@ fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
             let _ = writeln!(out, "\n[[bin]]\nname = \"{}-server\"\npath = \"src/bin/{}-server.rs\"\nrequired-features = [\"server\"]", component.name, component.name);
         }
     }
-    out.push_str("\n[workspace]\n");
+    if !plan.scope.no_workspace_table {
+        out.push_str("\n[workspace]\n");
+    }
     Artifact::new("Cargo.toml", out)
+}
+
+/// The crate's package name: the consumer's (`--package`), or the system's.
+fn package_name(ir: &EssIr, plan: &SynthesisPlan) -> String {
+    plan.scope
+        .package
+        .clone()
+        .unwrap_or_else(|| ir.system().segments().join("-"))
 }
 
 /// Rewrites every path that begins with a generated crate's name, or with `crate`, to where that

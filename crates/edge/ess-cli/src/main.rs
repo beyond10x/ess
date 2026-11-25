@@ -327,6 +327,14 @@ enum GenerateCommand {
         /// `crate`.
         #[arg(long, value_enum, default_value_t = SynthesisLayout::Workspace)]
         layout: SynthesisLayout,
+        /// The package name of the one crate `--layout crate` writes; without it the crate is
+        /// named for the system. Only with `--layout crate`.
+        #[arg(long, value_name = "NAME")]
+        package: Option<String>,
+        /// Leave the `[workspace]` table out of the one crate's `Cargo.toml`, so the crate can be a
+        /// member of an enclosing workspace. Only with `--layout crate`.
+        #[arg(long)]
+        no_workspace_table: bool,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -1796,6 +1804,8 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
             input,
             target,
             layout,
+            package,
+            no_workspace_table,
             out,
             format,
             http,
@@ -1804,6 +1814,10 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
             &input.path,
             target,
             layout,
+            &ess_synth::CrateManifest {
+                package,
+                no_workspace_table,
+            },
             out.as_deref(),
             format,
             http.as_deref().map(|binding| (binding, refines.as_deref())),
@@ -3734,6 +3748,7 @@ fn synthesize(
     path: &Path,
     target: SynthesisTarget,
     layout: SynthesisLayout,
+    manifest: &ess_synth::CrateManifest,
     out: Option<&Path>,
     format: Format,
     http: Option<(&Path, Option<&Path>)>,
@@ -3757,30 +3772,38 @@ fn synthesize(
             None => return Ok(ExitCode::from(1)),
         },
     };
-    let synthesis =
-        match ess_synth::synthesize_bound(&ir, target.target(), layout.layout(), bound.as_ref()) {
-            Ok(synthesis) => synthesis,
-            Err(ess_synth::SynthesisFailure::Binding(refusal)) => {
-                let named =
-                    http.map_or_else(String::new, |(binding, _)| binding.display().to_string());
-                eprintln!("{named} cannot be served:\n{refusal}");
-                return Ok(ExitCode::from(1));
+    let synthesis = match ess_synth::synthesize_crate(
+        &ir,
+        target.target(),
+        layout.layout(),
+        manifest,
+        bound.as_ref(),
+    ) {
+        Ok(synthesis) => synthesis,
+        Err(ess_synth::SynthesisFailure::Binding(refusal)) => {
+            let named = http.map_or_else(String::new, |(binding, _)| binding.display().to_string());
+            eprintln!("{named} cannot be served:\n{refusal}");
+            return Ok(ExitCode::from(1));
+        }
+        Err(ess_synth::SynthesisFailure::Manifest(refusal)) => {
+            eprintln!("error: {refusal}");
+            return Ok(ExitCode::from(2));
+        }
+        Err(ess_synth::SynthesisFailure::Layout(refusal)) => {
+            // A usage error, decided before anything is planned: no plan to render, nothing
+            // written, and the exit status clap gives any other flag it refuses.
+            eprintln!("error: {refusal}");
+            return Ok(ExitCode::from(2));
+        }
+        Err(ess_synth::SynthesisFailure::Target(failure)) => {
+            if matches!(format, Format::Text) {
+                println!("{failure}");
+            } else {
+                render(&failure, format)?;
             }
-            Err(ess_synth::SynthesisFailure::Layout(refusal)) => {
-                // A usage error, decided before anything is planned: no plan to render, nothing
-                // written, and the exit status clap gives any other flag it refuses.
-                eprintln!("error: {refusal}");
-                return Ok(ExitCode::from(2));
-            }
-            Err(ess_synth::SynthesisFailure::Target(failure)) => {
-                if matches!(format, Format::Text) {
-                    println!("{failure}");
-                } else {
-                    render(&failure, format)?;
-                }
-                return Ok(ExitCode::from(1));
-            }
-        };
+            return Ok(ExitCode::from(1));
+        }
+    };
     write_owned_artifacts(out, "synthesis", &synthesis.artifacts)?;
     if matches!(format, Format::Text) {
         let counts = synthesis.plan.counts();
