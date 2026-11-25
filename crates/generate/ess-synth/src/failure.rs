@@ -378,7 +378,7 @@ pub(crate) fn shorthand(
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
-    if target == Target::Clap {
+    if matches!(target, Target::Clap | Target::Rust) {
         return Ok(());
     }
     let causes = ir

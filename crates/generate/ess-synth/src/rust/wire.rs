@@ -349,6 +349,10 @@ fn struct_body(
     path: &str,
     fields: &[ResolvedField],
 ) {
+    let constrained = declared.body.is_constrained();
+    if let Some(shorthand) = surface.ir().shorthand(&declared.name) {
+        short_form(out, surface, path, fields, shorthand, constrained);
+    }
     if fields.is_empty() {
         // A `fields: []` struct (`ess/32`) reads no member, and a member read is what refuses a
         // value that is no object; it is held to being one here.
@@ -366,7 +370,6 @@ fn struct_body(
                 .collect::<Vec<_>>(),
         );
     }
-    let constrained = declared.body.is_constrained();
     let opening = if constrained { "let decoded = " } else { "Ok(" };
     let _ = writeln!(out, "    {opening}{path} {{");
     for (position, field) in fields.iter().enumerate() {
@@ -386,6 +389,51 @@ fn struct_body(
         );
     } else {
         out.push_str("    })\n");
+    }
+}
+
+/// The short form of a struct with a shorthand (`ess/27`): a value that is not an object is the
+/// shorthand field's value alone, read through that field's own decoder at the value's path, and
+/// every other field, `Optional` by declaration, is absent. The struct's invariants hold on it as on
+/// the object. The domain admits only a field that is a scalar on the wire, so the two forms differ
+/// by JSON type and nothing is guessed.
+fn short_form(
+    out: &mut String,
+    surface: &dyn Surface,
+    path: &str,
+    fields: &[ResolvedField],
+    shorthand: &str,
+    constrained: bool,
+) {
+    let opening = if constrained {
+        "let decoded = "
+    } else {
+        "return Ok("
+    };
+    let _ = writeln!(
+        out,
+        "    if !matches!(value, json::Value::Object(_)) {{\n        {opening}{path} {{"
+    );
+    for field in fields {
+        let read = if field.name == shorthand {
+            decode_value(surface, "value", "at", &field.type_ref, 0)
+        } else {
+            "None".to_owned()
+        };
+        let _ = writeln!(
+            out,
+            "            {}: {read},",
+            name::value_ident(&field.name)
+        );
+    }
+    if constrained {
+        out.push_str(
+            "        };\n        return match decoded.broken_constraint() {\n            \
+             Some(expected) => Err(json::DecodeError::of(at, expected, value)),\n            \
+             None => Ok(decoded),\n        };\n    }\n",
+        );
+    } else {
+        out.push_str("        });\n    }\n");
     }
 }
 
