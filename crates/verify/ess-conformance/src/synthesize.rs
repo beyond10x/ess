@@ -19664,6 +19664,99 @@ fn window_refutations(
     found
 }
 
+/// The row a refuting witness of a sibling's `guard` gives the default `outcome` beside it
+/// ([`crate::witness::refutations`]): `value` at `path`, moved on the sibling's own witness, the
+/// first of `bases`, or on the default's, the second, where it does not land there. The caller
+/// keeps it only where it selects the default.
+///
+/// A quantifier body's witness lands on element 0 of the list it walks, and the sibling's witness
+/// holds that list with its deciding element neither first nor last (beyond10x/ess#240,
+/// correction 1), so the row with element 0 moved still selects the sibling. The value is then
+/// moved onto each element in turn ([`spread_moves`]), and the default is still sent a non-empty
+/// list.
+fn refuting_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    guard: &Predicate,
+    (reference, primary): (Option<&BTreeMap<String, Node>>, &BTreeMap<String, Node>),
+    path: &FactPath,
+    value: &Node,
+) -> Option<BTreeMap<String, Node>> {
+    let (base, candidate) = reference
+        .and_then(|base| Some((base, with_leaf(base, path, value.clone())?)))
+        .or_else(|| Some((primary, with_leaf(primary, path, value.clone())?)))?;
+    let selects = |row: &BTreeMap<String, Node>| {
+        admitted(ir, command, row)
+            && selects_branch(ir, command, outcome, None, row).unwrap_or(false)
+    };
+    if selects(&candidate) {
+        return Some(candidate);
+    }
+    let decides = |row: &BTreeMap<String, Node>| {
+        flatten(ir, command, row).is_ok_and(|facts| facts.decide(guard) == Decision::Satisfied)
+    };
+    Some(
+        spread_moves(base, path, value, &decides)
+            .into_iter()
+            .find(|row| selects(row))
+            .unwrap_or(candidate),
+    )
+}
+
+/// The rows `value` moved to `path` gives on `input` where `path` reads element 0 of a list
+/// (`<list>.0.<member>`, a quantifier body rebound onto its first element) and `input` holds that
+/// list with several elements: the value on each further element in turn, the others kept, then
+/// on each element that alone still `decides` the guard `input` witnesses, sent alone, as the
+/// one-element witness was moved before. A several-element witness of a quantifier
+/// (beyond10x/ess#240, correction 1) holds its deciding element neither first nor last, so moving
+/// element 0 alone leaves the guard decided as before. Nothing where no list on the path holds
+/// more than one.
+fn spread_moves(
+    input: &BTreeMap<String, Node>,
+    path: &FactPath,
+    value: &Node,
+    decides: &dyn Fn(&BTreeMap<String, Node>) -> bool,
+) -> Vec<BTreeMap<String, Node>> {
+    let segments = path.segments();
+    let mut found = Vec::new();
+    for at in 1..segments.len() {
+        if segments[at] != "0" {
+            continue;
+        }
+        let Some(Node::Seq(held)) = input.get(&segments[0]).and_then(|root| {
+            segments[1..at]
+                .iter()
+                .try_fold(root, |node, segment| match node {
+                    Node::Map(members) => members.get(segment),
+                    Node::Seq(elements) => elements.get(segment.parse::<usize>().ok()?),
+                    _ => None,
+                })
+        }) else {
+            continue;
+        };
+        if held.len() < 2 {
+            continue;
+        }
+        let list = FactPath::from_segments(segments[..at].iter().cloned());
+        for index in 1..held.len() {
+            let mut moved = segments.to_vec();
+            moved[at] = index.to_string();
+            found.extend(with_leaf(
+                input,
+                &FactPath::from_segments(moved),
+                value.clone(),
+            ));
+        }
+        for element in held {
+            let alone = with_leaf(input, &list, Node::Seq(vec![element.clone()]))
+                .filter(|alone| decides(alone));
+            found.extend(alone.and_then(|alone| with_leaf(&alone, path, value.clone())));
+        }
+    }
+    found
+}
+
 /// `input` with the scalar at `path` replaced, or the list there by a list, or nothing where the
 /// path does not land on one.
 fn with_leaf(
@@ -20326,10 +20419,9 @@ fn boundary_inputs(
                 // that folds Unicode takes the guarded branch and fails.
                 // So is a `trimmed` guard's literal with an inner space or between U+00A0s (#532).
                 for (path, value) in crate::witness::refutations(guard) {
-                    if let Some(candidate) = reference
-                        .as_ref()
-                        .and_then(|base| with_leaf(base, &path, value.clone()))
-                        .or_else(|| with_leaf(primary, &path, value))
+                    let bases = (reference.as_ref(), primary);
+                    if let Some(candidate) =
+                        refuting_row(ir, command, outcome, guard, bases, &path, &value)
                     {
                         keep(candidate, &mut rows);
                     }

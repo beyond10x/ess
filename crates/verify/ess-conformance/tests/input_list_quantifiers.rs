@@ -1294,3 +1294,123 @@ fn adv3_a_second_nested_branch_is_spread_though_the_pooled_codes_each_decide_a_b
         adv3_evidence(&result, "tags")
     );
 }
+
+/// A crate whose `items`, an optional list, a guard refuses when one item has a blank code or
+/// size: the default `packed` is the accepting branch of a quantifier over an input list.
+const CRATES: &str = "format: ess/37
+system: demo
+version: v1
+domain: demo.crates
+types:
+  - {name: demo.crates.CrateId, kind: newtype, of: Uuid}
+  - name: demo.crates.ItemInput
+    kind: struct
+    fields:
+      - {name: code, type: String}
+      - {name: size, type: String}
+errors:
+  - {name: demo.crates.BadItem, summary: An item is blank., fields: []}
+entities:
+  - name: demo.crates.Crate
+    identity: {name: crate_id, type: demo.crates.CrateId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Packed, states: [Packed], terminal: [Packed]}
+events:
+  - name: demo.crates.CratePacked
+    fields: [{name: crate_id, type: demo.crates.CrateId}]
+actors:
+  - {name: demo.crates.Packer, may: [demo.crates.PackCrate]}
+commands:
+  - name: demo.crates.PackCrate
+    input:
+      - {name: label, type: String}
+      - {name: items, type: 'Optional<List<demo.crates.ItemInput>>'}
+    outcomes:
+      - name: bad-item
+        when: {bad_item}
+        error: demo.crates.BadItem
+      - name: packed
+        creates: demo.crates.Crate
+        instance: crate_id
+        emits: [demo.crates.CratePacked]
+        payload:
+          demo.crates.CratePacked: {crate_id: {generated: true}}
+        sets: {label: input.label}
+";
+
+const BAD_ITEM: &str = "{all: [defined(input.items), {exists: {in: input.items, as: i, that: {any: [{i.code: {trimmed: {equals: \"\"}}}, {i.size: {trimmed: {equals: \"\"}}}]}}}]}";
+const BAD_ITEM_ID: &str = "demo.crates.PackCrate/outcome/bad-item";
+const PACKED_ID: &str = "demo.crates.PackCrate/outcome/packed";
+
+fn crates(bad_item: &str) -> String {
+    CRATES.replace("{bad_item}", bad_item)
+}
+
+/// Every non-empty `items` list the scenario `id` sends, with the outcome the step after it
+/// expects.
+fn non_empty_items(result: &Synthesis, id: &str) -> Vec<(Vec<Node>, String)> {
+    let (_, scenario) = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .unwrap_or_else(|| panic!("{id} is in the suite"));
+    let mut found = Vec::new();
+    for (at, step) in scenario.steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand { input, .. } = step else {
+            continue;
+        };
+        let Some(ScenarioValue::Literal {
+            value: Node::Seq(list),
+        }) = input.get("items")
+        else {
+            continue;
+        };
+        if list.is_empty() {
+            continue;
+        }
+        let expected = scenario.steps[at + 1..]
+            .iter()
+            .find_map(|step| match step {
+                ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        found.push((list.clone(), expected));
+    }
+    found
+}
+
+/// The accepting branch of a quantifier over an input list is sent a non-empty list whose
+/// elements all fail the quantifier, beside the several-element witness of the refusal
+/// (beyond10x/ess#240, correction 1): a target refusing every non-empty list fails it.
+#[test]
+fn an_accepting_scenario_sends_a_non_empty_list_no_element_of_which_meets_the_quantifier() {
+    let model = crates(BAD_ITEM);
+    let result = synthesized(&model);
+    assert!(
+        items(sent(&result, BAD_ITEM_ID, "items")).len() >= 3,
+        "the refusal keeps its several-element witness"
+    );
+    let sends = non_empty_items(&result, PACKED_ID);
+    assert!(
+        !sends.is_empty(),
+        "{PACKED_ID} sends a non-empty `items` list, got none"
+    );
+    for (list, expected) in &sends {
+        assert_eq!(expected, "packed", "{list:?}");
+    }
+    for (id, status) in statuses(&result, &model) {
+        assert_eq!(status, Status::Passed, "{id}");
+    }
+    let run = statuses(
+        &result,
+        &crates("{all: [defined(input.items), 'input.items.count > 0']}"),
+    );
+    assert_ne!(
+        run.get(PACKED_ID),
+        Some(&Status::Passed),
+        "a target refusing every non-empty `items` fails {PACKED_ID}, got {run:?}"
+    );
+}
