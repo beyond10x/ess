@@ -1428,14 +1428,19 @@ impl App {
                 .and_then(ess_ui::icon_glyph)
                 .map(|glyph| format!("{glyph} "))
                 .unwrap_or_default();
+            // An action whose loaded row has not answered is drawn disabled: dim, with `·` where
+            // its key goes; its key runs nothing until the row answers (beyond10x/ess#723).
+            let waiting = self.waits_for_row(action, ctx);
             let style = match action.tone {
+                _ if waiting => dim(),
                 Some(ess_ui::ButtonTone::Primary) => bold(),
                 Some(ess_ui::ButtonTone::Danger) => bold().add_modifier(Modifier::UNDERLINED),
                 _ => dim(),
             };
+            let drawn_key = if waiting { '·' } else { *key };
             let switch = self.switch_mark(action, ctx);
             let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
-            let start = x + glyph.width() + key.len_utf8() + 1 + switch.width();
+            let start = x + glyph.width() + drawn_key.to_string().width() + 1 + switch.width();
             if let Some((path, row)) = path {
                 self.mark(Mark {
                     path: path.clone(),
@@ -1449,7 +1454,10 @@ impl App {
                 });
             }
             x = start + shown.width();
-            spans.push(Span::styled(format!("{glyph}{key} {switch}{shown}"), style));
+            spans.push(Span::styled(
+                format!("{glyph}{drawn_key} {switch}{shown}"),
+                style,
+            ));
         }
         vec![Line::from(spans)]
     }

@@ -946,6 +946,8 @@ impl<'d> Gen<'d> {
             ("copy", expr(action.copy.as_ref())),
             ("sets", sets),
             ("checked", checked),
+            // The read `loads.<field>` reads its first row from (beyond10x/ess#723, C17).
+            ("loads", action.loads.as_ref().and_then(Self::reads)),
             ("choice", choice),
             ("confirm", confirm),
             ("confirmShow", confirm_show),

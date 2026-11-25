@@ -69,6 +69,7 @@ Expressions connect a node to state and data. They are short paths plus a few op
 | `url.query.<name>` | a query parameter (guards only) |
 | `actor.<field>` | the signed-in actor: user\_id, account\_id, roles, signed\_in, may(\<command\>) |
 | `widget.<field>` | the widget row inside a board |
+| `loads.<field>` | the first row the action's `loads` read answers, in that action's `bind`, `checked` and `visible`; absent until a row answers, while the action is drawn disabled, and read again after a command it sends; anywhere else refused (`expr_paths`) |
 | `same_as(<section>)` | the params of another section's read |
 | `matches(params)` | true when a live row satisfies the section's read params |
 | `operators` | ==, !=, in \[..\], not, and, or, parentheses, literals; React and the terminal read them with one grammar |
@@ -970,7 +971,7 @@ row_actions:
 
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
-| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 | `model_enum_values` | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
 | `group_order` | `**.group_order`, `**.show_empty_groups` | `{must: "they order the groups of group_by, so a collection that has them has group_by"}` | error |
 
@@ -1153,7 +1154,7 @@ actions: [{name: create, opens: create, label: New ticket}]
 |---|---|---|---|
 | `channel_refs` | `**.live.channel`, `**.header.live[]`, `channel.<name> inside expr` | `{must_resolve: {ref: channel}}` | error |
 | `section_refs` | `**.header.total`, `**.header.filters`, `**.depends_on`, `pages.*.layout.columns[].sections[]`, `pages.*.layout.areas.place.*[]`, `section.<name>.<member> inside expr` | `{must_resolve_in: [page.sections, expressions.forms]}` | error |
-| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 | `header_record` | `**.header.title_from` | `{must: "title_from.section names a section that reads: the title's record is its first row"}` | error |
 
 ### overlay
@@ -1546,7 +1547,7 @@ choice: {component: choice, options: PartnerTier}
 |---|---|---|---|
 | `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 | `suggests_needs_tags` | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
-| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 
 ### Tab
 
@@ -2180,8 +2181,8 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `icon` | `string` |   |   | a name of `icon.icons`: an `as: icon` action draws its glyph alone, with the label as its accessible name; any other draws it before the label |
 | `tone` | one of: `primary` \| `secondary` \| `danger` \| `ghost` |   | `secondary` | emphasis, as a button's: React fills a `primary` action, draws a `danger` one destructive and a `ghost` one without border; the terminal draws `primary` bold, `danger` bold and underlined |
 | `choice` | [Node](#node) |   |   | options for as choice |
-| `loads` | [Reads](#reads) |   |   | a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state |
-| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read |
+| `loads` | [Reads](#reads) |   |   | a view the action reads, checked against the model and given fixture rows: `loads.<field>` in its `bind`, `checked` and `visible` reads the first row it answers, so a toggle bound `not loads.<field>` shows the loaded state; until a row answers, the action is drawn disabled |
+| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell, args or loads), and a toggle with `sets` the key it sets; a row field named like the action is never read |
 | `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
@@ -2230,7 +2231,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 | `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `toggle_state_unknown` | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
-| `checked_unreadable` | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
+| `checked_unreadable` | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args_loads]}` | warning |
 | `export_selection` | `**.export.params` | `{must: "an export's params read selection.<field> only on a bulk action, where the selection is in scope"}` | error |
 
 ### FixtureIndex
@@ -2905,11 +2906,11 @@ What a validator checks in a document, and the construct each check applies to. 
 | `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `suggests_needs_tags` | [Field](#field) | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 | `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
-| `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
+| `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args_loads]}` | warning |
 | `host_slots` | [HostSlot](#hostslot) | `**.host` | `{must: [carry_a_non_empty_reason, name_what_it_stands_in_for, be_the_only_slot_of_its_host_name, carry_neither_component_nor_primitive]}` | error |
 | `hosts_registered` | every node | `**.host, for every name ess ui check --hosts lists` | `{must_resolve_in: ["**.host"]}` | error |
 | `board_widget_kinds` | every node | `**.board.reads fixture rows` | `{must: have_a_widget_by_field_that_names_an_entry_of_widgets}` | warning |
-| `expr_paths` | every node | `judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); and shell.<name> inside the rest of a shell (its regions and guards)`, `not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values` | `{must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"]}` | error |
+| `expr_paths` | every node | `judged: state.<name>, params.<name> and shell.<name> inside an expr written in a page or in an overlay of a shell, against what is in scope there (a page overlay that declares params has the page's and its own, a shell overlay its own); and shell.<name> inside the rest of a shell (its regions and guards); and loads.<field> everywhere, which only the bind, checked and visible of an action that declares loads read`, `not judged: page kinds, widget declarations, navigation, state.<name> and params.<name> inside the rest of a shell, and params.<name> inside an overlay that declares no params, whose opener hands it values` | `{must_resolve_in: ["the state, parameters and shell state in scope where the expression stands"]}` | error |
 | `expr_roots` | every node | `an unquoted dotted word inside an expr, outside the arguments of a call`, `not judged: a read's filter and a dynamic menu entry's filter (held by the filter_* checks), and a widget argument whose parameter the widget does not substitute into an expr, where the word is shown as text` | `{must: begin_with_a_root_of_expressions.forms_or_be_quoted}` | warning |
 | `document_loads` | every node | `every node` | `{must: the loader accepts the document; a refusal no other check names is reported under this id}` | error |
 | `layer_rules` | every node | `every node` | `{must: a node stands only where its layer may (layers)}` | error |
@@ -2927,7 +2928,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `read_params` | [Reads](#reads) | `pages.*.sections[].reads` | `{must: "with --model, a read binds only parameters its view declares and leaves no required one unbound"}` | error |
 | `type_in_model` | [Type](#type) | `pages.*.params.*` | `{must: "with --model, a page parameter's named type resolves in the document, the schema or the model"}` | error |
 | `field_in_model` | every node | `every form field, bind key, column and row.<field> path` | `{must: "with --model, form fields and bind keys are inputs of their command; columns, record fields and row.<field> paths are fields of the view read"}` | error |
-| `row_fields` | [collection](#collection), [Field](#field), [header](#header) | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field and section.<name>.row.<field> name a row field the view has"}` | error |
+| `row_fields` | [collection](#collection), [Field](#field), [header](#header) | `**.group_by`, `**.label_from`, `**.title_from` | `{must: "with --model, group_by, an aggregate's field, label_from, a choice's value or label, title_from.field, section.<name>.row.<field> and loads.<field> name a row field the view has"}` | error |
 | `model_enum_values` | [collection](#collection), [choice](#choice) | `**.group_order`, `**.options` | `{must: "with --model, a group_order value or a form choice's fixed option is a variant of the enum the field holds, and the options leave no variant out"}` | error |
 | `metric_aggregate` | [metric](#metric) | `**.aggregate` | `{must: "aggregate reads rows, so it needs reads; every aggregate but count needs a field, and field means nothing without an aggregate"}` | error |
 | `group_order` | [collection](#collection) | `**.group_order`, `**.show_empty_groups` | `{must: "they order the groups of group_by, so a collection that has them has group_by"}` | error |

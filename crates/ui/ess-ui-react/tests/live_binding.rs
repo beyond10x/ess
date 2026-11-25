@@ -205,17 +205,20 @@ fn fnv(text: &str) -> u64 {
 /// The whole-project digest re-pinned for
 /// story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order:
 /// the collection's `compareValues` moves to `runtime/compare.ts`, which the chart sorts with too
-/// (beyond10x/ess#723); no file of the pins above changes.
+/// (beyond10x/ess#723); no file of the pins above changes. `actions.tsx` and the whole-project
+/// digest re-pinned for story:both-renderers-read-one-binding-expression-grammar, C17: an action
+/// reads the row its `loads` read answers (`useRead` in `ActionControl`) and is drawn disabled
+/// until it answers; `expr.ts` admits the `loads` root (beyond10x/ess#723).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
-    ("src/runtime/actions.tsx", 0xe486_1587_9e68_cda4),
+    ("src/runtime/actions.tsx", 0xe9c0_f829_a428_0cab),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
     ("src/runtime/data.ts", 0x51fa_44ce_7140_2852),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x57b6_5a55_90e8_2ddf;
+const PLAIN_PROJECT: u64 = 0xac18_5d19_b7f3_b76d;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

@@ -4,7 +4,7 @@ import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
 import { hrefFor } from "../routes";
 import { ScopeLayer, useScope, type Opener, type Scope } from "./core";
-import { dataAdapter, invalidate } from "./data";
+import { dataAdapter, filterRead, invalidate, useRead, type ReadSpec } from "./data";
 import { evaluate, holds, sent, truthy, type Sent } from "./expr";
 import { isObject } from "./json";
 //+bound
@@ -30,6 +30,8 @@ export interface ActionSpec {
   sets?: Record<string, string>;
   /** A toggle's state, resolved by the generator: `checked:`, the `not` bind entry's operand, or the key `sets` sets. */
   checked?: string;
+  /** The read whose first row `loads.<field>` reads in `bind`, `checked` and `visible`. */
+  loads?: ReadSpec;
   choice?: ReactNode;
   confirm?: ReactNode;
   confirmShow?: string;
@@ -257,12 +259,19 @@ function rowsToCsv(rows: unknown[]): string {
 /** One action as a control: button, icon, toggle, choice, menu item or link. */
 export function ActionControl(props: { action: ActionSpec }): ReactNode {
   const { action } = props;
-  const scope = useScope();
+  const outer = useScope();
   // While the inline confirm is open: the extra input the pick that opened it carried.
   const [pending, setPending] = useState<{ extra?: Record<string, unknown> } | undefined>(undefined);
 //+bound
   const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
 //-bound
+  // `loads.<field>`: the first row the action's `loads` read answers, read through the read cache
+  // as a section's read is, so a command the action sends reads it again. Until a row answers,
+  // the field is absent and the action is drawn disabled.
+  const loaded = filterRead(useRead(action.loads, outer.values, action.loads !== undefined), action.loads?.filter, outer.values);
+  const waiting = action.loads !== undefined && loaded.rows.length === 0;
+  const scope: Scope =
+    action.loads === undefined || waiting ? outer : { ...outer, values: { ...outer.values, loads: loaded.rows[0] } };
   if (action.visible !== undefined && !truthy(evaluate(action.visible, scope.values))) {
     return null;
   }
@@ -330,7 +339,7 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
     const on = action.checked !== undefined ? holds(action.checked, scope.values) : false;
     control = (
       <label className="ui-toggle" data-ui-path={useUiPath(path)}>
-        <input type="checkbox" checked={on} onChange={() => start()} />
+        <input type="checkbox" checked={on} disabled={waiting} onChange={() => start()} />
         {label(action)}
       </label>
     );
@@ -340,9 +349,12 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
         href="#"
         className={action.as === "link" ? "ui-link" : "ui-menu-item"}
         data-ui-path={useUiPath(path)}
+        aria-disabled={waiting || undefined}
         onClick={(event: { preventDefault(): void }) => {
           event.preventDefault();
-          start();
+          if (!waiting) {
+            start();
+          }
         }}
       >
         {label(action)}
@@ -356,6 +368,7 @@ export function ActionControl(props: { action: ActionSpec }): ReactNode {
         title={label(action)}
         aria-label={label(action)}
         data-ui-path={useUiPath(path)}
+        disabled={waiting}
         onClick={() => start()}
       >
         {action.glyph === undefined

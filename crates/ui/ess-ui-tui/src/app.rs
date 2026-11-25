@@ -427,6 +427,19 @@ pub(crate) struct Ctx<'a> {
     pub section: Option<&'a str>,
     pub overlay: bool,
     pub draft: Option<&'a str>,
+    /// The `loads` read of the action whose own expressions are evaluated: `loads.<field>`
+    /// reads its first row.
+    pub loads: Option<&'a Reads>,
+}
+
+impl<'a> Ctx<'a> {
+    /// This scope as `action`'s own `bind`, `checked` and `visible` see it: with its `loads`.
+    pub(crate) fn of_action(&self, action: &'a Action) -> Self {
+        Ctx {
+            loads: action.loads.as_ref(),
+            ..*self
+        }
+    }
 }
 
 /// Which view keys act on.
@@ -500,6 +513,9 @@ pub struct App {
     /// The sections whose `selection` is being resolved: a section that reads its own selection,
     /// directly or through another, sees none.
     pub(crate) resolving: std::cell::RefCell<Vec<String>>,
+    /// The reads of actions' `loads` the screen asked for while it drew them, by request key:
+    /// each is wanted like a shown section's read, so a command reads it again.
+    pub(crate) loads_requests: std::cell::RefCell<BTreeMap<String, ReadRequest>>,
     /// The selected rows of the collection whose bulk action runs, which `selection.<field>`
     /// reads (beyond10x/ess#722); `None` outside a bulk action.
     pub(crate) bulk_selection: Option<Value>,
@@ -610,6 +626,7 @@ impl App {
             exports: Vec::new(),
             marks: std::cell::RefCell::default(),
             resolving: std::cell::RefCell::default(),
+            loads_requests: std::cell::RefCell::default(),
             bulk_selection: None,
             regions: std::cell::RefCell::default(),
         };
@@ -1388,6 +1405,34 @@ impl App {
         }
     }
 
+    /// The first row an action's `loads` read answers in `ctx`: of its answer, or, while it runs
+    /// again after a command, of the answer it held; `None` until a row answers. Asking for it
+    /// makes the read wanted: the next pump starts it ([`App::needed_reads`]).
+    pub(crate) fn loaded_row(&self, reads: &Reads, ctx: &Ctx<'_>) -> Option<Value> {
+        let ctx = Ctx {
+            loads: None,
+            ..*ctx
+        };
+        let request = self.request(reads, &ctx);
+        self.loads_requests
+            .borrow_mut()
+            .entry(request.key())
+            .or_insert(request);
+        if let Some(result) = self.read_rows(reads, &ctx) {
+            return result.rows.first().cloned();
+        }
+        self.held_rows(reads, &ctx)?.into_iter().next()
+    }
+
+    /// Whether `action` reads `loads.<field>` from a row that has not answered yet: it is drawn
+    /// disabled, and its key runs nothing.
+    pub(crate) fn waits_for_row(&self, action: &Action, ctx: &Ctx<'_>) -> bool {
+        action
+            .loads
+            .as_ref()
+            .is_some_and(|reads| self.loaded_row(reads, ctx).is_none())
+    }
+
     /// The rows `reads` answered before it started again for the same request, with its filter
     /// applied; `None` unless it is running again after an answer. After a failed read, and for
     /// a request nothing has answered, nothing is held.
@@ -1658,6 +1703,9 @@ impl App {
 
     fn needed_reads(&self) -> Wanted {
         let mut out = Wanted::default();
+        // The rows actions drawn on screen load for `loads.<field>` (beyond10x/ess#723, C17).
+        out.reads
+            .extend(self.loads_requests.borrow().values().cloned());
         let page = self.page_def();
         if let Some(shell) = self.doc.shells.get(&page.shell) {
             if let Some(preload) = &shell.preload {
@@ -2230,10 +2278,11 @@ impl App {
     /// function form, `draft.*`), is evaluated as a display expression, as before, and
     /// `ess ui check` warns on it (`checked_unreadable`).
     pub(crate) fn toggle_on(&self, action: &Action, ctx: &Ctx<'_>) -> Option<bool> {
+        let ctx = &ctx.of_action(action);
         (action.action_as == Some(ActionAs::Toggle)).then(|| {
             ess_ui::toggle_state(action).is_some_and(|state| {
                 let text = &state.expr.0;
-                match ess_ui::filter::parse(text).filter(ess_ui::filter::Predicate::allowed_roots) {
+                match ess_ui::filter::parse(text).filter(ess_ui::filter::Predicate::action_roots) {
                     Some(predicate) => ess_ui::filter::truthy(&predicate.evaluate(&|path| {
                         let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
                         match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
@@ -2283,7 +2332,8 @@ impl App {
         let mut taken = view_keys.to_owned();
         let mut keyed = Vec::new();
         for (at, action) in offers {
-            if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), ctx) {
+            let own = ctx.of_action(action);
+            if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), &own) {
                 continue;
             }
             let key = action
@@ -2965,6 +3015,8 @@ impl App {
         self.demanded.clear();
         self.batches.clear();
         self.deferred.clear();
+        // The next page's actions ask for the rows they load as they are drawn.
+        self.loads_requests.borrow_mut().clear();
         // A view cache in memory is lost on unmount: the next page reads again.
         if crate::placement::class_default(&self.doc, &ess_ui::StateClass::ViewCache)
             .is_none_or(|store| store == ess_ui::Store::Memory)
@@ -4368,6 +4420,15 @@ impl App {
         row: Option<Value>,
         confirmed: bool,
     ) -> Option<Refused> {
+        let ctx = Ctx {
+            row: row.as_ref(),
+            ..Ctx::default()
+        }
+        .of_action(action);
+        // Drawn disabled until the row it loads answers, it runs nothing (beyond10x/ess#723).
+        if self.waits_for_row(action, &ctx) {
+            return None;
+        }
         if !confirmed {
             match &action.confirm {
                 Some(ActionConfirm::Opens(name)) => {
@@ -4409,10 +4470,6 @@ impl App {
                 None => {}
             }
         }
-        let ctx = Ctx {
-            row: row.as_ref(),
-            ..Ctx::default()
-        };
         if let Some(navigate) = &action.navigate {
             let params = navigate
                 .params
@@ -4861,6 +4918,14 @@ impl Resolve for Scope<'_> {
         let adapter = app.adapter.as_ref();
         match root {
             "row" => Resolved::Root(self.ctx.row.cloned().unwrap_or(Value::Null)),
+            // The first row the action's `loads` read answers, inside that action's own
+            // expressions; absent until a row answers (beyond10x/ess#723, C17).
+            "loads" => Resolved::Root(
+                self.ctx
+                    .loads
+                    .and_then(|reads| app.loaded_row(reads, self.ctx))
+                    .unwrap_or(Value::Null),
+            ),
             // The selected rows, inside a bulk action; a field projects over them as the browser
             // reads it (`selection.id` is the list of ids).
             "selection" => Resolved::Whole(

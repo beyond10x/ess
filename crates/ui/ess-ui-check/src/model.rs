@@ -684,6 +684,14 @@ impl Model {
         wire_problem(&qualified, &view.wires, field, "a section's row")
     }
 
+    /// What is wrong with `field` as a key of the first row an action's `loads` read answers
+    /// (`loads.<field>`), held as `section.<name>.row.<field>` is.
+    pub(crate) fn loaded_row_problem(&self, reads: &Reads, field: &str) -> Option<String> {
+        let (qualified, view) = self.view(reads.view.as_deref()?)?;
+        let field = field.split('.').next().unwrap_or(field);
+        wire_problem(&qualified, &view.wires, field, "the row an action loads")
+    }
+
     /// The fields and values the document reads from rows and inputs the model types: a
     /// `group_by`, `group_order`, an aggregate's `field`, a `label_from`, a `suggests` `value`, a form choice's fixed
     /// options, and a choice's `value` and `label` (beyond10x/ess#351, #358, #364, #330, #328).

@@ -38,9 +38,9 @@ pub struct ToggleState {
 /// In order: `checked:` when written; else for a toggle with `sets`, the first key it sets
 /// (the state it has always shown); else for a toggle with `does`, the expression `<expr>` of its
 /// only `bind` entry that parses as `not <expr>` as a whole, where `<expr>` reads a path and
-/// every path it reads starts at a root the filter grammar admits
-/// ([`Predicate::allowed_roots`]). `<expr>` is written in canonical text without redundant
-/// parentheses and with every string quoted (`not (row.on)` and `(not row.on)` both name
+/// every path it reads starts at a root an action's expression admits
+/// ([`Predicate::action_roots`], `loads` included). `<expr>` is written in canonical text without
+/// redundant parentheses and with every string quoted (`not (row.on)` and `(not row.on)` both name
 /// `row.on`; `not (row.stage == 'draft')` names `row.stage == 'draft'`), so the terminal reads it
 /// with the filter grammar as the React runtime reads it. Two such entries, an entry whose `not`
 /// is one operand of `and` or `or`, or a `not` over literal text (`not yet sent`, or a dotted
@@ -88,7 +88,7 @@ fn negated(text: &str) -> Option<String> {
     let Predicate::Not(inner) = filter::parse(text)? else {
         return None;
     };
-    if inner.paths().is_empty() || !inner.allowed_roots() {
+    if inner.paths().is_empty() || !inner.action_roots() {
         return None;
     }
     canonical(&inner)

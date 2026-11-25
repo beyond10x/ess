@@ -227,9 +227,15 @@ React (`App::eval`, `crates/ui/ess-ui-tui/src/app.rs`). Each position keeps its 
 row filter fails closed, a `visible` outside the grammar means shown, and a string that reads no
 path stays literal text (`Terms and conditions`). A `bind` value may be a YAML list of
 expressions, sent as one list input of their values (`ess_ui::BindValue`); a list anywhere else
-an expression is expected is refused by path. The `loads.<field>` root, the first row an action's
-`loads` read answers, is accepted in the story and not built yet: no renderer reads an action's
-`loads`.
+an expression is expected is refused by path. The `loads.<field>` root reads the first row an
+action's `loads` read answers, in that action's `bind`, `checked` and `visible` only. Each renderer
+reads it through its read cache when it draws the action (React: `useRead` in `ActionControl`;
+the terminal: `App::loaded_row`, whose request is wanted like a shown section's read), so a command
+the action sends reads it again as it reads a section of the view again. Until a row answers the
+field is absent and the action is drawn disabled: React disables the control, the terminal draws
+`·` where its key goes and its key runs nothing. `ess ui check` refuses `loads.` anywhere else
+(`expr_paths`) and with `--model` holds `<field>` to the view's fields (`row_fields`); a read
+filter never admits the root.
 
 ## Format and version
 

@@ -31,6 +31,7 @@ pub(crate) const ROOTS: &[&str] = &[
     "url",
     "args",
     "selection",
+    "loads",
 ];
 
 /// Resolves the first segment of a path; the rest is walked by [`walk`].
