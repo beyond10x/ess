@@ -567,6 +567,143 @@ fn the_manifest_options_are_refused_outside_the_crate_layout_and_for_a_bad_name(
     ));
 }
 
+/// The `pub fn` lines of a module: each codec's name and signature.
+fn functions(module: &str) -> Vec<&str> {
+    module
+        .lines()
+        .filter(|line| line.starts_with("pub fn "))
+        .collect()
+}
+
+/// Codecs that belong to a served component's commands and views.
+const SERVED_ONLY: [&str; 5] = [
+    "pub fn encode_command_",
+    "pub fn decode_command_",
+    "pub fn encode_outcome_",
+    "pub fn encode_view_",
+    "pub fn decode_params_",
+];
+
+#[test]
+fn a_crate_with_no_component_carries_its_codecs_at_the_root() {
+    let synthesis = crate_layout(&shop());
+    for path in ["src/wire.rs", "src/json.rs"] {
+        assert!(
+            synthesis.artifacts.contains_key(path),
+            "no `{path}` in {:?}",
+            synthesis.artifacts.keys().collect::<Vec<_>>()
+        );
+    }
+    assert!(
+        !synthesis.artifacts.keys().any(|path| is_server(path)),
+        "no server without a served component"
+    );
+    let lib = &synthesis.artifacts["src/lib.rs"].contents;
+    assert!(
+        lib.contains("\npub mod json;\n") && lib.contains("\npub mod wire;\n"),
+        "{lib}"
+    );
+    let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+    assert!(!manifest.contains("[features]"), "{manifest}");
+    let wire = &synthesis.artifacts["src/wire.rs"].contents;
+    assert!(wire.contains("\nuse crate::json;\n"), "{wire}");
+    for (declared, rust) in [
+        ("item_id", "ItemId"),
+        ("mode", "Mode"),
+        ("limit", "Limit"),
+        ("entry", "Entry"),
+    ] {
+        for function in [
+            format!(
+                "pub fn encode_shop_catalog_{declared}(value: &crate::catalog::{rust}, out: &mut \
+                 String) {{"
+            ),
+            format!(
+                "pub fn decode_shop_catalog_{declared}(value: &json::Value, at: &str) -> \
+                 Result<crate::catalog::{rust}, json::DecodeError> {{"
+            ),
+        ] {
+            assert!(
+                functions(wire).contains(&function.as_str()),
+                "no `{function}` in:\n{wire}"
+            );
+        }
+    }
+    for served in SERVED_ONLY {
+        assert!(!wire.contains(served), "`{served}` needs a server:\n{wire}");
+    }
+}
+
+#[test]
+fn a_crate_with_components_and_no_server_carries_no_command_or_view_codec() {
+    let synthesis = crate_layout(&example("billing"));
+    assert!(!synthesis.artifacts.keys().any(|path| is_server(path)));
+    let wire = &synthesis.artifacts["src/wire.rs"].contents;
+    assert!(
+        functions(wire)
+            .iter()
+            .any(|line| line.starts_with("pub fn decode_billing_")),
+        "{wire}"
+    );
+    for served in SERVED_ONLY {
+        assert!(!wire.contains(served), "`{served}` needs a server:\n{wire}");
+    }
+}
+
+#[test]
+fn a_served_crate_keeps_one_wire_module_and_every_codec_by_name_and_signature() {
+    let mut served_models = 0;
+    for (name, ir) in models() {
+        let workspace = synthesize_for(&ir, Target::Rust).expect("synthesizes");
+        let Some(before) = workspace
+            .artifacts
+            .get(&format!("crates/{name}-server/src/wire.rs"))
+        else {
+            continue;
+        };
+        served_models += 1;
+        let synthesis = crate_layout(&ir);
+        let root = &synthesis.artifacts["src/wire.rs"].contents;
+        let server = &synthesis.artifacts["src/server/wire.rs"].contents;
+        assert!(
+            server.contains("\npub use crate::wire::*;\n"),
+            "{name}: {server}"
+        );
+        assert!(
+            synthesis.artifacts["src/server/json.rs"]
+                .contents
+                .contains("\npub use crate::json::*;\n"),
+            "{name}"
+        );
+        let mut kept = functions(root);
+        kept.extend(functions(server));
+        for function in functions(&before.contents) {
+            // A bounded context named like a root module moves aside in this layout (`demo`).
+            let mut moved = function.to_owned();
+            for module in ["json", "ports", "server", "system", "wire"] {
+                moved = moved.replace(
+                    &format!("{name}_types::{module}::"),
+                    &format!("crate::{module}_domain::"),
+                );
+            }
+            let moved = moved
+                .replace(&format!("{name}_types::"), "crate::")
+                .replace(&format!("{name}_system::"), "crate::system::");
+            assert!(
+                kept.contains(&moved.as_str()),
+                "{name}: `{function}` lost its name or signature"
+            );
+        }
+        for function in functions(server) {
+            assert!(
+                !functions(root).contains(&function),
+                "{name}: `{function}` is written twice"
+            );
+        }
+    }
+    assert_eq!(served_models, 2, "gatepass and demo are served");
+}
+
 #[test]
 fn every_other_target_refuses_the_crate_layout_by_name() {
     let ir = example("gatepass");

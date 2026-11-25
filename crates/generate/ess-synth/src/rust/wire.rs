@@ -103,6 +103,17 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
     out
 }
 
+/// The server's `wire` module in the single crate (`--layout crate`): the crate root's module,
+/// re-exported, so every codec keeps the name and the path the server gave it. The system event
+/// codecs the server appends need the `system` module, so they stay here.
+pub(crate) fn reexport(types: &str) -> String {
+    format!(
+        "//! Every generated declaration, as JSON: the crate root's `wire` module, re-exported \
+         where the\n//! server names it, beside the codecs of the system's event log.\n\npub use \
+         {types}::wire::*;\n\nuse crate::json;\n"
+    )
+}
+
 /// The `wire` module's own documentation.
 const HEADER: &str = "//! Every generated declaration, as JSON, in the renderings the published \
                       wire contracts fix.\n//!\n//! Generated from the model beside the types it \

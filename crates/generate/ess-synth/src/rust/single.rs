@@ -13,6 +13,12 @@
 //! | `crates/<system>-server/src/lib.rs` | `src/server.rs`, behind the `server` feature |
 //! | `crates/<system>-server/src/<file>` | `src/server/<file>` |
 //!
+//! The types crate this layout is folded from carries the `wire` and `json` modules whether or not
+//! a server is generated, so a crate with no served component still reads and writes every
+//! declared type, event payload and error as JSON, without the `server` feature.
+//! A served crate's `src/server/wire.rs` and `src/server/json.rs` re-export them, beside the
+//! system event codecs that need the `system` module, so the server's paths keep their names.
+//!
 //! Nothing is deeper than `src/<module>/<file>`. The types crate's modules keep their paths — they
 //! were already `crate::`-rooted — so only the three kinds of dependent crate are rewritten: a path
 //! into another generated crate (`gatepass_types::visit::Visit`) becomes the module it now is
@@ -37,7 +43,7 @@ use super::EDITION;
 
 /// The modules the single crate adds at its root, beside the bounded contexts; a bounded context
 /// spelled like one of them is renamed by [`Layout::shaped`].
-pub(crate) const ROOT_MODULES: [&str; 3] = ["ports", "server", "system"];
+pub(crate) const ROOT_MODULES: [&str; 5] = ["json", "ports", "server", "system", "wire"];
 
 /// Where one workspace crate lands in the single crate.
 enum Destination {
