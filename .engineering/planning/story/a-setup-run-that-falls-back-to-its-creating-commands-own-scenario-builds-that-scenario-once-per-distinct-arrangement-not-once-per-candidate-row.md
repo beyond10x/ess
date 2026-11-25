@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 - informed_by: story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path
-revision: 1
+revision: 2
 ---
 ## Summary
 
@@ -126,12 +126,12 @@ after) are byte-identical (`cmp`). The gate of the branch ran green: 14 steps ex
 The fix is partial. The same model takes about 6 s on 0.98.2, about 196 s on 0.99.0 to 0.99.2 and
 58.6 s with the fix: synthesis of this model is still about nine times slower than on 0.98.2. The
 remaining rebuilds are distinct by held rows: 3,661 of 5,470 rebuilds are distinct with the full
-held key (the probe on 0.99.2 source, `S/gaps-n88/STATE.md`), so a memo keyed that way cannot
-remove them. Whether the rebuild can read fewer held rows, or the fallback can run once per
-distinct candidate, is not decided by this story.
+held key (the counting probe on 0.99.2 source), so a memo keyed that way cannot remove them.
+Whether the rebuild can read fewer held rows, or the fallback can run once per distinct candidate,
+is not decided by this story.
 
-The slow byte lanes of the fix's gate ran one test for 156 s in the first gate run and 119 s in
-the re-run (the lane of the 1, 2 and 7 job byte comparison), both over the 60 s bound of a single
+The slow byte lanes of the fix's gate ran one test for 156 s in the first gate run and 119 s in the
+re-run (the lane of the 1, 2 and 7 job byte comparison), both over the 60 s bound of a single
 test. That test is an item for `story:tests-that-run-over-60-s-on-main-without-a-branch-of-the-week-run-within-60-s-or-move-to-the-slow-lane`.
 
 ## Delivery
