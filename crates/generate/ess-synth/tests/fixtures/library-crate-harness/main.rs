@@ -63,6 +63,11 @@ fn main() {
                 wire::decode_shop_catalog_note,
                 wire::encode_shop_catalog_note
             ),
+            "dep" => round_trip!(
+                &document,
+                wire::decode_shop_catalog_dep,
+                wire::encode_shop_catalog_dep
+            ),
             "catalog" => round_trip!(
                 &document,
                 wire::decode_entity_shop_catalog_catalog,

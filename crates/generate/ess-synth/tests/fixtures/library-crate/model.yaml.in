@@ -40,6 +40,14 @@ types:
     undeclared_fields: ignored
     fields:
       - {name: text, type: String}
+  - name: shop.catalog.Dep
+    kind: struct
+    shorthand: requirement
+    fields:
+      - {name: requirement, type: String}
+      - {name: mode, type: Optional<shop.catalog.Mode>}
+    invariants:
+      - requirement.count >= 1
 entities:
   - name: shop.catalog.Catalog
     provided: true

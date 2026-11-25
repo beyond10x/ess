@@ -198,12 +198,76 @@ fn manifested(ir: &EssIr, manifest: &CrateManifest) -> Result<Synthesis, Synthes
     synthesize_crate(ir, Target::Rust, OutputLayout::Crate, manifest, None)
 }
 
+/// Two structs with a shorthand (`ess/27`), one over a `String` and one over an `Integer` with an
+/// invariant, reached by a command served over the network, so the short-form decoder is built in
+/// the crate's root wire module and behind its `server` feature.
+fn shorthands() -> EssIr {
+    let documents = [
+        (
+            "system.yaml",
+            "format: ess/37
+system: deps
+version: v1
+domains: [deps.manifest]
+components:
+  - component: deps-service
+    owns: {domains: [deps.manifest]}
+    accepts: {commands: [deps.manifest.Add]}
+    publishes: {events: [deps.manifest.Added]}
+    reached_by: network
+",
+        ),
+        (
+            "domains/manifest.yaml",
+            "domain: deps.manifest
+types:
+  - {name: deps.manifest.Mode, kind: enum, variants: [enforce, report]}
+  - name: deps.manifest.Dep
+    kind: struct
+    shorthand: requirement
+    fields:
+      - {name: requirement, type: String}
+      - {name: mode, type: Optional<deps.manifest.Mode>}
+  - name: deps.manifest.Quota
+    kind: struct
+    shorthand: amount
+    fields:
+      - {name: amount, type: Integer}
+      - {name: unit, type: Optional<String>}
+    invariants:
+      - amount >= 1
+events:
+  - name: deps.manifest.Added
+    fields:
+      - {name: quota, type: deps.manifest.Quota}
+commands:
+  - name: deps.manifest.Add
+    input:
+      - {name: deps, type: List<deps.manifest.Dep>}
+      - {name: quota, type: deps.manifest.Quota}
+    outcomes:
+      - name: added
+        emits: [deps.manifest.Added]
+        payload:
+          deps.manifest.Added: {quota: input.quota}
+",
+        ),
+    ];
+    compile(
+        &documents
+            .iter()
+            .map(|(label, text)| ((*label).to_owned(), (*text).to_owned()))
+            .collect::<Vec<_>>(),
+    )
+}
+
 /// Every model this file lays out as one crate, by name.
 fn models() -> Vec<(&'static str, EssIr)> {
     vec![
         ("gatepass", example("gatepass")),
         ("billing", example("billing")),
         ("demo", reserved_names()),
+        ("deps", shorthands()),
     ]
 }
 
@@ -701,7 +765,7 @@ fn a_served_crate_keeps_one_wire_module_and_every_codec_by_name_and_signature() 
             );
         }
     }
-    assert_eq!(served_models, 2, "gatepass and demo are served");
+    assert_eq!(served_models, 3, "gatepass, demo and deps are served");
 }
 
 #[test]
@@ -909,6 +973,15 @@ const ROUND_TRIPS: &[(&str, &str, &str)] = &[
     ("sku", r#""sku-a1""#, r#"ok "sku-a1""#),
     ("bundle", r#"{"skus":["sku-a","sku-b"]}"#, r#"ok {"skus":["sku-a","sku-b"]}"#),
     ("note", r#"{"text":"t","extra":1}"#, r#"ok {"text":"t"}"#),
+    // A struct with a shorthand (`ess/27`): its field's value alone is the object holding only
+    // that field, and the encoder writes the object.
+    ("dep", r#""serde""#, r#"ok {"requirement":"serde"}"#),
+    ("dep", r#"{"requirement":"serde"}"#, r#"ok {"requirement":"serde"}"#),
+    (
+        "dep",
+        r#"{"requirement":"serde","mode":"report"}"#,
+        r#"ok {"requirement":"serde","mode":"report"}"#,
+    ),
     (
         "catalog",
         r#"{"project":"p","format":"f","entries":[],"state":"Declared"}"#,
@@ -951,6 +1024,15 @@ const ROUND_TRIPS: &[(&str, &str, &str)] = &[
         "shelf",
         r#"{"shelf":"s","capacity":1,"state":"Gone"}"#,
         "refused $.state | one of `Open`",
+    ),
+    // A value that is neither the object nor the field's scalar is refused by the field's own
+    // decoder, and the struct's invariants hold on the short form as on the object.
+    ("dep", r#"["serde"]"#, "refused $ | a string"),
+    ("dep", r#""""#, "refused $ | a value satisfying `requirement.count >= 1`"),
+    (
+        "dep",
+        r#"{"requirement":""}"#,
+        "refused $ | a value satisfying `requirement.count >= 1`",
     ),
 ];
 
