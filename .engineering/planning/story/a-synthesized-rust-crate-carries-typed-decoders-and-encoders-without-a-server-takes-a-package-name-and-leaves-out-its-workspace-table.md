@@ -38,7 +38,7 @@ scope:
   path: website/docs/guides/synthesize.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 21
+revision: 23
 ---
 ## Need
 
@@ -183,6 +183,9 @@ rules (`AGENTS.md` § Crate tree) is marked "architecture: the owner's".
 
 - TD-D17: the plan's `scope` records the package name and the left-out workspace table as optional members that are absent by default, as `layout` is (`crates/generate/ess-synth/src/plan.rs:107-116` at 0.99.1), and the regenerate command names both flags; no format step, because the plan is written and never read back. The implementor verifies that no reader of `plan.json` exists; if one does and refuses unknown members, the unit stops and reports, taken by the coordinator on 2026-11-25 (D119); reversible until the release that carries it
 
+
+- TD-D14 amended: the crate-layout pin rows are re-pinned once with the cause beside them: the three `rust-crate` rows of `served_codec_names` and `SHOP_CRATE_DIGEST` in `http_binding_rust` moved, because a crate-layout output gains `src/wire.rs` and `src/json.rs`; no workspace, web or Go row moved; taken by the coordinator on 2026-11-25 (D124)
+
 ## Acceptance
 
 - a_crate_with_no_component_decodes: `--layout crate` on the minimal specification of the Reported case writes `decode` and `encode`
@@ -286,3 +289,7 @@ Derived 2026-11-25 by `story-scoper`, read against tag `0.99.1`. Every line is *
 - Whether `decode_system_event` and `encode_system_event` can sit in the root module without the `server` feature. They need the `system` module, which exists only with components or bindings.
 - I did not read `.engineering/` for newer decisions on `generated/` or on the doc-comment story.
 - Story text used: the draft on `plan/gap-reports-2026-11-24` (revision 7) and `DECISIONS.md`. I did not open `gap.md`.
+
+## Delivery
+
+Commits `0a55c9b57f` (U1), `db3b964241` (U2), `0f54c9a516` (U3) and `b070c140ab` (U4) on the branch `feat/a-synthesized-rust-crate-carries-typed-decoders-without-a-server`, pushed. The whole check ran 21 lines, exit 0. No pull request yet: this story and the shorthand story ship in one (D127).

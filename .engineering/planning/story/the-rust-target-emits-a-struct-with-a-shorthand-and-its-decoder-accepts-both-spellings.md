@@ -28,7 +28,7 @@ scope:
   path: crates/generate/ess-synth/tests
 - confidence: inferred
   path: website/docs/guides/synthesize.md
-revision: 11
+revision: 13
 ---
 ## Need
 
@@ -95,6 +95,9 @@ target keeps its output.
 
 - Build order beside the typed-decoders story: its first two units first, then this story's lift-and-decoder unit, the served round trip after it, the crate-layout unit after the typed-decoders story's last unit, the words last, taken by the coordinator on 2026-11-25 (D121); reversible until the release that carries it
 
+
+- Both stories ship in one pull request (coordinator, D127, 2026-11-25): this one and `story:a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-takes-a-package-name-and-leaves-out-its-workspace-table`, on one branch.
+
 ## Acceptance
 
 - both_spellings_decode: for a struct with `shorthand: requirement`, the typed decoder reads `"name"` and `{requirement: "name"}` to the
@@ -153,3 +156,7 @@ Derived 2026-11-25 by `story-scoper`, read against tag `0.99.1`. Every line is *
 - website/docs/guides/synthesize.md: git grep for shorthand found no mention, so the guide edit is optional and inferred.
 - Whether `ess verify`, `ess-conformance` synthesized suites or the UI crates read ess-synth refusal text (the refusal text is pinned only by refusal_policy/shorthand.rs as far as searched).
 - Story text: read through `aep plan artifact show` (revision 3, status draft) and the typed-decoders story's decisions the same way; DECISIONS.md and .engineering/ were not read for later decisions.
+
+## Delivery
+
+Commits `c57416bbef` (SB-U1), `2996fced71` (SB-U2), `2c0eacebb3` (SB-U3) and `38e1e95c49` (SB-U4) on the branch `feat/a-synthesized-rust-crate-carries-typed-decoders-without-a-server`, the branch of the typed-decoders story, pushed at `38e1e95c49`. The whole check ran 32 lines, exit 0. No byte pin moved.
