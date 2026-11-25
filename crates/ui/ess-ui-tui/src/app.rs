@@ -5109,7 +5109,7 @@ fn location_value(value: &Value) -> String {
     }
 }
 
-fn compare(left: &Value, right: &Value) -> std::cmp::Ordering {
+pub(crate) fn compare(left: &Value, right: &Value) -> std::cmp::Ordering {
     // A number, or an amount record (`{amount, currency}`), sorts by its number.
     let number = |value: &Value| {
         value

@@ -753,6 +753,7 @@ impl Model {
                         row_field(sink, &path.child("field"), &view, fields, field);
                     }
                 }
+                Composite::Chart(chart) => self.chart_sort(chart, path, sink),
                 Composite::Form(form) => self.form_options(form, path, sink),
                 Composite::Choice(choice) => {
                     let Some((qualified, view)) = choice
@@ -816,6 +817,22 @@ impl Model {
             field,
             "a header title",
         );
+    }
+
+    /// A chart's `sort.by` names a row field of its view, as a collection's `group_by` does
+    /// (beyond10x/ess#723).
+    fn chart_sort(&self, chart: &ess_ui::Chart, path: &NodePath, sink: &mut Sink) {
+        if let (Some(sort), Some((view, fields))) =
+            (&chart.sort, self.row_fields(Some(&chart.reads)))
+        {
+            row_field(
+                sink,
+                &path.child("sort").child("by"),
+                &view,
+                fields,
+                &sort.by,
+            );
+        }
     }
 
     /// A form field whose choice lists fixed options, over a command input that is an enum:

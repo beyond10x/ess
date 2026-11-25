@@ -24,9 +24,9 @@ use ess_ui::{
 };
 
 use crate::app::{
-    aggregate, bar_items, board_rows, client_sizes, columns_of, form_fields, graph_collection,
-    group_names, paged, references_collection, App, At, BarItem, Ctx, Focus, Lifecycle, Mark,
-    Prompt, ReadState, Region,
+    aggregate, bar_items, board_rows, client_sizes, columns_of, compare, form_fields,
+    graph_collection, group_names, paged, references_collection, App, At, BarItem, Ctx, Focus,
+    Lifecycle, Mark, Prompt, ReadState, Region,
 };
 use crate::expr::{display, field_path, reads_row, row_key, truthy};
 
@@ -2739,6 +2739,20 @@ impl App {
         let Some(result) = self.read_rows(&chart.reads, &place.ctx) else {
             return vec![Line::styled("loading…", dim())];
         };
+        // A declared `sort` orders the rows after the live effects and `reads.filter`, stably and
+        // as a collection compares; without one, the rows as read (beyond10x/ess#723).
+        let mut rows = result.rows.clone();
+        if let Some(sort) = &chart.sort {
+            let descending = sort.dir == Some(ess_ui::SortDir::Desc);
+            rows.sort_by(|left, right| {
+                let order = compare(&field_path(left, &sort.by), &field_path(right, &sort.by));
+                if descending {
+                    order.reverse()
+                } else {
+                    order
+                }
+            });
+        }
         let kind = match &chart.chart {
             ChartKind::Fixed(kind) => kind.clone(),
             ChartKind::Chosen(chosen) => self
@@ -2766,8 +2780,7 @@ impl App {
         let x_title = axis_title(&x_axis);
         let as_table = matches!(kind.as_str(), "table" | "list") || fallback == Some("table");
         if fallback == Some("metric") || kind == "single_number" {
-            let last = result
-                .rows
+            let last = rows
                 .last()
                 .map_or(Value::Null, |row| row[series[0].as_str()].clone());
             return vec![Line::from(vec![
@@ -2781,9 +2794,7 @@ impl App {
             let widths: Vec<usize> = fields
                 .iter()
                 .map(|(field, title)| {
-                    result
-                        .rows
-                        .iter()
+                    rows.iter()
                         .map(|row| axis_value(field, row).width())
                         .chain(std::iter::once(title.width()))
                         .max()
@@ -2799,7 +2810,7 @@ impl App {
                     .join("  "),
                 bold(),
             )];
-            for row in &result.rows {
+            for row in &rows {
                 lines.push(Line::from(
                     fields
                         .iter()
@@ -2814,8 +2825,7 @@ impl App {
         let width = titles.iter().map(|title| title.width()).max().unwrap_or(0);
         let mut lines = Vec::new();
         for (name, title) in series.iter().zip(&titles) {
-            let values: Vec<f64> = result
-                .rows
+            let values: Vec<f64> = rows
                 .iter()
                 .map(|row| row[name.as_str()].as_f64().unwrap_or(0.0))
                 .collect();
@@ -2834,13 +2844,11 @@ impl App {
                 Span::styled(format!("  max {}", trim_float(max)), dim()),
             ]));
         }
-        let first = result
-            .rows
+        let first = rows
             .first()
             .map(|row| axis_value(&x_axis, row))
             .unwrap_or_default();
-        let last = result
-            .rows
+        let last = rows
             .last()
             .map(|row| axis_value(&x_axis, row))
             .unwrap_or_default();

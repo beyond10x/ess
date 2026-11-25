@@ -1281,6 +1281,7 @@ A renderer without charts shows the series as a table (degrade no\_charts).
 | `chart` | one of: `line` \| `bar` \| `doughnut` \| `pie` \| `polar` \| `single_number` \| `list` \| `table` \| record \{ `binds`: `expr`, `options`: list of `string` \} | yes |   | chart kind, fixed or chosen by data |
 | `x` | one of: `name` \| record \{ `field`: `name`, `label`: optional `string`, `as`: optional (one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes`), `unit`: optional (one of: `ms` \| `s` \| `m` \| `h`) \} |   |   | x-axis field: a name, or `{field, label, as, unit}` as a column takes it; `label` titles the axis and `as` formats each tick |
 | `series` | list of (one of: `name` \| record \{ `field`: `name`, `label`: optional `string`, `as`: optional (one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `timestamp` \| `date_range` \| `duration` \| `percent` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `bytes`), `unit`: optional (one of: `ms` \| `s` \| `m` \| `h`) \}) |   |   | y fields, each a name or `{field, label, as, unit}`; `label` titles the series in the legend and the table |
+| `sort` | record \{ `by`: `name`, `dir`: optional (one of: `asc` \| `desc`) \} |   |   | the order the rows are drawn in, the collection's `by` and `dir` (default `asc`), applied after the live effects and `reads.filter`; absent, the rows as read and as the live effects leave them |
 
 **Example**
 
@@ -2355,7 +2356,7 @@ buffer: {type: {list: ChatEvent}, class: channel_buffer}
 
 How a section, or a nested composite that reads, applies a channel's events to its rows.
 
-`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all. A row path names one row: an `insert_top` event whose key the section already holds adds no second row, the held row takes the event's fields and moves to the top (`max_rows` then applies).
+`effect` decides what an event does: patch a row, insert or patch, insert at the top of a feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows. Every effect acts on rows, whatever shows them: a record shows the first row, a metric takes its value or aggregate from the rows, a list shows them all. A row path names one row: an `insert_top` event whose key the section already holds adds no second row, the held row takes the event's fields and moves to the top (`max_rows` then applies). An `insert_or_patch` or `insert_top` event puts a new row first; a collection's or a chart's declared `sort` orders the rows after the effect.
 
 **Properties**
 

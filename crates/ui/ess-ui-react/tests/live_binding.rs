@@ -202,6 +202,10 @@ fn fnv(text: &str) -> u64 {
 /// entry written `{value, when}` are sent only while `when` holds (`sent`, beyond10x/ess#723).
 /// `actions.tsx` and the whole-project digest re-pinned for story:an-action-names-its-icon: an
 /// action draws its icon's glyph (`glyph`), and no rule draws one dot for every icon.
+/// The whole-project digest re-pinned for
+/// story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order:
+/// the collection's `compareValues` moves to `runtime/compare.ts`, which the chart sorts with too
+/// (beyond10x/ess#723); no file of the pins above changes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
@@ -211,7 +215,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x51fa_44ce_7140_2852),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x98bb_19bc_d175_0fd9;
+const PLAIN_PROJECT: u64 = 0x57b6_5a55_90e8_2ddf;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

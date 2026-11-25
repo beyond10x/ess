@@ -3087,3 +3087,17 @@ fn a_chart_axis_takes_field_label_as_and_unit() {
         found.findings
     );
 }
+
+/// A chart's `sort.by` names a row field of its view, as a collection's `group_by` does
+/// (beyond10x/ess#723).
+#[test]
+fn a_chart_sort_names_a_row_field() {
+    let report = shelf_report(
+        "{name: trend, component: chart, chart: line, reads: stock.Items, x: label, \
+          series: [label], sort: {by: aisle}}, \
+         {name: fine, component: chart, chart: bar, reads: stock.Items, x: label, \
+          series: [label], sort: {by: label, dir: desc}}",
+    );
+    trips_in(&report, "row_fields", "pages/p/sections/trend/sort/by");
+    assert_eq!(tripped(&report, "row_fields").len(), 1, "{report:#?}");
+}

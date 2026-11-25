@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useUiPath } from "../core";
 import { display, formatValue, useData, useScope } from "../core";
+import { compareValues } from "../compare";
 import type { ReadSpec } from "../data";
 import { evaluate } from "../expr";
 
@@ -11,11 +12,12 @@ export function ChartView(props: {
   chart: string | { binds: string; options: string[] };
   x?: string | AxisSpec;
   series?: Array<string | AxisSpec>;
+  sort?: { by: string; dir?: "asc" | "desc" };
   degrades?: Record<string, string>;
 }): ReactNode {
   const scope = useScope();
   const data = useData(props.reads);
-  const rows = data?.rows ?? [];
+  const rows = sorted(data?.rows ?? [], props.sort);
   const kind = typeof props.chart === "string" ? props.chart : String(evaluate(props.chart.binds, scope.values) ?? props.chart.options[0]);
   const x = axis(props.x ?? "x");
   const series = (props.series ?? []).map(axis);
@@ -142,4 +144,16 @@ function tick(row: unknown, one: AxisSpec): string {
 /** A field's label: its name with `_` read as a space, as a column heading shows it. */
 function seriesLabel(field: string): string {
   return field.replace(/_/g, " ");
+}
+
+/**
+ * The rows in the order a chart's `sort` declares, after the live effects and `reads.filter`: a
+ * stable sort with the collection's comparison, a number by value; without a sort, as read.
+ */
+function sorted<T>(rows: T[], sort?: { by: string; dir?: "asc" | "desc" }): T[] {
+  if (sort === undefined) {
+    return rows;
+  }
+  const sign = sort.dir === "desc" ? -1 : 1;
+  return [...rows].sort((a, b) => compareValues(display(a, sort.by), display(b, sort.by)) * sign);
 }

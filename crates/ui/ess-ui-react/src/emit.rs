@@ -1818,6 +1818,18 @@ impl<'d> Gen<'d> {
                         "series",
                         (!c.series.is_empty()).then(|| ts::array(c.series.iter().map(axis))),
                     )
+                    .opt(
+                        "sort",
+                        c.sort.as_ref().map(|sort| {
+                            ts::object([
+                                ("by", Some(ts::string(&sort.by))),
+                                (
+                                    "dir",
+                                    sort.dir.as_ref().and_then(variant).map(|d| ts::string(&d)),
+                                ),
+                            ])
+                        }),
+                    )
                     .opt("degrades", Self::degrades(opts))
                     .render()
             }

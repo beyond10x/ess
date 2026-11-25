@@ -2186,6 +2186,11 @@ pub struct Chart {
     /// Y fields, each a name or `{field, label, as, unit}`.
     #[serde(default, deserialize_with = "chart_series")]
     pub series: Vec<Field>,
+    /// The order the rows are drawn in, after the live effects and `reads.filter`: the
+    /// collection's `{by, dir}`, without `allowed` or `mode`. Absent, rows as read
+    /// (beyond10x/ess#723).
+    #[serde(default)]
+    pub sort: Option<Sort>,
 }
 
 /// A chart axis: a field written as a name or as `{field, label, as, unit}`; any other key of a

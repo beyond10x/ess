@@ -247,6 +247,7 @@ mod tests {
         "Widget.arrange",
         "badge.tone",
         "button.tone",
+        "chart.sort.dir",
         "choice.style",
         "collection.selection",
         "collection.selection.mode",
