@@ -1414,3 +1414,61 @@ fn an_accepting_scenario_sends_a_non_empty_list_no_element_of_which_meets_the_qu
         "a target refusing every non-empty `items` fails {PACKED_ID}, got {run:?}"
     );
 }
+
+/// Whether `text` is empty once the six ASCII whitespace characters a `trimmed` guard removes are
+/// trimmed from it (`docs/design/value-expressions.md` § E10).
+fn trims_blank(text: &Node) -> bool {
+    matches!(text, Node::Text(text)
+        if text.trim_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r']).is_empty())
+}
+
+/// The refusal of a `trimmed` comparison in a quantifier body over an input list is sent the
+/// literal between `\v\f` and `\r\n` on the one element that meets the quantifier, beside the
+/// elements of its several-element witness (beyond10x/ess#240, correction 1): a target trimming
+/// spaces and tabs alone finds no element meeting it, answers the accepting branch and fails.
+#[test]
+fn a_refusal_sends_the_vertical_whitespace_witness_on_the_element_that_decides_it() {
+    let result = synthesized(&crates(BAD_ITEM));
+    let (_, scenario) = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == BAD_ITEM_ID)
+        .unwrap_or_else(|| panic!("{BAD_ITEM_ID} is in the suite"));
+    let vertical = Node::Text("\u{b}\u{c}\r\n".to_owned());
+    let mut sent = Vec::new();
+    let decided_by_it = scenario.steps.iter().any(|step| {
+        let ScenarioStep::ExecuteCommand { input, .. } = step else {
+            return false;
+        };
+        let Some(ScenarioValue::Literal {
+            value: Node::Seq(list),
+        }) = input.get("items")
+        else {
+            return false;
+        };
+        sent.push(list.clone());
+        let leaves = |element: &Node| -> Vec<Node> {
+            match element {
+                Node::Map(members) => ["code", "size"]
+                    .iter()
+                    .filter_map(|name| members.get(*name).cloned())
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        let meeting: Vec<Vec<Node>> = list
+            .iter()
+            .map(leaves)
+            .filter(|leaves| leaves.iter().any(trims_blank))
+            .collect();
+        list.len() >= 3
+            && matches!(meeting.as_slice(), [only]
+                if only.iter().filter(|leaf| trims_blank(leaf)).collect::<Vec<_>>() == [&vertical])
+    });
+    assert!(
+        decided_by_it,
+        "{BAD_ITEM_ID} sends a list of three or more whose one element meeting the quantifier \
+         is blank only through \\v\\f..\\r\\n, got {sent:?}"
+    );
+}
