@@ -149,24 +149,110 @@ fn compose_exits_non_zero_on_an_invariant_drift_under_v5() {
 // the composition entries that prove it (`docs/design/composition-type-conformance.md`, "Generating
 // the copy").
 
-fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
-    fs::create_dir_all(to).unwrap();
-    for entry in fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_tree(&entry.path(), &target);
-        } else {
-            fs::copy(entry.path(), target).unwrap();
+/// The `vendor` systems, written by each test into its own directory: an owner `example.owner`
+/// whose `orders` component owns the vendored type, and a consumer `example.consumer`.
+const VENDOR_SYSTEMS: &[(&str, &str)] = &[
+    (
+        "owner/system.yaml",
+        r"format: ess/23
+system: example.owner
+version: v1
+
+domains:
+  - example.owner.orders
+  - example.owner.ledger
+
+components:
+  - component: orders
+    owns:
+      domains: [example.owner.orders]
+",
+    ),
+    (
+        "owner/domains/orders.yaml",
+        r#"domain: example.owner.orders
+
+# The owner's type a consumer vendors, with the closure it reaches.
+types:
+  - name: example.owner.orders.OrderId
+    kind: newtype
+    of: String
+    prefix: "o-"
+    invariants:
+      - value != "o-"
+
+  - name: example.owner.orders.Stage
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: label, type: String}
+    variants:
+      - {name: Placed, wire: placed, attributes: {terminal: false, label: "Placed"}}
+
+  - name: example.owner.orders.OrderSummary
+    kind: struct
+    fields:
+      - {name: id, type: example.owner.orders.OrderId}
+      - {name: stage, type: example.owner.orders.Stage, wire: orderStage}
+      - {name: note, type: Optional<String>, presence: null_when_absent}
+      - {name: lines, type: "List<example.owner.orders.OrderId>"}
+
+  - name: example.owner.orders.Unrelated
+    kind: struct
+    fields:
+      - {name: text, type: String}
+"#,
+    ),
+    (
+        "owner/domains/ledger.yaml",
+        r"domain: example.owner.ledger
+
+# A domain no component of the owner owns.
+types:
+  - name: example.owner.ledger.Entry
+    kind: struct
+    fields:
+      - {name: amount, type: Integer}
+",
+    ),
+    (
+        "consumer/system.yaml",
+        r"format: ess/23
+system: example.consumer
+version: v1
+
+domains:
+  - example.consumer.board
+
+components:
+  - component: board
+    owns:
+      domains: [example.consumer.board]
+",
+    ),
+    (
+        "consumer/domains/board.yaml",
+        r"domain: example.consumer.board
+
+types:
+  - name: example.consumer.board.Card
+    kind: struct
+    fields:
+      - {name: title, type: String}
+",
+    ),
+];
+
+/// The `vendor` system `system`, written under `directory`.
+fn vendor_copy(directory: &std::path::Path, system: &str) -> PathBuf {
+    for (path, text) in VENDOR_SYSTEMS {
+        if let Some(relative) = path.strip_prefix(&format!("{system}/")) {
+            let file = directory.join(system).join(relative);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, text).unwrap();
         }
     }
-}
-
-/// A writable copy of the `vendor` fixture system `system` under `directory`.
-fn vendor_copy(directory: &std::path::Path, system: &str) -> PathBuf {
-    let to = directory.join(system);
-    copy_tree(&fixture("vendor", system), &to);
-    to
+    directory.join(system)
 }
 
 /// The compiled-model digest `ess verify diff` reports for the system at `path`.
@@ -271,7 +357,7 @@ fn compose_vendored(
 #[test]
 fn a_vendored_copy_composes_without_drift() {
     let directory = TemporaryDirectory::create("ess-vendor-composes").unwrap();
-    let owner = fixture("vendor", "owner");
+    let owner = vendor_copy(&directory, "owner");
     let consumer = vendor_copy(&directory, "consumer");
     let vendor = Vendor::new(&directory, &owner, &consumer);
 
@@ -386,8 +472,8 @@ fn an_imported_type_changed_upstream_is_refused_until_repinned() {
 #[test]
 fn vendor_refuses_by_name() {
     let directory = TemporaryDirectory::create("ess-vendor-refusals").unwrap();
-    let owner = fixture("vendor", "owner");
-    let consumer = fixture("vendor", "consumer");
+    let owner = vendor_copy(&directory, "owner");
+    let consumer = vendor_copy(&directory, "consumer");
     let refused = |vendor: &Vendor, code: i32, named: &[&str]| {
         let output = vendor.run(&[]);
         let all = text(&output);
@@ -443,7 +529,7 @@ fn vendor_refuses_by_name() {
     vendor.type_name = None;
     refused(&vendor, 2, &["--type"]);
 
-    let clashing = vendor_copy(&directory, "consumer");
+    let clashing = vendor_copy(&directory.join("clash"), "consumer");
     let board = clashing.join("domains/board.yaml");
     let mut text_of_board = fs::read_to_string(&board).unwrap();
     text_of_board.push_str(
