@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
+## [0.99.3] — 2026-11-25
+
 ### Fixed
 
-- `ess verify conform synthesize` builds the setup of a creating command that reads several related rows once for each set of field values and rows it is asked with, not once for every scenario that asks. Releases 0.99.0 to 0.99.2 rebuilt it for every scenario needing such a row with field values of its own: on a model of two domains and about 200 scenarios whose creating command many other commands read, synthesis took 196 s and takes 59 s, with one job and with eight (0.98.2: 6 s). Every suite keeps its bytes.
+- `ess verify conform synthesize` builds the setup of a creating command that reads several related rows once for each set of field values and rows it is asked with, not once for every scenario that asks. Releases 0.99.0 to 0.99.2 rebuilt it for every scenario needing such a row with field values of its own: on a model of two domains and about 200 scenarios whose creating command many other commands read, synthesis took 196 s and takes 59 s, about three times faster, with one job and with eight. Synthesis of such a model is still slower than on 0.98.2, which took 6 s; the rest is tracked. No suite's bytes and no format key change.
 
 ## [0.99.2] — 2026-11-25
 
