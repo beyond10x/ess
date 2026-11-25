@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:several-command-routes-may-share-one-method-and-path-each-chosen-by-literal-values-of-members-of-the-json-body
 - depends_on: story:a-json-request-may-carry-an-input-field-in-a-nested-member-of-its-body-validated-compiled-and-projected
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -128,6 +128,11 @@ path).
 ## Decisions
 
 Accept, redesigned. **AE-D3**, default A.
+
+- D132: "document order" reads "the compiled order of the binding" (path, method, operation),
+  because the compiled binding keeps no document order; the same binding written in another
+  route order gives the same OpenAPI bytes. Taken by the coordinator on 2026-11-25; reversible
+  until the release that carries it.
 
 ## Size
 

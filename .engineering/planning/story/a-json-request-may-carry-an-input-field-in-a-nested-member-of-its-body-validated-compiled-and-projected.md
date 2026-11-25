@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 3
+revision: 5
 ---
 ## Need
 
@@ -156,6 +156,17 @@ Accept, redesigned. **AE-D4**, default A.
 
 - A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
+- Stricter than drafted (found by the implementor, 2026-11-25): both keys are refused beside
+  `multipart` and on `get`; a selected member above or inside a field's member is refused; a
+  refinement restates both keys (`ESS-HTTP-012`); a catch-all on a shared path whose body is not a
+  `json` input object is `ESS-HTTP-010`.
+
 ## Size
 
 M, about 420 lines with tests.
+
+## Delivery
+
+Commits `d4082cd47a` (`request.members`, decision S5 = A) and `29f00aff50` (`select` per route,
+decision S4 = A) on the branch `feat/http-nested-members-and-shared-routes`, pushed. The whole
+check ran 8 lines, each exit 0. No pull request yet.
