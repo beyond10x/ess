@@ -37,8 +37,8 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedCommand, ResolvedCondition, ResolvedOutcome, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelatedVia,
+    EssIr, PrecedencePlan, ResolvedCommand, ResolvedCondition, ResolvedOutcome,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia,
 };
 use ess_domain::name::QualifiedName;
 
@@ -198,7 +198,7 @@ fn rewritten<'ir>(
             instance: instance.clone(),
             identity: identity.to_owned(),
             within,
-            input: guarded_input(command, outcome, identity, input)?,
+            input: guarded_input(ir, command, outcome, identity, input)?,
             shape: input_shape(ir, command),
         });
         awaits.push(Awaited {
@@ -313,13 +313,18 @@ const ABSENT_GUARDED_INPUT: &str = "an await of a system-issued step whose branc
 /// guard tells apart failed a correct target that took the other (an adopter report,
 /// 2026-10-26). The guards read are the claimed branch's own `when:` (an `external:` branch's
 /// eligibility included) and, for a default branch, every other branch's `when:`, which the
-/// default is taken by refuting. Each input is stated top-level and whole; the identity is the
-/// instance and is never stated. Any other branch states nothing, as before.
+/// default is taken by refuting. An `external:` branch narrowed by `when_subject:` (ess/29) also
+/// reads the input read inside its predicate and every input guard of a branch the precedence
+/// order answers before it, which it is taken by refuting
+/// (story:an-awaited-system-step-of-a-narrowed-external-branch-states-the-input-its-guards-read).
+/// Each input is stated top-level and whole; the identity is the instance and is never stated.
+/// Any other branch states nothing, as before.
 ///
 /// An input such a guard reads that the send leaves absent is refused
 /// `ESS-SYNTH-006` for the scenario: an await states a value for
 /// each input it names, and cannot state an absence.
 fn guarded_input(
+    ir: &EssIr,
     command: &ResolvedCommand,
     outcome: Option<&ResolvedOutcome>,
     identity: &str,
@@ -333,14 +338,23 @@ fn guarded_input(
             .outcomes
             .iter()
             .filter(|other| other.name != outcome.name)
-            .filter_map(|other| guard(&other.condition))
+            .flat_map(|other| guard(&other.condition))
             .collect(),
-        own => guard(own).into_iter().collect(),
+        own @ ResolvedCondition::ExternalSubject { .. } => {
+            PrecedencePlan::new(command, ir.format())
+                .iter()
+                .map(|(_, branch)| branch)
+                .take_while(|branch| branch.name != outcome.name)
+                .flat_map(|branch| guard(&branch.condition))
+                .chain(guard(own))
+                .collect()
+        }
+        own => guard(own),
     };
     let mut stated = BTreeMap::new();
-    for predicate in &guards {
+    for (predicate, bare) in &guards {
         for path in predicate.fact_paths() {
-            let Some(field) = input_read(command, path.segments()) else {
+            let Some(field) = input_read(command, path.segments(), *bare) else {
                 continue;
             };
             if field == identity {
@@ -359,23 +373,41 @@ fn guarded_input(
     Ok(stated)
 }
 
-/// The input guard of a branch: its `when:`, an `external:` branch's eligibility, or the input
-/// half of a `when_subject:`, `when_related:` or row-set guard
-/// (story:a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes).
-fn guard(condition: &ResolvedCondition) -> Option<&ess_primitives::predicate::Predicate> {
+/// The input guards of a branch, each with whether a bare name in it reads the input: its
+/// `when:`, an `external:` branch's eligibility, or the input half of a `when_subject:`,
+/// `when_related:` or row-set guard
+/// (story:a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes). An `external:`
+/// branch narrowed by `when_subject:` (ess/29) adds its stored-field predicate, whose bare names
+/// are stored fields and whose `input.` reads are input
+/// (story:an-awaited-system-step-of-a-narrowed-external-branch-states-the-input-its-guards-read).
+fn guard(condition: &ResolvedCondition) -> Vec<(&ess_primitives::predicate::Predicate, bool)> {
     match condition {
         ResolvedCondition::When { predicate }
-        | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        | ResolvedCondition::ExternalWhen { predicate, .. } => vec![(predicate, true)],
         ResolvedCondition::SubjectPredicate { input, .. }
         | ResolvedCondition::Related { input, .. }
-        | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
-        _ => None,
+        | ResolvedCondition::RelatedSet { input, .. } => {
+            input.iter().map(|input| (input, true)).collect()
+        }
+        ResolvedCondition::ExternalSubject {
+            predicate, input, ..
+        } => input
+            .iter()
+            .map(|input| (input, true))
+            .chain([(predicate, false)])
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
-/// The declared top-level input of `command` a guard's fact path reads, written bare (`verdict`)
-/// or under its namespace (`input.verdict`); `None` for a path that reads no input.
-fn input_read<'c>(command: &'c ResolvedCommand, segments: &[String]) -> Option<&'c str> {
+/// The declared top-level input of `command` a guard's fact path reads, written bare (`verdict`,
+/// where `bare` says a bare name reads the input) or under its namespace (`input.verdict`); `None`
+/// for a path that reads no input.
+fn input_read<'c>(
+    command: &'c ResolvedCommand,
+    segments: &[String],
+    bare: bool,
+) -> Option<&'c str> {
     let declared = |name: &str| {
         command
             .input
@@ -384,7 +416,7 @@ fn input_read<'c>(command: &'c ResolvedCommand, segments: &[String]) -> Option<&
             .map(|field| field.name.as_str())
     };
     match segments {
-        [first, ..] if declared(first).is_some() => declared(first),
+        [first, ..] if bare && declared(first).is_some() => declared(first),
         [namespace, field, ..] if namespace == "input" => declared(field),
         _ => None,
     }

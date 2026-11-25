@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A command a system actor issues with an `external:` branch narrowed by `when_subject:` and answered only for some value of an input, through a `when:` beside it, an `input.` read inside its predicate or a sibling declared before it that takes the other values, got a scenario awaiting the command with no `input`; a correct target issuing it with another value took a sibling, and the scenario failed with `ESS-CF-OUTCOME`. The await now states each input those guards read at the value synthesis sent. Suites without such a branch keep their bytes.
+
 ## [0.99.1] — 2026-11-24
 
 ### Fixed
