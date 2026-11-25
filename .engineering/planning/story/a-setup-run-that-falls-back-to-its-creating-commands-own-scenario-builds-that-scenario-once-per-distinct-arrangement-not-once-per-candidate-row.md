@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 - informed_by: story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path
-revision: 5
+revision: 7
 ---
 ## Summary
 
@@ -145,3 +145,42 @@ pushed; the gate of the branch green. Tagged 0.99.3 on `e0f8d1d3b2` (pull reques
 release run 45596324248 was cancelled on 2026-11-25 by the 60-minute limit of its targeted test job
 and published nothing. The release workflow was dispatched again for the same tag with the full
 gate (run 45610533532, in progress when this was written); the tag did not move.
+
+The second release run for tag 0.99.3 (45610533532) was cancelled on 2026-11-25 before its test
+jobs started, so that 0.99.4, which holds everything 0.99.3 holds, is gated first; the full gate for
+0.99.3 is dispatched again after 0.99.4 is published (the operator session, D144 part 2 = A). The
+tag did not move.
+
+## Second finding
+
+Base time, release build of the 0.99.4 release commit `78c4ba842c`, `--jobs 1`: 50.21 s wall on
+the reported model class (178 scenarios, 66 refusals, 1.86 GB peak). Of a probed run of 79.6 s,
+70.7 s lay inside the 1,276 own-scenario arrangements that are built with chosen values; the largest
+costs inside one arrangement are `Around::admits` into `leaves_to` (about 43 % inclusive), `chooses`
+into `selects` (30 %), and `subject_fact::evaluate_row_flat` (59 %) beneath both, all under the
+input trial of `with_row_where` (75 %).
+
+Verdict: the repetition is inside one row search, not across arrangements. With chosen (fixed)
+input fields, `searched_inputs` (`crates/verify/ess-conformance/src/synthesize/related_guard.rs`)
+overwrites the candidates' fields with the chosen values, so most inputs of a search become equal
+copies of one another and each copy was tried again on the row. Counts of the probe: lists with
+chosen fields held 1,239,300 inputs of which 52,530 are distinct (23.6 times); `leaves_to` ran
+1,133,087 calls for 19,580 distinct ones per search, `chooses` 976,814 calls for 57,117, and
+`evaluate_row_flat` 4,430,122 calls for 118,265.
+
+Red test: `an_input_the_chosen_values_make_equal_is_tried_once` in
+`crates/verify/ess-conformance/tests/fixed_input_tried_once_work.rs`, commit `bfcf715890` (it
+replaces a first shape, `389608fcab`, whose count grew with the rows and not with the copies). It
+fails with the inputs tried per row, without the guard on the chosen name (648 on 324 rows) and with
+it (1,152 on 216 rows); 1.6 s.
+
+Change: a repeated input is dropped after the chosen values are applied; the first of each keeps its
+place, so the order the row search tries inputs in is the same.
+
+Times, same session, release build, before and after: `--jobs 1` 52.78 s to 18.21 s, `--jobs 8`
+57.25 s to 17.44 s. The four suites (`--jobs 1` and `--jobs 8`, before and after) are byte-identical
+(`cmp`). After the change the row search `with_row_where` holds 37 % inclusive as a whole and no
+single cost is over a third of what is left, so no second round was made.
+
+The red test is committed locally and the fix is written but not committed: the build node ended on
+2026-11-25 before its gate ran; nothing is pushed.
