@@ -279,6 +279,311 @@ impl fmt::Display for Unknown {
     }
 }
 
+/// A literal a `select` tests a member of the body for: a JSON string, Boolean or integer.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MemberLiteral {
+    /// `true` or `false`.
+    Boolean(bool),
+    /// An integer within 64 bits.
+    Integer(i64),
+    /// A string.
+    String(String),
+}
+
+impl MemberLiteral {
+    /// The literal `value` is, if it is one: a string, a Boolean or an integer within 64 bits.
+    pub fn of(value: &serde_json::Value) -> Option<Self> {
+        match value {
+            serde_json::Value::Bool(value) => Some(Self::Boolean(*value)),
+            serde_json::Value::String(value) => Some(Self::String(value.clone())),
+            serde_json::Value::Number(value) => value.as_i64().map(Self::Integer),
+            _ => None,
+        }
+    }
+
+    /// The literal as a JSON value.
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            Self::Boolean(value) => serde_json::Value::Bool(*value),
+            Self::Integer(value) => serde_json::Value::from(*value),
+            Self::String(value) => serde_json::Value::String(value.clone()),
+        }
+    }
+}
+
+impl fmt::Display for MemberLiteral {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Boolean(value) => write!(formatter, "{value}"),
+            Self::Integer(value) => write!(formatter, "{value}"),
+            Self::String(value) => formatter.write_str(value),
+        }
+    }
+}
+
+impl serde::Serialize for MemberLiteral {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Boolean(value) => serializer.serialize_bool(*value),
+            Self::Integer(value) => serializer.serialize_i64(*value),
+            Self::String(value) => serializer.serialize_str(value),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for MemberLiteral {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Self::of(&value).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "`{value}` is not a literal a `select` tests for: a string, a Boolean or an integer"
+            ))
+        })
+    }
+}
+
+/// One alternative of a route's `select`: the members of the `json` body it tests, each with its
+/// literal, in member order, none an object above another. A body matches it when every tested
+/// member holds its literal; a member it does not test matches any value, absent included. With no
+/// test it is the catch-all, which matches every body.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Select(pub Vec<(MemberPath, MemberLiteral)>);
+
+/// How two alternatives meet, when one body can match both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Meeting {
+    /// They test the same members for the same literals.
+    Same,
+    /// One tests every member the other tests, for the same literals, and more: it is the more
+    /// specific, and it answers.
+    Nested,
+    /// Each tests a member the other leaves open: the first's and the second's.
+    Crossed(MemberPath, MemberPath),
+}
+
+impl Select {
+    /// Each tested member with its literal, in member order.
+    pub fn tests(&self) -> impl Iterator<Item = (&MemberPath, &MemberLiteral)> {
+        self.0.iter().map(|(member, literal)| (member, literal))
+    }
+
+    /// The literal `member` is tested for, if it is tested.
+    pub fn literal(&self, member: &MemberPath) -> Option<&MemberLiteral> {
+        self.tests()
+            .find(|(tested, _)| *tested == member)
+            .map(|(_, literal)| literal)
+    }
+
+    /// How `self` and `other` meet, `None` when no body matches both: they test one member for two
+    /// literals, or a member one tests is an object above one the other tests, which a literal is
+    /// not.
+    fn meet(&self, other: &Self) -> Option<Meeting> {
+        for (member, literal) in self.tests() {
+            for (theirs, their_literal) in other.tests() {
+                let apart = if member == theirs {
+                    literal != their_literal
+                } else {
+                    member.covers(theirs) || theirs.covers(member)
+                };
+                if apart {
+                    return None;
+                }
+            }
+        }
+        let open = |one: &Self, other: &Self| {
+            one.tests()
+                .find(|(member, _)| other.literal(member).is_none())
+                .map(|(member, _)| member.clone())
+        };
+        Some(match (open(self, other), open(other, self)) {
+            (None, None) => Meeting::Same,
+            (Some(mine), Some(theirs)) => Meeting::Crossed(mine, theirs),
+            _ => Meeting::Nested,
+        })
+    }
+
+    /// A body that matches both `self` and `other`, which meet, written as JSON with a space after
+    /// each `:` and `,`.
+    fn common_body(&self, other: &Self) -> String {
+        fn put(
+            level: &mut serde_json::Map<String, serde_json::Value>,
+            names: &[String],
+            value: serde_json::Value,
+        ) {
+            let [first, rest @ ..] = names else {
+                return;
+            };
+            if rest.is_empty() {
+                level.insert(first.clone(), value);
+            } else if let serde_json::Value::Object(next) = level
+                .entry(first.clone())
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+            {
+                put(next, rest, value);
+            }
+        }
+        let mut body = serde_json::Map::new();
+        for (member, literal) in self.tests().chain(other.tests()) {
+            put(&mut body, member.segments(), literal.to_json());
+        }
+        spaced(&serde_json::Value::Object(body))
+    }
+}
+
+/// `value` as JSON with a space after each `:` and `,`, each object's members in name order.
+fn spaced(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(map) => {
+            let members: BTreeMap<&String, &serde_json::Value> = map.iter().collect();
+            let shown: Vec<String> = members
+                .into_iter()
+                .map(|(name, value)| {
+                    format!(
+                        "{}: {}",
+                        serde_json::Value::from(name.as_str()),
+                        spaced(value)
+                    )
+                })
+                .collect();
+            format!("{{{}}}", shown.join(", "))
+        }
+        other => other.to_string(),
+    }
+}
+
+impl fmt::Display for Select {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tests: Vec<String> = self
+            .tests()
+            .map(|(member, literal)| format!("{member}: {literal}"))
+            .collect();
+        write!(formatter, "{{{}}}", tests.join(", "))
+    }
+}
+
+impl serde::Serialize for Select {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (member, literal) in &self.0 {
+            map.serialize_entry(member, literal)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Select {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let Entries(entries) = Entries::<MemberLiteral>::deserialize(deserializer)?;
+        let mut select = Vec::new();
+        for (text, literal) in entries {
+            let member = MemberPath::parse(&text).ok_or_else(|| {
+                serde::de::Error::custom(format!("`select` tests `{text}`, not a member path"))
+            })?;
+            select.push((member, literal));
+        }
+        Self::checked(select).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Select {
+    /// The alternative testing `tests`, once it is held to its rules: at least one test, in member
+    /// order, each member once and none an object above another.
+    fn checked(tests: Vec<(MemberPath, MemberLiteral)>) -> Result<Self, String> {
+        if tests.is_empty() {
+            return Err("a `select` map is empty: it tests at least one member".to_owned());
+        }
+        for (index, (member, _)) in tests.iter().enumerate().skip(1) {
+            let (before, _) = &tests[index - 1];
+            if before >= member {
+                return Err(format!(
+                    "`select` is out of member order: `{member}` follows `{before}`; compiled IR \
+                     orders a select's members, each once"
+                ));
+            }
+        }
+        if let Some((one, other)) = tests.iter().enumerate().find_map(|(index, (one, _))| {
+            tests[..index]
+                .iter()
+                .find(|(other, _)| other.covers(one) || one.covers(other))
+                .map(|(other, _)| (one, other))
+        }) {
+            return Err(format!(
+                "`select` tests `{other}` and `{one}`, one an object above the other, which a \
+                 literal is not"
+            ));
+        }
+        Ok(Self(tests))
+    }
+}
+
+/// A route's compiled `select`: its alternatives, each a [`Select`], in the order written, no two
+/// meeting. Compiled IR writes one alternative as its map and several as a list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selection(pub Vec<Select>);
+
+impl Selection {
+    /// The alternatives, in the order written.
+    pub fn alternatives(&self) -> &[Select] {
+        &self.0
+    }
+
+    /// The first two alternatives, by index, that one body can match, if any.
+    fn meeting(alternatives: &[Select]) -> Option<(usize, usize)> {
+        (0..alternatives.len()).find_map(|later| {
+            (0..later)
+                .find(|&earlier| alternatives[earlier].meet(&alternatives[later]).is_some())
+                .map(|earlier| (earlier, later))
+        })
+    }
+}
+
+impl fmt::Display for Selection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0.as_slice() {
+            [one] => write!(formatter, "{one}"),
+            many => {
+                let shown: Vec<String> = many.iter().map(ToString::to_string).collect();
+                write!(formatter, "[{}]", shown.join(", "))
+            }
+        }
+    }
+}
+
+impl serde::Serialize for Selection {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0.as_slice() {
+            [one] => one.serialize(serializer),
+            many => many.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Selection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Written {
+            One(Select),
+            Many(Vec<Select>),
+        }
+        let alternatives = match Written::deserialize(deserializer)? {
+            Written::One(one) => vec![one],
+            Written::Many(many) if many.len() >= 2 => many,
+            Written::Many(_) => return Err(serde::de::Error::custom(
+                "`select` is a list of fewer than two maps; compiled IR writes one alternative \
+                     as its map",
+            )),
+        };
+        if let Some((earlier, later)) = Self::meeting(&alternatives) {
+            return Err(serde::de::Error::custom(format!(
+                "`select` alternatives {earlier} and {later} meet; alternatives are disjoint"
+            )));
+        }
+        Ok(Self(alternatives))
+    }
+}
+
 /// A route's `request`, as written. Each value is read as text so that one outside its set is
 /// refused with a code and a path (`ESS-HTTP-020`) rather than as a parse error.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
@@ -2005,6 +2310,12 @@ pub struct RouteSpec {
     /// How a command's request is encoded; absent, a `json` body that refuses an unknown key.
     #[serde(default)]
     pub request: Option<RequestSpec>,
+    /// The literal values of members of a command's `json` body that choose this route among the
+    /// routes of its component on its method and path: a map of member paths to literals, or a list
+    /// of such maps, each an alternative. Read as any value, so that one outside its rules is
+    /// refused with a code and a path (`ESS-HTTP-020`).
+    #[serde(default)]
+    pub select: Option<serde_json::Value>,
     /// A command's answer per outcome, keyed by the outcome's local name; an outcome not listed
     /// keeps its derived status and the envelope.
     #[serde(default)]
@@ -2727,6 +3038,11 @@ pub struct Route {
     /// key, ESS's own, and always absent on a view.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<Request>,
+    /// The literal values of members of the `json` body that choose this route among the routes of
+    /// its component sharing its method and path; absent, the route takes every body the others
+    /// do not select (the catch-all), or it shares its template with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selection>,
     /// A command's answer for each outcome the binding lists, keyed by the outcome's local name in
     /// name order. Absent when empty, and always absent on a view; an outcome not listed keeps its
     /// derived status and the envelope.
@@ -3420,6 +3736,20 @@ impl HttpIr {
 
 /// The invariants of one compiled route that need no specification (see [`HttpIr::from_json`]).
 fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
+    if route.select.is_some() {
+        let body = route
+            .request
+            .as_ref()
+            .is_none_or(|request| request.encoding == Encoding::Json && request.body.is_none());
+        if !matches!(route.operation, Operation::Command(_)) || route.method == Method::Get || !body
+        {
+            return Err(format!(
+                "`{at}.select` is on {} on `{}`; a select tests members of a command's `json` \
+                 body that is the input object, off `get`",
+                route.operation, route.method
+            ));
+        }
+    }
     let admitted = match route.operation {
         Operation::View(_) => route.method == Method::Get,
         Operation::Command(_) => {
@@ -4231,11 +4561,11 @@ impl Refusals {
 /// | `ESS-HTTP-007` | a path that breaks the template grammar ([`template`]), naming the segment |
 /// | `ESS-HTTP-008` | a path variable not mapped, mapped twice (two segments or two keys), reading a source another variable of the route already reads, or a mapping for no variable of the path |
 /// | `ESS-HTTP-009` | a source in the wrong namespace (`input.` for a command, `param.` for a view), naming no field, or of a type a segment cannot carry: `String`, `Integer`, an enum or an unconstrained newtype of one of them |
-/// | `ESS-HTTP-010` | two operations of one component on one method and template, variable names ignored, declared or derived |
-/// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers |
+/// | `ESS-HTTP-010` | two operations of one component on one method and template, variable names ignored, declared or derived; two declared command routes on one template whose `select` tests the same members for the same literals, two of them without `select`, or one `select` beside a route whose body is not a `json` input object (the message names `select:` as the way out when both are declared) |
+/// | `ESS-HTTP-011` | two templates of one component and method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`), naming both operations, a path both match and the segments. From 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers; two declared routes on one template whose selects cross: each tests a body member the other leaves open, naming both members and a body both select |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field neither the path nor `request.query` carries; at `routes[i].request.query`: `query` beside `encoding: query`, on a `get` command, or written empty, an entry that is not `input.<field>` naming an input field of the command, one listed twice, and one the path, the bare `body` or a part of a `multipart` request carries; at `routes[i].request.members`: `members` written empty; at `routes[i].request.members.<field>`: `members` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a key that is not an input field of the command, a field the path or `request.query` carries, a path that is not one or more non-empty member names joined by `.`, two fields on one path, one path an object above another, and a path starting at the top-level member an unmapped input field is carried under (its wire name) |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form`, `query` and `multipart`, `json`, `form` or `multipart` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` beside a bare `body`; at `routes[i].request`: `request` on a view; at `routes[i].request.body`: `body` on a view, beside `form` or `query`, or on a `get` command, a body that is not `input.<field>` naming an input field of the command, one that is `Optional` or that the path carries, and, on a route with a path, each other input field neither the path nor `request.query` carries; at `routes[i].request.query`: `query` beside `encoding: query`, on a `get` command, or written empty, an entry that is not `input.<field>` naming an input field of the command, one listed twice, and one the path, the bare `body` or a part of a `multipart` request carries; at `routes[i].request.members`: `members` written empty; at `routes[i].request.members.<field>`: `members` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a key that is not an input field of the command, a field the path or `request.query` carries, a path that is not one or more non-empty member names joined by `.`, two fields on one path, one path an object above another, and a path starting at the top-level member an unmapped input field is carried under (its wire name); at `routes[i].select`: `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a value that is not a map or a list of maps, an empty map or list, a member path with an empty name, a literal that is not a string, a Boolean or an integer, two members one an object above the other, a literal the type of the input field on that member does not admit (naming the field and its type), a member above or inside the member an input field is read from, and two alternatives of one route that meet |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried; at `routes[i].request.query`: a field `query` lists whose type has no flat spelling, beside any encoding |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
@@ -4283,7 +4613,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].request.members`: a refined route's `members` added, dropped or restated with another path; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].request.members`: a refined route's `members` added, dropped or restated with another path; at `routes[i].select`: a refined route's `select` added, dropped or written otherwise; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -5773,6 +6103,16 @@ fn request_changes(
             ),
         );
     }
+    if route.select != fixed.select {
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].select"),
+            format!(
+                "{operation} has another `select` here than the refined binding fixes at \
+                 `routes[{at}]`; a refinement restates the select of every route it restates"
+            ),
+        );
+    }
     let members = |route: &RouteSpec| {
         route
             .request
@@ -5850,6 +6190,266 @@ struct Bound {
     /// The resolved route, when its operation, method, path, sources, request and `get` input
     /// resolved; it reaches the IR only when the binding earned no refusal at all.
     route: Option<Route>,
+    /// Its `select`, as far as it resolved.
+    select: Selecting,
+    /// Whether it serves a command whose `json` body is the input object, off `get`: the only
+    /// body `select` tells routes apart by.
+    json_body: bool,
+}
+
+/// A route's `select`, as far as it resolved.
+enum Selecting {
+    /// None written: on a template it shares, the route is the catch-all.
+    Unwritten,
+    /// The alternatives, each held to its rules, no two meeting.
+    Selects(Vec<Select>),
+    /// Refused (`ESS-HTTP-020`), or left unchecked beside a refused encoding.
+    Refused,
+}
+
+impl Selecting {
+    /// The route's compiled `select`.
+    fn compiled(&self) -> Option<Selection> {
+        match self {
+            Self::Selects(selects) => Some(Selection(selects.clone())),
+            Self::Unwritten | Self::Refused => None,
+        }
+    }
+}
+
+/// Whether a route serves a command on a method other than `get` whose `json` body, as written,
+/// is the input object: no bare `body`, and `json` written or left out.
+fn members_body(spec: &RouteSpec, operation: &Operation, method: Option<Method>) -> bool {
+    let request = spec.request.as_ref();
+    matches!(operation, Operation::Command(_))
+        && method.is_some_and(|method| method != Method::Get)
+        && request.is_none_or(|request| {
+            request.body.is_none()
+                && request
+                    .encoding
+                    .as_deref()
+                    .is_none_or(|text| text == Encoding::Json.as_str())
+        })
+}
+
+/// A route's `select` (`ESS-HTTP-020`, at `routes[i].select`), resolved: only on a command whose
+/// `json` body is the input object, off `get`; a map of member paths to literals, or a list of at
+/// least one such map, each map an alternative testing at least one member, its literals strings,
+/// Booleans or integers ([`select_of`]); and no two alternatives meeting.
+fn selection(
+    spec: &RouteSpec,
+    operation: &Operation,
+    target: Option<&Target<'_>>,
+    method: Option<Method>,
+    mapped: &[String],
+    path: &str,
+    refusals: &mut Refusals,
+) -> Selecting {
+    let Some(written) = &spec.select else {
+        return Selecting::Unwritten;
+    };
+    let at = format!("{path}.select");
+    let request = spec.request.as_ref();
+    let encoding = request
+        .and_then(|request| request.encoding.as_deref())
+        .map_or(Some(Encoding::Json), Encoding::parse);
+    let rule = match (operation, encoding, method) {
+        (Operation::View(_), _, _) => Some(format!(
+            "{operation} takes no body: `select` tests members of a command's `json` body"
+        )),
+        (_, Some(encoding @ (Encoding::Form | Encoding::Query | Encoding::Multipart)), _) => {
+            Some(format!(
+                "`select` tests members of a `json` body, and this request is encoded `{encoding}`"
+            ))
+        }
+        _ if request.is_some_and(|request| request.body.is_some()) => Some(
+            "`select` tests members of the input object, and a bare `body` is one input field's \
+             value, which holds no member of the input to test"
+                .to_owned(),
+        ),
+        (_, _, Some(Method::Get)) => {
+            Some("`select` tests members of a `json` body, and `get` carries none".to_owned())
+        }
+        _ => None,
+    };
+    if let Some(rule) = rule {
+        refusals.refuse("ESS-HTTP-020", at, rule);
+        return Selecting::Refused;
+    }
+    let maps: Vec<&serde_json::Map<String, serde_json::Value>> = match written {
+        serde_json::Value::Object(map) => vec![map],
+        serde_json::Value::Array(items) if !items.is_empty() => items
+            .iter()
+            .filter_map(serde_json::Value::as_object)
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    let listed = match written {
+        serde_json::Value::Array(items) => items.len(),
+        _ => 1,
+    };
+    if maps.len() != listed || maps.is_empty() {
+        refusals.refuse(
+            "ESS-HTTP-020",
+            at,
+            match written {
+                serde_json::Value::Array(items) if items.is_empty() => {
+                    "`select` is an empty list: it holds at least one map".to_owned()
+                }
+                _ => format!(
+                    "`select` is `{written}`: it is a map of member paths to literals, or a list \
+                     of such maps"
+                ),
+            },
+        );
+        return Selecting::Refused;
+    }
+    let (Some(target), Some(_)) = (target, encoding) else {
+        return Selecting::Refused;
+    };
+    let mut selects = Vec::new();
+    let mut refused = false;
+    for map in maps {
+        match select_of(map, target, request, mapped) {
+            Ok(select) => selects.push(select),
+            Err(rule) => {
+                refusals.refuse("ESS-HTTP-020", at.as_str(), rule);
+                refused = true;
+            }
+        }
+    }
+    if let Some((earlier, later)) = Selection::meeting(&selects) {
+        refusals.refuse(
+            "ESS-HTTP-020",
+            at.as_str(),
+            format!(
+                "alternative `{}` and alternative `{}` both match `{}`; the alternatives of one \
+                 route are disjoint",
+                selects[earlier],
+                selects[later],
+                selects[earlier].common_body(&selects[later])
+            ),
+        );
+        refused = true;
+    }
+    if refused {
+        Selecting::Refused
+    } else {
+        Selecting::Selects(selects)
+    }
+}
+
+/// One alternative of a `select` (`map`), or why it is refused: at least one member, each a member
+/// path, none an object above another, each literal a string, a Boolean or an integer within 64
+/// bits, and on a member an input field is read from a literal its type admits; a member above or
+/// inside the member an input field is read from is refused.
+fn select_of(
+    map: &serde_json::Map<String, serde_json::Value>,
+    target: &Target<'_>,
+    request: Option<&RequestSpec>,
+    mapped: &[String],
+) -> Result<Select, String> {
+    if map.is_empty() {
+        return Err("`select` holds an empty map: an alternative tests at least one member".into());
+    }
+    // Where the body carries each input field the path and the query string do not.
+    let queried: Vec<String> = request
+        .and_then(|request| request.query.as_ref())
+        .into_iter()
+        .flatten()
+        .filter_map(|text| Source::parse(text).map(|source| source.field().to_owned()))
+        .collect();
+    let members = request.and_then(|request| request.members.as_ref());
+    let carried: Vec<(&ResolvedField, MemberPath)> = target
+        .fields
+        .iter()
+        .filter(|field| {
+            !mapped.contains(&format!("input.{}", field.name)) && !queried.contains(&field.name)
+        })
+        .filter_map(|field| {
+            let text = members
+                .and_then(|members| members.get(&field.name))
+                .cloned()
+                .unwrap_or_else(|| {
+                    field
+                        .naming
+                        .wire
+                        .clone()
+                        .unwrap_or_else(|| field.name.clone())
+                });
+            MemberPath::parse(&text).map(|member| (field, member))
+        })
+        .collect();
+    let mut tests = Vec::new();
+    for (text, value) in map {
+        let member = MemberPath::parse(text).ok_or_else(|| {
+            format!(
+                "`{text}` is not a member path: one or more member names joined by `.`, and a \
+                 name is never empty"
+            )
+        })?;
+        let literal = MemberLiteral::of(value).ok_or_else(|| {
+            format!(
+                "`{text}: {value}` is not a literal a `select` tests for: a string, a Boolean or \
+                 an integer"
+            )
+        })?;
+        for (field, read) in &carried {
+            if *read == member {
+                if !admits(target.ir, &field.type_ref, &literal) {
+                    return Err(format!(
+                        "`{text}: {value}` tests the member input field `{}` is read from, of type \
+                         `{}`, which does not admit that literal",
+                        field.name, field.type_ref
+                    ));
+                }
+            } else if read.covers(&member) || member.covers(read) {
+                return Err(format!(
+                    "`{text}` is above or inside `{read}`, the member input field `{}` is read \
+                     from: a tested member is the member of a field, or of none",
+                    field.name
+                ));
+            }
+        }
+        tests.push((member, literal));
+    }
+    tests.sort();
+    Select::checked(tests)
+}
+
+/// Whether `type_ref` admits `literal`: a Boolean a `Boolean`, an integer an `Integer`, a string a
+/// `String` or an enum naming it among its variants' wire names, each through newtypes and
+/// `Optional`.
+fn admits(ir: &EssIr, type_ref: &ResolvedTypeRef, literal: &MemberLiteral) -> bool {
+    match literal {
+        MemberLiteral::Boolean(_) => of_primitive(type_ref, Primitive::Boolean, ir),
+        MemberLiteral::Integer(_) => of_primitive(type_ref, Primitive::Integer, ir),
+        MemberLiteral::String(text) => {
+            of_primitive(type_ref, Primitive::String, ir) || names_variant(ir, type_ref, text)
+        }
+    }
+}
+
+/// Whether `type_ref`, through `Optional` and newtypes, is an enum one of whose variants is
+/// written `text`.
+fn names_variant(ir: &EssIr, type_ref: &ResolvedTypeRef, text: &str) -> bool {
+    let mut current = type_ref;
+    for _ in 0..=ir.types().len() {
+        match current {
+            ResolvedTypeRef::Optional { of } => current = of,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => current = of,
+                ResolvedBody::Enum { variants } => {
+                    return variants.iter().any(|variant| {
+                        variant.naming.wire.as_deref().unwrap_or(&variant.name) == text
+                    });
+                }
+                _ => return false,
+            },
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// The fields a route's sources are read from: a command's input or a view's parameters.
@@ -5927,6 +6527,15 @@ fn routes(
             &path,
             refusals,
         );
+        let select = selection(
+            spec,
+            &operation,
+            target.as_ref(),
+            method,
+            &mapped,
+            &path,
+            refusals,
+        );
         let route_limits = route_limits(spec, &operation, method, &request, &path, refusals);
         let own = self::standard(
             spec.refusals.as_ref(),
@@ -5943,21 +6552,8 @@ fn routes(
             &standing,
             refusals,
         );
-        if let Some(first) = first_route.get(&operation) {
-            refusals.refuse(
-                "ESS-HTTP-005",
-                path.as_str(),
-                format!("{operation} is already routed by `routes[{first}]`; an operation has one route"),
-            );
-        } else {
-            first_route.insert(operation.clone(), index);
-        }
-        let claim = match (method, &segments, &spec.path) {
-            (Some(method), Some(Some(segments)), Some(path)) => {
-                Some((method, path.clone(), segments.clone()))
-            }
-            _ => None,
-        };
+        routed_once(&mut first_route, &operation, index, refusals);
+        let claim = claim_of(method, segments.as_ref(), spec.path.as_ref());
         let route = match (target, method, segments, sources, request, answers) {
             (Some(_), Some(method), Some(_), Some(sources), Ok(request), Ok(answers)) => {
                 Some(Route {
@@ -5968,6 +6564,7 @@ fn routes(
                     path: spec.path.clone(),
                     parameters: sources,
                     request,
+                    select: select.compiled(),
                     outcomes: answers.outcomes,
                     errors: answers.errors,
                     alike: answers.alike,
@@ -5982,13 +6579,51 @@ fn routes(
         };
         routes.push(Bound {
             index,
+            json_body: members_body(spec, &operation, method),
             operation,
             claim,
+            select,
             route,
         });
     }
     routes
 }
+/// Refuses `routes[index]` when an earlier route routes `operation` already (`ESS-HTTP-005`), and
+/// records it as the operation's route otherwise.
+fn routed_once(
+    first_route: &mut BTreeMap<Operation, usize>,
+    operation: &Operation,
+    index: usize,
+    refusals: &mut Refusals,
+) {
+    if let Some(first) = first_route.get(operation) {
+        refusals.refuse(
+            "ESS-HTTP-005",
+            format!("routes[{index}]"),
+            format!(
+                "{operation} is already routed by `routes[{first}]`; an operation has one route"
+            ),
+        );
+    } else {
+        first_route.insert(operation.clone(), index);
+    }
+}
+
+/// The method, path and segments a route claims on the surface: `None` for an open route, or when
+/// its method was refused or its path broke the grammar.
+fn claim_of(
+    method: Option<Method>,
+    segments: Option<&Option<Vec<Segment>>>,
+    path: Option<&String>,
+) -> Option<(Method, String, Vec<Segment>)> {
+    match (method, segments, path) {
+        (Some(method), Some(Some(segments)), Some(path)) => {
+            Some((method, path.clone(), segments.clone()))
+        }
+        _ => None,
+    }
+}
+
 /// The operation a route serves, or `None` when it names neither or both (`ESS-HTTP-004`).
 fn served_operation(spec: &RouteSpec, path: &str, refusals: &mut Refusals) -> Option<Operation> {
     match (&spec.command, &spec.view) {
@@ -9824,6 +10459,96 @@ struct Claim<'a> {
     segments: Vec<Segment>,
     /// Where the binding declares it; `None` for a derived route.
     declared: Option<usize>,
+    /// A declared route's `select`; `None` for a derived route.
+    select: Option<&'a Selecting>,
+    /// Whether its body is a `json` input object, the only body `select` tells apart.
+    json_body: bool,
+}
+
+/// Refuses two declared routes of one component on one method and template, `this` at
+/// `routes[at]`, unless their selects tell them apart (`ESS-HTTP-010` for the same tests,
+/// `ESS-HTTP-011` for crossed ones); of nested selects the more specific answers.
+fn shared(
+    this: &Claim<'_>,
+    other: &Claim<'_>,
+    component: &str,
+    at: usize,
+    refusals: &mut Refusals,
+) {
+    match told(this, other) {
+        Told::Apart | Told::Unknown => {}
+        Told::Same => refusals.refuse(
+            "ESS-HTTP-010",
+            format!("routes[{at}]"),
+            format!(
+                "{COLLISION}: {} and {} are one route on component `{component}`, since variable \
+                 names do not tell two templates apart; tell them apart with `select:`, literal \
+                 values of members of a `json` body that is the input object, at most one of them \
+                 without it",
+                this.describe(),
+                other.describe()
+            ),
+        ),
+        Told::Crossed(mine, theirs, body) => refusals.refuse(
+            "ESS-HTTP-011",
+            format!("routes[{at}]"),
+            format!(
+                "{} and {} cross on component `{component}`: both select the body `{body}`, and \
+                 neither is more specific, since the one tests `{mine}` where the other leaves it \
+                 open and the other tests `{theirs}` where the one leaves it open; a select takes \
+                 precedence only where it tests every member the other tests, with the same \
+                 literals",
+                this.describe(),
+                other.describe()
+            ),
+        ),
+    }
+}
+
+/// How two declared routes on one method and template are told apart by their selects.
+enum Told {
+    /// Every two alternatives are disjoint or nested: the more specific answers.
+    Apart,
+    /// Two alternatives test the same members for the same literals, two catch-alls among them, or
+    /// a catch-all that is not a `json` body beside a select (`ESS-HTTP-010`).
+    Same,
+    /// Two alternatives cross: the first's member the second leaves open, the second's the first
+    /// leaves open, and a body that matches both (`ESS-HTTP-011`).
+    Crossed(MemberPath, MemberPath, String),
+    /// A select was refused already.
+    Unknown,
+}
+
+/// How the selects of two routes on one template tell them apart; a route without `select` is
+/// the catch-all, one alternative testing nothing.
+fn told(this: &Claim<'_>, other: &Claim<'_>) -> Told {
+    const CATCH_ALL: &[Select] = &[Select(Vec::new())];
+    fn alternatives<'a>(claim: &Claim<'a>) -> Option<&'a [Select]> {
+        match claim.select {
+            Some(Selecting::Selects(selects)) => Some(selects.as_slice()),
+            Some(Selecting::Unwritten) => Some(CATCH_ALL),
+            Some(Selecting::Refused) | None => None,
+        }
+    }
+    let (Some(mine), Some(theirs)) = (alternatives(this), alternatives(other)) else {
+        return Told::Unknown;
+    };
+    let selected = |claim: &Claim<'_>| matches!(claim.select, Some(Selecting::Selects(_)));
+    if (selected(this) || selected(other)) && !(this.json_body && other.json_body) {
+        return Told::Same;
+    }
+    for one in mine {
+        for two in theirs {
+            match one.meet(two) {
+                Some(Meeting::Same) => return Told::Same,
+                Some(Meeting::Crossed(left, right)) => {
+                    return Told::Crossed(left, right, one.common_body(two));
+                }
+                Some(Meeting::Nested) | None => {}
+            }
+        }
+    }
+    Told::Apart
 }
 
 impl Claim<'_> {
@@ -9955,6 +10680,8 @@ fn surface(
                         path,
                         segments: segments.clone(),
                         declared: Some(bound.index),
+                        select: Some(&bound.select),
+                        json_body: bound.json_body,
                     });
                 }
             }
@@ -9966,6 +10693,8 @@ fn surface(
                 path: &route.path,
                 segments: literal_segments(&route.path),
                 declared: None,
+                select: None,
+                json_body: false,
             });
         }
     }
@@ -9983,7 +10712,11 @@ fn surface(
                 } else {
                     (left, right)
                 };
+                let both = this.declared.is_some() && other.declared.is_some();
                 match clash(&this.segments, &other.segments) {
+                    Some(Clash::Same) if both => {
+                        shared(this, other, component, at, refusals);
+                    }
                     Some(Clash::Same) => refusals.refuse(
                         "ESS-HTTP-010",
                         format!("routes[{at}]"),

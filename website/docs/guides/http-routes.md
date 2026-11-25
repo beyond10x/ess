@@ -252,6 +252,35 @@ The document follows those keys on the routes that use them:
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
 
+### Several commands on one route
+
+Command routes of one component may share a method and path when `select:` tells them apart by
+literal values of members of the `json` body. A member path is member names joined by `.`; a
+literal is a string, a Boolean or an integer; a list of maps gives one command several
+alternatives:
+
+```yaml
+routes:
+  - {command: catalog.desk.OpenTicket, method: post, path: /hooks, select: {kind: opened}}
+  - {command: catalog.desk.CloseTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+  - {command: catalog.desk.ReopenTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: catalog.desk.IgnoreHook, method: post, path: /hooks}
+  - command: catalog.desk.ChangeLabel
+    method: post
+    path: /v2/hooks
+    select: [{object: label, action: added}, {object: label, action: removed}]
+```
+
+- A member a select does not name matches anything, an absent member too. Of two selects one body
+  matches, the one testing more members answers; two testing the same members for the same
+  literals are `ESS-HTTP-010`, and two each testing a member the other leaves open are
+  `ESS-HTTP-011`.
+- The route without `select` is the catch-all. Without one, a body no select matches is
+  `malformed`, a `4xx`.
+- A tested member an input field is read from must hold a literal the field's type admits.
+- `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, on `get`, written
+  empty, or with two alternatives one body matches is `ESS-HTTP-020`.
+
 ### Answer a view as CSV
 
 A view route may answer its rows as CSV when the query holds a value you choose, and as JSON

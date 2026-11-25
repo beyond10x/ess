@@ -174,6 +174,53 @@ or `single` they write all use the wire name, and the model name is an unknown k
 takes its wire name the same way. `naming: {wire}` is not a view field's key and is refused as an
 unknown field.
 
+### Several operations on one route
+
+Command routes of one component and method may share a template when `select:` tells them apart
+(`ae1a-several-operations-share-one-route-by-body-members`). A select is a map from a member path
+of the `json` body (the grammar of `request.members`) to a literal, a string, a Boolean or an
+integer, or a list of such maps, each an alternative of one operation, so `ESS-HTTP-005` keeps its
+meaning:
+
+```yaml
+routes:
+  - {command: demo.desk.OpenTicket, method: post, path: /hooks, select: {kind: opened}}
+  - {command: demo.desk.CloseTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+  - {command: demo.desk.ReopenTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: demo.desk.IgnoreHook, method: post, path: /hooks}        # the catch-all
+  - command: demo.desk.ChangeLabel
+    method: post
+    path: /v2/hooks
+    select: [{object: label, action: added}, {object: label, action: removed}]
+```
+
+The rule is the template rule of 0.89.0, applied to members:
+
+- A member a select does not name matches any value, an absent member included.
+- Two selects meet when one body can match both. The same tests are `ESS-HTTP-010`, as two
+  catch-alls are. One that tests every member the other tests, with the same literals, and more is
+  nested: the more specific answers. Each testing a member the other leaves open is crossed:
+  `ESS-HTTP-011`, naming both members and a body that matches both.
+- A route on the shared template without `select` is the catch-all, and makes the set open.
+  Without one the set is closed: a body no select matches is `malformed`, answered with the
+  binding's or the route's `malformed` refusal, a `4xx`.
+- A tested member may be one an input field is read from, at the top level under its wire name or
+  through `request.members`; that field receives the body's value, and its type must admit the
+  literal. A tested member is never an undeclared member, under `unknown: refuse` or `ignore`. A
+  member above or inside the member a field is read from is refused.
+- `ESS-HTTP-020` refuses, at `routes[i].select`: `select` on a view, beside `form`, `query`,
+  `multipart` or a bare `body`, or on `get`; a value that is not a map or a list of maps; an empty
+  map or list; a path breaking the member grammar; a literal that is `null`, a list, an object or
+  a number that is not an integer; two members of one map one above the other; a literal the field
+  on its member does not admit; and two alternatives of one route that meet.
+- A route sharing a template with a select is a `json` body that is the input object, or the two
+  are `ESS-HTTP-010`. A derived route never shares a template with a declared one.
+- Compiled IR writes `select` only where it is declared, one alternative as its map in member
+  order and several as a list in the order written, so every binding without it compiles to the
+  bytes it did. No format version: a reader without the key refuses `select` by name. A refinement
+  restates `select` (`ESS-HTTP-012`).
+- The OpenAPI document, the generated servers and the generated apps do not read `select` yet.
+
 ### Which operations a binding may name
 
 - A command a component `accepts`. Every such command has an OpenAPI route today (`http.rs:392-411`).
@@ -203,9 +250,9 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-007` | a path that breaks the template grammar | `routes[i].path` and the offending segment |
 | `ESS-HTTP-008` | a variable not mapped, mapped twice, reading a source another variable of the route already reads (a request path would give it two values), or a mapping for no variable | `routes[i].parameters.<name>`; for a source read twice, the second variable of the path that reads it |
 | `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry (any but `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them) | `routes[i].parameters.<name>`, the source, its type |
-| `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
-| `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates") | both operations, a path both match, and the segment where each holds its literal |
-| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body`, `request.query` or `request.members` | `routes[i].method`, `routes[i].path`, `routes[i].request.body`, `routes[i].request.query` or `routes[i].request.members`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
+| `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived; two declared command routes on one template whose `select` tests the same members for the same literals, two without `select`, or a `select` beside a route whose body is not a `json` input object (the message names `select:` when both are declared) | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
+| `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates"); two declared routes on one template whose selects cross, each testing a body member the other leaves open ("Several operations on one route") | both operations, a path both match, and the segment where each holds its literal |
+| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body`, `request.query`, `request.members` or `select` | `routes[i].method`, `routes[i].path`, `routes[i].request.body`, `routes[i].request.query`, `routes[i].request.members` or `routes[i].select`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
 
@@ -723,7 +770,7 @@ and its answers.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field neither the path nor `request.query` carries; a `query` beside `encoding: query`, on a `get` command or written empty, an entry that is not `input.<field>` naming an input field, one listed twice, and one the path, the bare `body` or a part carries; `request.members` written empty, on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a key that is not an input field, a field the path or `request.query` carries, a path with an empty name, two fields on one path, one path an object above another, and a path starting at an unmapped field's wire name | `routes[i].request.encoding`, `routes[i].request.unknown`, `routes[i].request.body`, `routes[i].request.query`, `routes[i].request.members` or `routes[i].request.members.<field>`, and for a field left out, the field |
+| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field neither the path nor `request.query` carries; a `query` beside `encoding: query`, on a `get` command or written empty, an entry that is not `input.<field>` naming an input field, one listed twice, and one the path, the bare `body` or a part carries; `request.members` written empty, on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a key that is not an input field, a field the path or `request.query` carries, a path with an empty name, two fields on one path, one path an object above another, and a path starting at an unmapped field's wire name; `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on `get`, a value that is not a map or a list of maps, an empty map or list, a member path with an empty name, a literal that is not a string, a Boolean or an integer, two members one above the other, a literal the type of the input field on its member does not admit, a member above or inside a field's member, and two alternatives of one route that meet | `routes[i].select`, `routes[i].request.encoding`, `routes[i].request.unknown`, `routes[i].request.body`, `routes[i].request.query`, `routes[i].request.members` or `routes[i].request.members.<field>`, and for a field left out, the field |
 | `ESS-HTTP-021` | a `form`, `query` or `multipart` field, or a field `request.query` lists, whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
