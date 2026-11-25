@@ -1097,5 +1097,8 @@ fn a_setup_run_arranged_as_its_own_scenario_keeps_the_rows_its_guards_relate() {
         .filter(|run| run.status != Status::Passed)
         .map(|run| (run.scenario.to_string(), run.status))
         .collect();
-    assert!(failed.is_empty(), "the declared interpreter passes every scenario: {failed:#?}");
+    assert!(
+        failed.is_empty(),
+        "the declared interpreter passes every scenario: {failed:#?}"
+    );
 }
