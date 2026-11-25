@@ -1,0 +1,153 @@
+# A system sealer seals a checked batch unless an outside check finds the stock moved. The outside
+# check is asked only on some rows (`external:` beside `when_subject:`) and only for one value of
+# an input the system decides, in three forms: a `when:` beside the narrowing (`Seal`), an
+# `input.` read inside the narrowing's predicate (`SealChecked`), and the narrowed branch declared
+# after a sibling refusing the other value on the same rows (`SealLate`). Each awaited step of the
+# outside branch states the input its guards read, at the value synthesis sent
+# (story:an-awaited-system-step-of-a-narrowed-external-branch-states-the-input-its-guards-read).
+
+format: ess/29
+system: upkeep
+version: v1
+domain: upkeep.batch
+types:
+  - {name: upkeep.batch.BatchId, kind: newtype, of: Uuid}
+entities:
+  - name: upkeep.batch.Batch
+    identity: {name: batch_id, type: upkeep.batch.BatchId}
+    fields:
+      - {name: retries, type: Integer}
+    lifecycle:
+      initial: Drafted
+      states: [Drafted, Checked, Sealed, Expired]
+      terminal: [Sealed, Expired]
+      transitions:
+        - {name: check, from: [Drafted], to: Checked}
+        - {name: seal, from: [Checked], to: Sealed}
+        - {name: expire, from: [Checked], to: Expired}
+actors:
+  - name: upkeep.batch.Clerk
+    may: [upkeep.batch.Draft, upkeep.batch.Check]
+  - name: upkeep.batch.Sealer
+    system: true
+    may: [upkeep.batch.Seal, upkeep.batch.SealChecked, upkeep.batch.SealLate]
+commands:
+  - name: upkeep.batch.Draft
+    input:
+      - {name: retries, type: Integer}
+    outcomes:
+      - name: drafted
+        creates: upkeep.batch.Batch
+        instance: batch_id
+        sets: {retries: input.retries}
+        emits: [upkeep.batch.Drafted]
+        payload:
+          upkeep.batch.Drafted: {batch_id: {generated: true}}
+  - name: upkeep.batch.Check
+    input:
+      - {name: batch_id, type: upkeep.batch.BatchId}
+    outcomes:
+      - name: checked
+        moves: upkeep.batch.Batch.check
+        instance: batch_id
+        emits: [upkeep.batch.Checked]
+        payload:
+          upkeep.batch.Checked: {batch_id: input.batch_id}
+      - name: not-drafted
+        wrong_state: true
+        error: upkeep.batch.NotDrafted
+  - name: upkeep.batch.Seal
+    input:
+      - {name: batch_id, type: upkeep.batch.BatchId}
+      - {name: forced, type: Boolean}
+    outcomes:
+      - name: expired
+        external: the stock moved after the check
+        when: forced == false
+        when_subject:
+          predicate: {all: [state == Checked, retries < 3]}
+        moves: upkeep.batch.Batch.expire
+        instance: batch_id
+        emits: [upkeep.batch.Expired]
+        payload:
+          upkeep.batch.Expired: {batch_id: input.batch_id}
+      - name: sealed
+        moves: upkeep.batch.Batch.seal
+        instance: batch_id
+        emits: [upkeep.batch.Sealed]
+        payload:
+          upkeep.batch.Sealed: {batch_id: input.batch_id}
+      - name: not-checked
+        wrong_state: true
+        error: upkeep.batch.NotChecked
+  - name: upkeep.batch.SealChecked
+    input:
+      - {name: batch_id, type: upkeep.batch.BatchId}
+      - {name: forced, type: Boolean}
+    outcomes:
+      - name: expired
+        external: the stock moved after the check
+        when_subject:
+          predicate: {all: [state == Checked, retries < 3, input.forced == false]}
+        moves: upkeep.batch.Batch.expire
+        instance: batch_id
+        emits: [upkeep.batch.Expired]
+        payload:
+          upkeep.batch.Expired: {batch_id: input.batch_id}
+      - name: sealed
+        moves: upkeep.batch.Batch.seal
+        instance: batch_id
+        emits: [upkeep.batch.Sealed]
+        payload:
+          upkeep.batch.Sealed: {batch_id: input.batch_id}
+      - name: not-checked
+        wrong_state: true
+        error: upkeep.batch.NotChecked
+  - name: upkeep.batch.SealLate
+    input:
+      - {name: batch_id, type: upkeep.batch.BatchId}
+      - {name: forced, type: Boolean}
+    outcomes:
+      - name: held
+        when_subject: {predicate: retries < 3}
+        when: forced == true
+        error: upkeep.batch.Held
+      - name: expired
+        external: the stock moved after the check
+        when_subject:
+          predicate: {all: [state == Checked, retries < 3]}
+        moves: upkeep.batch.Batch.expire
+        instance: batch_id
+        emits: [upkeep.batch.Expired]
+        payload:
+          upkeep.batch.Expired: {batch_id: input.batch_id}
+      - name: sealed
+        moves: upkeep.batch.Batch.seal
+        instance: batch_id
+        emits: [upkeep.batch.Sealed]
+        payload:
+          upkeep.batch.Sealed: {batch_id: input.batch_id}
+      - name: not-checked
+        wrong_state: true
+        error: upkeep.batch.NotChecked
+events:
+  - name: upkeep.batch.Drafted
+    fields: [{name: batch_id, type: upkeep.batch.BatchId}]
+  - name: upkeep.batch.Checked
+    fields: [{name: batch_id, type: upkeep.batch.BatchId}]
+  - name: upkeep.batch.Expired
+    fields: [{name: batch_id, type: upkeep.batch.BatchId}]
+  - name: upkeep.batch.Sealed
+    fields: [{name: batch_id, type: upkeep.batch.BatchId}]
+errors:
+  - name: upkeep.batch.NotDrafted
+  - name: upkeep.batch.NotChecked
+  - name: upkeep.batch.Held
+views:
+  - name: upkeep.batch.Batches
+    source: upkeep.batch.Batch
+    consistency: read_your_writes
+    fields:
+      - {name: batch_id, type: upkeep.batch.BatchId}
+      - {name: retries, type: Integer}
+      - {name: state, type: upkeep.batch.Batch.State}

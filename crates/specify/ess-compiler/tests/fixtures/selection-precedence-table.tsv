@@ -1,4 +1,4 @@
-#	models=411	commands=858
+#	models=412	commands=863
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -1165,6 +1165,12 @@ crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	ir=78c8c58
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.AddWorker	default: added
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Assign	held_state: wrong-state | accepting: dialler-refused | default: assigned
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Enqueue	default: enqueued
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	ir=2574fbd57370be46b02995cdb2b70818c09d944eaef8c344a25a9215760eb908:22557
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	upkeep.batch.Check	held_state: not-drafted | default: checked
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	upkeep.batch.Draft	default: drafted
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	upkeep.batch.Seal	held_state: expired, not-checked | default: sealed
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	upkeep.batch.SealChecked	held_state: expired, not-checked | default: sealed
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	upkeep.batch.SealLate	held_state: held, expired, not-checked | default: sealed
 crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	ir=d3d3f32082b2b471847deca786e723e094da5ee0ca25b0c1e54f223d1597be0f:15832
 crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	demo.seats.AddMember	default: added
 crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	demo.seats.AddSeat	default: added

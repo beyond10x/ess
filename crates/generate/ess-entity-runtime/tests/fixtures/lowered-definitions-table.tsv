@@ -1,4 +1,4 @@
-#	models=493	lines=676
+#	models=494	lines=677
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -409,6 +409,7 @@ crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-servic
 crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	create	opened
 crates/verify/ess-conformance/tests/fixtures/system-guard.yaml	inspection-service	inspection.check.Check	inspection.check.RecordCheck	accepted, rejected, closed
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/system-narrowed-external-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	components=0

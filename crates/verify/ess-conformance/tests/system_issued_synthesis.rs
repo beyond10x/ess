@@ -1170,3 +1170,59 @@ fn adversary_a_row_set_guard_beside_an_input_guard_states_the_input() {
     );
     run_on_the_interpreter(ir, &synthesis);
 }
+
+const SYSTEM_NARROWED_EXTERNAL: &str = include_str!("fixtures/system-narrowed-external-guard.yaml");
+
+/// story:an-awaited-system-step-of-a-narrowed-external-branch-states-the-input-its-guards-read:
+/// an `external:` branch narrowed by `when_subject:` whose answering also reads an input (a
+/// `when:` beside it, an `input.` read inside its predicate, or declared after a sibling taking the
+/// other value) is awaited with that input stated at the value synthesis sent, and the suite
+/// passes on the interpreted model. With a human actor the send states it already.
+#[test]
+fn an_awaited_system_step_of_a_narrowed_external_branch_states_the_input_its_guards_read() {
+    let ir = ir_of(SYSTEM_NARROWED_EXTERNAL);
+    let synthesis = synthesize(&ir);
+    assert_never_driven(&ir, &synthesis);
+    let not_forced = ScenarioValue::literal(ess_primitives::node::Node::Bool(false));
+    for command in [
+        "upkeep.batch.Seal",
+        "upkeep.batch.SealChecked",
+        "upkeep.batch.SealLate",
+    ] {
+        let expired = format!("{command}/outcome/expired");
+        assert_eq!(
+            stated(&synthesis, &expired, command).get("forced"),
+            Some(&not_forced),
+            "`{expired}` awaits the input the narrowed external branch's guard admits"
+        );
+        let mut awaits = 0;
+        for (scenario_id, scenario) in &synthesis.suite.scenarios {
+            for (at, step) in scenario.steps.iter().enumerate() {
+                let ScenarioStep::AwaitOutcome { input, .. } = step else {
+                    continue;
+                };
+                let claims_expired = names(step, command)
+                    && scenario.steps[at + 1..]
+                        .iter()
+                        .take_while(|next| !matches!(next, ScenarioStep::AwaitOutcome { .. }))
+                        .any(|next| {
+                            matches!(next, ScenarioStep::ExpectOutcome { outcome }
+                                if outcome.outcome.to_string() == "expired")
+                        });
+                if claims_expired {
+                    awaits += 1;
+                    assert_eq!(
+                        input.get("forced"),
+                        Some(&not_forced),
+                        "`{scenario_id}` states the input: {input:#?}"
+                    );
+                }
+            }
+        }
+        assert!(awaits > 0, "`{command}`'s `expired` is awaited");
+    }
+    run_on_the_interpreter(ir, &synthesis);
+    let human = ir_of(&SYSTEM_NARROWED_EXTERNAL.replace("    system: true\n", ""));
+    let synthesis = synthesize(&human);
+    run_on_the_interpreter(human, &synthesis);
+}
