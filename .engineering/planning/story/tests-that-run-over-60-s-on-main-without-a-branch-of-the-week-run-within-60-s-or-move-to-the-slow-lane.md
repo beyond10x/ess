@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - derived_from: story:the-test-step-meets-the-test-budget
 - informed_by: story:three-adversary-targets-run-a-reduced-sweep-in-the-test-step-and-the-full-sweep-in-the-slow-lane
-revision: 1
+revision: 2
 ---
 ## Summary
 
@@ -77,3 +77,14 @@ slowest 170.2 s.
   `aggregate_group_selection.rs`, `adversary_287_pass1.rs`, `nested_response_observations.rs`,
   `adversary_map_witness_pass1.rs`) and `crates/edge/ess-cli/tests/explore_concurrent.rs`; the
   slow-lane list (`cargo xtask slow-list`) and its pin test.
+
+## Added evidence (2026-11-25)
+
+- The test step of `ess-ui-test` ran 121 s in the narrowed gate of the pull request 830 (head
+  `f93dcf8514`), over the 120 s step budget; the time includes compiling. It is a step over the
+  budget, not one test over 60 s: the step's own build and its tests both count.
+- One slow byte lane of the gate of the N89 fix (branch
+  `fix/n89-a-setup-run-rebuilds-its-creating-scenario-once`, the lane that compares suites at 1, 2
+  and 7 jobs) ran 156 s in the first gate run and 119 s in the re-run, a single test over the 60 s
+  bound in both. Its test name is not recorded in the gate log read for this entry; the lane's
+  first step is to name it.
