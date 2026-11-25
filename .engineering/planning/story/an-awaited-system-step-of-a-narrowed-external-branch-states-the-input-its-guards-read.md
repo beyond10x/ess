@@ -14,7 +14,7 @@ relations:
 - informed_by: story:a-system-issued-awaited-step-honours-its-outcomes-input-guard
 - informed_by: story:a-stored-guard-beside-an-input-guard-on-a-system-step-synthesizes
 - informed_by: story:external-branch-narrowed-by-subject-guard
-revision: 1
+revision: 3
 ---
 ## Summary
 
@@ -123,6 +123,7 @@ inside the predicate (lines 281-286) is never applied to the narrowed external b
   `SubjectPredicate` of a system step is refused. Recommended A. Not architecture and not a security
   boundary; taken on default if unanswered.
 - Accept as reported: the defect, with no new syntax.
+- SX-D1: A, taken by the coordinator on 2026-11-25
 
 ## Scope
 
@@ -130,3 +131,8 @@ inside the predicate (lines 281-286) is never applied to the narrowed external b
   `guarded_input`), `crates/verify/ess-conformance/tests/system_issued_synthesis.rs`,
   `crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv` and
   `synthesis-sources.digest` if a committed model has such a branch, `CHANGELOG.md`.
+
+## Delivery
+
+The fix is built in commit `510282e086`, in pull request 828 (`beyond10x/ess`). Release 0.99.1 is
+pending; this story is not moved until the release is verified.
