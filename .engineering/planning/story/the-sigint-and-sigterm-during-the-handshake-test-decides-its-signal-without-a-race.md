@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:a-killed-childs-outcome-says-which-signal-ended-it
-revision: 1
+revision: 2
 ---
 ## Defect
 
@@ -59,6 +59,8 @@ What the code and the design say:
   target's group is gone; the design promises one of them. B: `end_on` decides by arrival order (the first signal received), a
   product change, and the test keeps asserting `SIGINT`; needs the design page to say first-wins. Recommended A. Open until answered;
   taken on default if unanswered.
+
+- PT-D1: A (the test asserts what holds for either order of the two signals), taken by the coordinator on 2026-11-25; the race's cause is not verified, the implementor states it before the fix.
 
 ## Acceptance
 
