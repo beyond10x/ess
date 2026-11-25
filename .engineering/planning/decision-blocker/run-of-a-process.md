@@ -10,7 +10,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - blocks: story:a-specification-may-state-one-run-of-a-process-with-a-command-once-per-member-of-a-set-and-a-command-once-per
-revision: 4
+revision: 5
 ---
 Does a specification state a run of a process (a cause, a command per member of a set, a command once, a continuation after a refused member, an exit status), and as a binding cause, as its own document, or not at all: options A, B, C, D of RN-D1, an architecture decision with the owner. There is no default; nothing waiting on it takes one. The question has been with the owner since 2026-11-24; there is no answer yet.
 
@@ -26,3 +26,7 @@ One execution of a process: it has a cause, issues commands (one per member of a
 - D. A run stays a deployment fact. `ess-runtime` already says when a process starts (`schedule:`, `retry_limit`); ESS states nothing of what it issues or how it exits. Both needs are declined with the reason. Cost: none; two figures a reader needs stay outside every suite.
 
 The coordinator recommends B, taken in two steps so that nothing waits on it that need not: the exit status per outcome first (it stands under A and B), then the run cause with fan-out. B reuses bindings and the existing selection vocabulary; C is the safer shape if the owner wants a run to carry its own policy and exit table; A is the fallback if the owner does not want ESS to model processes; D declines both needs. Each of B and C also says where a run's own arguments are declared and how a command's input field names one (RA-D1). The owner decides. The Acceptance of the blocked story is written for B.
+
+## Decisions
+
+- RN-D1: step 1 only, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries it: the exit status per outcome of one forwarded command in the `ess-cli` binding. The run as a new cause of a binding is a source format: its design page goes to the owner before any build, and this blocker stays open for step 2.

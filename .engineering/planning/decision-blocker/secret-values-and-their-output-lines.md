@@ -11,7 +11,7 @@ tags:
 - security
 relations:
 - blocks: story:a-secret-value-appears-in-no-output-of-the-process
-revision: 1
+revision: 6
 ---
 Which value is secret, where that is declared, and what a conformance run counts as a line that carries it: SV-D1 to SV-D6. A decision that touches a security boundary has no default; the owner decides. Each decision names its fail-closed option, the one where a line that could carry the value is refused or reported unchecked, never passed.
 
@@ -73,3 +73,15 @@ Fail-closed: A, and E1. No default.
 ## Not decided here
 
 The spelling of any key, the format version numbers, and whether the check also covers the interpreted target's own outputs.
+
+## Decisions
+
+- SV-D1: B, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries the check: an exact case-sensitive UTF-8 substring of the marker, and the marker's declared encodings (JSON string escapes, URL percent-encoding, base64 standard and URL alphabet, lower and upper hex).
+
+- SV-D2: B, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries the check: declared events, command answers, view answers and errors, and the target's standard-output lines outside the protocol and its standard-error lines (this changes `conformance-target-process.md:62`).
+
+- SV-D5: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries the check: a field of a secret class may not appear in an event, view, answer or error, except the one marked response field of a one-time response; refused at validation.
+
+- SV-D6: A with E1, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries the check: the class vocabulary of `story:field-sensitivity-class` declares each class `output: forbidden` or `output: allowed`; the `ess-cli` `protected` source gets no environment source (E1: it keeps `file`, `stdin` and `hidden_tty`, and a binding naming `env:` is refused with a diagnostic naming the three).
+
+- SV-D3 and SV-D4 stay the owner's. This decision-blocker stays open and `story:a-secret-value-appears-in-no-output-of-the-process` stays a draft.

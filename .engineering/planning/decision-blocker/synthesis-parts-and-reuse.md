@@ -10,7 +10,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - blocks: story:a-synthesis-may-be-split-into-parts-that-are-kept-by-the-digest-of-their-inputs-and-merged-into-the-suite-one
-revision: 4
+revision: 5
 ---
 Does ESS split a synthesis into persisted parts that together hold every scenario of the system, merge them into the suite one synthesis writes, and reuse parts across runs by the digest of their inputs: options A, B, C of ST-D5, an architecture decision with the owner. There is no default; nothing waiting on it takes one. The question has been with the owner since 2026-11-24; there is no answer yet.
 
@@ -25,3 +25,7 @@ A split into parts that hold every scenario of the whole plus a merge equal to t
 - C. B plus reuse: parts kept under the digest of their inputs, so a change redoes the parts whose digest moved. B's cost and a stable unit under change: a change to one command can move scenarios of commands that arrange through it, and the memories are shared across commands.
 
 The coordinator recommends A, because no saving is shown for the reporter's cut and B or C commit a format and a determinism rule before the cost of a part is known. The owner decides. The Acceptance of the blocked story is written for C.
+
+## Decisions
+
+- ST-D5: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries it: no parts are built now (not built); the need is answered by `--jobs` and the committed suite.

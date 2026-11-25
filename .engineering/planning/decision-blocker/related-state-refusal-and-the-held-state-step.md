@@ -10,7 +10,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - blocks: story:a-refusal-reading-a-related-rows-state-may-answer-before-held-state-branches
-revision: 1
+revision: 2
 ---
 RS-D1: may a refusal that reads a related row's lifecycle state answer before the held-state branches of its command? It changes the order of the one precedence rule (`docs/design/generic-language-features.md` "The rule": request alone, existence, held state, rows around the record, acceptance, default) and the formats, so it has no default: the owner decides.
 
@@ -30,3 +30,7 @@ No default. A is the only option that adds no surface; B is the one that states 
 ## Not decided here
 
 The spelling of any marker, and whether the accepting branch that changes nothing (`story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view`) is the reporter's "changes nothing".
+
+## Decisions
+
+- RS-D1: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET (he is away); reversible until a release carries it: keep the order of the one precedence rule; the help of `ESS-COMMAND-004` and the `when_related` reference page name the idiom (the short draft `story:the-help-of-ess-command-004-and-the-when-related-page-name-the-idiom-for-a-refusal-above-held-state-branches`).
