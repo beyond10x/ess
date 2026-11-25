@@ -219,7 +219,7 @@ The rule is the template rule of 0.89.0, applied to members:
   order and several as a list in the order written, so every binding without it compiles to the
   bytes it did. No format version: a reader without the key refuses `select` by name. A refinement
   restates `select` (`ESS-HTTP-012`).
-- The OpenAPI document, the generated servers and the generated apps do not read `select` yet.
+- OpenAPI writes the routes sharing a method and path as one operation ("What OpenAPI writes (k4)"). The generated servers and apps do not read `select` yet.
 
 ### Which operations a binding may name
 
@@ -1000,6 +1000,26 @@ on every bound operation that can answer it, and a route's own override on that 
 the binding bounds carries `x-ess-request-max-bytes` and the `too_large` answer as one more response
 (`413` with `{"refused": ...}` where the binding declares no `too_large`); a binding that declares
 neither key writes no new byte.
+
+Routes sharing one method and path by `select:` are one operation
+(`ae1b-openapi-writes-a-shared-route-as-one-operation`), since a path item holds one operation per
+method:
+
+- `operationId` is the `operation_id`, or else the qualified name, of the first sharing route in the
+  compiled order of the binding (path, method, operation), and `x-ess-operations` lists every
+  sharing route in that order as `{operationId, command, select}`, the select as compiled and the
+  catch-all's `otherwise`. The same routes written in another order give the same bytes.
+- `requestBody` is `oneOf` the commands' request schemas. Each selecting route's
+  `{command}.Input` holds its tested members `const` (`enum` where its alternatives test a member
+  for several literals), nested as `request.members` nests, and required where every alternative
+  tests them. Where every route tests one and the same top-level member for strings and none is
+  the catch-all, OpenAPI's `discriminator` (`propertyName`, `mapping` to the `{command}.Input`
+  schemas) is written too. The catch-all's entry says it takes every body the others do not.
+- `responses` merge per status: one command's answer, or answers written alike, as they are;
+  otherwise `oneOf` the bodies, the description naming each command.
+- A closed set, without a catch-all, states under the `malformed` status (the binding's, else
+  `400`) that a body no route selects is answered as `malformed`.
+- A binding without `select` keeps its bytes.
 
 ## Operation ids and servers
 

@@ -817,6 +817,7 @@ fn paths(
     let checked = http::grants_checked_on(ir, component);
 
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
+    let mut groups: Vec<(String, http::Method, Sharing<'_>)> = Vec::new();
     for route in http::bound_routes(ir, component, binding) {
         // A standard refusal's override applies to the routes the binding names, never to a
         // derived one (decided for stage 2, answer 17). A route's own override stands in place of
@@ -848,9 +849,230 @@ fn paths(
             ),
         };
         served.security = security_of(binding, route.declared);
-        *out.entry(route.path).or_default().slot(route.method) = Some(served);
+        match groups
+            .iter_mut()
+            .find(|(path, method, _)| *path == route.path && *method == route.method)
+        {
+            Some((_, _, sharing)) => sharing.push((route.declared, served)),
+            None => groups.push((route.path, route.method, vec![(route.declared, served)])),
+        }
+    }
+    for (path, method, mut sharing) in groups {
+        let served = if sharing.len() == 1 {
+            sharing.remove(0).1
+        } else {
+            shared_operation(binding, sharing)
+        };
+        *out.entry(path).or_default().slot(method) = Some(served);
     }
     out
+}
+
+/// ESS's own answer to a `malformed` request, where the binding declares none.
+const MALFORMED: &str = "400";
+
+/// The operations written for one method and path, each with the binding's route it was written
+/// from, if any.
+type Sharing<'a> = Vec<(Option<&'a ess_http::Route>, Operation)>;
+
+/// The `select` of a declared route, if it has one.
+fn select_of(declared: Option<&ess_http::Route>) -> Option<&ess_http::Selection> {
+    declared.and_then(|route| route.select.as_ref())
+}
+
+/// The `discriminator` a shared request body can carry, as far as the routes read so far leave it.
+enum Discriminator {
+    /// No route read yet.
+    Unread,
+    /// Every alternative so far tests this one top-level member, for a string.
+    Member(String),
+    /// One alternative does not, or a route is the catch-all.
+    Lost,
+}
+
+/// `discriminator` after `chosen`, each string `chosen` selects mapped to `schema`'s `$ref`.
+fn discriminate(
+    chosen: &ess_http::Selection,
+    schema: &Value,
+    discriminator: &mut Discriminator,
+    mapping: &mut serde_json::Map<String, Value>,
+) {
+    for alternative in chosen.alternatives() {
+        let tests: Vec<_> = alternative.tests().collect();
+        let property = match &*discriminator {
+            Discriminator::Unread => None,
+            Discriminator::Member(property) => Some(property.as_str()),
+            Discriminator::Lost => return,
+        };
+        match (tests.as_slice(), schema.get("$ref")) {
+            ([(member, ess_http::MemberLiteral::String(value))], Some(target))
+                if member.segments().len() == 1
+                    && property.is_none_or(|property| property == member.top()) =>
+            {
+                *discriminator = Discriminator::Member(member.top().to_owned());
+                mapping.insert(value.clone(), target.clone());
+            }
+            _ => *discriminator = Discriminator::Lost,
+        }
+    }
+}
+
+/// Adds to `status`, the answer a closed set of selecting routes gives a body none of them selects,
+/// that it gives it.
+fn state_unselected(responses: &mut BTreeMap<String, Response>, status: String) {
+    let unselected =
+        "A body no route selects is answered as `malformed`: no route on this method and path takes it.";
+    responses
+        .entry(status)
+        .and_modify(|response| {
+            response.description = format!("{} {unselected}", response.description);
+        })
+        .or_insert_with(|| Response {
+            description: unselected.to_owned(),
+            headers: BTreeMap::new(),
+            content: None,
+            outcomes: None,
+            representations: None,
+        });
+}
+
+/// One operation for the routes `sharing` one method and path, each chosen by its `select`
+/// (`ae1b-openapi-writes-a-shared-route-as-one-operation`): the first route's `operationId` in the
+/// compiled order of the binding (path, method, operation), `x-ess-operations` naming every route
+/// in that order, a request body `oneOf` each route's own, with `OpenAPI`'s `discriminator` where
+/// every route tests one and the same top-level member for strings and none is the catch-all, and
+/// the responses merged per status. A closed set, without a catch-all, states that a body no route
+/// selects is answered as `malformed`.
+fn shared_operation(binding: Option<&http::Binding>, mut sharing: Sharing<'_>) -> Operation {
+    sharing.sort_by(|(left, _), (right, _)| {
+        left.map(|route| &route.operation)
+            .cmp(&right.map(|route| &route.operation))
+    });
+    let open = sharing
+        .iter()
+        .any(|(declared, _)| select_of(*declared).is_none());
+    let malformed = sharing
+        .first()
+        .and_then(|(declared, _)| declared.zip(binding))
+        .and_then(|(route, binding)| {
+            binding
+                .refusals_on(route)
+                .get(&ess_http::RefusalKey::Malformed)
+                .map(|refusal| refusal.status.to_string())
+        });
+    let mut one_of = Vec::new();
+    let mut mapping = serde_json::Map::new();
+    let mut discriminator = Discriminator::Unread;
+    let mut listed = Vec::new();
+    let mut by_status: BTreeMap<String, Vec<(String, Response)>> = BTreeMap::new();
+    let mut first: Option<Operation> = None;
+    for (declared, operation) in sharing {
+        let name = declared.map_or_else(String::new, |route| route.operation.name().to_owned());
+        let chosen = select_of(declared);
+        listed.push(json!({
+            "operationId": operation.id,
+            "command": name,
+            "select": chosen.map_or_else(|| json!("otherwise"), |chosen| serde_json::to_value(chosen).unwrap_or_default()),
+        }));
+        let mut schema = operation
+            .request_body
+            .as_ref()
+            .and_then(|body| body.content.get(MEDIA_TYPE))
+            .and_then(|media| serde_json::to_value(&media.schema).ok())
+            .unwrap_or_else(|| json!({"type": "object"}));
+        match chosen {
+            None => {
+                schema["description"] = json!(
+                    "The catch-all: it takes every body no other route on this method and path \
+                     selects."
+                );
+                discriminator = Discriminator::Lost;
+            }
+            Some(chosen) => discriminate(chosen, &schema, &mut discriminator, &mut mapping),
+        }
+        one_of.push(schema);
+        let mut operation = operation;
+        for (status, response) in std::mem::take(&mut operation.responses) {
+            by_status
+                .entry(status)
+                .or_default()
+                .push((name.clone(), response));
+        }
+        if first.is_none() {
+            first = Some(operation);
+        }
+    }
+    let mut merged = first.expect("a shared route has at least two operations");
+    let mut body = json!({"oneOf": one_of});
+    if let Discriminator::Member(property) = discriminator {
+        body["discriminator"] = json!({"propertyName": property, "mapping": mapping});
+    }
+    merged.operations = listed;
+    merged.summary = None;
+    merged.description = Some(
+        "Several commands share this method and path, each chosen by the members of the JSON body \
+         it selects (`x-ess-operations`)."
+            .to_owned(),
+    );
+    merged.request_body = Some(RequestBody {
+        description: format!(
+            "One of the bodies of the commands sharing this method and path, told apart by the \
+             members each selects.{}",
+            if open {
+                ""
+            } else {
+                " A body no route selects is answered as `malformed`."
+            }
+        ),
+        required: true,
+        content: content(body),
+    });
+    merged.responses = by_status
+        .into_iter()
+        .map(|(status, answers)| (status, merged_response(answers)))
+        .collect();
+    if !open {
+        state_unselected(
+            &mut merged.responses,
+            malformed.unwrap_or_else(|| MALFORMED.to_owned()),
+        );
+    }
+    merged
+}
+
+/// One status's answers of the routes sharing a method and path, each with its command: one, or
+/// several written alike, as it is; otherwise one response whose body is `oneOf` theirs and whose
+/// description names each command.
+fn merged_response(mut answers: Vec<(String, Response)>) -> Response {
+    let alike = answers
+        .windows(2)
+        .all(|pair| serde_json::to_value(&pair[0].1).ok() == serde_json::to_value(&pair[1].1).ok());
+    if alike {
+        return answers.remove(0).1;
+    }
+    let description = answers
+        .iter()
+        .map(|(command, response)| format!("`{command}`: {}", response.description))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let bodies: Vec<Value> = answers
+        .iter()
+        .filter_map(|(_, response)| response.content.as_ref()?.get(MEDIA_TYPE))
+        .filter_map(|media| serde_json::to_value(&media.schema).ok())
+        .collect();
+    let outcomes: Vec<String> = answers
+        .iter()
+        .filter_map(|(_, response)| response.outcomes.clone())
+        .flatten()
+        .collect();
+    let (_, first) = answers.remove(0);
+    Response {
+        description,
+        headers: first.headers,
+        content: (!bodies.is_empty()).then(|| content(json!({"oneOf": bodies}))),
+        outcomes: (!outcomes.is_empty()).then_some(outcomes),
+        representations: None,
+    }
 }
 
 /// The challenges of the default `unauthenticated` answer of a route that requires a scheme
@@ -1014,6 +1236,7 @@ fn operation(
             .and_then(|route| route.operation_id.clone())
             .unwrap_or_else(|| command.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
+        operations: Vec::new(),
         max_request_bytes: bound_request,
         periodic: ir
             .bindings()
@@ -1237,6 +1460,7 @@ fn query(
             .and_then(|route| route.operation_id.clone())
             .unwrap_or_else(|| view.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
+        operations: Vec::new(),
         max_request_bytes: None,
         periodic: Vec::new(),
         summary: Some(view.naming.display_or(&view.name).to_owned()),
@@ -3037,6 +3261,7 @@ fn input_schema(
     command: &ResolvedCommand,
     body: &[ResolvedField],
     request: &ess_http::Request,
+    select: Option<&ess_http::Selection>,
 ) -> Fragment {
     // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
     // open body.
@@ -3050,7 +3275,7 @@ fn input_schema(
         undeclared_fields,
         ..Message::of_command(command)
     }));
-    nested_input(flat, command, request)
+    nested_input(flat, command, request, select)
 }
 
 /// `{command}.Input` as the body carries it when its route reads input fields from nested members
@@ -3062,11 +3287,12 @@ fn nested_input(
     input: Fragment,
     command: &ResolvedCommand,
     request: &ess_http::Request,
+    select: Option<&ess_http::Selection>,
 ) -> Fragment {
     let Fragment::Mapping(mut object) = input else {
         return input;
     };
-    if request.members.is_empty() {
+    if request.members.is_empty() && select.is_none() {
         return Fragment::Mapping(object);
     }
     let Some(Fragment::Mapping(properties)) = object.get("properties").cloned() else {
@@ -3093,6 +3319,9 @@ fn nested_input(
         let top = [wire.clone()];
         let path = paths.get(wire.as_str()).copied().unwrap_or(&top);
         level.insert(path, schema, required.contains(&name));
+    }
+    if let Some(select) = select {
+        level.select(select);
     }
     let open = request.unknown == ess_http::Unknown::Ignore;
     let (nested, required) = level.into_fragments(open);
@@ -3137,6 +3366,82 @@ impl Level {
         if let Nested::Object(level) = &mut self.0[index].1 {
             level.insert(rest, schema, required);
         }
+    }
+
+    /// Writes what a route's `select` tests: each tested member `const` its literal, or `enum` its
+    /// literals where the alternatives test it for several, and required where every alternative
+    /// tests it; a member no input field is read from is declared with that keyword alone.
+    fn select(&mut self, select: &ess_http::Selection) {
+        let alternatives = select.alternatives();
+        let mut members: Vec<&ess_http::MemberPath> = alternatives
+            .iter()
+            .flat_map(|alternative| alternative.tests().map(|(member, _)| member))
+            .collect();
+        members.sort();
+        members.dedup();
+        for member in members {
+            let mut literals: Vec<Value> = Vec::new();
+            for literal in alternatives
+                .iter()
+                .filter_map(|alternative| alternative.literal(member))
+            {
+                let value = literal.to_json();
+                if !literals.contains(&value) {
+                    literals.push(value);
+                }
+            }
+            let everywhere = alternatives
+                .iter()
+                .all(|alternative| alternative.literal(member).is_some());
+            let keyword = match literals.as_slice() {
+                [one] => ("const", one.clone()),
+                _ => ("enum", Value::Array(literals)),
+            };
+            self.test(member.segments(), &keyword, everywhere);
+        }
+    }
+
+    /// Adds `keyword` to the property at `path`, declaring it when no field is read from there.
+    fn test(&mut self, path: &[String], keyword: &(&str, Value), required: bool) {
+        let [first, rest @ ..] = path else {
+            return;
+        };
+        if !rest.is_empty() {
+            let index = self.object(first);
+            if let Nested::Object(level) = &mut self.0[index].1 {
+                level.test(rest, keyword, required);
+            }
+            return;
+        }
+        let found = self
+            .0
+            .iter_mut()
+            .find(|(name, member)| name == first && matches!(member, Nested::Property(..)));
+        if let Some((_, Nested::Property(schema, needed))) = found {
+            if let Fragment::Mapping(schema) = schema {
+                schema.insert(keyword.0.into(), written(keyword.1.clone()));
+            }
+            *needed |= required;
+        } else {
+            let mut schema = ess_yaml::Mapping::new();
+            schema.insert(keyword.0.into(), written(keyword.1.clone()));
+            self.0.push((
+                first.clone(),
+                Nested::Property(Fragment::Mapping(schema), required),
+            ));
+        }
+    }
+
+    /// The index of the object level `name`, opened when it is not there yet.
+    fn object(&mut self, name: &str) -> usize {
+        self.0
+            .iter()
+            .position(|(held, member)| held == name && matches!(member, Nested::Object(_)))
+            .unwrap_or_else(|| {
+                self.0
+                    .push((name.to_owned(), Nested::Object(Level::default())));
+                self.0.len() - 1
+            })
     }
 
     /// Whether it holds a required property at any depth.
@@ -3207,7 +3512,12 @@ fn command_schemas<'a>(
     if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare && !parted {
         out.insert(
             format!("{}.Input", command.name),
-            input_schema(command, &body, &request),
+            input_schema(
+                command,
+                &body,
+                &request,
+                route.and_then(|route| route.select.as_ref()),
+            ),
         );
     }
     roots.extend(types::field_leaves(&command.input));
@@ -4121,6 +4431,11 @@ struct Operation {
     /// where they are derived, so a document generated without a binding keeps its bytes.
     #[serde(rename = "x-ess-route-source", skip_serializing_if = "Option::is_none")]
     route_source: Option<&'static str>,
+    /// Every route sharing this method and path, in the compiled order of the binding, each
+    /// `{operationId, command, select}`, the catch-all's select `otherwise`; empty, and omitted,
+    /// for a route of its own.
+    #[serde(rename = "x-ess-operations", skip_serializing_if = "Vec::is_empty")]
+    operations: Vec<Value>,
     /// The largest request body, in bytes, the operation reads; absent where nothing bounds it, so
     /// a document generated without a limit keeps its bytes.
     #[serde(

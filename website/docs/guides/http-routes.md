@@ -280,6 +280,14 @@ routes:
 - A tested member an input field is read from must hold a literal the field's type admits.
 - `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, on `get`, written
   empty, or with two alternatives one body matches is `ESS-HTTP-020`.
+- The OpenAPI document writes the shared method and path as one operation. Its `operationId` is
+  that of the first sharing route in the compiled order of the binding (path, method, operation),
+  and `x-ess-operations` lists every sharing route in that order with its select, the catch-all's
+  `otherwise`, so the order the routes are written in does not change the document. The request
+  body is `oneOf` each command's `{command}.Input`, whose tested members are `const` and required;
+  one top-level string member and no catch-all also writes a `discriminator`. Answers on one
+  status are merged, and a set without a catch-all states that a body no route selects is
+  `malformed`.
 
 ### Answer a view as CSV
 

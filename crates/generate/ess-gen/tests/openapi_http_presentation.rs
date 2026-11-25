@@ -12,6 +12,8 @@
 //! an `in: query` parameter and in no request body (beyond10x/ess#754,
 //! `story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body`).
 
+use std::fmt::Write as _;
+
 use ess_compiler::resolve::compile as compile_model;
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
@@ -425,6 +427,196 @@ fn a_nested_member_is_written_nested_with_required_per_level() {
     let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
     assert_eq!(input["required"], json!(["board_id", "title"]), "{input}");
     assert!(input["properties"].get("note").is_some(), "{input}");
+}
+
+// --- a shared route (`ae1b-openapi-writes-a-shared-route-as-one-operation`) ---
+
+/// A desk accepting `catalog.desk.Hook0` to `Hook<count - 1>`, each taking `ticket_id`, a `String`
+/// `kind` and an `Optional<Boolean>` `reopen`.
+fn desk(count: usize) -> EssIr {
+    let names: Vec<String> = (0..count)
+        .map(|n| format!("catalog.desk.Hook{n}"))
+        .collect();
+    let commands = names.iter().fold(String::new(), |mut commands, name| {
+        write!(
+            commands,
+            "  - name: {name}
+    input:
+      - {{name: ticket_id, type: catalog.desk.TicketId}}
+      - {{name: kind, type: String}}
+      - {{name: reopen, type: Optional<Boolean>}}
+    outcomes:
+      - name: done
+        emits: [catalog.desk.Hooked]
+        payload:
+          catalog.desk.Hooked: {{ticket_id: input.ticket_id}}
+"
+        )
+        .expect("writes");
+        commands
+    });
+    let text = format!(
+        "format: ess/22
+system: catalog
+version: v1
+domain: catalog.desk
+types:
+  - {{name: catalog.desk.TicketId, kind: newtype, of: String}}
+entities:
+  - name: catalog.desk.Ticket
+    identity: {{name: ticket_id, type: catalog.desk.TicketId}}
+    fields:
+      - {{name: title, type: String}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open], transitions: []}}
+events:
+  - name: catalog.desk.Hooked
+    fields:
+      - {{name: ticket_id, type: catalog.desk.TicketId}}
+commands:
+{commands}components:
+  - component: desk
+    reached_by: network
+    owns: {{domains: [catalog.desk]}}
+    accepts:
+      commands: [{}]
+    publishes:
+      events: [catalog.desk.Hooked]
+",
+        names.join(", ")
+    );
+    model_of(&[("desk.yaml", text.as_str())])
+}
+
+const OPEN_SET: &str = "routes:
+  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}
+  - command: catalog.desk.Hook3
+    method: post
+    path: /hooks
+    outcomes: {done: {status: 204, body: none}}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+";
+
+fn shared_document(ir: &EssIr, routes: &str) -> (String, Value) {
+    let written = documents(ir, binding(ir, routes));
+    let text = written["openapi/desk.yaml"].clone();
+    let document = as_json(&text);
+    (text, document)
+}
+
+#[test]
+fn a_shared_route_is_one_operation_naming_every_command() {
+    let ir = desk(4);
+    let (text, document) = shared_document(&ir, OPEN_SET);
+    let operation = &document["paths"]["/hooks"]["post"];
+    let listed = operation["x-ess-operations"].as_array().expect("listed");
+    assert_eq!(listed.len(), 4, "{operation}");
+    assert_eq!(operation["operationId"], "catalog.desk.Hook0");
+    assert_eq!(
+        listed[0],
+        json!({"operationId": "catalog.desk.Hook0", "command": "catalog.desk.Hook0", "select": {"kind": "opened"}})
+    );
+    assert_eq!(
+        listed[1]["select"],
+        json!({"data.reopen": false, "kind": "closed"})
+    );
+    assert_eq!(listed[3]["select"], "otherwise");
+    let schema = &operation["requestBody"]["content"]["application/json"]["schema"];
+    let one_of = schema["oneOf"].as_array().expect("oneOf");
+    assert_eq!(one_of.len(), 4, "{schema}");
+    assert!(schema.get("discriminator").is_none(), "{schema}");
+    assert_eq!(
+        one_of[0]["$ref"],
+        "#/components/schemas/catalog.desk.Hook0.Input"
+    );
+    assert!(one_of[3]["description"].is_string(), "{schema}");
+    let schemas = &document["components"]["schemas"];
+    let opened = &schemas["catalog.desk.Hook0.Input"];
+    assert_eq!(opened["properties"]["kind"]["const"], "opened", "{opened}");
+    let reopened = &schemas["catalog.desk.Hook2.Input"];
+    assert_eq!(
+        reopened["properties"]["data"]["properties"]["reopen"]["const"], true,
+        "{reopened}"
+    );
+    assert!(
+        reopened["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&json!("data"))),
+        "{reopened}"
+    );
+    let catch_all = &schemas["catalog.desk.Hook3.Input"];
+    assert!(
+        catch_all["properties"]["kind"].get("const").is_none(),
+        "{catch_all}"
+    );
+    // The catch-all's `204` and the others' answers are merged per status.
+    let responses = operation["responses"].as_object().expect("responses");
+    assert!(responses.contains_key("204"), "{operation}");
+    assert!(responses.len() >= 2, "{operation}");
+    // The same routes written in another order give the same bytes.
+    let swapped = OPEN_SET.replace(
+        "  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}\n  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}\n",
+        "  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}\n  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}\n",
+    );
+    assert_ne!(swapped, OPEN_SET);
+    assert_eq!(shared_document(&ir, &swapped).0, text);
+}
+
+#[test]
+fn a_closed_set_states_its_malformed_answer_and_one_string_member_is_a_discriminator() {
+    let ir = desk(9);
+    let mut routes = String::from("routes:\n");
+    let mut n = 0;
+    for object in ["label", "ticket", "user"] {
+        for action in ["added", "removed", "changed"] {
+            writeln!(
+                routes,
+                "  - {{command: catalog.desk.Hook{n}, method: post, path: /v2/hooks, select: {{object: {object}, action: {action}}}}}"
+            )
+            .expect("writes");
+            n += 1;
+        }
+    }
+    let (_, document) = shared_document(&ir, &routes);
+    let operation = &document["paths"]["/v2/hooks"]["post"];
+    let schema = &operation["requestBody"]["content"]["application/json"]["schema"];
+    assert_eq!(
+        schema["oneOf"].as_array().map(Vec::len),
+        Some(9),
+        "{schema}"
+    );
+    assert!(schema.get("discriminator").is_none(), "{schema}");
+    let input = &document["components"]["schemas"]["catalog.desk.Hook4.Input"];
+    assert_eq!(input["properties"]["object"]["const"], "ticket", "{input}");
+    assert_eq!(input["properties"]["action"]["const"], "removed", "{input}");
+    let unselected = operation["responses"]
+        .as_object()
+        .expect("responses")
+        .values()
+        .any(|response| {
+            response["description"]
+                .as_str()
+                .is_some_and(|text| text.contains("no route selects"))
+        });
+    assert!(unselected, "{operation}");
+
+    // One top-level `String` member, a closed set: OpenAPI's discriminator.
+    let routes = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /v3/hooks, select: {kind: a}}
+  - {command: catalog.desk.Hook1, method: post, path: /v3/hooks, select: [{kind: b}, {kind: c}]}
+";
+    let (_, document) = shared_document(&ir, routes);
+    let schema = &document["paths"]["/v3/hooks"]["post"]["requestBody"]["content"]
+        ["application/json"]["schema"];
+    assert_eq!(
+        schema["discriminator"],
+        json!({"propertyName": "kind", "mapping": {
+            "a": "#/components/schemas/catalog.desk.Hook0.Input",
+            "b": "#/components/schemas/catalog.desk.Hook1.Input",
+            "c": "#/components/schemas/catalog.desk.Hook1.Input"
+        }}),
+        "{schema}"
+    );
 }
 
 // --- authentication (beyond10x/ess#681, `story:an-http-binding-projects-its-security-schemes`) ---
