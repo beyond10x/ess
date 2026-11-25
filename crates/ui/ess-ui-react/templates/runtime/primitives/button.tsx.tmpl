@@ -9,10 +9,11 @@ export function ButtonView(props: {
   action: ActionSpec;
   tone?: string;
   icon?: string;
+  glyph?: string;
 }): ReactNode {
   return (
     <span className="ui-button-node" data-ui-path={useUiPath(props["data-ui-path"])}>
-      <ActionControl action={{ ...props.action, label: props.label, tone: props.tone, icon: props.icon }} />
+      <ActionControl action={{ ...props.action, label: props.label, tone: props.tone, icon: props.icon, glyph: props.glyph }} />
     </span>
   );
 }

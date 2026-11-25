@@ -74,8 +74,12 @@ fn scratch(test: &str) -> PathBuf {
 }
 
 fn open(test: &str) -> (App, Rc<RefCell<FixtureAdapter>>) {
+    open_with(test, DOCUMENT)
+}
+
+fn open_with(test: &str, yaml: &str) -> (App, Rc<RefCell<FixtureAdapter>>) {
     let dir = scratch(test);
-    let document = ess_ui::load_str(DOCUMENT).expect("the document loads");
+    let document = ess_ui::load_str(yaml).expect("the document loads");
     let (adapter, scripts) = FixtureAdapter::load(&document, &dir, None).expect("fixtures load");
     let adapter = Rc::new(RefCell::new(adapter));
     let mut app = App::with_adapter(
@@ -145,4 +149,152 @@ fn a_confirm_overlay_without_does_runs_the_action_that_opened_it() {
         vec![("things.Drop".to_owned(), BTreeMap::new())],
         "the opener's command runs on confirm"
     );
+}
+
+/// A `bind` value written as a list sends one list input of the values its expressions read
+/// (story:both-renderers-read-one-binding-expression-grammar, beyond10x/ess#723).
+#[test]
+fn a_listed_bind_value_is_sent_as_one_list() {
+    let text = DOCUMENT.replace(
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n          \
+         - {name: tag, does: things.Tag, bind: {things: [row.id, row.name]}, label: Tag}\n",
+    );
+    assert_ne!(text, DOCUMENT, "the document changed");
+    let (mut app, adapter) = open_with("listed", &text);
+    app.keys("jt");
+    let listed = Value::Sequence(vec![
+        Value::String("th-2".to_owned()),
+        Value::String("Bolt".to_owned()),
+    ]);
+    assert_eq!(
+        sent(&adapter),
+        vec![(
+            "things.Tag".to_owned(),
+            BTreeMap::from([("things".to_owned(), listed)])
+        )],
+        "{}",
+        app.render_text(100, 30)
+    );
+}
+
+/// A header action whose `visible:` is false is not drawn, a row action guarded with `and` is
+/// offered on the row it holds for, and a bulk bind `selection.<field>` sends the list of that
+/// field over the selected rows (story:the-terminal-evaluates-every-expression-form-the-schema-defines,
+/// beyond10x/ess#722).
+#[test]
+fn the_terminal_hides_offers_and_sends_as_every_expression_form_reads() {
+    let text = DOCUMENT
+        .replace(
+            "    title: Things\n    sections:\n",
+            "    title: Things\n    header:\n      actions:\n        \
+             - {name: hidden, does: things.Never, label: Never drawn, visible: \"params.never == yes\"}\n        \
+             - {name: shown, does: things.Shown, label: Drawn action}\n    sections:\n",
+        )
+        .replace(
+            "        columns: [name]\n",
+            "        columns: [name]\n        selection: multiple\n        \
+             bulk_actions: [{name: archive, does: things.Archive, bulk: true, bind: {ids: selection.id}}]\n",
+        )
+        .replace(
+            "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+            "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n          \
+             - {name: reopen, does: things.Reopen, bind: {thing: row.id}, label: Reopen, \
+             visible: \"row.name == Bolt and row.id != nobody\"}\n",
+        );
+    let (mut app, adapter) = open_with("forms", &text);
+    let screen = app.render_text(120, 30);
+    assert!(screen.contains("Drawn action"), "{screen}");
+    assert!(!screen.contains("Never drawn"), "{screen}");
+    let hint = |screen: &str| {
+        screen
+            .lines()
+            .find(|line| line.contains("Remove"))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    assert!(!hint(&screen).contains("Reopen"), "Anvil:\n{screen}");
+    app.keys("j");
+    let screen = app.render_text(120, 30);
+    assert!(hint(&screen).contains("Reopen"), "Bolt:\n{screen}");
+    app.keys(" A");
+    let ids = Value::Sequence(vec![Value::String("th-2".to_owned())]);
+    assert_eq!(
+        sent(&adapter),
+        vec![(
+            "things.Archive".to_owned(),
+            BTreeMap::from([("ids".to_owned(), ids)])
+        )],
+        "{}",
+        app.render_text(120, 30)
+    );
+}
+
+/// A `bind` entry written `{value, when}` is sent only while `when` holds, and left out (not sent
+/// as null) otherwise (beyond10x/ess#723).
+#[test]
+fn a_conditional_bind_entry_is_left_out_while_its_condition_is_false() {
+    let document = DOCUMENT.replace(
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+        "          - {name: tag, does: things.Tag, bind: {thing: row.id, name: {value: row.name, when: row.name == Bolt}}, label: Tag}\n",
+    );
+    let (mut app, adapter) = open_with("conditional-bind", &document);
+    app.keys("t");
+    app.keys("jt");
+    assert_eq!(
+        sent(&adapter),
+        vec![
+            ("things.Tag".to_owned(), input(&[("thing", "th-1")])),
+            (
+                "things.Tag".to_owned(),
+                input(&[("thing", "th-2"), ("name", "Bolt")])
+            ),
+        ],
+        "{}",
+        app.render_text(120, 30)
+    );
+}
+
+/// An action names its icon and its tone (beyond10x/ess#723): the key hint shows the glyph before
+/// the key, a `danger` action bold and underlined, a `primary` one bold, and an action with
+/// neither as before.
+#[test]
+fn a_row_action_shows_its_glyph_and_its_tone_in_the_hint() {
+    use ratatui::backend::TestBackend;
+    use ratatui::style::Modifier;
+    use ratatui::Terminal;
+    let document = DOCUMENT.replace(
+        "          - {name: drop, does: things.Drop, label: Drop, confirm: ask}\n",
+        "          - {name: drop, does: things.Drop, label: Drop, icon: delete, tone: danger, confirm: ask}\n          \
+         - {name: keep, does: things.Keep, label: Keep, icon: check, tone: primary}\n",
+    );
+    let (app, _) = open_with("action-look", &document);
+    let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("a terminal");
+    terminal.draw(|frame| app.draw(frame)).expect("a frame");
+    let buffer = terminal.backend().buffer().clone();
+    let modifier = |text: &str| {
+        for y in 0..buffer.area.height {
+            let joined: String = (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect();
+            if let Some(byte) = joined.find(text) {
+                let column = u16::try_from(joined[..byte].chars().count()).expect("a column");
+                return (joined.clone(), buffer[(column, y)].modifier);
+            }
+        }
+        panic!("`{text}` is not on the screen");
+    };
+    let (line, drop) = modifier("Drop");
+    assert!(line.contains("✕ d Drop"), "{line}");
+    assert!(line.contains("✓ e Keep"), "{line}");
+    assert!(line.contains("r Remove"), "{line}");
+    assert!(
+        drop.contains(Modifier::BOLD | Modifier::UNDERLINED),
+        "{drop:?}"
+    );
+    let (_, keep) = modifier("Keep");
+    assert!(keep.contains(Modifier::BOLD), "{keep:?}");
+    assert!(!keep.contains(Modifier::UNDERLINED), "{keep:?}");
+    let (_, remove) = modifier("Remove");
+    assert!(!remove.contains(Modifier::BOLD), "{remove:?}");
 }

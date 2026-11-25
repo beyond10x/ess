@@ -120,8 +120,16 @@ func TestHTTPBinding(t *testing.T) {
 			target += "?" + query
 		}
 		raw := fmt.Sprintf("%s %s HTTP/1.1\r\nHost: shop.test\r\nContent-Length: %d\r\n", method, target, len(body))
-		if contentType != "" {
-			raw += "Content-Type: " + contentType + "\r\n"
+		// The content type, or `name: value` headers joined by ` | ` (beyond10x/ess#681).
+		for _, header := range strings.Split(contentType, " | ") {
+			if header == "" {
+				continue
+			}
+			if name, value, ok := strings.Cut(header, ": "); ok {
+				raw += name + ": " + value + "\r\n"
+			} else {
+				raw += "Content-Type: " + header + "\r\n"
+			}
 		}
 		raw += "\r\n" + body
 		request, err := http.ReadRequest(bufio.NewReader(strings.NewReader(raw)))
@@ -1785,3 +1793,6 @@ mod ignored_members;
 mod multipart;
 #[path = "query_beside_body.rs"]
 mod query_beside_body;
+
+#[path = "authentication.rs"]
+mod authentication;

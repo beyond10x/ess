@@ -625,3 +625,69 @@ for (const keep of [undefined, () => true]) {
 ",
     );
 }
+
+const CONDITIONAL: &str = r"format: ess-ui/1
+app: orders
+model: t
+placement_profile: fat
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: p, sections: [{name: all, pages: [p, q]}]}
+pages:
+  p:
+    kind: detail_page
+    title: Orders
+    state:
+      search: {type: string, class: page_state, default: a}
+      open_only: {type: boolean, class: page_state, default: false}
+    sections:
+      - name: list
+        component: collection
+        reads: {view: t.Orders, params: {q: state.search, only_open: {value: true, when: state.open_only}}}
+        columns: [id]
+        row_actions:
+          - {name: tag, does: t.Tag, bind: {order: row.id, note: {value: row.note, when: row.note}}}
+          - {name: open, navigate: {to: q, params: {id: row.id, note: {value: row.note, when: row.note}}}}
+  q:
+    kind: detail_page
+    title: Order
+    params: {id: string, note: string}
+    sections:
+      - {name: one, component: record, reads: {view: t.Orders, params: {q: params.id}}, fields: [id]}
+";
+
+/// `{value, when}` sends a read param only while `when` holds: with the toggle off the read
+/// carries `q` alone, with it on `q` and `only_open=true`, and the two are different reads
+/// (beyond10x/ess#723). A bind and a navigation param take the same form.
+#[test]
+fn a_conditional_param_is_left_out_while_its_condition_is_false() {
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-react-read-filter")
+        .join("conditional");
+    if out.exists() {
+        std::fs::remove_dir_all(&out).unwrap();
+    }
+    let document = ess_ui::load_str(CONDITIONAL).unwrap_or_else(|error| panic!("{error}"));
+    ess_ui_react::generate(&document, Path::new("."), &out).unwrap();
+    let page = std::fs::read_to_string(out.join("src/pages/P.tsx")).unwrap();
+    for written in [
+        r#"only_open: { value: "true", when: "state.open_only" }"#,
+        r#"note: { value: "row.note", when: "row.note" }"#,
+    ] {
+        assert!(page.contains(written), "{written} is not emitted: {page}");
+    }
+    support::compile(&out, &["runtime/expr.ts", "runtime/data.ts", "pages/P.tsx"]);
+    support::node(
+        &out,
+        "conditional",
+        r"
+const { evaluateParams } = out('runtime/data');
+const { sent } = out('runtime/expr');
+const spec = { view: 't.Orders', params: { q: 'state.search', only_open: { value: 'true', when: 'state.open_only' } } };
+assert.deepEqual(evaluateParams(spec, { state: { search: 'a', open_only: false } }), { q: 'a' });
+assert.deepEqual(evaluateParams(spec, { state: { search: 'a', open_only: true } }), { q: 'a', only_open: true });
+const bind = { order: 'row.id', notes: { value: ['row.note', 'row.id'], when: 'row.note' } };
+assert.deepEqual(sent(bind, { row: { id: 'o-1', note: '' } }), [['order', 'row.id']]);
+assert.deepEqual(sent(bind, { row: { id: 'o-1', note: 'n' } }), [['order', 'row.id'], ['notes', ['row.note', 'row.id']]]);
+",
+    );
+}

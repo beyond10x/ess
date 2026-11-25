@@ -288,6 +288,29 @@ fn a_live_choice_takes_the_channels_events_into_its_options() {
     );
 }
 
+/// A collection in a record's `item` draws its rows and their actions at
+/// `…/sections/<s>/item/<name>/rows/<key>`, the paths an ess-ui-test journey names
+/// (beyond10x/ess#722).
+#[test]
+fn a_collection_in_a_records_item_draws_its_rows_at_the_items_path() {
+    let text = DOCUMENT.replace(
+        "        fields: [goal]\n",
+        "        fields: [goal]\n        item:\n          - name: parts\n            component: collection\n            reads: {view: parts.All, key: part_id}\n            columns: [label]\n            row_actions: [{name: pick, label: Pick, does: parts.Pick, bind: {part_id: row.part_id}}]\n",
+    );
+    run_with(
+        "item-collection",
+        &text,
+        r"
+  rows['parts.All'] = [{ part_id: 'pa-1', label: 'Cog' }, { part_id: 'pa-2', label: 'Gear' }];
+  await settle();
+  const at = 'pages/objective/sections/objective/item/parts/rows/';
+  const drawn = root.find((node) => node.props && typeof node.props['data-ui-path'] === 'string' && node.props['data-ui-path'].startsWith(at)).map((node) => node.props['data-ui-path']);
+  assert.ok(drawn.includes(at + 'pa-1') && drawn.includes(at + 'pa-2'), `both rows at the item's path: ${JSON.stringify(drawn)}`);
+  assert.ok(drawn.includes(at + 'pa-2/row_actions/pick'), `the row action at the row's path: ${JSON.stringify(drawn)}`);
+",
+    );
+}
+
 // ── bound to a served surface ────────────────────────────────────────────────────────────────
 
 fn root() -> PathBuf {

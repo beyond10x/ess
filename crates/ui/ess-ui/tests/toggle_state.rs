@@ -125,6 +125,32 @@ fn a_command_toggle_derives_its_state_from_the_bind_it_flips() {
     );
 }
 
+/// `loads.<field>` reads the first row the action's `loads` read answers, so a toggle that flips
+/// it shows the loaded state (beyond10x/ess#723, C17); a read filter still admits no `loads`.
+#[test]
+fn a_command_toggle_shows_the_row_its_action_loads() {
+    let document = load(&document(
+        "          - {name: paused, as: toggle, does: flags.SetPaused, loads: {view: flags.Settings}, bind: {paused: not loads.paused}}",
+    ));
+    let state = ess_ui::toggle_state(action(&document, "paused"))
+        .expect("a toggle flipping its loaded field has a state");
+    assert_eq!(
+        (state.expr, state.source),
+        (
+            expr("loads.paused"),
+            ToggleSource::Flipped {
+                input: "paused".to_owned()
+            }
+        )
+    );
+    let predicate = ess_ui::filter::parse("loads.paused").expect("the path parses");
+    assert!(
+        predicate.action_roots(),
+        "an action's expression reads `loads`"
+    );
+    assert!(!predicate.allowed_roots(), "a read filter does not");
+}
+
 #[test]
 fn a_sets_toggle_keeps_its_state() {
     let document = load(&document(

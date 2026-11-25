@@ -174,6 +174,9 @@ fn request_readers(helpers: &mut String, emit: &Emit<'_>, binding: &http::Bindin
     if bound::reads_query_beside_body(binding) {
         helpers.push_str(bound::QUERIED);
     }
+    if bound::authenticates(binding) {
+        helpers.push_str(bound::CREDENTIALS);
+    }
 }
 
 /// The package's own file: what an answer is, how a body is read, and the two media types.
@@ -259,7 +262,19 @@ fn helpers_file(
                 .filter(|declared| declared.refusals.is_empty())
                 .any(|declared| binding.ir().bounds_request(declared))
         });
-        helpers.push_str(&bound::refusals(binding, checks_grant, shared_too_large));
+        let shared_unauthenticated = served(ir, refusals).into_iter().any(|component| {
+            http::bound_routes(ir, component, Some(binding))
+                .iter()
+                .filter_map(|route| route.declared)
+                .filter(|declared| declared.refusals.is_empty())
+                .any(|declared| !binding.credentials_on(declared).is_empty())
+        });
+        helpers.push_str(&bound::refusals(
+            binding,
+            checks_grant,
+            shared_too_large,
+            shared_unauthenticated,
+        ));
         for component in served(ir, refusals) {
             helpers.push_str(&bound::route_refusals(
                 ir,
@@ -283,7 +298,12 @@ struct RouteTable<'a> {
 }
 
 impl RouteTable<'_> {
-    fn write_bound(&self, body: &mut String, reading: bound::Reading) {
+    fn write_bound(
+        &self,
+        body: &mut String,
+        reading: bound::Reading,
+        binding: Option<&http::Binding>,
+    ) {
         bound::dispatch(
             body,
             self.ir,
@@ -293,6 +313,7 @@ impl RouteTable<'_> {
             self.system,
             self.exported,
             reading,
+            binding,
         );
     }
 
@@ -1481,6 +1502,7 @@ fn surface_file(
                 capped,
                 package_capped,
             },
+            binding,
         );
         if let (true, Some(binding)) = (capped, binding) {
             bound::body_limit(&mut body, binding, ir, layout, &routes, &rows, &exported);

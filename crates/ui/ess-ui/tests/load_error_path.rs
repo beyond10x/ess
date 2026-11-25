@@ -258,3 +258,76 @@ fn a_nested_export_param_named_action_is_refused_with_the_params_message() {
     );
     assert_eq!(action.message(), other.message());
 }
+
+/// A `bind` value may be a list of expressions, sent as one list input; a list anywhere else an
+/// expression is expected is still refused by path
+/// (story:both-renderers-read-one-binding-expression-grammar, beyond10x/ess#723).
+#[test]
+fn a_bind_value_may_be_a_list_and_no_other_expression_may() {
+    let listed = document(
+        "other",
+        ", bulk_actions: [{name: tag, label: Tag, does: desk.TagFiles, \
+         bind: {ids: [selection.id, row.id], note: row.name}}]",
+    );
+    let document_loaded = load_str(&listed).unwrap_or_else(|error| panic!("{error}\n{listed}"));
+    let text = format!("{document_loaded:?}");
+    assert!(
+        text.contains("List([Expr(\"selection.id\"), Expr(\"row.id\")])"),
+        "the list is kept as a list: {text}"
+    );
+    let copied = document(
+        "other",
+        ", bulk_actions: [{name: tag, label: Tag, copy: [row.id]}]",
+    );
+    let error = refused(&copied);
+    assert!(
+        error
+            .path()
+            .to_string()
+            .starts_with("pages/files/sections/list/bulk_actions/tag"),
+        "{error}"
+    );
+    assert!(error.message().contains("scalar"), "{error}");
+}
+
+/// A chart takes the collection's `sort: {by, dir}` (beyond10x/ess#723): `by` and `dir` load, and
+/// `allowed` and `mode`, which only a sort control a user works reads, are refused at their path.
+#[test]
+fn a_chart_takes_sort_by_and_dir_and_refuses_allowed_and_mode() {
+    let chart = |sort: &str| {
+        document("kind", "").replace(
+            "      - {name: list, component: collection, selection: multiple, reads: {view: desk.Files}, columns: [name]}",
+            &format!("      - {{name: trend, component: chart, chart: line, reads: {{view: desk.Files}}, x: seq, series: [size], sort: {sort}}}"),
+        )
+    };
+    for sort in ["{by: seq}", "{by: seq, dir: desc}"] {
+        let text = chart(sort);
+        let document = load_str(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+        let page = &document.pages["files"];
+        let Some(ess_ui::Body::Composite(ess_ui::Composite::Chart(chart))) = page
+            .sections
+            .iter()
+            .find(|section| section.name == "trend")
+            .map(|section| &section.body)
+        else {
+            panic!("the section is a chart: {text}");
+        };
+        assert_eq!(
+            chart.sort.as_ref().map(|sort| sort.by.as_str()),
+            Some("seq")
+        );
+    }
+    for (sort, key) in [
+        ("{by: seq, allowed: [seq]}", "allowed"),
+        ("{by: seq, mode: server}", "mode"),
+    ] {
+        let text = chart(sort);
+        let error = refused(&text);
+        reported_at(
+            &error,
+            &format!("pages/files/sections/trend/sort/{key}"),
+            key,
+            &text,
+        );
+    }
+}
