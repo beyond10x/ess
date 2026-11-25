@@ -1116,6 +1116,25 @@ fn wire(
             "event decoder",
         );
     }
+    // Only the single crate's own `wire` module carries entity snapshot codecs.
+    if layout.single_crate() {
+        for entity in ir.entities().values() {
+            if !plan.is_generated(CapabilityKind::EntityLifecycle, &entity.name.to_string()) {
+                continue;
+            }
+            for function in [
+                super::wire::entity_encoder_name(layout, &entity.name),
+                super::wire::entity_decoder_name(layout, &entity.name),
+            ] {
+                inventory.symbol(
+                    "wire functions",
+                    &function,
+                    &entity.name.to_string(),
+                    "entity snapshot codec",
+                );
+            }
+        }
+    }
     for command in ir
         .commands()
         .values()

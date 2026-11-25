@@ -319,8 +319,8 @@ fn codec_modules(
 
 /// The single crate's own wire seam: what the crate root's `wire` module reads and writes.
 ///
-/// Every declared type, event payload and error the plan generates, as the server presents them.
-/// Command and view codecs stay with a server, as they always were: with one, this module is the
+/// Every declared type, event payload and error the plan generates, as the server presents them,
+/// and every entity's snapshot, which only this module reads and writes. Command and view codecs stay with a server, as they always were: with one, this module is the
 /// server's whole wire module, moved to the root and re-exported where the server named it, so a
 /// served crate keeps one module and not two.
 struct Library<'a> {
@@ -371,6 +371,11 @@ impl wire::Surface for Library<'_> {
             && self
                 .plan
                 .is_generated(CapabilityKind::CommandContract, &declared.to_string())
+    }
+
+    fn presents_entity(&self, declared: &QualifiedName) -> bool {
+        self.plan
+            .is_generated(CapabilityKind::EntityLifecycle, &declared.to_string())
     }
 }
 

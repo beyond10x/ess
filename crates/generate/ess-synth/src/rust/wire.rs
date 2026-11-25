@@ -23,8 +23,8 @@
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    ResolvedBody, ResolvedCommand, ResolvedError, ResolvedEvent, ResolvedField, ResolvedTypeRef,
-    ResolvedView,
+    ResolvedBody, ResolvedCommand, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
+    ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -69,6 +69,12 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
             continue;
         }
         named_type(&mut out, surface, declared);
+    }
+    for entity in surface.ir().entities().values() {
+        if surface.presents_entity(&entity.name) {
+            entity_encoder(&mut out, surface, entity);
+            entity_decoder(&mut out, surface, entity);
+        }
     }
     for event in surface.ir().events().values() {
         if surface.presents_event(&event.name) {
@@ -508,6 +514,147 @@ fn record_encoder(
             &format!("pub fn {function}(_value: &{path}, out: &mut String) {{"),
         );
     }
+}
+
+// ---- entity snapshots ----------------------------------------------------------------------------
+
+/// The name of one entity snapshot's encoder.
+pub(crate) fn entity_encoder_name(layout: &RustLayout, entity: &QualifiedName) -> String {
+    format!("encode_entity_{}", ident(layout, entity))
+}
+
+/// The name of one entity snapshot's decoder.
+pub(crate) fn entity_decoder_name(layout: &RustLayout, entity: &QualifiedName) -> String {
+    format!("decode_entity_{}", ident(layout, entity))
+}
+
+/// The snapshot type an entity crosses a boundary as, from inside the emitting crate.
+fn entity_snapshot_path(surface: &dyn Surface, entity: &ResolvedEntity) -> String {
+    let layout = surface.layout();
+    format!(
+        "{}::{}::{}",
+        surface.types(),
+        layout.module(layout.owner(&entity.name)),
+        layout.entity_snapshot(&entity.name)
+    )
+}
+
+/// The data an entity's snapshot holds beside its state, from inside the emitting crate.
+fn entity_data_path(surface: &dyn Surface, entity: &ResolvedEntity) -> String {
+    let layout = surface.layout();
+    format!(
+        "{}::{}::{}Data",
+        surface.types(),
+        layout.module(layout.owner(&entity.name)),
+        layout.type_name(&entity.name)
+    )
+}
+
+/// The members of an entity's document, in the order its published schema lists them: the
+/// identity, every declared field, then `state`.
+fn entity_members(entity: &ResolvedEntity) -> Vec<ResolvedField> {
+    let mut members = Vec::with_capacity(entity.fields.len() + 2);
+    members.push(entity.identity.clone());
+    members.extend(entity.fields.iter().cloned());
+    members.push(entity.state_field());
+    members
+}
+
+/// One entity snapshot's encoder: the identity and every field from its data, then its state, the
+/// document the entity's published schema fixes.
+fn entity_encoder(out: &mut String, surface: &dyn Surface, entity: &ResolvedEntity) {
+    let layout = surface.layout();
+    let snapshot = entity_snapshot_path(surface, entity);
+    let _ = write!(
+        out,
+        "\n/// Writes the entity `{}` as JSON: its identity, its fields and its `state`.\npub fn \
+         {}(value: &{snapshot}, out: &mut String) {{\n    out.push('{{');\n",
+        entity.name,
+        entity_encoder_name(layout, &entity.name)
+    );
+    let members = entity_members(entity);
+    let (state, data) = members.split_last().expect("an entity has a state");
+    for field in data {
+        encode_member(
+            out,
+            layout,
+            "    ",
+            ess_gen::schema::wire_field_name(field),
+            &format!("value.data.{}", name::value_ident(&field.name)),
+            &field.type_ref,
+            0,
+            null_when_absent(field),
+        );
+    }
+    encode_member(
+        out,
+        layout,
+        "    ",
+        ess_gen::schema::wire_field_name(state),
+        "value.state",
+        &state.type_ref,
+        0,
+        false,
+    );
+    out.push_str("    out.push('}');\n}\n");
+}
+
+/// One entity snapshot's decoder: the inverse of [`entity_encoder`], closed like the entity's
+/// published document, and holding the entity's declared invariants as a struct's decoder holds
+/// the struct's (TD-D13).
+fn entity_decoder(out: &mut String, surface: &dyn Surface, entity: &ResolvedEntity) {
+    let layout = surface.layout();
+    let snapshot = entity_snapshot_path(surface, entity);
+    let members = entity_members(entity);
+    let _ = write!(
+        out,
+        "\n/// Reads the entity `{}` from JSON, the document [`{}`] writes.\n///\n/// # \
+         Errors\n///\n/// [`json::DecodeError`] naming the path and what the declaration says \
+         belongs there,\n/// or the entity's first declared invariant the value breaks.\npub fn \
+         {}(value: &json::Value, at: &str) -> Result<{snapshot}, json::DecodeError> {{\n",
+        entity.name,
+        entity_encoder_name(layout, &entity.name),
+        entity_decoder_name(layout, &entity.name)
+    );
+    model_name_refusals(out, &members);
+    closure(
+        out,
+        &members
+            .iter()
+            .map(ess_gen::schema::wire_field_name)
+            .collect::<Vec<_>>(),
+    );
+    let (state, data) = members.split_last().expect("an entity has a state");
+    let _ = writeln!(
+        out,
+        "    let data = {} {{",
+        entity_data_path(surface, entity)
+    );
+    for (position, field) in data.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "        {}: {},",
+            name::value_ident(&field.name),
+            decode_member(surface, field, position)
+        );
+    }
+    let _ = writeln!(
+        out,
+        "    }};\n    let state = {};",
+        decode_member(surface, state, data.len())
+    );
+    if entity.invariants.is_empty() {
+        let _ = writeln!(out, "    Ok({snapshot} {{ state, data }})");
+    } else {
+        // The declared invariants are held here, as a struct's decoder holds the struct's.
+        let _ = writeln!(
+            out,
+            "    match data.broken_invariant() {{\n        Some(expected) => \
+             Err(json::DecodeError::of(at, expected, value)),\n        None => Ok({snapshot} {{ \
+             state, data }}),\n    }}"
+        );
+    }
+    out.push_str("}\n");
 }
 
 // ---- commands ------------------------------------------------------------------------------------
@@ -1127,4 +1274,10 @@ pub(crate) trait Surface {
     fn presents_view(&self, declared: &QualifiedName) -> bool;
     /// `true` when this command's input and outcome cross it.
     fn presents_command(&self, declared: &QualifiedName) -> bool;
+    /// `true` when this entity's snapshot crosses it: only the single crate's own `wire` module
+    /// (`--layout crate`) reads and writes entity snapshots, so every other surface keeps its
+    /// bytes.
+    fn presents_entity(&self, _declared: &QualifiedName) -> bool {
+        false
+    }
 }

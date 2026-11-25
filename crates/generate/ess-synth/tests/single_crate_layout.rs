@@ -705,6 +705,62 @@ fn a_served_crate_keeps_one_wire_module_and_every_codec_by_name_and_signature() 
 }
 
 #[test]
+fn an_entity_snapshot_has_a_decoder_and_an_encoder_in_the_crate_layout_only() {
+    let shop = crate_layout(&shop());
+    let wire = &shop.artifacts["src/wire.rs"].contents;
+    for function in [
+        "pub fn encode_entity_shop_catalog_catalog(value: &crate::catalog::CatalogSnapshot, out: \
+         &mut String) {",
+        "pub fn decode_entity_shop_catalog_catalog(value: &json::Value, at: &str) -> \
+         Result<crate::catalog::CatalogSnapshot, json::DecodeError> {",
+    ] {
+        assert!(
+            functions(wire).contains(&function),
+            "no `{function}` in:\n{wire}"
+        );
+    }
+    for line in [
+        "    json::closed_at(value, at, &[\"project\", \"format\", \"entries\", \"state\"])?;\n",
+        "    let data = crate::catalog::CatalogData {\n",
+        "    Ok(crate::catalog::CatalogSnapshot { state, data })\n",
+    ] {
+        assert!(wire.contains(line), "no `{line}` in:\n{wire}");
+    }
+    // The snapshot decoder holds the entity's declared invariants, as a struct's decoder does.
+    let billing = crate_layout(&example("billing"));
+    let wire = &billing.artifacts["src/wire.rs"].contents;
+    let decoder = wire
+        .split("\npub fn decode_entity_billing_invoice_invoice(")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .unwrap_or_else(|| panic!("no invoice snapshot decoder in:\n{wire}"));
+    assert!(
+        decoder.contains(
+            "    match data.broken_invariant() {\n        Some(expected) => \
+             Err(json::DecodeError::of(at, expected, value)),\n"
+        ),
+        "{decoder}"
+    );
+    // Every other surface keeps its bytes: the workspace's server and the browser bridge carry no
+    // snapshot codec.
+    for (name, ir) in all_models() {
+        for target in [Target::Rust, Target::Web] {
+            let Ok(other) = synthesize_for(&ir, target) else {
+                continue;
+            };
+            for (path, artifact) in &other.artifacts {
+                assert!(
+                    !artifact.contents.contains("encode_entity_")
+                        && !artifact.contents.contains("decode_entity_"),
+                    "{name}: `{path}` of the {} target names an entity codec",
+                    target.name()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn every_other_target_refuses_the_crate_layout_by_name() {
     let ir = example("gatepass");
     for target in [Target::Go, Target::Web, Target::Clap] {

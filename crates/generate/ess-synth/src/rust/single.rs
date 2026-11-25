@@ -15,7 +15,7 @@
 //!
 //! The types crate this layout is folded from carries the `wire` and `json` modules whether or not
 //! a server is generated, so a crate with no served component still reads and writes every
-//! declared type, event payload and error as JSON, without the `server` feature.
+//! declared type, event payload, error and entity snapshot as JSON, without the `server` feature.
 //! A served crate's `src/server/wire.rs` and `src/server/json.rs` re-export them, beside the
 //! system event codecs that need the `system` module, so the server's paths keep their names.
 //!
