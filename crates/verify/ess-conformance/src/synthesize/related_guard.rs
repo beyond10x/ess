@@ -5861,12 +5861,15 @@ fn with_row_where(
         // link input already bound (`pins`) names that owner whatever is chosen here.
         let mut inputs = subject_fact::naming_owners(ir, command, entity, node, inputs, pins);
         // An input field the arrangement decided is sent holding that value, whatever was
-        // searched here (beyond10x/ess#521).
+        // searched here (beyond10x/ess#521). Candidates that differed only there are one input
+        // now, tried once where it first stands: a copy decides as the first did.
         for input in &mut inputs {
             input.extend(fixed.clone());
         }
         if !fixed.is_empty() {
             add_fixed_tried((1, 0));
+            let mut seen = BTreeSet::new();
+            inputs.retain(|input| seen.insert(input.clone()));
         }
         Ok(inputs)
     };
