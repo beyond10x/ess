@@ -3590,6 +3590,14 @@ pub fn own_overlay_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64, u64)) {
     related_guard::own_overlay_work(run)
 }
 
+/// What `run` returns, how many input lists row searches whose input fields the arrangement fixed
+/// (the field values a caller chose) built for a row on this thread while it ran, and how many
+/// inputs of them they tried: the work a test bounds. Not part of the suite.
+#[doc(hidden)]
+pub fn fixed_input_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    related_guard::fixed_input_work(run)
+}
+
 /// What `run` returns, how many rows of creating branches it asked for on this thread, and how
 /// many of them were made rather than answered from what the synthesis made before: the work a
 /// test bounds. Not part of the suite.

@@ -2849,6 +2849,32 @@ thread_local! {
     /// arrangements carrying chosen values were asked for ([`own_overlay_work`]).
     static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64, u64)> =
         const { std::cell::Cell::new((0, 0, 0)) };
+    /// How many input lists a row search whose input fields the arrangement fixed built for a
+    /// row, and how many inputs of them it tried there ([`fixed_input_work`]).
+    static FIXED_TRIED: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// What `run` returns, how many input lists row searches whose input fields the arrangement fixed
+/// built for a row on this thread while it ran, and how many inputs they tried ([`FIXED_TRIED`]).
+pub(super) fn fixed_input_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    let before = FIXED_TRIED.with(std::cell::Cell::get);
+    let out = run();
+    let after = FIXED_TRIED.with(std::cell::Cell::get);
+    (out, (after.0 - before.0, after.1 - before.1))
+}
+
+/// The input lists built and the inputs tried on a row by searches whose input fields the
+/// arrangement fixed, on this thread ([`FIXED_TRIED`]).
+pub(super) fn taken_fixed_tried() -> (u64, u64) {
+    FIXED_TRIED.with(std::cell::Cell::get)
+}
+
+/// Adds `more`, the input lists built and the inputs tried, to [`FIXED_TRIED`] on this thread.
+pub(super) fn add_fixed_tried(more: (u64, u64)) {
+    FIXED_TRIED.with(|work| {
+        let (searched, tried) = work.get();
+        work.set((searched + more.0, tried + more.1));
+    });
 }
 
 /// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
@@ -5839,6 +5865,9 @@ fn with_row_where(
         for input in &mut inputs {
             input.extend(fixed.clone());
         }
+        if !fixed.is_empty() {
+            add_fixed_tried((1, 0));
+        }
         Ok(inputs)
     };
     // On a row `admits` takes, the first input tried that selects `outcome` there — and, `strict`,
@@ -5874,6 +5903,9 @@ fn with_row_where(
                     ))
         };
         let takes = |input: &BTreeMap<String, Node>| {
+            if !fixed.is_empty() {
+                add_fixed_tried((0, 1));
+            }
             let mut input = input.clone();
             if let Some(via) = own_via {
                 on_row(ir, &mut input, via, node);
