@@ -494,6 +494,7 @@ work! {
     companion_searched: u64 = related_guard::taken_companion_work().1;
     own_overlay_built: u64 = related_guard::taken_own_overlay_work().0;
     own_overlay_asked_at_the_bound: u64 = related_guard::taken_own_overlay_work().1;
+    own_overlay_asked: u64 = related_guard::taken_own_overlay_work().2;
     own_arranged: u64 = related_guard::taken_own_work().0;
     own_strict: u64 = related_guard::taken_own_work().1;
     own_deepest: usize = related_guard::taken_own_work().2;
@@ -596,6 +597,7 @@ impl Work {
         related_guard::add_own_overlay_work((
             self.own_overlay_built,
             self.own_overlay_asked_at_the_bound,
+            self.own_overlay_asked,
         ));
         related_guard::add_own_work((self.own_arranged, self.own_strict, self.own_deepest));
         row_set::add_attempts(self.attempts);

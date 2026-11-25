@@ -11,6 +11,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::{ir::EssIr, refs::OutcomeRef, resolve::compile, source::SourceMap};
+use ess_conformance::interpret::Interpreted;
 use ess_conformance::{
     report::{ConformanceStatus, Status},
     scenario::{ScenarioId, ScenarioStep, ScenarioValue},
@@ -529,4 +530,125 @@ fn a_target_ignoring_the_guard_or_comparing_the_wrong_owner_fails_the_suite() {
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// [`AMEND`] beside a refusal of a missing account named by the same input. The link guard answers
+/// before the related row is read (held state first, then missing and present related rows), so
+/// every branch below it is sent the account the entry is filed under, or is not synthesized.
+const REVISE: &str = r"
+  - name: ledger.book.ReviseEntry
+    input:
+      - {name: id, type: ledger.book.EntryId}
+      - {name: account_id, type: ledger.book.AccountId}
+      - {name: memo, type: String}
+    outcomes:
+      - name: other-account
+        when_subject: {predicate: account_id != input.account_id}
+        error: ledger.book.OtherAccount
+      - name: no-account
+        when_related: {via: input.account_id, exists: false}
+        error: ledger.book.NoAccount
+      - name: revised
+        updates: ledger.book.Entry
+        instance: id
+        sets: {memo: input.memo}
+        emits: [ledger.book.EntryAmended]
+        payload:
+          ledger.book.EntryAmended:
+            id: input.id
+views:
+";
+
+/// A tag no entry is filed under, read beside the account: [`REVISE`] with a second related row,
+/// so the scenario of `no-tag` arranges the account as a row beside the missing tag.
+const TAGS: [(&str, &str); 4] = [
+    (
+        "  - {name: ledger.book.EntryId, kind: newtype, of: Uuid}\n",
+        "  - {name: ledger.book.EntryId, kind: newtype, of: Uuid}\n  - {name: ledger.book.TagId, kind: newtype, of: Uuid}\n",
+    ),
+    (
+        "errors:\n",
+        "  - name: ledger.book.Tag\n    identity: {name: tag_id, type: ledger.book.TagId}\n    fields: []\n    lifecycle: {initial: Open, states: [Open], terminal: [Open]}\nerrors:\n  - {name: ledger.book.NoTag, fields: []}\n",
+    ),
+    (
+        "commands:\n",
+        "  - name: ledger.book.TagOpened\n    fields: [{name: tag_id, type: ledger.book.TagId}]\ncommands:\n  - name: ledger.book.OpenTag\n    input: []\n    outcomes:\n      - name: opened\n        creates: ledger.book.Tag\n        instance: tag_id\n        emits: [ledger.book.TagOpened]\n        payload:\n          ledger.book.TagOpened:\n            tag_id: {generated: true}\n",
+    ),
+    (
+        "      - {name: memo, type: String}\n    outcomes:\n      - name: other-account\n",
+        "      - {name: memo, type: String}\n      - {name: tag_id, type: ledger.book.TagId}\n    outcomes:\n      - name: other-account\n",
+    ),
+];
+
+/// [`REVISE`] reading a tag beside the account, refused where no tag carries the identity.
+const NO_TAG: (&str, &str) = (
+    "      - name: revised\n",
+    "      - name: no-tag\n        when_related: {via: input.tag_id, exists: false}\n        error: ledger.book.NoTag\n      - name: revised\n",
+);
+
+/// Every scenario synthesized from the ledger with [`REVISE`] that the model's own interpreter
+/// does not pass, with what it reported.
+fn revise_failing() -> BTreeMap<String, String> {
+    revise_failing_with(&[])
+}
+
+/// [`revise_failing`] with each `(from, to)` of `edits` applied, in order, to the model and the
+/// command.
+fn revise_failing_with(edits: &[(&str, &str)]) -> BTreeMap<String, String> {
+    let (head, entries) = MODEL
+        .split_once("views:\n")
+        .expect("the model declares `views:`");
+    let mut text = format!(
+        "{}{}{entries}{BY_ACCOUNT_WHOLE}",
+        head.replace("format: ess/15", "format: ess/29").replace(
+            "  - {name: ledger.book.OtherAccount, fields: []}\n",
+            "  - {name: ledger.book.OtherAccount, fields: []}\n  - {name: ledger.book.NoAccount, fields: []}\n",
+        ),
+        REVISE.trim_start_matches('\n')
+    );
+    for (from, to) in edits {
+        assert!(text.contains(from), "the model holds {from:?}");
+        text = text.replacen(from, to, 1);
+    }
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let spec = Specification::assemble([(Source::new("ledger.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+    let suite = synthesize(&ir).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    Runner::for_suite(&suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report()
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| {
+            (
+                scenario.scenario.to_string(),
+                format!("{:#?}", scenario.diagnostics().collect::<Vec<_>>()),
+            )
+        })
+        .collect()
+}
+
+/// RED (a downstream report, 2026-11-25): the `revised` scenario names an account arranged for
+/// the missing-account refusal instead of the entry's own, and the `no-account` scenario sends a
+/// missing account that is not the entry's, so the link guard answers `other-account` in both.
+/// Synthesis arranges the row the input names without the held-state guard that compares the
+/// entry's link with that same input.
+#[test]
+fn a_link_guard_beside_a_missing_row_refusal_on_the_same_input_passes_its_own_model() {
+    let failed = revise_failing();
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// The same link guard where the row its input names is arranged beside another row the command
+/// reads: the `no-tag` scenario arranges an account beside the missing tag, apart from the entry's
+/// own, so the link guard answers `other-account` first; it is refused by synthesis instead.
+#[test]
+fn a_link_guard_on_the_input_naming_a_row_beside_passes_its_own_model() {
+    let mut edits = TAGS.to_vec();
+    edits.push(NO_TAG);
+    let failed = revise_failing_with(&edits);
+    assert!(failed.is_empty(), "{failed:#?}");
 }
