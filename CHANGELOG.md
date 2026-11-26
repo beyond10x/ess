@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.99.8] — 2026-11-26
+
+### Fixed
+
+- `ess verify conform synthesize` sends an identity no row carries in the `unknown_instance:` scenario of a command whose `when_related:` guards read the row its own input addresses, such as `when_related: {via: input.item_id, predicate: owner_id != input.owner_id}` beside `moves:` with `instance: item_id`. The scenario sent the row arranged for the predicate refusal and expected the unknown-instance answer, so `ess verify conform run --target interpreted` failed it with that refusal and `ess verify conform mutate` refused with `ESS-MUTATE-001`; every release from 0.63.0 to 0.99.7 carries it. The second send naming a missing related row is left out for such a command, here and in the held-state refusal's scenario, since that row is the addressed record, whose absence `unknown_instance:` answers. A pinned suite of such a model moves when it is synthesized again. Validation still requires an `exists: false` branch over that row, which `unknown_instance:` answers first; this release does not change that.
+
+The fix changes no format key.
+
 ## [0.99.7] — 2026-11-26
 
 ### Fixed
