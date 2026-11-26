@@ -612,6 +612,7 @@ fn a_related_read_of_the_commands_own_subject_is_refused_from_ess_38_and_warns_b
         "probe.shop.CloseShelf",
         "input.shelf_id",
         "when_subject: {predicate:",
+        "`state == <state>`",
         "unknown_instance: true",
     ] {
         assert!(stderr.contains(named), "names {named}: {stderr}");

@@ -1285,7 +1285,8 @@ fn own_subject_refusals(spec: &Specification, command: &CommandSpec) -> Validati
     errors
 }
 
-/// The repair of [`own_subject_refusals`]: `when_subject:` and `unknown_instance: true`, or where
+/// The repair of [`own_subject_refusals`]: `when_subject:`, naming the required state because G4
+/// answers `when_subject` before `wrong_state` in one step, and `unknown_instance: true`; or where
 /// the command also guards on a row set, which a `when_subject` guard may not stand beside
 /// (`ESS-COMMAND-009`), each guard over the addressed row written as a row set selecting it by its
 /// key, beside `unknown_instance: true`.
@@ -1307,8 +1308,9 @@ fn own_subject_hint(
             ),
         )
     } else {
-        "write `when_subject: {predicate: …}` for a guard over the addressed row and \
-         `unknown_instance: true` for its absence"
+        "write `when_subject: {predicate: …}` for a guard over the addressed row, its predicate \
+         naming the state the command requires (`state == <state>`) so that `wrong_state:` still \
+         answers a row in another state, and `unknown_instance: true` for its absence"
             .to_owned()
     }
 }

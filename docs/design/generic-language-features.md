@@ -530,8 +530,9 @@ What changes, from the format that carries G4:
 - A `when_related:` row read through the input that addresses the command's own subject (the same
   entity, the acting branches' `instance:` field) is that record, which steps 2 and 3 have already
   answered, so its `exists: false` branch never answers: from `ess/38` validation refuses it as
-  ESS-COMMAND-004 with the hint to write `when_subject: {predicate: …}` and
-  `unknown_instance: true` (beside a row-set guard, which a `when_subject` guard may not stand
+  ESS-COMMAND-004 with the hint to write `when_subject: {predicate: …}`, naming the state the
+  command requires because `wrong_state:` answers last in step 3, and `unknown_instance: true`
+  (beside a row-set guard, which a `when_subject` guard may not stand
   beside, each guard over that record as a row set selecting it by its key), and below `ess/38` the
   same text is a warning.
 
