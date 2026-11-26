@@ -1,7 +1,7 @@
 # Outward events, an event-bus contract, routing, transports and ingress
 
-Status: draft design, 2026-11-26. Nothing on this page is built or scheduled. The forks at the end
-are open: the owner decides each one, and no option is taken by default. Planning:
+Status: design, 2026-11-26. The owner decided the seven forks the first draft held; they are
+listed under "Decided" at the end. Nothing on this page is built. Planning:
 `epic:outward-events-and-an-event-bus-contract`.
 
 ## Need
@@ -129,8 +129,8 @@ reports removing it or changing its payload incompatibly as breaking, and every 
 carry it. A published event that is not outward stays the system's own; a bus contract that names
 it is refused.
 
-- **Relation to events.** Nothing about the event changes; outwardness is one more fact about it
-  (where that fact lives is fork F1).
+- **Relation to events.** Nothing about the event changes; outwardness is one more fact about it,
+  declared on the component's `publishes:` in the specification itself, at the next `ess/N`.
 - **Relation to views.** A view answers when asked; an outward event is pushed. A periodic
   aggregate (§ 2) is where the two meet: the answer of an aggregate view, published every period
   as an outward event.
@@ -140,15 +140,15 @@ it is refused.
   request with one reply. An outward event is a one-message exchange with no initiator message
   (the exchange record, lines 87-89), so it needs no request half. Both reuse the same split: the
   wire address (a subject, a socket path) is the transport binding's; correlation, order and
-  timers are a protocol's. Both would touch `ess-transport` if F6 is A, so the one that lands first
-  opens the format.
+  timers are a protocol's. The bus is bound by its own format (§ 4), so an outward event adds
+  nothing to `ess-transport`; the broker-subject story keeps `ess-transport/3` to itself.
 
 ```yaml
 components:
   - name: gateway.Router
     publishes:
       events: [gateway.calls.CallFinished, gateway.usage.RouteStats, gateway.internal.Retried]
-      outward: [gateway.calls.CallFinished, gateway.usage.RouteStats]   # F1 A
+      outward: [gateway.calls.CallFinished, gateway.usage.RouteStats]
 ```
 
 ## 2. The event-bus contract: messaging semantics
@@ -177,7 +177,7 @@ not) or `at_least_once` (a duplicate is allowed, the receiver must survive it). 
 not a word here either.
 
 ```yaml
-type: ess-bus/1                      # F2 A
+type: ess-bus/1
 name: platform
 systems:
   - {system: pool, version: v1, source_digest: "sha256:<hex>"}
@@ -200,8 +200,9 @@ channels:
 ```
 
 **Periodic aggregate.** The producer states the period and the aggregate; the bus carries the
-result like any other event. Under F3 A the outward event is declared as the answer of an
-aggregate view the system already has, sampled every period:
+result like any other event. The outward event is declared as the answer of an aggregate view the
+system already has, sampled every period. The view is windowed: it aggregates what happened since
+the last emission, and the interpreter samples it on logical time.
 
 ```yaml
 outward:
@@ -228,7 +229,7 @@ routes:
   - name: slow-hosted-routes
     from: stats
     event: gateway.usage.RouteStats
-    where: [event.backend == hosted, event.p95_latency_ms > 5000]    # F4
+    where: [event.backend == hosted, event.p95_latency_ms > 5000]
     to: {system: alerts, input: alerts.pages.Raise}
 ```
 
@@ -239,24 +240,31 @@ routes:
 - A sink is closed to three kinds: a channel of the same contract, a declared input of a pinned
   system (an input is § 5's: a command it accepts over a declared ingress), and the contract's
   dead-letter channel once that pattern exists.
-- **The condition language** (fork F4). ESS's binding `where:` and Canon's `where` are both
-  three-valued, both typed against declared fields, both refuse an undeclared field. They differ in
-  reach: the ESS fragment compares String, enum and Boolean leaves for equality and tests
-  `defined` (`condition.rs:22-26`); `canon-expr/1` adds numeric comparison, list literals and
-  `contains` (trigger-rules.md lines 103-121). A statistics route needs numeric comparison.
-- **"Start protocol P" as a sink** (fork F5). A trigger rule is about the state of an entity row in
-  a snapshot, with owner, mode, cap and refire policy (trigger-rules.md § 3); a route is about one
-  event in flight. Under F5 B a trigger evaluator is one more system with a declared input, and a
-  route whose sink is that input hands it the event; the rule still decides whether P starts.
+- **The condition language** is ESS's binding `where:` fragment, extended by numeric comparison
+  and list membership. ESS's binding `where:` and Canon's `where` are both three-valued, both typed
+  against declared fields, both refuse an undeclared field. They differ in reach: the ESS fragment
+  compares String, enum and Boolean leaves for equality and tests `defined`
+  (`condition.rs:22-26`); `canon-expr/1` adds numeric comparison, list literals and `contains`
+  (trigger-rules.md lines 103-121), and a statistics route needs numeric comparison. ESS keeps one
+  typed language against its own payload types. A stated translation of the shared fragment into
+  `canon-expr/1`, with a test per operator, lets Canon's evaluator read a route's condition
+  without a second parser.
+- **"Start protocol P" is not a kind of sink.** A trigger rule is about the state of an entity row
+  in a snapshot, with owner, mode, cap and refire policy (trigger-rules.md § 3); a route is about
+  one event in flight. A trigger evaluator is one more system with a declared input; a route whose
+  sink is that input hands it the event, and the rule still decides whether P starts. The bus
+  learns nothing of Canon's protocol identity, mode, cap or refire.
 
 ## 4. Transport bindings that conform
 
 A **bus binding** maps the channels of one bus contract to one wire. It is a typed document with a
 closed vocabulary, pinned to the contract's digest, and it never restates a promise of the
-contract. The operator console injects one implementation by choosing one binding.
+contract. There is one binding per bus, so one injection point: the operator console injects one
+implementation by choosing one binding. It reuses `ess-transport`'s subject and stream checks as a
+library.
 
 ```yaml
-type: ess-bus-binding/1              # F6 B
+type: ess-bus-binding/1
 bus: "sha256:<compiled digest of platform>"
 transport:
   protocol: nats                     # closed: nats | unix_socket
@@ -333,7 +341,9 @@ The same separation, on the way in. Four layers, from the inside out:
   published suite); the specification's scenarios run through a target adapter per binding, as
   `ess-http/1` runs its routes today.
 
-How a binding format is cut per protocol is fork F7.
+Each protocol has its own binding format with a closed vocabulary: `ess-mcp/1` and `ess-a2a/1`,
+beside `ess-http/1`, each pinning its protocol port. The exchange record keeps every binding its
+own format (§ 4, lines 134-136).
 
 ## 6. First producers and the first consumer
 
@@ -357,73 +367,35 @@ ESS ships none of the producers or the consumer. It ships the formats, their che
 projections and the conformance suite, and one worked example with generic names that holds the
 end-to-end path.
 
-## Forks
+## Decided
 
-Each fork is open for the owner. The recommendation is the designer's, not a default.
+The owner decided each fork of the first draft on 2026-11-26 (relayed by the operator session).
+The picked option is the design above. Each rejected option is one line.
 
-- **F1, where outwardness is declared.**
-  - A: in the specification, a component's `publishes:` gains `outward:` (a subset of its events)
-    at the next `ess/N`. Cost: one source format; `ess verify diff` and AsyncAPI learn it.
-  - B: nowhere in the model; every published event may be carried, and the bus contract selects.
-    Cost: no contract boundary; a payload change of a carried event is not breaking to `diff`.
-  - C: a sibling `ess-outward/1` per specification. Cost: one more document per system for one list.
-  - Recommended: A. The owner's words place the declaration in ESS ("each system can declare"),
-    and a contract with unknown readers is semantics.
-- **F2, where the bus contract lives.**
-  - A: a sibling `ess-bus/1` that pins several specifications by digest, compiled to
-    `ess-bus-ir/1`. Cost: a new format and crate; a document that spans systems is new in ESS.
-  - B: in each producer's specification (the producer names patterns and sinks). Cost: a producer
-    names its consumers; one bus is spread over many systems.
-  - C: an `ess-protospec/1` document per bus, the patterns as protocol templates. Cost: no pattern
-    names or route vocabulary in protospec; bounded exploration where a typed check would do.
-  - Recommended: A, with each pattern's reference machine in `ess-protospec/1` for conformance
-    (§ 4), so the contract stays typed and the machine stays checkable.
-- **F3, how a periodic aggregate is declared.**
-  - A: an outward event sampled from an aggregate view every period (`every`, `from_view`). Cost:
-    a windowed "since the last emission" aggregate and a new outward form; the interpreter samples
-    on logical time.
-  - B: an ordinary outward event that a time step (the component steps story) emits by running a
-    command every period. Cost: a command cannot compute an aggregate over rows today, so the
-    payload is unchecked against any view.
-  - C: the bus aggregates per-occurrence events into the period (a correlating aggregator in the
-    bus). Cost: per-occurrence events cross the wire, which the owner excluded ("not per token").
-  - Recommended: A.
-- **F4, the route condition language.**
-  - A: ESS's binding `where:` fragment, extended by numeric comparison and list membership.
-    Cost: two condition languages in the organization; ESS's grows by two operators.
-  - B: `canon-expr/1` unchanged, as Canon's trigger rules use it. Cost: ESS depends on Canon's
-    expression crate, or reimplements it byte for byte; the event payload becomes a `$row` record.
-  - C: A now, with a stated, tested translation of the shared fragment into `canon-expr/1`. Cost:
-    a translation table and a test per operator.
-  - Recommended: C. ESS keeps one typed language against its own payload types; Canon's evaluator
-    can read a route's condition without a second parser.
-- **F5, "start protocol P" as a sink.**
-  - A: a sink kind of its own (`start: {protocol, input}`). Cost: the bus learns Canon's protocol
-    identity, mode, cap and refire policy, or ignores them.
-  - B: no own kind; a trigger evaluator is a system with a declared input, and a route's sink is
-    that input. Cost: one hop more; the evaluator declares its input in ESS.
-  - C: a route's sink may only be a command of a pinned system; protocol starts stay outside the
-    bus. Cost: a trigger evaluator cannot be fed by the bus at all.
-  - Recommended: B.
-- **F6, where a bus's transport binding lives.**
-  - A: in `ess-transport` (each producer binds its outward events to subjects; a new member
-    `unix_socket` joins the closed protocol set). Cost: one bus is bound in as many documents as it
-    has producers, and they must agree.
-  - B: a sibling `ess-bus-binding/1` per bus contract, reusing `ess-transport`'s subject and
-    stream checks as a library. Cost: a new format; two documents bind events to NATS subjects.
-  - C: transport keys inside `ess-bus/1`. Cost: the contract carries wire words, against the
-    separation the owner asks for.
-  - Recommended: B. One injection point per bus, which is where the operator console chooses the
-    implementation.
-- **F7, how an ingress binding is cut.**
-  - A: one sibling format per protocol (`ess-mcp/1`, `ess-a2a/1`, beside `ess-http/1`), each with a
-    closed vocabulary and the pinned protocol port. Cost: two new formats.
-  - B: one `ess-ingress/1` with a closed `protocol:` member set. Cost: one vocabulary for
-    protocols whose facts differ (tool descriptions, agent skills, routes).
-  - C: MCP and A2A as methods of the draft `ess-jsonrpc/1`, the protocol facts in the port.
-    Cost: protocol-specific facts (tool listing, agent card) have no typed home.
-  - Recommended: A, as the exchange record keeps every binding its own format (§ 4, lines
-    134-136).
+- **F1, where outwardness is declared: A.** `outward:` on a component's `publishes:`, at the next
+  `ess/N`. Rejected: B, nowhere, the bus selects (no contract boundary for `diff`); C, a sibling
+  `ess-outward/1` (one more document per system for one list).
+- **F2, where the bus contract lives: A.** A sibling `ess-bus/1` pinning several specifications by
+  digest, compiled to `ess-bus-ir/1`, with each pattern's reference machine in `ess-protospec/1`
+  for conformance (§ 4). Rejected: B, inside each producer's specification (a producer names its
+  consumers); C, one `ess-protospec/1` per bus (no pattern vocabulary).
+- **F3, how a periodic aggregate is declared: A.** An outward event sampled from an aggregate view
+  every period (`every`, `from_view`). Rejected: B, a time step emitting an event (its payload is
+  checked against no view); C, the bus aggregating per-occurrence events (per-occurrence traffic
+  the owner excluded).
+- **F4, the route condition language: C.** ESS's binding `where:` fragment extended by numeric
+  comparison and list membership, plus a tested translation into `canon-expr/1`. Rejected: A
+  without the translation (two unrelated languages); B, `canon-expr/1` unchanged (ESS depends on
+  Canon's crate or reimplements it).
+- **F5, "start protocol P" as a sink: B.** No sink kind of its own; a trigger evaluator is a system
+  with a declared input, the evaluator's declared input being the sink. Rejected: A, a sink kind
+  that teaches the bus Canon's mode, cap and refire; C, protocol starts outside the bus.
+- **F6, where a bus's transport binding lives: B.** A sibling `ess-bus-binding/1` per bus, reusing
+  `ess-transport`'s subject and stream checks. Rejected: A, in `ess-transport` per producer (N
+  documents must agree); C, transport keys inside the contract (wire words in the semantics).
+- **F7, how an ingress binding is cut: A.** One format per protocol, `ess-mcp/1` and `ess-a2a/1`.
+  Rejected: B, one `ess-ingress/1` with a closed `protocol:` set; C, MCP and A2A as methods of the
+  draft `ess-jsonrpc/1` (no typed home for tool listing or agent card).
 
 ## What it is not
 
@@ -438,7 +410,7 @@ Each fork is open for the owner. The recommendation is the designer's, not a def
 
 ## Stories
 
-| story | delivers | forks |
+| story | delivers | decisions |
 |---|---|---|
 | `story:a-system-declares-which-of-its-published-events-are-outward` | § 1 | F1 |
 | `story:an-event-bus-contract-states-publish-subscribe-and-fan-out-channels-over-outward-events` | § 2 | F1, F2 |
@@ -446,4 +418,4 @@ Each fork is open for the owner. The recommendation is the designer's, not a def
 | `story:a-bus-route-forwards-an-event-to-a-sink-when-its-condition-holds` | § 3 | F4, F5 |
 | `story:a-bus-contract-binds-to-nats-or-a-unix-socket-and-a-bus-implementation-is-checked-over-each` | § 4 | F6 |
 | `story:a-system-declares-its-ingress-as-mcp-and-a2a-protocol-bindings-beside-http` | § 5 | F7 |
-| `story:a-worked-example-puts-several-producers-and-one-consumer-on-one-bus-and-checks-it-end-to-end` | § 6 | all |
+| `story:a-worked-example-puts-several-producers-and-one-consumer-on-one-bus-and-checks-it-end-to-end` | § 6 | F1-F7 |
