@@ -5,6 +5,7 @@
 ### Fixed
 
 - `ess verify conform synthesize` keeps an input's `example:` at every leaf no decision tells apart when a scenario's setup updates an existing row with a further witness. This applies to a command that compares the row with its input, such as `rev != input.base_rev`. Such a setup sent the whole further witness, so a leaf another command reads only through `defined(…)` carried the type placeholder (`prefs.note-1`) where the example holds a value. The rule of 0.99.0 covered further creations only, and this setup path has sent the placeholder since 0.37.0. A pinned suite of such a model moves when it is synthesized again.
+- `ess verify conform synthesize` no longer says a branch "has no scenario" when it cannot arrange one row of the branch's related-guard boundary, such as a disjunct held with every other refuted. The suite holds that scenario. The `ESS-SYNTH-003` refusal now reads "has a scenario `<id>` that leaves a row of its related guard unwitnessed" and is marked as standing beside the scenario. It said "has no scenario" since 0.42.0 at least. Code and scenario id are unchanged, and no suite moves.
 
 ## [0.99.5] — 2026-11-25
 

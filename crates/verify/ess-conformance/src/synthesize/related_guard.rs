@@ -3810,6 +3810,10 @@ fn unknown_when_absent(predicate: &Predicate, absent: &BTreeSet<FactPath>) -> bo
     }
 }
 
+/// How [`describe_goal`] starts, so a refusal beside the branch's standing scenario is worded as
+/// one about a row of its related guard.
+pub(super) const RELATED_BOUNDARY: &str = "a related row on which ";
+
 /// A boundary no arrangement reached, as a refusal states it.
 pub(super) fn describe_goal(refuted: &[Predicate], held: &[Predicate]) -> String {
     let list = |predicates: &[Predicate]| {
@@ -3820,7 +3824,7 @@ pub(super) fn describe_goal(refuted: &[Predicate], held: &[Predicate]) -> String
             .join(", ")
     };
     format!(
-        "a related row on which {} is false and {} is true",
+        "{RELATED_BOUNDARY}{} is false and {} is true",
         list(refuted),
         if held.is_empty() {
             "nothing else".to_owned()
