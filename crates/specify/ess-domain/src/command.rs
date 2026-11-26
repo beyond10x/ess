@@ -203,6 +203,7 @@
 //! for [`UnknownState`](ValidationCode::UnknownState), which an AEP workflow and an ESS lifecycle
 //! have shared since wave 1.
 
+pub mod absent_comparison;
 pub(crate) mod absent_input;
 pub mod append_list;
 pub mod caller_value;

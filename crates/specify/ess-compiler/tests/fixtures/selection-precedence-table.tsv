@@ -1,4 +1,4 @@
-#	models=413	commands=866
+#	models=414	commands=866
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -186,6 +186,7 @@ crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	A
 crates/specify/ess-composition/tests/fixtures/payload-conformance/demo/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/payload-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/absent-comparison.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
 crates/specify/ess-domain/tests/fixtures/component-steps.yaml	ir=f008439627c8fb7d07e189f57585613c1c98f385002dec4f3247ee40cb1604f9:11925

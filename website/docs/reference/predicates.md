@@ -52,6 +52,13 @@ A binding's `when:` names its cause, such as `periodic:`. It is not a predicate.
 A predicate is evaluated in three-valued logic: true, false, or unknown when a fact it reads was
 never observed. Only true satisfies a guard. An unobserved collection is unknown, not empty.
 
+A comparison over an `Optional` stored field is unknown against a row that holds the field absent.
+In a row-set selector (`where:` or `forall:`), a related predicate, a `when_subject:` predicate or
+an `affects:` filter, `ess specify validate` names such a comparison when a row may hold the field
+absent and no presence test stands beside it: `defined(f)` in a conjunction around it, or
+`missing(f)` in a disjunction around it. Write `defined(f) and f == x`, which is false where `f` is
+absent. From `ess/38` it is refused as `missing_declaration`; below it, it is a warning.
+
 ## The model the examples use
 
 Every fragment below is placed into this one specification before it is run. A `when:` fragment

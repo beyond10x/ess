@@ -1143,6 +1143,9 @@ pub fn advise_locating(
     advisories.extend(ess_domain::command::related_guard::implied_relations(
         specification,
     ));
+    advisories.extend(ess_domain::command::absent_comparison::advisories(
+        specification,
+    ));
     let bridged = bridge(&advisories, &Locator::new(sources, files));
     let mut warnings = Diagnostics::new();
     // `bridge` keeps one diagnostic per advisory, in order.

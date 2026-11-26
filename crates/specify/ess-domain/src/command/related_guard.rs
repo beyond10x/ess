@@ -1604,6 +1604,22 @@ fn addressed_or_refusal<'a>(
 /// before the branch; it addresses no existing subject through its input, or more than one; the
 /// subject stores no such field; or the field's type is no entity's identity, nor `Optional<…>` of
 /// one.
+/// The entity whose row `via` names, or `None` where it names none; the refusal is
+/// [`validate`]'s to report.
+pub(crate) fn row_entity<'a>(
+    spec: &'a Specification,
+    command: &CommandSpec,
+    via: &RelatedVia,
+) -> Option<&'a EntitySpec> {
+    let mut reported = ValidationErrors::new();
+    match via {
+        RelatedVia::Input(field) => entity_or_refusal(spec, command, field, &mut reported),
+        RelatedVia::Subject(field) => {
+            subject_entity_or_refusal(spec, command, field, &mut reported)
+        }
+    }
+}
+
 fn subject_entity_or_refusal<'a>(
     spec: &'a Specification,
     command: &CommandSpec,

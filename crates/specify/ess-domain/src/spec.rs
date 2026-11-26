@@ -554,6 +554,8 @@ impl Specification {
         errors.extend(crate::binding::condition::validate_specification(self));
         // What a component starts itself: its level and time steps (ess/38).
         errors.extend(crate::component::validate_steps(self));
+        // A comparison over a field a row may hold absent, with no presence test beside it (ess/38).
+        errors.extend(crate::command::absent_comparison::validate(self));
         errors.extend(crate::binding::refusal::validate_specification(self));
         errors
     }
