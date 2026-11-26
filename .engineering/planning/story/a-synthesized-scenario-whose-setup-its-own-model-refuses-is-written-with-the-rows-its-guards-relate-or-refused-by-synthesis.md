@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 6
+revision: 7
 ---
 ## Summary
 
@@ -135,3 +135,17 @@ written.
 ## Left open
 
 The 23 scenarios are refused by synthesis and not arranged; arranging them is not built.
+
+## Reported after 0.99.4
+
+Reported 2026-11-25 on 0.99.4 by a downstream application: several scenarios of a command whose branches read the row the subject links are refused with "no candidate of the 0 tried satisfies" a branch that "refuses first". This is the first half of group 1 of the Fix plan and of "Left open".
+
+Verdict: a defect, an arrangement that is not built, in `arranged_at` of `crates/verify/ess-conformance/src/synthesize/related_guard.rs` (the early `GuardUnsatisfiable` with `tried: 0`, commit `090b691e2d`, 0.99.4); the shape is wrong since before 0.97.4. The refusal is right for what synthesis builds: it arranges the row the input names apart from the subject, so an earlier branch with the guard `<link> != input.<field>` answers first (0.99.1 wrote those scenarios and they failed). The arrangement a hand-written scenario uses, where the input names the row the subject links, is not built.
+
+Cause. "0 tried" is literal: no filter empties a list. `arranged_at` returns before any candidate when `subject_link_refuses` finds that guard answered first and the field names the focus row or a row beside it. Three of the refused branches belong to `story:a-link-copied-from-a-related-row-s-proved-reference-is-itself-proved-so-a-command-reading-it-needs-no-dead-exists-false-branch` (a dead branch: no arrangement exists at all). Reading through the stored link instead (`stored::arranged_at`) does not help the reported shape: a link copied from another row's field is refused ("does not write it from its input unchanged"), and where the creator writes the link from its input the scenarios are written but send the compared input as a placeholder, so the earlier branch answers on the interpreted target (a further defect of the same class, `related_guard/stored.rs`). The refusal of a revoke on a revoked row is group 3 of this story (0.97.4 behaviour restored, by design).
+
+Reduction: a generic model with an order, a store, and a command that ships an order from a store, reproduces the refusals on the 0.99.5 binary; a hand arrangement exists (open the store, place the order at it, freeze it, ship naming it).
+
+Fix plan, in order: (1) `arranged_at`, where `subject_link_refuses` fires for the read field, arranges through `stored::arranged_at` with the subject's link as the read row and binds `input.<field>` to that row instead of refusing; (2) `stored::arranged_at`, non-absent arm, binds every `input.<field>` that a step-3 guard `<link> != input.<field>` compares to the linked row's instance, which fixes the placeholder send; (3) a relink through a link a creator copies from another row's field, arranging that row's link first (the reported shape needs it; no strategy has it).
+
+Built (2026-11-26): branch `fix/n93-a-branch-reading-the-row-the-subject-links-is-sent-that-row`, head `b0054486c1`, pushed. Red tests, each in `link_field_guard.rs`: A `a_branch_reading_the_row_the_input_names_beside_a_link_refusal_is_sent_the_subjects_own_row` (`746bf7b55b`), B `a_branch_reading_the_subjects_stored_link_beside_a_link_refusal_is_sent_that_row` (`298cd5d7e1`), C `a_branch_beside_a_link_refusal_is_sent_the_subjects_own_row_where_the_link_is_copied_from_another_row` (`f32b46797b`), D `a_branch_reading_two_rows_beside_a_link_refusal_is_sent_the_subjects_own_row` (`be63bb054e`, the reported shape with a second row beside). Fixes: part 2 (`7f63a3f059`), part 1 (`61f63169e8`), part 3 (`b7e0c1e132`), part 4 (`ad3c57b4e6`, several rows). `link_field_guard` 13 of 13; the gate ran every step with exit 0 on the third run and no committed byte row moved; the longest test was 48.5 s. Planned for 0.99.6 or 0.99.7.

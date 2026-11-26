@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -417,3 +417,18 @@ archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 br
 written.
 
 0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
+
+Second finding: branch `fix/n90b-a-further-instance-in-an-update-setup-keeps-the-example`, from tag 0.99.5, pushed. Red test `5cd1402f01`
+(`suffixed_instance_inputs::a_further_witness_of_an_update_setup_keeps_the_example_at_a_leaf_read_only_for_presence`), fix `3d3402acb5`. The red test is green; `suffixed_instance_inputs` 19 tests. The gate ran every step with exit 0 (stamp, `task fmt-check`, clippy, `suffixed_instance_inputs`, `subject_fact_complete_refusal`, `stored_map_entries`, `adversary_464_pass1`, the bytes table with its slow lanes, `cli_read`, `adversary_related_values_all_bytes`, `external_beside_held_guard`, `tutorial_page`); no committed byte row moved; the longest test was 48.8 s. A pinned suite of a model with this shape moves when it is synthesized again. Planned for 0.99.6.
+
+## Second finding
+
+Reported 2026-11-25 on 0.99.4 by a downstream application: in a model whose saving command updates a row, four steps send a placeholder at a leaf that only presence reads touch, where the example holds the leaf.
+
+Verdict, per step. Two steps are a defect: the setup steps, the committing command's two scenarios. Two are expected: the steps under test, the saving command's stale-row and other-account scenarios, where rule `ess/23` (the complete refusal, `refused_writes_apart` in `crates/verify/ess-conformance/src/synthesize/subject_fact.rs`) moves a leaf that an accepting sibling copies into a stored field the row already holds, a text to its placeholder. In those two the stored copy of the leaf holds the example, so the refusal must move that leaf to show a wrong write.
+
+Cause of the defect, since 0.37.0 (`bcd7b19318`; the 0.99.0 example rule never reached it). The setup is an update arranged on an existing row by the stored-row search. The saving command compares a row field with an input, so `inputs_for` (`subject_fact.rs`, lines 2447 to 2451 at 0.99.5) appends the further witnesses after the plain ones, and the plain ones cannot give the member that a by-value read leaves out the example, so the whole further witness is sent, placeholder included. The 0.99.0 rule runs only in `exampled` (`synthesize.rs`), which is called for a further creation (`created_by`); no condition of it fails, because this path never reaches it. The suffix, the nesting and the stored copy are not the cause.
+
+Reduction, on the 0.99.5 binary: a generic model whose saving command compares a row field with an input and reads one text leaf only through `not defined(...)` sends that leaf as its placeholder in the setup; the same model without the row-input comparison sends the example.
+
+Fix: `exampled_witness` (new, beside `exampled` in `synthesize.rs`) builds, for each further witness `inputs_for` appends, a variant with the example back at every example leaf that no decision tells apart (input guards by value, the row comparisons' input paths, `told_apart` over the command's branches on the entity, `decision_inputs`), and `inputs_for` tries it before the raw witness; `admitted()` still filters it.
