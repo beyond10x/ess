@@ -42,6 +42,8 @@ Concepts are in [ESS](../concepts/ess.md). These pages are about writing one.
     payload says so.
 14. [Read stored state in the command a binding invokes](specify/binding-stored-state.md): why a
     binding maps an identity and the invoked command reads the row.
+15. [Refusal order and caps](specify/guard-order-and-caps.md): a refusal the request alone decides
+    answers before the input refusals, and a cap holds for the requests an input guard selects.
 
 ## Where each section went
 

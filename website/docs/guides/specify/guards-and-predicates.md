@@ -108,10 +108,12 @@ One order answers every command, whichever branches it declares
 ([the precedence order](https://github.com/beyond10x/ess/blob/main/docs/design/cross-record-and-stored-field-guards.md#the-precedence-order)).
 For a command acting on a record its input names:
 
-1. input refusals answer first: a `when:` with an `error:` and no subject is checked before the
-   record is looked up, and of two that one input selects, the first declared answers; a refusal
-   whose `when:` always holds (`when: true`) is refused (`ESS-COMMAND-004`): give it the
-   condition it refuses on, or drop `when:` to make it the default refusal;
+1. input refusals answer first, beside an `external:` refusal marked `before_row: true`
+   ([answer before the input is checked](./guard-order-and-caps.md#answer-before-the-input-is-checked)):
+   a `when:` with an `error:` and no subject is checked before the record is looked up, and of
+   two that one request selects, the first declared answers; a refusal whose `when:` always holds
+   (`when: true`) is refused (`ESS-COMMAND-004`): give it the condition it refuses on, or drop
+   `when:` to make it the default refusal;
 2. then existence: an identity no record carries takes the unknown instance answer, an
    `unknown_instance:` branch or the declared not-found refusal;
 3. then the held state: `when_subject_state:` and `when_subject:` select by it, and `wrong_state`
@@ -345,7 +347,8 @@ one. A generator reads `external` and injects a fault instead of trying to const
 
 ## A rule stored as data is evaluated by the system
 
-This section has its own page: [rules stored as data](./stored-rules.md).
+This section has its own page: [rules stored as data](./stored-rules.md). A cap that holds for
+some requests only is on [refusal order and caps](./guard-order-and-caps.md).
 
 ## One outcome for many commands
 

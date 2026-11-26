@@ -34,6 +34,85 @@ add simultaneous semantic CLI and HTTP surfaces, and duplicating domain ownershi
 See [Logical, interface and delivery owners](../../concepts/ess.md#logical-interface-and-delivery-owners)
 for the separate contracts, identity consequences and bounded examples.
 
+### A command only some builds serve
+
+A command only a development build serves, such as a local sign-in, stays in the component that
+owns its domain. The specification says what the system means, not which build serves what: which
+builds serve the command is the implementation's choice. A release build that leaves it out still
+serves the other commands, and the scenarios that arrange state through it run against a build that
+serves it.
+
+```yaml
+format: ess/37
+system: demo
+version: v1
+domain: demo.access
+summary: A session started by a local sign-in that development builds serve, and ended by a sign-out.
+types:
+  - {name: demo.access.SessionId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.access.Session
+    identity: {name: session_id, type: demo.access.SessionId}
+    fields:
+      - {name: user, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Ended]
+      terminal: [Ended]
+      transitions:
+        - {name: end, from: [Active], to: Ended}
+actors:
+  - name: demo.access.User
+    may: [demo.access.LocalSignIn, demo.access.SignOut]
+errors:
+  - {name: demo.access.UnknownSession, fields: []}
+  - {name: demo.access.AlreadyEnded, fields: []}
+events:
+  - name: demo.access.SignedIn
+    fields: [{name: session_id, type: demo.access.SessionId}]
+  - name: demo.access.SignedOut
+    fields: [{name: session_id, type: demo.access.SessionId}]
+commands:
+  - name: demo.access.LocalSignIn       # served by development builds only
+    input:
+      - {name: user, type: String}
+    outcomes:
+      - name: signed-in
+        creates: demo.access.Session
+        instance: session_id
+        sets: {user: input.user}
+        emits: [demo.access.SignedIn]
+        payload: {demo.access.SignedIn: {session_id: {generated: true}}}
+  - name: demo.access.SignOut
+    input:
+      - {name: session_id, type: demo.access.SessionId}
+    outcomes:
+      - {name: unknown-session, unknown_instance: true, error: demo.access.UnknownSession}
+      - name: signed-out
+        moves: demo.access.Session.end
+        instance: session_id
+        emits: [demo.access.SignedOut]
+        payload: {demo.access.SignedOut: {session_id: input.session_id}}
+      - {name: already-ended, wrong_state: true, error: demo.access.AlreadyEnded}
+views:
+  - name: demo.access.Sessions
+    source: demo.access.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: demo.access.SessionId}
+      - {name: state, type: demo.access.Session.State}
+components:
+  - component: access-service
+    owns: {domains: [demo.access]}
+    accepts: {commands: [demo.access.LocalSignIn, demo.access.SignOut]}
+    reached_by: network
+```
+
+`SignOut`'s scenarios arrange their session through `LocalSignIn`. Accepting `LocalSignIn` in a
+second component that owns no domain is refused with `ESS-COMPONENT-004`: a command has one handler,
+the component that owns its domain. Dropping the command instead leaves the sessions it creates
+unreachable, and synthesis refuses the outcomes that need one with `ESS-SYNTH-003`.
+
 ## A binding says what happens when it fails
 
 Bindings live above the domains, in `components.yaml`:

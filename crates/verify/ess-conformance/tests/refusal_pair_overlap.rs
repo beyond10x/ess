@@ -134,6 +134,9 @@ enum Change {
     PauseFirst,
     /// Never refuses a blank code: it reads the code as if one were given.
     NeverBlank,
+    /// Refuses a label over eight characters before anything else: the guards page's
+    /// authenticate-first model with its input refusal checked first.
+    LabelFirst,
 }
 
 struct Target {
@@ -143,8 +146,13 @@ struct Target {
 
 impl Target {
     fn new(change: Change) -> Self {
+        Self::of(MODEL, change)
+    }
+
+    /// The interpreted target of `model`, changed as `change` says.
+    fn of(model: &str, change: Change) -> Self {
         Self {
-            inner: Interpreted::for_model(ir(MODEL)),
+            inner: Interpreted::for_model(ir(model)),
             change,
         }
     }
@@ -166,6 +174,7 @@ impl ConformanceTarget for Target {
     ) -> Result<SemanticCommandResult, TargetError> {
         let blank = request.input.get("code") == Some(&Node::Text(String::new()));
         let pause = request.input.get("pause") == Some(&Node::Bool(true));
+        let request_label = request.input.get("label").cloned();
         if self.change == Change::NeverBlank && blank {
             request
                 .input
@@ -177,11 +186,27 @@ impl ConformanceTarget for Target {
             // The model refuses every `pause: true` input and changes nothing, so only the answer
             // differs.
             result.outcome = Some(OutcomeRef::new(
-                command,
+                command.clone(),
                 OutcomeName::new("pause-refused").expect("a name"),
             ));
             result.error = Some(DeclaredErrorValue::new(
                 "demo.hold.PauseRefused"
+                    .parse::<ErrorRef>()
+                    .expect("an error"),
+            ));
+            result.direct_events.clear();
+        }
+        let long_label = matches!(
+            request_label.as_ref(),
+            Some(Node::Text(label)) if label.chars().count() > 8
+        );
+        if self.change == Change::LabelFirst && long_label {
+            result.outcome = Some(OutcomeRef::new(
+                command,
+                OutcomeName::new("label-too-long").expect("a name"),
+            ));
+            result.error = Some(DeclaredErrorValue::new(
+                "demo.desk.LabelTooLong"
                     .parse::<ErrorRef>()
                     .expect("an error"),
             ));
@@ -779,4 +804,194 @@ fn stored_pair_no_row_can_satisfy_is_not_sent_and_not_noted() {
         refused, 1,
         "`empty` is sent once, for its own row: {sent:#?}"
     );
+}
+
+// ---- the guards page: a refusal before the input, a cap for some requests (beyond10x/ess#816) --
+
+/// The guards guide page, as written.
+fn guards_page() -> String {
+    guide_page("guards-and-predicates")
+}
+
+fn order_page() -> String {
+    guide_page("guard-order-and-caps")
+}
+
+fn guide_page(name: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../../website/docs/guides/specify/{name}.md"));
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// The part of `page` under `heading` (a whole line, `## …` or `### …`), up to the next heading of
+/// the same or a higher level.
+fn under<'a>(page: &'a str, heading: &str) -> Option<&'a str> {
+    let start = page.find(&format!("\n{heading}\n"))? + 1;
+    let level = heading.split(' ').next().unwrap_or_default().len();
+    let rest = &page[start + heading.len()..];
+    let mut end = rest.len();
+    let mut at = 0;
+    let mut fenced = false;
+    for line in rest.split_inclusive('\n') {
+        if line.starts_with("```") {
+            fenced = !fenced;
+        }
+        let hashes = line.chars().take_while(|c| *c == '#').count();
+        if !fenced && hashes > 0 && hashes <= level && line[hashes..].starts_with(' ') {
+            end = at;
+            break;
+        }
+        at += line.len();
+    }
+    Some(&page[start..start + heading.len() + end])
+}
+
+/// The first fenced `yaml` block of `text`.
+fn first_model(text: &str) -> String {
+    let open = text.find("```yaml\n").expect("a fenced model") + "```yaml\n".len();
+    let close = text[open..].find("\n```").expect("a closed fence");
+    text[open..=(open + close)].to_owned()
+}
+
+const BEFORE_INPUT: &str = "## Answer before the input is checked";
+const UNAUTHENTICATED: &str = "demo.desk.OpenSeat/outcome/unauthenticated";
+
+/// Each `OpenSeat` the scenario sends: its `label` and the outcome the next step requires.
+fn labels_sent(scenario: &ConformanceScenario) -> Vec<(String, Option<String>)> {
+    let mut out = Vec::new();
+    for (at, step) in scenario.steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand { input, .. } = step else {
+            continue;
+        };
+        let required = scenario.steps.get(at + 1).and_then(|next| match next {
+            ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+            _ => None,
+        });
+        let Some(Node::Text(label)) = input.get("label").and_then(ScenarioValue::as_literal) else {
+            continue;
+        };
+        out.push((label.clone(), required));
+    }
+    out
+}
+
+#[test]
+fn which_branch_answers_names_the_before_row_external_in_step_one() {
+    let page = guards_page();
+    let section = under(&page, "## Which branch answers").expect("the section");
+    let first = section.find("\n1. ").expect("a numbered list") + 1;
+    let item = &section[first..first + section[first..].find("\n2. ").expect("item 2")];
+    assert!(
+        item.contains("`before_row: true`"),
+        "item 1 names the external refusal of step 1:\n{item}"
+    );
+}
+
+#[test]
+fn authenticate_first_model_on_the_page_sends_the_overlap_and_requires_the_external() {
+    let page = order_page();
+    let text =
+        under(&page, BEFORE_INPUT).unwrap_or_else(|| panic!("the page has `{BEFORE_INPUT}`"));
+    let model = first_model(text);
+    let result = synthesis(&model);
+    assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+    let sent = labels_sent(scenario(&result.suite, UNAUTHENTICATED));
+    assert!(
+        sent.iter()
+            .any(|(label, required)| label.chars().count() > 8
+                && required.as_deref() == Some("unauthenticated")),
+        "one send lies inside `label-too-long` and requires `unauthenticated`: {sent:?}"
+    );
+
+    let honest = run(&result.suite, &Target::of(&model, Change::None));
+    assert_eq!(not_passed(&honest), Vec::<&str>::new(), "{honest:#?}");
+    assert_eq!(
+        not_passed(&run(&result.suite, &Target::of(&model, Change::LabelFirst))),
+        vec![UNAUTHENTICATED],
+        "checking the label first fails the external refusal's scenario and nothing else"
+    );
+}
+
+#[test]
+fn authenticate_first_subsection_says_where_to_declare_it() {
+    let page = order_page();
+    let text =
+        under(&page, BEFORE_INPUT).unwrap_or_else(|| panic!("the page has `{BEFORE_INPUT}`"));
+    for phrase in [
+        "above the input refusals",
+        "the input refusal answers first",
+        "`input_absent:`",
+        "before both",
+    ] {
+        assert!(
+            text.contains(phrase),
+            "the subsection says {phrase:?}:\n{text}"
+        );
+    }
+}
+
+const CAP: &str = "## A cap that holds for some requests only";
+const TRIAL_FULL: &str = "demo.cap.AddSeat/outcome/trial-full";
+
+#[test]
+fn order_page_shows_a_cap_narrowed_by_an_input_guard() {
+    let page = order_page();
+    let text = under(&page, CAP).unwrap_or_else(|| panic!("the page has `{CAP}`"));
+    let model = first_model(text);
+    let refusal = &model[model.find("- name: trial-full\n").expect("the cap refusal")..];
+    let refusal = &refusal[..refusal.find("- name: added").expect("the accepting branch")];
+    for key in ["when: ", "when_related:", "count: "] {
+        assert!(
+            refusal.contains(key),
+            "the refusal declares {key:?}:\n{refusal}"
+        );
+    }
+    for phrase in ["`when_related: all:`", "is refused", "this form"] {
+        assert!(
+            text.contains(phrase),
+            "the section says {phrase:?}:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn cap_model_on_the_page_validates_synthesizes_and_passes() {
+    let page = order_page();
+    let model = first_model(under(&page, CAP).unwrap_or_else(|| panic!("the page has `{CAP}`")));
+    let result = synthesis(&model);
+    assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+    let capped = scenario(&result.suite, TRIAL_FULL);
+    let sends: Vec<(&BTreeMap<String, ScenarioValue>, Option<String>)> = capped
+        .steps
+        .iter()
+        .enumerate()
+        .filter_map(|(at, step)| match step {
+            ScenarioStep::ExecuteCommand { input, .. } => Some((
+                input,
+                capped.steps.get(at + 1).and_then(|next| match next {
+                    ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+                    _ => None,
+                }),
+            )),
+            _ => None,
+        })
+        .collect();
+    let (last, required) = sends.last().expect("a send");
+    assert_eq!(required.as_deref(), Some("trial-full"), "{sends:#?}");
+    let tenant = last.get("tenant").and_then(ScenarioValue::as_literal);
+    let arranged = sends[..sends.len() - 1]
+        .iter()
+        .filter(|(input, _)| input.get("tenant").and_then(ScenarioValue::as_literal) == tenant)
+        .count();
+    assert!(
+        arranged >= 2,
+        "two seats of the tenant are arranged first: {sends:#?}"
+    );
+    assert!(
+        format!("{:?}", last.get("plan")).contains("trial"),
+        "the capped send asks for a trial seat: {last:?}"
+    );
+
+    let statuses = run(&result.suite, &Target::of(&model, Change::None));
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new(), "{statuses:#?}");
 }
