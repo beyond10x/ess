@@ -1893,3 +1893,53 @@ fn a_view_with_a_default_row_states_it_in_its_description() {
     );
     assert!(!without.contains("default row"), "{without}");
 }
+
+/// beyond10x/ess#640: an `instance:` that names a member of a struct input (`ess/38`) is carried
+/// by the request body, inside the struct input, and no parameter is invented for it.
+#[test]
+fn a_struct_member_identity_stays_inside_the_request_body() {
+    const SHELF: &str =
+        include_str!("../../ess-entity-runtime/tests/fixtures/struct-member-instance.yaml.in");
+    let text = format!(
+        "{}\ncomponents:\n  - component: shelf\n    reached_by: network\n    owns: {{domains: \
+         [shop.shelf]}}\n    accepts: {{commands: [shop.shelf.AddSlot, shop.shelf.Note, \
+         shop.shelf.Tag]}}\n    publishes: {{events: [shop.shelf.SlotAdded, shop.shelf.SlotNoted, \
+         shop.shelf.SlotTagged]}}\n",
+        SHELF.trim_end()
+    );
+    let document = document(&inline(&[("shelf.yaml", &text)]), "shelf");
+    let schemas = &document["components"]["schemas"];
+    for command in ["Note", "Tag"] {
+        let input = format!("#/components/schemas/shop.shelf.{command}.Input");
+        let found: Vec<&Value> = operations(&document)
+            .into_values()
+            .filter(|operation| {
+                operation["requestBody"]["content"]["application/json"]["schema"]["$ref"] == *input
+            })
+            .collect();
+        assert_eq!(found.len(), 1, "{command}: one operation takes {input}");
+        let body = &schemas[format!("shop.shelf.{command}.Input").as_str()];
+        assert_eq!(
+            body["properties"]["pick"]["$ref"], "#/components/schemas/shop.shelf.Pick",
+            "{command}: {body}"
+        );
+        assert_eq!(body["required"], serde_json::json!(["pick"]), "{command}");
+        if let Some(parameters) = found[0].get("parameters") {
+            for parameter in parameters.as_array().expect("a parameter list") {
+                let name = parameter["name"].as_str().unwrap_or_default();
+                assert!(
+                    !["primary", "pick", "pick.primary"].contains(&name),
+                    "{command}: no parameter carries the identity: {parameter}"
+                );
+            }
+        }
+    }
+    assert!(
+        schemas["shop.shelf.Pick"]["properties"]
+            .get("primary")
+            .is_some(),
+        "{}",
+        schemas["shop.shelf.Pick"]
+    );
+    assert_valid("shelf", &document);
+}
