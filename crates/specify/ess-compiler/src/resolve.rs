@@ -3393,9 +3393,11 @@ impl<'a> Resolver<'a> {
             // The first element of a list of references naming no row (ess/28,
             // beyond10x/ess#558), at the element's type: `ess-domain` admitted it only on the
             // branch whose guard refuses that list for a missing row.
+            // From ess/38 (beyond10x/ess#640) the list may be a member of a struct input, read by
+            // its path.
             PayloadSource::MissingElement { field } => {
                 let element = input
-                    .and_then(|input| input.iter().find(|held| held.name == *field))
+                    .and_then(|input| self.input_read(command, input, field))
                     .and_then(|held| match &held.type_ref {
                         ResolvedTypeRef::List { of } => Some((**of).clone()),
                         _ => None,
@@ -3614,7 +3616,7 @@ impl<'a> Resolver<'a> {
     /// addresses, read as it was before the branch: [`ResolvedRelatedVia::Subject`], at the field's
     /// declared type, `Optional<…>` included.
     fn related_guard(
-        &self,
+        &mut self,
         command: &CommandSpec,
         outcome: &Outcome,
         input: Option<&[ResolvedField]>,
@@ -3640,7 +3642,7 @@ impl<'a> Resolver<'a> {
     /// The input field, or stored field, `via` reads and the entity whose identity it carries, by
     /// the rule `ess-domain` validated it with.
     fn related_read(
-        &self,
+        &mut self,
         command: &CommandSpec,
         via: &RelatedVia,
         input: Option<&[ResolvedField]>,
@@ -3653,10 +3655,11 @@ impl<'a> Resolver<'a> {
         };
         let read = match via {
             RelatedVia::Input(field) => {
-                let read = input?.iter().find(|held| held.name == *field)?;
+                // From ess/38 (beyond10x/ess#640) a member of a struct input, named by its path.
+                let read = self.input_read(command, input?, field)?;
                 ResolvedRelatedVia::Input {
-                    field: read.name.clone(),
-                    type_ref: read.type_ref.clone(),
+                    field: read.name,
+                    type_ref: read.type_ref,
                 }
             }
             RelatedVia::Subject(field) => {

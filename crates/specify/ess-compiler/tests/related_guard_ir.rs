@@ -254,3 +254,66 @@ fn issue_283_each_branch_carries_the_row_its_own_via_names() {
         "the creation is the default"
     );
 }
+
+/// From ess/38 (beyond10x/ess#640) a `when_related` guard names its row through a member of a
+/// struct input; the IR carries the path in the same `field` string an ess/22 `InputField` does.
+const MEMBER: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/struct-input-member-related-rows.yaml.in"
+);
+
+#[test]
+fn a_member_via_carries_its_path_and_the_members_type_in_the_ir() {
+    use ess_compiler::ir::ResolvedPayloadValue;
+    let model = ir(MEMBER);
+    let vias = |command: &str| -> Vec<(String, ess_compiler::ir::ResolvedTypeRef)> {
+        model.commands()[&command.parse().unwrap()]
+            .outcomes
+            .iter()
+            .filter_map(|outcome| match &outcome.condition {
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { field, type_ref },
+                    ..
+                } => Some((field.clone(), type_ref.clone())),
+                _ => None,
+            })
+            .collect()
+    };
+    let check = vias("shop.route.Check");
+    assert_eq!(check.len(), 2, "{check:?}");
+    for (field, type_ref) in &check {
+        assert_eq!(field, "settings.primary");
+        assert_eq!(type_ref.written().to_string(), "shop.route.DepotId");
+    }
+    let send = vias("shop.route.Send");
+    assert_eq!(send.len(), 1, "{send:?}");
+    assert_eq!(send[0].0, "settings.depots");
+    assert_eq!(send[0].1.written().to_string(), "List<shop.route.DepotId>");
+    let unknown = model.commands()[&"shop.route.Send".parse().unwrap()]
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name.as_str() == "unknown-depot")
+        .expect("the refusal");
+    let depot = unknown
+        .error_payload
+        .iter()
+        .find(|field| field.target == "depot_id")
+        .expect("the payload field");
+    let ResolvedPayloadValue::MissingElement { field, type_ref } = &depot.value else {
+        panic!("the missing element: {:?}", depot.value)
+    };
+    assert_eq!(field, "settings.depots");
+    assert_eq!(type_ref.written().to_string(), "shop.route.DepotId");
+    let probe = vias("shop.route.Probe");
+    assert_eq!(probe.len(), 2, "{probe:?}");
+    for (field, type_ref) in &probe {
+        assert_eq!(field, "settings.extra.spare");
+        assert!(
+            type_ref.is_optional(),
+            "the route is Optional: {type_ref:?}"
+        );
+        assert_eq!(
+            type_ref.required().written().to_string(),
+            "shop.route.DepotId"
+        );
+    }
+}
