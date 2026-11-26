@@ -169,8 +169,27 @@ pub fn run(command: &Command) -> Result<ExitCode> {
         .iter()
         .filter(|route| route.path.is_none())
         .count();
+    // Each variable a route declares `ignored`, named so the statement is not buried.
+    let ignored: Vec<String> = http
+        .routes()
+        .iter()
+        .flat_map(|route| {
+            route.ignored.iter().map(move |variable| {
+                format!(
+                    "`{variable}` of `{} {}`",
+                    route.method,
+                    route.path.as_deref().unwrap_or_default()
+                )
+            })
+        })
+        .collect();
+    let ignored = if ignored.is_empty() {
+        String::new()
+    } else {
+        format!(", {} ignored ({})", ignored.len(), ignored.join(", "))
+    };
     let summary = format!(
-        "{} — {} route(s), {open} open",
+        "{} — {} route(s), {open} open{ignored}",
         input.binding.display(),
         http.routes().len()
     );

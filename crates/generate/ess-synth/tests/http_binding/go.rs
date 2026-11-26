@@ -1783,6 +1783,9 @@ mod representations;
 #[path = "uuid_segments.rs"]
 mod uuid_segments;
 
+#[path = "ignored_segments.rs"]
+mod ignored_segments;
+
 #[path = "undeclared_members.rs"]
 mod undeclared_members;
 

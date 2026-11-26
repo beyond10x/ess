@@ -200,11 +200,12 @@
 //! (beyond10x/ess#493, `docs/design/http-presentation-binding.md`). It is what the table's
 //! `method` and `path` rows become where a protocol fixes them: an operation the binding routes is
 //! at its declared method and path ([`http::bound_routes`]), marked `x-ess-route-source: binding`;
-//! each path variable is a required `in: path` parameter; a command's input field carried in the
-//! path is not in `{command}.Input`, the request body, which is absent when the path carries every
-//! field; and a view's parameter carried in the path is not a query parameter. An operation the
-//! binding does not name keeps exactly the projection above, and without a binding every byte is
-//! unchanged.
+//! each path variable is a required `in: path` parameter; one the binding declares `ignored` is a
+//! `string` with `x-ess-ignored: true` and a description saying the service accepts any value; a
+//! command's input field carried in the path is not in `{command}.Input`, the request body, which is
+//! absent when the path carries every field; and a view's parameter carried in the path is not a
+//! query parameter. An operation the binding does not name keeps exactly the projection above, and
+//! without a binding every byte is unchanged.
 //!
 //! Stage 2 of the binding states the rest of an operation's wire shape, and the document follows
 //! it on the routes the binding names ("What `OpenAPI` writes (k4)"):
@@ -955,6 +956,20 @@ fn path_parameters(
             let ess_http::Segment::Variable(variable) = segment else {
                 return None;
             };
+            if declared.ignored.contains(&variable) {
+                return Some(Parameter {
+                    name: variable,
+                    location: "path",
+                    description: "The service accepts any value in this segment and reads none \
+                                  of it: the specification does not constrain it."
+                        .to_owned(),
+                    required: true,
+                    style: None,
+                    explode: None,
+                    schema: written(json!({"type": "string"})),
+                    ignored: true,
+                });
+            }
             let source = declared.parameters.get(&variable)?;
             let field = fields.iter().find(|field| field.name == source.field())?;
             Some(Parameter {
@@ -969,6 +984,7 @@ fn path_parameters(
                 style: None,
                 explode: None,
                 schema: embedded(&types::field(field)),
+                ignored: false,
             })
         })
         .collect()
@@ -1101,6 +1117,7 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
             style: is_list(&field.type_ref).then_some("form"),
             explode: is_list(&field.type_ref).then_some(true),
             schema: embedded(&types::field(field)),
+            ignored: false,
         })
         .collect()
 }
@@ -1125,6 +1142,7 @@ fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> 
             style: is_list(&field.type_ref).then_some("form"),
             explode: is_list(&field.type_ref).then_some(true),
             schema: embedded(&types::field(field)),
+            ignored: false,
         })
         .collect()
 }
@@ -1311,6 +1329,7 @@ fn selector_parameter(representations: &[ess_http::Representation]) -> Parameter
         style: None,
         explode: None,
         schema: written(json!({"type": "string", "enum": values})),
+        ignored: false,
     }
 }
 
@@ -1503,6 +1522,7 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
         style: None,
         explode: None,
         schema: written(json!({"type": "string", "minLength": 1})),
+        ignored: false,
     })
 }
 
@@ -4059,6 +4079,10 @@ struct Parameter {
     #[serde(skip_serializing_if = "Option::is_none")]
     explode: Option<bool>,
     schema: Fragment,
+    /// A path variable the binding declares `ignored`: the service accepts any value there and
+    /// reads none. Absent everywhere else.
+    #[serde(rename = "x-ess-ignored", skip_serializing_if = "std::ops::Not::not")]
+    ignored: bool,
 }
 
 /// The command's input.
@@ -4184,6 +4208,7 @@ fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Paramet
                     style: None,
                     explode: None,
                     schema: written(json!({"type": "integer", "minimum": paging.first_page})),
+                    ignored: false,
                 },
                 Some(paging) if paging.size == param.name => Parameter {
                     name,
@@ -4193,6 +4218,7 @@ fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Paramet
                     style: None,
                     explode: None,
                     schema: written(json!({"type": "integer", "minimum": 1})),
+                    ignored: false,
                 },
                 _ => Parameter {
                     name,
@@ -4208,6 +4234,7 @@ fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Paramet
                     style: is_list(&param.type_ref).then_some("form"),
                     explode: is_list(&param.type_ref).then_some(true),
                     schema: embedded(&types::field(param)),
+                    ignored: false,
                 },
             }
         })

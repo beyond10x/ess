@@ -991,6 +991,23 @@ pub fn path_fields<'a>(
         .collect()
 }
 
+/// The position of `variable` among every variable of a bound route's path, the index of its text
+/// in what a served path matches. It differs from the variable's index in [`path_fields`] where a
+/// variable before it is declared `ignored`, which carries no field.
+pub fn path_position(route: &Route<'_>, variable: &str) -> usize {
+    route
+        .declared
+        .and_then(ess_http::Route::segments)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|segment| match segment {
+            ess_http::Segment::Variable(name) => Some(name),
+            ess_http::Segment::Literal(_) => None,
+        })
+        .position(|name| name == variable)
+        .unwrap_or_default()
+}
+
 /// The names of the fields a bound route's path carries, which leave its body or query string.
 pub fn carried<'a>(ir: &'a EssIr, route: &Route<'a>) -> std::collections::BTreeSet<&'a str> {
     path_fields(ir, route)

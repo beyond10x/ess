@@ -2099,9 +2099,10 @@ fn path_members(ir: &EssIr, route: &http::Route<'_>) -> (String, String) {
     let mut statements = String::new();
     let mut members = Vec::new();
     for (index, (variable, field)) in http::path_fields(ir, route).iter().enumerate() {
+        let position = http::path_position(route, variable);
         let _ = writeln!(
             statements,
-            "\t\tmember{index}, err := pathValue(path[{index}], {}, {})\n\t\tif err != nil \
+            "\t\tmember{index}, err := pathValue(path[{position}], {}, {})\n\t\tif err != nil \
              {{\n\t\t\treturn nil, err\n\t\t}}",
             flat_kind(ir, field),
             go_string(&format!("path.{variable}"))

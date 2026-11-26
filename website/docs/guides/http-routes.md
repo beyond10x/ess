@@ -45,6 +45,12 @@ routes:
   `Duration` or `Uuid`, an enum, or an unconstrained newtype of one of them, because a path segment
   is always present and holds one value with one text spelling. `Bytes`, `Binary64` and `Json` are
   refused, and so are `Optional`, `List`, a struct and a constrained newtype.
+- A variable the service accepts with any value and reads none of is mapped `ignored`:
+  `parameters: {parent_id: ignored, item_id: param.item_id}` on `/parents/{parent_id}/items/{item_id}`.
+  OpenAPI marks it `x-ess-ignored: true`, the generated servers answer any non-empty segment there
+  alike, and `validate` names it. At least one variable of the route reads a value
+  (`ESS-HTTP-039`). Where the service does check the parent, filter the view on it instead: a
+  conformance run then tells the two apart.
 
 Check a binding against the specification, or write its compiled form:
 

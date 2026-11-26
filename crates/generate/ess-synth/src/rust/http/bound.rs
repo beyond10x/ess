@@ -1496,8 +1496,8 @@ fn path_members(server: &Server<'_>, route: &http::Route<'_>) -> String {
     let fields = http::path_fields(server.ir, route);
     let members: Vec<String> = fields
         .iter()
-        .enumerate()
-        .map(|(index, (variable, field))| {
+        .map(|(variable, field)| {
+            let index = http::path_position(route, variable);
             format!(
                 "({:?}.to_owned(), http::path_value(&path[{index}], http::Flat::{}, {:?})?)",
                 ess_gen::schema::wire_field_name(field),

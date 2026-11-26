@@ -149,6 +149,30 @@ fn validate_and_compile_an_http_binding() {
 }
 
 #[test]
+fn validate_names_each_path_variable_a_route_declares_ignored() {
+    let fixture = Fixture::new();
+    fixture.binding(&ROUTES.replace(
+        "path: /items/{item_id}\n    parameters: {item_id: param.item_id}",
+        "path: /shops/{shop_id}/items/{item_id}\n    parameters: {shop_id: ignored, item_id: param.item_id}",
+    ));
+    let validate = fixture.ess(&[
+        "specify",
+        "http",
+        "validate",
+        "--path",
+        "model",
+        "--binding",
+        "http.yaml",
+    ]);
+    assert!(validate.status.success(), "{}", text(&validate));
+    assert_eq!(
+        String::from_utf8_lossy(&validate.stdout),
+        "http.yaml — 2 route(s), 1 open, 1 ignored (`shop_id` of `get \
+         /shops/{shop_id}/items/{item_id}`), valid\n"
+    );
+}
+
+#[test]
 fn a_refused_binding_exits_1_with_every_code_and_path() {
     let fixture = Fixture::new();
     fixture.binding(

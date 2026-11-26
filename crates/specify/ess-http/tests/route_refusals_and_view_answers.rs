@@ -1263,3 +1263,69 @@ fn compiled_ir_with_authentication_out_of_rules_is_refused() {
     assert_ne!(changed, text);
     HttpIr::from_json(&changed).expect_err("an unknown kind");
 }
+
+// --- an ignored path variable -------------------------------------------------------------------
+
+/// `OrderById` on `get /shops/{shop_id}/orders/{order_id}` with `parameters` as written.
+fn shop_route(parameters: &str) -> String {
+    format!(
+        "routes:\n  - view: catalog.orders.OrderById\n    method: get\n    path: /shops/{{shop_id}}/orders/{{order_id}}\n    parameters: {parameters}\n"
+    )
+}
+
+#[test]
+fn a_path_variable_may_be_declared_ignored() {
+    let ir = model();
+    let http = compiled(
+        &ir,
+        &shop_route("{shop_id: ignored, order_id: param.order_id}"),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    let json = ir_json(&http);
+    assert_eq!(json["routes"][0]["ignored"], json!(["shop_id"]));
+    assert_eq!(
+        json["routes"][0]["parameters"],
+        json!({"order_id": "param.order_id"})
+    );
+    assert_eq!(http.routes()[0].ignored, ["shop_id"]);
+    round_trips(&http);
+    // Without the word the IR has no `ignored` key, so every existing binding keeps its bytes.
+    let plain = compiled(&ir, &view_route("OrderById", ""))
+        .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert!(ir_json(&plain)["routes"][0].get("ignored").is_none());
+    // `ignored` for a name the path has no variable of.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &view_route("OrderById", "").replace(
+                "{order_id: param.order_id}",
+                "{order_id: param.order_id, shop_id: ignored}"
+            )
+        )),
+        [refused("ESS-HTTP-039", "routes[0].parameters.shop_id")]
+    );
+    // `ignored` for every variable of the route: nothing then names a row.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &shop_route("{shop_id: ignored, order_id: ignored}")
+        )),
+        [refused("ESS-HTTP-039", "routes[0].parameters")]
+    );
+    // Compiled IR holds `ignored` in order, never empty, never beside a mapping of the same name.
+    let text = http.to_canonical_json();
+    for (from, to) in [
+        (
+            "\"ignored\": [\n        \"shop_id\"\n      ]",
+            "\"ignored\": []",
+        ),
+        (
+            "\"ignored\": [\n        \"shop_id\"\n      ]",
+            "\"ignored\": [\n        \"shop_id\",\n        \"order_id\"\n      ]",
+        ),
+    ] {
+        let changed = text.replace(from, to);
+        assert_ne!(changed, text, "{from}");
+        HttpIr::from_json(&changed).expect_err(to);
+    }
+}

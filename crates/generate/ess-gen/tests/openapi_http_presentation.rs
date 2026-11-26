@@ -509,3 +509,37 @@ fn a_binding_without_authentication_projects_no_security() {
         }
     }
 }
+
+#[test]
+fn an_ignored_path_variable_is_a_required_path_string_marked_ignored() {
+    let ir = model_of(&[("catalog.yaml", MODEL)]);
+    let documents = documents(
+        &ir,
+        binding(
+            &ir,
+            "routes:
+  - view: catalog.items.ItemById
+    method: get
+    path: /shops/{shop_id}/items/{item_id}
+    parameters: {shop_id: ignored, item_id: param.item_id}
+",
+        ),
+    );
+    let document = as_json(&documents["openapi/items-service.yaml"]);
+    let parameters = &document["paths"]["/shops/{shop_id}/items/{item_id}"]["get"]["parameters"];
+    assert_eq!(
+        parameters[0],
+        json!({
+            "name": "shop_id",
+            "in": "path",
+            "description": "The service accepts any value in this segment and reads none of it: \
+                            the specification does not constrain it.",
+            "required": true,
+            "schema": {"type": "string"},
+            "x-ess-ignored": true,
+        }),
+        "{parameters}"
+    );
+    assert_eq!(parameters[1]["name"], "item_id", "{parameters}");
+    assert!(parameters[1].get("x-ess-ignored").is_none(), "{parameters}");
+}

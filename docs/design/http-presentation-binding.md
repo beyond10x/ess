@@ -168,6 +168,29 @@ text holds `/`), `Binary64` (no one text spelling of a JSON number) or `Json`, b
 segment is always present and holds one value. A segment its field's decoder refuses, such as
 `not-a-uuid` for a `Uuid`, is `malformed`.
 
+A variable may instead be declared **ignored**: `parameters: {parent_id: ignored}` beside
+`{item_id: param.item_id}` on `/parents/{parent_id}/items/{item_id}` states that the service
+accepts any value in that segment and reads none of it
+(`story:a-route-may-declare-a-path-variable-the-service-reads-and-ignores`, HB-D3 B). It reads no
+source, so it carries no field and selects nothing. The compiled IR lists each such variable in the
+route's `ignored`, ordered by variable and absent when there is none, so every binding without the
+word keeps its bytes, and an earlier reader refuses one with it as an unknown field. OpenAPI writes
+the variable as a required `in: path` `string` with `x-ess-ignored: true` and a description saying
+the service accepts any value. The generated Rust and Go servers match any non-empty segment at
+that position, read nothing from it and answer as the route without it; an empty segment is not
+that route. `ess specify http validate` names each ignored variable beside the count of open
+routes. `ignored` for a name the path has no variable of, or for every variable of a route (no
+segment then names a row), is `ESS-HTTP-039`.
+
+The word records a shipped service; it loses what the stricter model states. That model gives the
+item its parent and filters on both (`parent_id == param.parent_id` and
+`item_id == param.item_id`): the parent is read, and a conformance run that sends a decoy parent
+tells a service that ignores the segment from the specification. An ignored segment states nothing
+a suite can tell. A segment that carries a tenant or another scope is never declared `ignored` for
+the sake of a credential that decides it instead
+(`story:a-view-selects-rows-by-a-caller-attribute`, HC-D1): no check can tell the two apart, so
+this rule is the documentation's.
+
 A view parameter that stays in the query string is named there by its flat `wire:`, as a command's
 field is: the OpenAPI `in: query` parameter, the Rust and Go servers' query readers and the `rows`
 or `single` they write all use the wire name, and the model name is an unknown key. A view field
@@ -208,6 +231,7 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` or `request.query` | `routes[i].method`, `routes[i].path`, `routes[i].request.body` or `routes[i].request.query`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
+| `ESS-HTTP-039` | `ignored` for a name the path has no variable of (or on a route with no path), or for every variable of a route, so that no segment names a row ("Path templates") | `routes[i].parameters.<name>`; `routes[i].parameters` when every variable is ignored |
 
 A stage-1 reader refuses every stage-2 key as an unknown field naming it. `ess-cli/1` took the same
 route when the `trailing` kind arrived in 0.54.0 without a format change: an older reader refuses it

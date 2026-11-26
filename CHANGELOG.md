@@ -18,6 +18,7 @@
 - The generated React runtime's `setAuthorization(value, renew?)` takes an optional `renew`: a read or a command answered `401` awaits it once, shared by every request answered `401` meanwhile, and is sent once more with the value it returns. A second `401` or no value stays the answer (beyond10x/ess#723).
 - `ess specify vendor --from <key=path> --service <key=path> --type <name> --into <domain> --out <file> --conformances <file>` writes a consumer's copy of another specification's type, with every type it reaches, as a source file of the consumer's, and the composition `services:` and `conformances:` entries that prove it against the pinned owner; `--check` exits 1 naming each copy the owner has changed since (beyond10x/ess#663).
 - Suite pair `ess-conformance/66` (ordinary) and `/67` (coverage) is open with no construct: every reader (Rust, Go, TypeScript) admits it wherever it admits `/64` and `/65`, and nothing writes it yet.
+- An `ess-http/1` route may map a path variable `ignored` (`parameters: {parent_id: ignored, item_id: param.item_id}`) where the service accepts any value in that segment and reads none: the compiled route lists it under `ignored`, OpenAPI writes it as a required `in: path` string with `x-ess-ignored: true`, the generated Rust and Go servers answer any non-empty segment there alike, and `ess specify http validate` names it beside the count of open routes; `ignored` for no variable of the path, or for every variable of a route, is `ESS-HTTP-039`. A binding without the word keeps its bytes
 
 ### Changed
 

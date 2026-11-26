@@ -66,11 +66,16 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-035",
     "ESS-HTTP-036",
     "ESS-HTTP-037",
+    "ESS-HTTP-039",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
 /// on one location, so the two read alike.
 pub const COLLISION: &str = "two operations claim the same method and path";
+
+/// The mapping word that declares a path variable the service accepts with any value and reads
+/// none of: `parameters: {<variable>: ignored}`.
+pub const IGNORED: &str = "ignored";
 
 /// The largest request body both generated servers read when a binding declares no `limits`, in
 /// bytes: 1 MiB.
@@ -2572,6 +2577,15 @@ pub struct Route {
         deserialize_with = "canonical_parameters"
     )]
     pub parameters: BTreeMap<String, Source>,
+    /// Each path template variable the binding declares `ignored`: the service accepts any value
+    /// there and reads none, ordered by variable. Absent when empty, so a binding that declares
+    /// none keeps its bytes and an earlier reader refuses one that does.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "canonical_ignored"
+    )]
+    pub ignored: Vec<String>,
     /// How a command's request is encoded. Absent when it is a `json` body that refuses an unknown
     /// key, ESS's own, and always absent on a view.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3303,8 +3317,27 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
         }
     }
     let written = route.path.as_deref().unwrap_or("(open)");
+    for name in &route.ignored {
+        if !variables.contains(name) {
+            return Err(format!(
+                "`{at}.ignored` names `{name}`, no variable of `{written}`; compiled IR ignores \
+                 only variables of the path"
+            ));
+        }
+        if route.parameters.contains_key(name) {
+            return Err(format!(
+                "`{at}.ignored` names `{name}`, which `{at}.parameters` maps; a variable is \
+                 mapped or ignored, never both"
+            ));
+        }
+    }
+    if !route.ignored.is_empty() && route.ignored.len() == variables.len() {
+        return Err(format!(
+            "`{at}.ignored` names every variable of `{written}`, so no segment names a row"
+        ));
+    }
     for name in &variables {
-        if !route.parameters.contains_key(name) {
+        if !route.parameters.contains_key(name) && !route.ignored.contains(name) {
             return Err(format!(
                 "`{at}.parameters.{name}` is missing: variable `{name}` of `{written}` is not \
                  mapped, and compiled IR maps each variable of the path"
@@ -3971,6 +4004,29 @@ fn canonical_parameters<'de, D: serde::Deserializer<'de>>(
     deserializer.deserialize_map(Entries)
 }
 
+/// Reads a route's `ignored` of compiled IR: never empty, ordered by variable, each once.
+fn canonical_ignored<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error> {
+    let ignored = <Vec<String> as serde::Deserialize>::deserialize(deserializer)?;
+    if ignored.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`ignored` is empty; compiled IR omits a route's `ignored` when it holds no variable",
+        ));
+    }
+    if let Some((before, after)) = ignored
+        .iter()
+        .zip(ignored.iter().skip(1))
+        .find(|(before, after)| before >= after)
+    {
+        return Err(serde::de::Error::custom(format!(
+            "`ignored` is out of canonical order: `{after}` follows `{before}`; compiled IR \
+             orders it by variable, each once"
+        )));
+    }
+    Ok(ignored)
+}
+
 /// One refusal, located at the key that caused it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct HttpDiagnostic {
@@ -4065,6 +4121,7 @@ impl Refusals {
 /// | `ESS-HTTP-035` | at `routes[i].representations`: `representations` on a command route, on a `single` view or on a paged view, or an empty list; at `routes[i].representations[j].query`: a `query` holding other than exactly one parameter, a parameter other than the first representation's, a value an earlier representation has, a parameter name that is a view parameter's wire name or a path variable or is not RFC 3986 `unreserved` characters, or a value that is empty or not `unreserved` characters; at `routes[i].representations[j].encoding.csv.separator`: a separator other than `","`, `";"` and `"\t"`; at `routes[i].representations[j].encoding`: a view field whose type has no flat spelling (a struct, a union, a `List`, a `Map`, `Json`), naming the field (beyond10x/ess#753) |
 /// | `ESS-HTTP-036` | at `routes[i].request.parts`: `parts` beside an encoding other than `multipart`; at `routes[i].request.parts.<field>`: a key naming no input field, or one whose type is not `Bytes` (a newtype of it, or an `Optional` of either), or a part stating nothing; at `routes[i].request.parts.<field>.filename` or `….media_type`: a source that is not `input.<field>` naming a `String` input field (a newtype of it, or an `Optional` of either), or one the path carries, that is a part, or that another attribute reads; at `routes[i].request.parts.<field>.media_types`: an empty list, an entry that is not an RFC 6838 `type/subtype`, or one entry twice (beyond10x/ess#754) |
 /// | `ESS-HTTP-037` | at `authentication`: `authentication` over a specification that declares no actor; at `authentication.schemes`: no scheme declared; at `authentication.schemes.<name>`: a name that is not an RFC 9110 token, one declared twice, or one no route requires (its own `authentication` or, where it states none, `authentication.required`); at `….<name>.kind`: a kind outside `bearer`, `basic`, `api_key` and `mutual_tls` (`oauth2` and `open_id_connect` named as not yet admitted); at `….<name>.in`, `….name` or `….realm`: a key the kind does not take, one it requires missing (`realm` for `basic`, `in` and `name` for `api_key`), an `in` outside `header`, `query` and `cookie`, a header or cookie name that is not a token, a query name that is not RFC 3986 `unreserved` characters, or a realm no quoted string carries; at `authentication.required` or `routes[i].authentication`: a scheme no `authentication.schemes` declares, or one listed twice; at `routes[i].authentication`: a route requiring only schemes without a challenge (`api_key`, `mutual_tls`) and no `refusals.unauthenticated`, its own or the binding's (beyond10x/ess#681) |
+/// | `ESS-HTTP-039` | at `routes[i].parameters.<name>`: `ignored` for a name the path has no variable of, or on a route with no path; at `routes[i].parameters`: every variable of the path `ignored`, so that none names a row |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -5762,6 +5819,7 @@ fn routes(
                     method,
                     path: spec.path.clone(),
                     parameters: sources,
+                    ignored: ignored(spec),
                     request,
                     outcomes: answers.outcomes,
                     errors: answers.errors,
@@ -5982,6 +6040,8 @@ fn variables(
                     ),
                 );
             }
+        } else if spec.parameters.get(name) == Some(IGNORED) {
+            // Declared accepted and read by nothing: it reads no source, so it shares none.
         } else if let Some(text) = spec.parameters.get(name) {
             let source = Source::parse(text).map_or_else(|| text.to_owned(), |s| s.to_string());
             if let Some((_, earlier)) = read.iter().find(|(seen, _)| *seen == source) {
@@ -6003,11 +6063,15 @@ fn variables(
                 format!("{path}.parameters.{name}"),
                 format!(
                     "variable `{name}` of `{written}` is not mapped; each variable of the path \
-                     reads one source under `parameters`"
+                     reads one source under `parameters`, or is declared `{IGNORED}` where the \
+                     service accepts any value and reads none (a source the operation filters \
+                     on is the stricter model: a suite then tells a service that ignores the \
+                     segment from the specification)"
                 ),
             );
         }
     }
+    every_variable_ignored(spec, &names, path, refusals);
     let mut mapped = Vec::new();
     for (position, (name, source)) in spec.parameters.0.iter().enumerate() {
         let at = format!("{path}.parameters.{name}");
@@ -6020,6 +6084,8 @@ fn variables(
                 at,
                 format!("variable `{name}` is mapped twice; each variable is mapped once"),
             );
+        } else if source == IGNORED && !names.contains(&name.as_str()) {
+            refusals.refuse("ESS-HTTP-039", at, no_segment_to_ignore(spec, name));
         } else if !names.contains(&name.as_str()) {
             let message = match &spec.path {
                 None => format!(
@@ -6031,11 +6097,57 @@ fn variables(
                 ),
             };
             refusals.refuse("ESS-HTTP-008", at, message);
-        } else {
+        } else if source != IGNORED {
             mapped.push(source.clone());
         }
     }
     mapped
+}
+
+/// Why `ignored` for `name`, no variable of the route's path, is refused (`ESS-HTTP-039`).
+fn no_segment_to_ignore(spec: &RouteSpec, name: &str) -> String {
+    match &spec.path {
+        None => format!(
+            "the route has no path, so `{name}` names no segment to accept and ignore; \
+             `{IGNORED}` names a variable of the path"
+        ),
+        Some(written) => format!(
+            "`{written}` has no variable `{name}`, so there is no segment to accept and ignore; \
+             `{IGNORED}` names a variable of the path"
+        ),
+    }
+}
+
+/// Refuses a route whose every path variable is declared `ignored` (`ESS-HTTP-039`): no segment
+/// would then name a row.
+fn every_variable_ignored(spec: &RouteSpec, names: &[&str], path: &str, refusals: &mut Refusals) {
+    if !names.is_empty()
+        && names
+            .iter()
+            .all(|name| spec.parameters.get(name) == Some(IGNORED))
+    {
+        let written = spec.path.as_deref().unwrap_or_default();
+        refusals.refuse(
+            "ESS-HTTP-039",
+            format!("{path}.parameters"),
+            format!(
+                "every variable of `{written}` is declared `{IGNORED}`, so no segment names a \
+                 row; at least one variable reads a source"
+            ),
+        );
+    }
+}
+
+/// The variables a route declares `ignored`, ordered by variable, each once.
+fn ignored(spec: &RouteSpec) -> Vec<String> {
+    let ignored: std::collections::BTreeSet<&str> = spec
+        .parameters
+        .0
+        .iter()
+        .filter(|(_, source)| source == IGNORED)
+        .map(|(name, _)| name.as_str())
+        .collect();
+    ignored.into_iter().map(str::to_owned).collect()
 }
 
 /// Every mapping resolved to its typed source, or `None` when one is refused (`ESS-HTTP-009`).
@@ -6054,6 +6166,9 @@ fn sources(
     let mut refused = false;
     for (name, text) in &spec.parameters.0 {
         let at = format!("{path}.parameters.{name}");
+        if text == IGNORED {
+            continue;
+        }
         let source = Source::parse(text).filter(|source| source.namespace() == namespace);
         let Some(source) = source else {
             refusals.refuse(
