@@ -17,6 +17,7 @@
 //!
 //! What is read from the binding is read through `ess_gen::http`, which the Go server reads too.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{ResolvedCommand, ResolvedField, ResolvedView};
@@ -1916,19 +1917,11 @@ fn outcome_arm(
             format!("http::Response::new({status}, http::JSON, http::bare(response))")
         }
         // The bare form's JSON under its one member (beyond10x/ess#755).
-        Body::Wrapped { member, field } => {
-            let bare = match field {
-                None => "http::bare(response)".to_owned(),
-                Some(field) => format!(
-                    "http::bare(response.and_then(|response| response.member({:?})))",
-                    response_wire(command, field)
-                ),
-            };
-            format!(
-                "http::Response::new({status}, http::JSON, {})",
-                wrapped_json(member, &bare)
-            )
-        }
+        Body::Wrapped {
+            member,
+            field,
+            literals,
+        } => wrapped_outcome(command, status, member, field.as_deref(), literals),
         // A string field answered `encoding: text`: its value alone, not JSON. The media type is
         // written inline rather than as a constant beside `JSON`, so a server whose binding
         // answers no text keeps its bytes.
@@ -2175,7 +2168,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
                 "{{\n            let mut answer = {};\n            if answer.status == 200 {{\n                \
                  answer.body = {};\n            }}\n            answer\n        }}",
                 single_answer(empty),
-                wrapped_json(member, "answer.body")
+                view_json(route, member, "answer.body")
             ),
         ),
         // The rows of `{"rows": [...]}`, bare.
@@ -2192,7 +2185,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             format!(
                 "{{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
                  http::Response::new(status, http::JSON, {})\n        }}",
-                wrapped_json(member, "http::bare(read.member(\"rows\"))")
+                view_json(route, member, "http::bare(read.member(\"rows\"))")
             ),
         ),
         _ => (
@@ -2216,6 +2209,90 @@ fn wrapped_json(member: &str, inner: &str) -> String {
         "{{ let mut wrapped = String::from(\"{{\"); crate::json::member(&mut wrapped, \
          {member:?}); wrapped.push_str(&{inner}); wrapped.push('}}'); wrapped }}"
     )
+}
+
+/// Rust code answering a wrapped outcome body (beyond10x/ess#755): the response, or its one
+/// `field`, under `member`, with the literal members beside it.
+fn wrapped_outcome(
+    command: &ResolvedCommand,
+    status: u16,
+    member: &str,
+    field: Option<&str>,
+    literals: &BTreeMap<String, String>,
+) -> String {
+    let bare = response_json(command, field);
+    format!(
+        "http::Response::new({status}, http::JSON, {})",
+        members_json(member, &bare, literals, None)
+    )
+}
+
+/// Rust code for the JSON text of the command's response, or of its one `field`.
+fn response_json(command: &ResolvedCommand, field: Option<&str>) -> String {
+    match field {
+        None => "http::bare(response)".to_owned(),
+        Some(field) => format!(
+            "http::bare(response.and_then(|response| response.member({:?})))",
+            response_wire(command, field)
+        ),
+    }
+}
+
+/// Rust code for a wrapped view answer: `inner` under `member`, with the literal members and the
+/// count the route declares beside it (beyond10x/ess#755).
+fn view_json(route: &http::Route<'_>, member: &str, inner: &str) -> String {
+    let no_literals = BTreeMap::new();
+    let (literals, count) = route.declared.map_or((&no_literals, None), |declared| {
+        (&declared.body.literals, declared.body.count.as_deref())
+    });
+    members_json(
+        member,
+        inner,
+        literals,
+        count.map(|count| (count, ROWS_COUNTED)),
+    )
+}
+
+/// Rust code for the number of rows `read` holds under `rows`: a wrapped `array`'s count
+/// (decision HB-D4).
+const ROWS_COUNTED: &str =
+    "match read.member(\"rows\") { Some(json::Value::Array(rows)) => rows.len(), _ => 0 }";
+
+/// Rust code for the object a wrapped body answers with members beside its form
+/// (beyond10x/ess#755): `inner` under `member`, each literal member's text, and under `count`
+/// the number `count`'s expression yields, the members ordered by name. Without such members it is
+/// [`wrapped_json`], so a server whose binding declares none keeps its bytes.
+fn members_json(
+    member: &str,
+    inner: &str,
+    literals: &BTreeMap<String, String>,
+    count: Option<(&str, &str)>,
+) -> String {
+    if literals.is_empty() && count.is_none() {
+        return wrapped_json(member, inner);
+    }
+    let mut members: BTreeMap<&str, String> = literals
+        .iter()
+        .map(|(name, text)| {
+            (
+                name.as_str(),
+                format!("crate::json::push_text(&mut wrapped, {text:?});"),
+            )
+        })
+        .collect();
+    members.insert(member, format!("wrapped.push_str(&{inner});"));
+    if let Some((name, number)) = count {
+        members.insert(name, format!("wrapped.push_str(&({number}).to_string());"));
+    }
+    let mut code = String::from("{ let mut wrapped = String::from(\"{\");");
+    for (name, value) in members {
+        let _ = write!(
+            code,
+            " crate::json::member(&mut wrapped, {name:?}); {value}"
+        );
+    }
+    code.push_str(" wrapped.push('}'); wrapped }");
+    code
 }
 
 /// Rust code binding `selected`, the representation the query selects (beyond10x/ess#753): its

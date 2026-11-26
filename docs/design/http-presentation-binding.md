@@ -498,22 +498,35 @@ query` reads; every other field stays where the encoding puts it:
 | `{<member>: array}` | a view `array` admits | `{"<member>": [<rows>]}`, `{"<member>": []}` when the view holds none |
 | `{<member>: response}` | an outcome `response` admits | `{"<member>": <the response object>}` |
 | `{<member>: response.<field>}` | an outcome `response.<field>` admits | `{"<member>": <the field's value>}` |
+| a wrapped form with `{<name>: {literal: <text>}}` members beside it | where the wrapped form is admitted | the wrapped object, each literal member holding its text |
+| `{<member>: array, <name>: count}`, literal members allowed beside | a view `array` admits | the wrapped rows, and `<name>` holding the number of rows |
 
 A wrapped form (beyond10x/ess#755) holds, under its one named `<member>`, the value its bare form
 answers, and is refused wherever that bare form is (`ESS-HTTP-024`, `-030`, `-031`): on a paged
 view, `single` without identity selection or without `empty`, `response` without `returns: true` or
-under `errors`. An empty `<member>`, an object of two members, a member holding any other word, and
-`encoding: text` beside a wrapped form are refused with `ESS-HTTP-024`; a refinement that changes
-it is `ESS-HTTP-012`. `{<member>: error}` keeps its meaning: the member holds the error's wire name.
-`{rows: array}` on a view that is not paged is `rows`, ESS's own answer, and compiles to the same
-IR; `rows` is an object already, so it is never wrapped. Compiled IR writes the member and the form,
-`{"app": "single"}`, as the binding does, and a binding without a wrapped form compiles to the
-bytes it compiled to before. A body holds one form: fixed members beside the wrapped value
-(`{"success": true, "app": …}`) are not a body. OpenAPI writes the answer as an object whose one
-required member holds the bare form's schema, `additionalProperties: false`; both generated servers
-write `{"<member>": …}` around the bytes the bare form writes, and the empty answer of `single`
-stays as `empty` declares it, unwrapped. A binding without a wrapped form generates the bytes it
-generated before.
+under `errors`. An empty `<member>`, a member holding any other word, and `encoding: text` beside a
+wrapped form are refused with `ESS-HTTP-024`; a refinement that changes it is `ESS-HTTP-012`.
+`{<member>: error}` keeps its meaning: the member holds the error's wire name. `{rows: array}` on a
+view that is not paged is `rows`, ESS's own answer, and compiles to the same IR; `rows` is an object
+already, so it is never wrapped. Compiled IR writes the member and the form, `{"app": "single"}`, as
+the binding does, and a binding without a wrapped form compiles to the bytes it compiled to before.
+OpenAPI writes the answer as an object whose one required member holds the bare form's schema,
+`additionalProperties: false`; both generated servers write `{"<member>": …}` around the bytes the
+bare form writes, and the empty answer of `single` stays as `empty` declares it, unwrapped. A
+binding without a wrapped form generates the bytes it generated before.
+
+A body object of several members
+(`story:a-wrapped-answer-carries-literal-members-and-paging-facts`) holds one wrapped form and,
+beside it, any number of literal members, `{<name>: {literal: <text>}}`, and on an `array` of a view
+that is not paged one member holding `count`, the number of rows the answer holds (decision HB-D4).
+`{success: {literal: ok}, app: single}` answers `{"app": {…}, "success": "ok"}`. A second form, a
+second `count`, `count` beside `single` or on an outcome, `error`, an empty member name, any other
+word, and literal members with no form are refused with `ESS-HTTP-024` naming the member; a paged
+view stays refused as for every wrapped form. A literal holds text. Compiled IR writes every member
+in name order as the binding does; OpenAPI requires every member, a literal as `{type: string,
+const: <text>}` and the count as `{type: integer, minimum: 0}`; both servers write the members in
+name order, the empty answer of `single` unwrapped. A standard refusal's body keeps its one literal
+member.
 
 A bare body carries no `outcome` and no `published`. A caller of such a route sees the branch only
 through status, body shape and headers, and sees no published event. That is what the protocol
@@ -693,7 +706,7 @@ and its answers.
 | `ESS-HTTP-021` | a `form`, `query` or `multipart` field, or a field `request.query` lists, whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
-| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
+| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors`; a body object of several members with other than one form, a second `count`, `count` beside other than a view's `array`, `error`, an empty member name or another word, naming the member | the outcome (or `routes[i].body`) and the form, or `….encoding` |
 | `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both are `{<member>: error}` on one member over errors of one wire name and one error always writes (its type not `Optional` through any newtype, its outcome not a `wrong_state` one that can answer an unknown instance) a field, by wire name, that the other never writes (one function decides it for this check and for `alike:`), or both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24); an `alike:` group whose answers differ, or that the wire tells apart (`envelope` bodies, error objects under distinct wire names or over errors one of which always writes a field the other never writes, the message naming the field, and error objects over errors whose fields differ otherwise, in an optional field, a type or an order, which are not one answer either, a header or challenge param reading `error.wire` under distinct wire names, redirects told apart as above); two outcomes in one group are never a pair | both outcomes and the status (for an override, `refusals.<key>` or the route's own `routes[i].refusals.<key>`, the route and the outcomes; for a group, `routes[i].alike`, the group and the first key that differs) |
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |

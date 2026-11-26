@@ -1,6 +1,8 @@
-//! Answers wrapped in one named member, sent to both generated servers (beyond10x/ess#755):
-//! `ItemById` answers `body: {item: single}`, `ItemsTitled` `body: {items: array}` and `Place`'s
-//! `placed` `body: {data: response}`. An empty answer keeps its own form, unwrapped.
+//! Answers wrapped in a named member, sent to both generated servers (beyond10x/ess#755):
+//! `ItemById` answers `body: {item: single, success: {literal: ok}}`, `ItemsTitled`
+//! `body: {items: array}`, `ItemsLabelled` `body: {items: array, kind: {literal: item}, total:
+//! count}` and `Place`'s `placed` `body: {data: response, success: {literal: ok}}`. An empty answer
+//! keeps its own form, unwrapped.
 
 use std::collections::BTreeMap;
 
@@ -12,10 +14,13 @@ use super::answer_forms::{go_harness, rust_harness, MODEL_EDITS};
 
 /// `(anchor, replacement)` in the shared routes, each anchor found exactly once.
 const EDITS: &[(&str, &str)] = &[
-    ("    body: single\n", "    body: {item: single}\n"),
+    (
+        "    body: single\n",
+        "    body: {item: single, success: {literal: ok}}\n",
+    ),
     (
         "      placed:\n        status: 201\n        body: response\n",
-        "      placed:\n        status: 201\n        body: {data: response}\n",
+        "      placed:\n        status: 201\n        body: {data: response, success: {literal: ok}}\n",
     ),
     (
         "  - command: shop.items.Purge\n",
@@ -24,9 +29,30 @@ const EDITS: &[(&str, &str)] = &[
     path: /titled/{title}
     parameters: {title: param.title}
     body: {items: array}
+  - view: shop.items.ItemsLabelled
+    method: get
+    path: /labelled/{title}
+    parameters: {title: param.title}
+    body: {items: array, kind: {literal: item}, total: count}
   - command: shop.items.Purge\n",
     ),
 ];
+
+/// A second view of the rows `ItemsTitled` reads, answered with literal members and a count.
+const MODEL_LABELLED: &[(&str, &str)] = &[(
+    "actors:\n",
+    "  - name: shop.items.ItemsLabelled
+    source: shop.items.Item
+    consistency: read_your_writes
+    params:
+      - {name: title, type: String}
+    filter: title == param.title
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String}
+actors:
+",
+)];
 
 const REQUESTS: &[[&str; 7]] = &[
     [
@@ -42,6 +68,8 @@ const REQUESTS: &[[&str; 7]] = &[
     ["get-missing", "y", "GET", "/items/zz", "", "", ""],
     ["titled", "y", "GET", "/titled/Lamp", "", "", ""],
     ["titled-none", "y", "GET", "/titled/Desk", "", "", ""],
+    ["labelled", "y", "GET", "/labelled/Lamp", "", "", ""],
+    ["labelled-none", "y", "GET", "/labelled/Desk", "", "", ""],
     [
         "placed",
         "y",
@@ -72,7 +100,7 @@ fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
     BOTH.get_or_init(|| {
-        let ir = ir_of(&edited(shared::MODEL, MODEL_EDITS));
+        let ir = ir_of(&edited(&edited(shared::MODEL, MODEL_EDITS), MODEL_LABELLED));
         let bound = shared::binding(&ir, &edited(shared::ROUTES, EDITS));
         let synthesis = |target| -> Synthesis {
             synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
@@ -104,7 +132,7 @@ fn both_servers_answer_a_wrapped_row_rows_and_response() {
     let get = answered("get");
     assert_eq!(get.status, 200, "{get:?}");
     assert_eq!(
-        get.body, r#"{"item":{"item_id":"t1","title":"Lamp"}}"#,
+        get.body, r#"{"item":{"item_id":"t1","title":"Lamp"},"success":"ok"}"#,
         "{get:?}"
     );
 
@@ -123,11 +151,23 @@ fn both_servers_answer_a_wrapped_row_rows_and_response() {
     );
     assert_eq!(answered("titled-none").body, r#"{"items":[]}"#);
 
+    // Literal members and the count of the rows beside them (decision HB-D4).
+    let labelled = answered("labelled");
+    assert_eq!(labelled.status, 200, "{labelled:?}");
+    assert_eq!(
+        labelled.body, r#"{"items":[{"item_id":"t1","title":"Lamp"}],"kind":"item","total":1}"#,
+        "{labelled:?}"
+    );
+    assert_eq!(
+        answered("labelled-none").body,
+        r#"{"items":[],"kind":"item","total":0}"#
+    );
+
     let placed = answered("placed");
     assert_eq!(placed.status, 201, "{placed:?}");
     assert_eq!(
         placed.json(),
-        serde_json::json!({"data": {"code": "C-i1"}}),
+        serde_json::json!({"data": {"code": "C-i1"}, "success": "ok"}),
         "{placed:?}"
     );
     assert_eq!(placed.header("X-Code"), Some("C-i1"), "{placed:?}");

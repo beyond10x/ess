@@ -1939,9 +1939,9 @@ enum Answer<'a> {
     Rows(&'a ResolvedView),
     /// A `single` view's one row, bare, or under the one member a wrapped body names
     /// (beyond10x/ess#755).
-    Row(&'a ResolvedView, Option<&'a str>),
+    Row(&'a ResolvedView, &'a ess_http::ViewAnswer),
     /// An `array` view's rows, bare: a JSON array, or under the one member a wrapped body names.
-    Array(&'a ResolvedView, Option<&'a str>),
+    Array(&'a ResolvedView, &'a ess_http::ViewAnswer),
     /// A `single` view's answer when it holds no row: no body, or one literal member.
     Empty(&'a ResolvedView, &'a ess_http::RefusalBody),
 }
@@ -2085,7 +2085,7 @@ fn bound_view_responses<'a>(
             by_status
                 .entry(READ.to_owned())
                 .or_default()
-                .push(Answer::Row(view, route.body.member.as_deref()));
+                .push(Answer::Row(view, &route.body));
             by_status
                 .entry(empty.status.to_string())
                 .or_default()
@@ -2094,7 +2094,7 @@ fn bound_view_responses<'a>(
         (ess_http::ViewBody::Array, _) => by_status
             .entry(READ.to_owned())
             .or_default()
-            .push(Answer::Array(view, route.body.member.as_deref())),
+            .push(Answer::Array(view, &route.body)),
         // Compiling refuses `single` without `empty` (`ESS-HTTP-030`).
         _ => by_status
             .entry(READ.to_owned())
@@ -2311,8 +2311,8 @@ fn rendered(
             Some(json!({"$ref": reference(&view_key(view))})),
             view_description(ir, view),
         ),
-        Answer::Row(view, member) => view_answer(ir, view, *member, true),
-        Answer::Array(view, member) => view_answer(ir, view, *member, false),
+        Answer::Row(view, member) => view_answer(ir, view, member, true),
+        Answer::Array(view, member) => view_answer(ir, view, member, false),
         Answer::Empty(view, body) => Rendered::standard(
             literal_schema(body),
             format!(
@@ -2330,12 +2330,25 @@ fn rendered(
     }
 }
 
-/// A view's `single` (`one`) or `array` answer, bare or under its one `member`
-/// (beyond10x/ess#755).
-fn view_answer(ir: &EssIr, view: &ResolvedView, member: Option<&str>, one: bool) -> Rendered {
+/// A view's `single` (`one`) or `array` answer, bare or under its one `member`, with the literal
+/// members and the count beside it (beyond10x/ess#755).
+fn view_answer(
+    ir: &EssIr,
+    view: &ResolvedView,
+    answer: &ess_http::ViewAnswer,
+    one: bool,
+) -> Rendered {
     let source = &ir.entity(&view.source).name;
     let row = json!({"$ref": reference(&row_schema_key(view))});
-    match (one, member) {
+    let beside = beside(&answer.literals, answer.count.as_deref());
+    let under = |member: &str| {
+        if beside.is_empty() {
+            format!("the one member `{member}`")
+        } else {
+            format!("the member `{member}`{beside}")
+        }
+    };
+    match (one, answer.member.as_deref()) {
         (true, None) => Rendered::standard(
             Some(row),
             format!(
@@ -2346,12 +2359,13 @@ fn view_answer(ir: &EssIr, view: &ResolvedView, member: Option<&str>, one: bool)
             ),
         ),
         (true, Some(member)) => Rendered::standard(
-            Some(wrapped_schema(member, &row)),
+            Some(wrapped_schema(member, &row, &answer.literals, None)),
             format!(
-                "The one row of `{}` under the one member `{member}`, as the `ess-http/1` \
-                 binding declares (`body: {{{member}: single}}`): its filter selects by the \
-                 identity of `{source}`, so it holds one row at most.",
-                view.name
+                "The one row of `{}` under {}, as the `ess-http/1` binding declares (`body: \
+                 {answer}`): its filter selects by the identity of `{source}`, so it holds one \
+                 row at most.",
+                view.name,
+                under(member)
             ),
         ),
         (false, None) => Rendered::standard(
@@ -2366,14 +2380,32 @@ fn view_answer(ir: &EssIr, view: &ResolvedView, member: Option<&str>, one: bool)
             Some(wrapped_schema(
                 member,
                 &json!({"type": "array", "items": row}),
+                &answer.literals,
+                answer.count.as_deref(),
             )),
             format!(
-                "Every row of `{}`, a projection of `{source}`, as a JSON array under the one \
-                 member `{member}`, as the `ess-http/1` binding declares (`body: {{{member}: \
-                 array}}`).",
-                view.name
+                "Every row of `{}`, a projection of `{source}`, as a JSON array under {}, as the \
+                 `ess-http/1` binding declares (`body: {answer}`).",
+                view.name,
+                under(member)
             ),
         ),
+    }
+}
+
+/// The members a wrapped answer holds beside its form, as a clause (`, beside …`), or nothing.
+fn beside(literals: &BTreeMap<String, String>, count: Option<&str>) -> String {
+    let mut members: Vec<String> = literals
+        .iter()
+        .map(|(member, text)| format!("`{member}` holding `{text}`"))
+        .collect();
+    if let Some(count) = count {
+        members.push(format!("`{count}` holding the number of rows"));
+    }
+    if members.is_empty() {
+        String::new()
+    } else {
+        format!(", beside {}", members.join(" and "))
     }
 }
 
@@ -2400,13 +2432,19 @@ fn rendered_outcome(
             text: false,
         }),
         // The bare form's schema under its one member (beyond10x/ess#755).
-        ess_http::Body::Wrapped { member, field } => Some(Member {
+        ess_http::Body::Wrapped {
+            member,
+            field,
+            literals,
+        } => Some(Member {
             schema: wrapped_schema(
                 member,
                 &match field {
                     None => json!({"$ref": reference(&format!("{}.Result", command.name))}),
                     Some(_) => json!({"$ref": key}),
                 },
+                literals,
+                None,
             ),
             discriminated: None,
             text: false,
@@ -2538,13 +2576,25 @@ fn listed_sentence(
             "the command's response field `{field}`, bare: its value alone, with no object around \
              it."
         ),
-        ess_http::Body::Wrapped { member, field } => format!(
-            "{}, under the one member `{member}`: no `outcome` names the branch.",
-            field.as_ref().map_or_else(
-                || "the command's response".to_owned(),
-                |field| format!("the command's response field `{field}`")
+        ess_http::Body::Wrapped {
+            member,
+            field,
+            literals,
+        } => {
+            let beside = beside(literals, None);
+            format!(
+                "{}, under {}: no `outcome` names the branch.",
+                field.as_ref().map_or_else(
+                    || "the command's response".to_owned(),
+                    |field| format!("the command's response field `{field}`")
+                ),
+                if beside.is_empty() {
+                    format!("the one member `{member}`")
+                } else {
+                    format!("the member `{member}`{beside}")
+                }
             )
-        ),
+        }
         ess_http::Body::Error { member } => {
             let wire = outcome.error.as_ref().map_or("", |error| {
                 let error = ir.error(error);
@@ -2566,13 +2616,28 @@ fn listed_sentence(
     )
 }
 
-/// The object a wrapped body answers (beyond10x/ess#755): `inner` under its one `member`.
-fn wrapped_schema(member: &str, inner: &Value) -> Value {
+/// The object a wrapped body answers (beyond10x/ess#755): `inner` under its `member`, each literal
+/// member a constant string beside it, and `count` the number of rows, every member required.
+fn wrapped_schema(
+    member: &str,
+    inner: &Value,
+    literals: &BTreeMap<String, String>,
+    count: Option<&str>,
+) -> Value {
+    let mut properties = serde_json::Map::new();
+    properties.insert(member.to_owned(), inner.clone());
+    for (name, text) in literals {
+        properties.insert(name.clone(), json!({"type": "string", "const": text}));
+    }
+    if let Some(count) = count {
+        properties.insert(count.to_owned(), json!({"type": "integer", "minimum": 0}));
+    }
+    let required: Vec<&String> = properties.keys().collect();
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": [member],
-        "properties": {member: inner},
+        "required": required,
+        "properties": properties,
     })
 }
 

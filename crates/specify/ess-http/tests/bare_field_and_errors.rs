@@ -649,3 +649,98 @@ fn ess_http_012_a_refinement_restates_a_wrapped_answer() {
         assert!(codes.contains(&"ESS-HTTP-012"), "{changed}: {codes:?}");
     }
 }
+
+// --- literal members beside a wrapped response (beyond10x/ess#755) ------------------------------
+
+#[test]
+fn an_outcome_answers_literal_members_beside_its_wrapped_response() {
+    let ir = model();
+    let http = compiled(
+        &ir,
+        &send_task(
+            "    outcomes:\n      sent: {status: 201, body: {success: {literal: ok}, data: response}}\n",
+        ),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        only_route(&http)["outcomes"]["sent"]["body"],
+        json!({"data": "response", "success": {"literal": "ok"}})
+    );
+    let typed = http.routes()[0].outcomes["sent"].body.clone();
+    assert_eq!(
+        typed.to_string(),
+        "{data: response, success: {literal: ok}}"
+    );
+    round_trips(&http);
+    // Written in another order, the same body: a refinement restating it is no change.
+    let base = send_task(
+        "    outcomes:\n      sent: {status: 201, body: {success: {literal: ok}, data: response}}\n",
+    );
+    let refined = Refined::from_yaml((header(&ir) + &base).as_bytes()).expect("parses");
+    let text = header(&ir)
+        + &format!("refines: {}\n", refined.digest())
+        + &send_task(
+            "    outcomes:\n      sent: {status: 201, body: {data: response, success: {literal: ok}}}\n",
+        );
+    let spec = HttpSpec::from_yaml(&text).expect("parses");
+    assert_eq!(
+        located(compile_refining(&spec, Some(&refined), &ir, &derived(&ir))),
+        []
+    );
+}
+
+#[test]
+fn an_outcome_body_of_several_members_out_of_rules_is_refused_naming_the_member() {
+    let ir = model();
+    for (outcome, body, named) in [
+        ("sent", "{data: response, more: response.task_id}", "more"),
+        ("sent", "{data: response, total: count}", "total"),
+        (
+            "sent",
+            "{success: {literal: ok}, kind: {literal: task}}",
+            "form",
+        ),
+        ("sent", "{data: response, code: error}", "code"),
+        ("sent", "{data: response, '': {literal: ok}}", "empty"),
+        (
+            "too-large",
+            "{data: response, success: {literal: no}}",
+            "reports error",
+        ),
+    ] {
+        let status = if outcome == "sent" { 200 } else { 400 };
+        let document = send_task(&format!(
+            "    outcomes:\n      {outcome}: {{status: {status}, body: {body}}}\n"
+        ));
+        let result = compiled(&ir, &document);
+        let words = match &result {
+            Ok(_) => panic!("`{body}` on `{outcome}` compiles"),
+            Err(diagnostics) => diagnostics.to_string(),
+        };
+        assert_eq!(
+            located(result),
+            [refused(
+                "ESS-HTTP-024",
+                &format!("routes[0].outcomes.{outcome}.body")
+            )],
+            "`{body}` on `{outcome}`: {words}"
+        );
+        assert!(words.contains(named), "`{body}`: {words}");
+    }
+    let http = compiled(
+        &ir,
+        &send_task(
+            "    outcomes:\n      sent: {status: 201, body: {success: {literal: ok}, data: response}}\n",
+        ),
+    )
+    .expect("compiles")
+    .to_canonical_json();
+    for (written, broken) in [
+        ("\"data\": \"response\"", "\"data\": \"count\""),
+        ("\"data\": \"response\"", "\"data\": {\"literal\": \"x\"}"),
+    ] {
+        let text = http.replace(written, broken);
+        assert_ne!(text, http);
+        HttpIr::from_json(&text).expect_err(broken);
+    }
+}

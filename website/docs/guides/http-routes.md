@@ -230,6 +230,9 @@ The document follows those keys on the routes that use them:
   answers `{"order": {…}}` (with `empty` as for `single`), `body: {items: array}` answers
   `{"items": […]}`, and on a command `body: {data: response}` or `{id: response.order_id}` answers
   the response, or the one field, under that member. Each is refused wherever its bare form is.
+- Fixed members may stand beside the wrapped form: `body: {success: {literal: ok}, order: single}`
+  answers `{"order": {…}}` with `"success": "ok"` beside it. Beside an `array` of a view that is not
+  paged, `{items: array, total: count}` adds `total`, the number of rows the answer holds.
 - A `refusals:` entry replaces the standard answer for that refusal on every operation the binding
   names. A route's own `refusals:` replaces it on that route alone, so one endpoint can answer
   `malformed` with its protocol's error while the others keep the binding's.

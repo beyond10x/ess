@@ -2105,7 +2105,7 @@ fn declared_answers(
                 Body::None => ("none".to_owned(), None),
                 Body::Response => ("response".to_owned(), None),
                 Body::ResponseField(field) => (format!("response.{field}"), None),
-                Body::Wrapped { member, field } => (
+                Body::Wrapped { member, field, .. } => (
                     field.as_ref().map_or_else(
                         || "response".to_owned(),
                         |field| format!("response.{field}"),

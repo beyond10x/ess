@@ -8,6 +8,7 @@
 //!
 //! What is read from the binding is read through `ess_gen::http`, as the Rust server reads it.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
@@ -2560,13 +2561,30 @@ fn field_answer(
     }
 }
 
+/// The members of a `jsonObject` literal a wrapped body answers (beyond10x/ess#755): `value` under
+/// `member` and each literal member's text beside it, ordered by name as the Rust server writes
+/// them.
+fn object_members(member: &str, value: &str, literals: &BTreeMap<String, String>) -> String {
+    let mut members: BTreeMap<&str, String> = literals
+        .iter()
+        .map(|(name, text)| (name.as_str(), go_string(text)))
+        .collect();
+    members.insert(member, value.to_owned());
+    members
+        .iter()
+        .map(|(name, value)| format!("{{name: {}, value: {value}}}", go_string(name)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// A wrapped outcome body's answer (beyond10x/ess#755): the response, or its one `field`, under
-/// the one `member`, written as the bare form writes it.
+/// the one `member`, written as the bare form writes it, and the literal members beside it.
 fn wrapped_answer(
     command: &ResolvedCommand,
     status: u16,
     member: &str,
     field: Option<&str>,
+    literals: &BTreeMap<String, String>,
 ) -> String {
     let value = match field {
         None => "reply".to_owned(),
@@ -2583,8 +2601,8 @@ fn wrapped_answer(
     };
     format!(
         "response{{status: {status}, contentType: mediaJSON, body: \
-         bare(jsonObject{{{{name: {}, value: {value}}}}})}}",
-        go_string(member)
+         bare(jsonObject{{{}}})}}",
+        object_members(member, &value, literals)
     )
 }
 
@@ -2607,9 +2625,11 @@ fn outcome_arm(
         Body::Response => {
             format!("response{{status: {status}, contentType: mediaJSON, body: bare(reply)}}")
         }
-        Body::Wrapped { member, field } => {
-            wrapped_answer(command, status, member, field.as_deref())
-        }
+        Body::Wrapped {
+            member,
+            field,
+            literals,
+        } => wrapped_answer(command, status, member, field.as_deref(), literals),
         Body::ResponseField(field) => field_answer(command, field, declared, &mut arm),
         Body::None => format!("response{{status: {status}}}"),
         Body::Error { member } => format!(
@@ -2826,14 +2846,22 @@ fn json_answer(out: &mut String, route: &http::Route<'_>) {
     let member = route
         .declared
         .and_then(|declared| declared.body.member.as_deref());
+    // The literal members and the count beside it (beyond10x/ess#755).
+    let no_literals = BTreeMap::new();
+    let literals = route
+        .declared
+        .map_or(&no_literals, |declared| &declared.body.literals);
+    let count = route
+        .declared
+        .and_then(|declared| declared.body.count.as_deref());
     match (body, empty) {
         (_, Some(empty)) => {
             let one = member.map_or_else(
                 || "encoded[0]".to_owned(),
                 |member| {
                     format!(
-                        "jsonObject{{{{name: {}, value: encoded[0]}}}}",
-                        go_string(member)
+                        "jsonObject{{{}}}",
+                        object_members(member, "encoded[0]", literals)
                     )
                 },
             );
@@ -2856,10 +2884,22 @@ fn json_answer(out: &mut String, route: &http::Route<'_>) {
         (ess_http::ViewBody::Array, None) => match member {
             None => out.push_str("\treturn rendered(200, encoded)\n}\n"),
             Some(member) => {
+                let mut members: BTreeMap<&str, String> = literals
+                    .iter()
+                    .map(|(name, text)| (name.as_str(), go_string(text)))
+                    .collect();
+                members.insert(member, "encoded".to_owned());
+                if let Some(count) = count {
+                    members.insert(count, "len(encoded)".to_owned());
+                }
+                let members: Vec<String> = members
+                    .iter()
+                    .map(|(name, value)| format!("{}: {value}", go_string(name)))
+                    .collect();
                 let _ = write!(
                     out,
-                    "\treturn rendered(200, map[string]any{{{}: encoded}})\n}}\n",
-                    go_string(member)
+                    "\treturn rendered(200, map[string]any{{{}}})\n}}\n",
+                    members.join(", ")
                 );
             }
         },

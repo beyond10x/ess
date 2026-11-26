@@ -543,6 +543,10 @@ pub enum BodySpec {
         /// The bare form it holds, as written.
         form: String,
     },
+    /// An object of two members or more, ordered by name (beyond10x/ess#755): one holds a form,
+    /// the others literals or, beside an `array`, the count of its rows. Which members a key
+    /// admits is [`compile`]'s to check.
+    Members(Vec<(String, MemberValue)>),
 }
 
 impl fmt::Display for BodySpec {
@@ -554,6 +558,22 @@ impl fmt::Display for BodySpec {
                 write!(formatter, "{{{member}: {{literal: {text}}}}}")
             }
             Self::Wrapped { member, form } => write!(formatter, "{{{member}: {form}}}"),
+            Self::Members(members) => {
+                formatter.write_str("{")?;
+                for (index, (member, value)) in members.iter().enumerate() {
+                    if index > 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    match value {
+                        MemberValue::Error => write!(formatter, "{member}: error")?,
+                        MemberValue::Literal(text) => {
+                            write!(formatter, "{member}: {{literal: {text}}}")?;
+                        }
+                        MemberValue::Form(form) => write!(formatter, "{member}: {form}")?,
+                    }
+                }
+                formatter.write_str("}")
+            }
         }
     }
 }
@@ -580,13 +600,25 @@ impl<'de> serde::Deserialize<'de> for BodySpec {
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let one = "a body object holds exactly one member";
-                let Some((member, value)) = map.next_entry::<String, MemberValue>()? else {
-                    return Err(serde::de::Error::custom(one));
-                };
-                if map.next_key::<serde::de::IgnoredAny>()?.is_some() {
-                    return Err(serde::de::Error::custom(one));
+                let mut members = Vec::new();
+                while let Some((member, value)) = map.next_entry::<String, MemberValue>()? {
+                    members.push((member, value));
                 }
+                members.sort_by(|left, right| left.0.cmp(&right.0));
+                if let Some(pair) = members.windows(2).find(|pair| pair[0].0 == pair[1].0) {
+                    return Err(serde::de::Error::custom(format!(
+                        "a body object names member `{}` twice",
+                        pair[0].0
+                    )));
+                }
+                if members.len() > 1 {
+                    return Ok(BodySpec::Members(members));
+                }
+                let Some((member, value)) = members.pop() else {
+                    return Err(serde::de::Error::custom(
+                        "a body object holds one member or more",
+                    ));
+                };
                 Ok(match value {
                     MemberValue::Error => BodySpec::Error(member),
                     MemberValue::Literal(text) => BodySpec::Literal { member, text },
@@ -624,15 +656,35 @@ impl serde::Serialize for BodySpec {
                 map.serialize_entry(member, form)?;
                 map.end()
             }
+            Self::Members(members) => {
+                let mut map = serializer.serialize_map(Some(members.len()))?;
+                for (member, value) in members {
+                    match value {
+                        MemberValue::Error => map.serialize_entry(member, "error")?,
+                        MemberValue::Literal(text) => map.serialize_entry(
+                            member,
+                            &Literal {
+                                literal: text.clone(),
+                            },
+                        )?,
+                        MemberValue::Form(form) => map.serialize_entry(member, form)?,
+                    }
+                }
+                map.end()
+            }
         }
     }
 }
 
-/// The value of a body object's one member: `error`, `{literal: <text>}`, or another word, the
-/// bare form it wraps.
-enum MemberValue {
+/// The value of a body object's member: `error`, `{literal: <text>}`, or another word, the bare
+/// form it wraps (`count` beside an `array` counts its rows).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MemberValue {
+    /// `error`.
     Error,
+    /// `{literal: <text>}`.
     Literal(String),
+    /// Any other word, as written.
     Form(String),
 }
 
@@ -677,6 +729,130 @@ impl<'de> serde::Deserialize<'de> for MemberValue {
     }
 }
 
+/// A body object of several members, read (beyond10x/ess#755): the member holding the form and
+/// the form as written, the literal members by name, and the member holding `count`.
+struct Several {
+    member: String,
+    form: String,
+    literals: BTreeMap<String, String>,
+    count: Option<String>,
+}
+
+/// Reads `members`, the members of `written`: exactly one holds a form `forms` admits, and every
+/// other a literal or `count`, once; or why not, naming the member.
+fn several(
+    written: &BodySpec,
+    members: &[(String, MemberValue)],
+    forms: impl Fn(&str) -> bool,
+) -> Result<Several, String> {
+    let mut form: Option<(&String, &String)> = None;
+    let mut literals = BTreeMap::new();
+    let mut count: Option<&String> = None;
+    for (member, value) in members {
+        if member.is_empty() {
+            return Err(format!(
+                "`{written}` holds a member with an empty name; every member of a body object is \
+                 named"
+            ));
+        }
+        match value {
+            MemberValue::Literal(text) => {
+                literals.insert(member.clone(), text.clone());
+            }
+            MemberValue::Form(word) if word == "count" => {
+                if let Some(first) = count {
+                    return Err(format!(
+                        "`{first}` and `{member}` both hold `count`; a body counts its rows in one \
+                         member"
+                    ));
+                }
+                count = Some(member);
+            }
+            MemberValue::Form(word) if forms(word) => {
+                if let Some((first, _)) = form {
+                    return Err(format!(
+                        "`{member}` holds a second form beside `{first}`; a body of several \
+                         members holds one form, with literal members beside it"
+                    ));
+                }
+                form = Some((member, word));
+            }
+            MemberValue::Error => {
+                return Err(format!(
+                    "`{member}: error` names the error object, which a body of several members \
+                     does not hold"
+                ))
+            }
+            MemberValue::Form(word) => {
+                return Err(format!(
+                    "`{member}` holds `{word}`; beside a body's one form, a member holds \
+                     `{{literal: <text>}}` or `count`"
+                ))
+            }
+        }
+    }
+    let Some((member, form)) = form else {
+        return Err(format!(
+            "`{written}` holds no form; a body of several members holds one form, with literal \
+             members beside it"
+        ));
+    };
+    Ok(Several {
+        member: member.clone(),
+        form: form.clone(),
+        literals,
+        count: count.cloned(),
+    })
+}
+
+/// A view route's body of several members: `single` or `array` under one member, literal members
+/// beside it and, beside an `array` only, the member that counts its rows (decision HB-D4).
+fn view_members(
+    written: &BodySpec,
+    members: &[(String, MemberValue)],
+) -> Result<ViewAnswer, String> {
+    let read = several(written, members, |word| matches!(word, "single" | "array"))?;
+    let form = if read.form == "single" {
+        ViewBody::Single
+    } else {
+        ViewBody::Array
+    };
+    if let Some(count) = &read.count {
+        if form != ViewBody::Array {
+            return Err(format!(
+                "`{count}: count` counts the rows of an `array`, and `{}` holds `{}`",
+                read.member, read.form
+            ));
+        }
+    }
+    Ok(ViewAnswer {
+        form,
+        member: Some(read.member),
+        literals: read.literals,
+        count: read.count,
+    })
+}
+
+/// The members of a body of several members, ordered by name: `member` holding `form`, the
+/// literals and the member holding `count`.
+fn members_spec(
+    member: &str,
+    form: &str,
+    literals: &BTreeMap<String, String>,
+    count: Option<&str>,
+) -> BodySpec {
+    let mut members: Vec<(String, MemberValue)> = literals
+        .iter()
+        .map(|(name, text)| (name.clone(), MemberValue::Literal(text.clone())))
+        .collect();
+    members.push((member.to_owned(), MemberValue::Form(form.to_owned())));
+    if let Some(count) = count {
+        members.push((count.to_owned(), MemberValue::Form("count".to_owned())));
+    }
+    members.sort_by(|left, right| left.0.cmp(&right.0));
+    BodySpec::Members(members)
+}
+
 /// What a command's outcome answers with (`docs/design/http-presentation-binding.md`, "Response
 /// body per outcome"). `envelope` is the default and compiled IR omits it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -698,12 +874,15 @@ pub enum Body {
         member: String,
     },
     /// `{<member>: response}` or `{<member>: response.<field>}`: an object whose one `member`
-    /// holds what `response`, or `response.<field>`, answers bare (beyond10x/ess#755).
+    /// holds what `response`, or `response.<field>`, answers bare (beyond10x/ess#755), beside
+    /// literal members.
     Wrapped {
         /// The member that holds the value.
         member: String,
         /// The response field it holds, by local name; `None` for the whole response.
         field: Option<String>,
+        /// The literal members beside it, by name: `{<name>: {literal: <text>}}`; empty, none.
+        literals: BTreeMap<String, String>,
     },
 }
 
@@ -717,13 +896,24 @@ impl Body {
             }
             Self::None => BodySpec::Word("none".into()),
             Self::Error { member } => BodySpec::Error(member.clone()),
-            Self::Wrapped { member, field } => BodySpec::Wrapped {
-                member: member.clone(),
-                form: field.as_ref().map_or_else(
+            Self::Wrapped {
+                member,
+                field,
+                literals,
+            } => {
+                let form = field.as_ref().map_or_else(
                     || "response".to_owned(),
                     |field| AnswerSource::Response(field.clone()).to_string(),
-                ),
-            },
+                );
+                if literals.is_empty() {
+                    BodySpec::Wrapped {
+                        member: member.clone(),
+                        form,
+                    }
+                } else {
+                    members_spec(member, &form, literals, None)
+                }
+            }
         }
     }
 
@@ -791,9 +981,39 @@ impl<'de> serde::Deserialize<'de> for Body {
                 Ok(Self::Wrapped {
                     member: member.clone(),
                     field,
+                    literals: BTreeMap::new(),
+                })
+            }
+            BodySpec::Members(members) => {
+                let read = outcome_members(&written, members).map_err(serde::de::Error::custom)?;
+                let field = match AnswerSource::parse(&read.form) {
+                    Some(AnswerSource::Response(field)) => Some(field),
+                    _ => None,
+                };
+                Ok(Self::Wrapped {
+                    member: read.member,
+                    field,
+                    literals: read.literals,
                 })
             }
         }
+    }
+}
+
+/// An outcome's body of several members: `response` or `response.<field>` under one member and
+/// literal members beside it; a count answers a view's rows only.
+fn outcome_members(
+    written: &BodySpec,
+    members: &[(String, MemberValue)],
+) -> Result<Several, String> {
+    let read = several(written, members, |word| {
+        word == "response" || matches!(AnswerSource::parse(word), Some(AnswerSource::Response(_)))
+    })?;
+    match &read.count {
+        Some(count) => Err(format!(
+            "`{count}: count` counts the rows of a view's `array`, and an outcome answers no rows"
+        )),
+        None => Ok(read),
     }
 }
 
@@ -841,12 +1061,20 @@ pub struct ViewAnswer {
     /// The member that holds the `single` or `array` answer; `None` where it is bare. Never
     /// beside `rows`, which `{rows: array}` is.
     pub member: Option<String>,
+    /// The literal members beside `member`, by name: `{<name>: {literal: <text>}}`; empty, none.
+    pub literals: BTreeMap<String, String>,
+    /// The member beside an `array` that holds the number of its rows (`{<name>: count}`,
+    /// decision HB-D4); `None`, none.
+    pub count: Option<String>,
 }
 
 impl ViewAnswer {
     /// The bare `form`.
     pub fn bare(form: ViewBody) -> Self {
-        Self { form, member: None }
+        Self {
+            form,
+            ..Self::default()
+        }
     }
 
     fn is_default(&self) -> bool {
@@ -856,10 +1084,16 @@ impl ViewAnswer {
     fn spec(&self) -> BodySpec {
         match &self.member {
             None => BodySpec::Word(self.form.word().to_owned()),
-            Some(member) => BodySpec::Wrapped {
+            Some(member) if self.literals.is_empty() && self.count.is_none() => BodySpec::Wrapped {
                 member: member.clone(),
                 form: self.form.word().to_owned(),
             },
+            Some(member) => members_spec(
+                member,
+                self.form.word(),
+                &self.literals,
+                self.count.as_deref(),
+            ),
         }
     }
 }
@@ -903,9 +1137,13 @@ impl<'de> serde::Deserialize<'de> for ViewAnswer {
                 Some(form @ (ViewBody::Single | ViewBody::Array)) => Ok(Self {
                     form,
                     member: Some(member.clone()),
+                    ..Self::default()
                 }),
                 Some(ViewBody::Rows) | None => Err(refused()),
             },
+            BodySpec::Members(members) => {
+                view_members(&written, members).map_err(serde::de::Error::custom)
+            }
             BodySpec::Error(_) | BodySpec::Literal { .. } => Err(refused()),
         }
     }
@@ -4051,7 +4289,7 @@ impl Refusals {
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form`, `query` or `multipart` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried; at `routes[i].request.query`: a field `query` lists whose type has no flat spelling, beside any encoding |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
-/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
+/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts); at either body, a body object of several members (beyond10x/ess#755) with other than one form, a second `count`, `count` beside other than a view's `array`, `error`, an empty member name or another word, naming the member |
 /// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, or with one wire name and one error always writing a field, its type not `Optional` through any newtype and its outcome not a `wrong_state` one that can answer an unknown instance, that the other never writes, do; one function decides the field rule for this check and for `alike`) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; at `routes[i].refusals.<key>`: the same for a route's own override, which stands on that route in place of the binding's; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names or over errors one of which always writes a field the other never writes (the message names the field), or that are not one answer, the fields of the errors differing otherwise (in an optional field, a type or an order), a header or challenge param reading `error.wire` under distinct error wire names, or redirects one of which always writes a parameter the other never does |
 /// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>` or `routes[i].representations[j].headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header; any source or challenge in a representation's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
@@ -7819,16 +8057,37 @@ fn wrapped_body(
         Ok(Body::Response) => Ok(Body::Wrapped {
             member,
             field: None,
+            literals: BTreeMap::new(),
         }),
         Ok(Body::ResponseField(field)) => Ok(Body::Wrapped {
             member,
             field: Some(field),
+            literals: BTreeMap::new(),
         }),
         Ok(_) => Err(format!(
             "`{wrapped}` wraps another form; a member holds `response` or `response.<field>`, \
              and {forms}"
         )),
         Err(reason) => Err(format!("in `{wrapped}`, {reason}")),
+    }
+}
+
+/// A body of several members on an outcome (beyond10x/ess#755): its one form, wrapped as
+/// [`wrapped_body`] wraps it, with the literal members beside it.
+fn wrapped_members(
+    written: &BodySpec,
+    members: &[(String, MemberValue)],
+    bare: impl FnOnce(&str) -> Result<Body, String>,
+    forms: &str,
+) -> Result<Body, String> {
+    let read = outcome_members(written, members)?;
+    match wrapped_body(written, &read.member, || bare(&read.form), forms)? {
+        Body::Wrapped { member, field, .. } => Ok(Body::Wrapped {
+            member,
+            field,
+            literals: read.literals,
+        }),
+        other => Ok(other),
     }
 }
 
@@ -7914,6 +8173,10 @@ fn outcome_body(
         Some(BodySpec::Word(word)) => word_body(word),
         Some(wrapped @ BodySpec::Wrapped { member, form }) => {
             wrapped_body(wrapped, member, || word_body(form), forms)
+        }
+        // One form under its member, literal members beside it (beyond10x/ess#755).
+        Some(written @ BodySpec::Members(members)) => {
+            wrapped_members(written, members, |form| word_body(&form.to_owned()), forms)
         }
         Some(BodySpec::Error(member)) => match error {
             None => Err(format!(
@@ -9059,8 +9322,18 @@ fn view_body(
                 Some(form @ (ViewBody::Single | ViewBody::Array)) => Some(ViewAnswer {
                     form,
                     member: Some(member.clone()),
+                    ..ViewAnswer::default()
                 }),
                 _ => None,
+            },
+            // One form under its member, literal members and a count beside it
+            // (beyond10x/ess#755).
+            BodySpec::Members(members) => match view_members(written, members) {
+                Ok(answer) => Some(answer),
+                Err(reason) => {
+                    refusals.refuse("ESS-HTTP-024", format!("{path}.body"), reason);
+                    return None;
+                }
             },
             _ => None,
         },
@@ -9190,6 +9463,9 @@ fn misplaced(
 ) -> Option<String> {
     let single = match &spec.body {
         Some(BodySpec::Word(form) | BodySpec::Wrapped { form, .. }) => form == "single",
+        Some(BodySpec::Members(members)) => members
+            .iter()
+            .any(|(_, value)| *value == MemberValue::Form("single".to_owned())),
         _ => false,
     };
     match (operation, view) {

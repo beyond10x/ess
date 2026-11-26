@@ -1546,6 +1546,56 @@ fn a_binding_without_a_wrapped_form_keeps_its_document() {
     );
 }
 
+/// Literal members and a count beside a wrapped answer (beyond10x/ess#755, decision HB-D4): each
+/// literal a constant string, the count a whole number, every member required.
+#[test]
+fn literal_members_and_a_count_project_beside_the_wrapped_answer() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let forms = wrapped_forms()
+        .replace("{order: single}", "{order: single, success: {literal: ok}}")
+        .replace(
+            "{items: array}",
+            "{items: array, success: {literal: ok}, total: count}",
+        )
+        .replace(
+            "{data: response}",
+            "{data: response, success: {literal: ok}}",
+        );
+    let document = bound_document(&ir, binding(&ir, &forms), "orders-service");
+    let paths = &document["paths"];
+    let schema = |response: &Value| response["content"]["application/json"]["schema"].clone();
+
+    let one = schema(&paths["/orders/{order_id}"]["get"]["responses"]["200"]);
+    assert_eq!(one["required"], json!(["order", "success"]), "{one:#}");
+    assert_eq!(one["additionalProperties"], json!(false), "{one:#}");
+    assert_eq!(
+        one["properties"]["success"],
+        json!({"type": "string", "const": "ok"}),
+        "{one:#}"
+    );
+
+    let many = schema(&paths["/orders/size/{quantity}"]["get"]["responses"]["200"]);
+    assert_eq!(
+        many["required"],
+        json!(["items", "success", "total"]),
+        "{many:#}"
+    );
+    assert_eq!(
+        many["properties"]["total"],
+        json!({"type": "integer", "minimum": 0}),
+        "{many:#}"
+    );
+    assert_eq!(many["properties"]["items"]["type"], "array", "{many:#}");
+
+    let placed = schema(&paths["/api/orders"]["post"]["responses"]["201"]);
+    assert_eq!(placed["required"], json!(["data", "success"]), "{placed:#}");
+    assert_eq!(
+        placed["properties"]["data"]["$ref"],
+        "#/components/schemas/catalog.orders.PlaceOrder.Result",
+        "{placed:#}"
+    );
+}
+
 /// An identity that is a `Uuid` addresses its resource in the path (beyond10x/ess#755): the path
 /// parameter is the field's schema, a reference to the newtype, which says `format: uuid`.
 #[test]

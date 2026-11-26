@@ -937,6 +937,141 @@ fn compiled_ir_with_a_wrapped_view_answer_out_of_rules_is_refused() {
     }
 }
 
+// --- literal members and a count beside a wrapped view answer (beyond10x/ess#755) ---------------
+
+#[test]
+fn a_view_route_answers_literal_members_beside_its_wrapped_form() {
+    let ir = model();
+    let single = compiled(
+        &ir,
+        &view_route(
+            "OrderById",
+            "    body: {success: {literal: ok}, order: single}\n    empty: {status: 404}\n",
+        ),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        ir_json(&single)["routes"][0]["body"],
+        json!({"order": "single", "success": {"literal": "ok"}})
+    );
+    let route = &single.routes()[0];
+    assert_eq!(route.body.member.as_deref(), Some("order"));
+    assert_eq!(
+        route.body.literals.iter().collect::<Vec<_>>(),
+        [(&"success".to_owned(), &"ok".to_owned())]
+    );
+    round_trips(&single);
+    // A count member beside the rows of a view that is not paged (decision HB-D4).
+    let array = compiled(
+        &ir,
+        &sized_route("    body: {items: array, total: count, kind: {literal: order}}\n"),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(
+        ir_json(&array)["routes"][0]["body"],
+        json!({"items": "array", "kind": {"literal": "order"}, "total": "count"})
+    );
+    assert_eq!(array.routes()[0].body.count.as_deref(), Some("total"));
+    round_trips(&array);
+}
+
+#[test]
+fn a_body_of_several_members_out_of_rules_is_refused_naming_the_member() {
+    let ir = model();
+    for (route, body, named) in [
+        // Two members with a view form.
+        (
+            "single",
+            "{order: single, again: single, success: {literal: ok}}",
+            "again",
+        ),
+        ("array", "{items: array, more: array}", "more"),
+        // A count beside one row, and a count twice.
+        ("single", "{order: single, total: count}", "total"),
+        ("array", "{items: array, total: count, size: count}", "size"),
+        // Literal members and no form.
+        (
+            "array",
+            "{success: {literal: ok}, kind: {literal: order}}",
+            "form",
+        ),
+        // An error object, another word, and an empty member beside the form.
+        ("array", "{items: array, code: error}", "code"),
+        ("array", "{items: array, page: paging}", "page"),
+        ("array", "{items: array, '': {literal: ok}}", "empty"),
+    ] {
+        let document = if route == "single" {
+            view_route(
+                "OrderById",
+                &format!("    body: {body}\n    empty: {{status: 404}}\n"),
+            )
+        } else {
+            sized_route(&format!("    body: {body}\n"))
+        };
+        let result = compiled(&ir, &document);
+        let words = match &result {
+            Ok(_) => panic!("`{body}` compiles"),
+            Err(diagnostics) => diagnostics.to_string(),
+        };
+        assert_eq!(
+            located(result),
+            [refused("ESS-HTTP-024", "routes[0].body")],
+            "`{body}`: {words}"
+        );
+        assert!(words.contains(named), "`{body}`: {words}");
+    }
+    // A count on a paged view, whose answer carries a page.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &view_route("OrderPage", "    body: {items: array, total: count}\n")
+        )),
+        [refused("ESS-HTTP-024", "routes[0].body")]
+    );
+}
+
+#[test]
+fn compiled_ir_with_members_beside_a_wrapped_view_answer_out_of_rules_is_refused() {
+    let ir = model();
+    let array = compiled(
+        &ir,
+        &sized_route("    body: {items: array, total: count, kind: {literal: order}}\n"),
+    )
+    .expect("compiles")
+    .to_canonical_json();
+    let written = "\"kind\": {\n          \"literal\": \"order\"\n        },";
+    assert!(array.contains(written), "{array}");
+    for (broken, named) in [
+        ("\"kind\": \"array\",", "kind"),
+        ("\"kind\": \"count\",", "kind"),
+        ("\"kind\": {\"literal\": 1},", "string"),
+        ("\"\": {\"literal\": \"order\"},", "empty"),
+    ] {
+        let text = array.replace(written, broken);
+        assert_ne!(text, array);
+        let error = HttpIr::from_json(&text).expect_err(broken).to_string();
+        assert!(error.contains(named), "{broken}: {error}");
+    }
+    let single = compiled(
+        &ir,
+        &view_route(
+            "OrderById",
+            "    body: {success: {literal: ok}, order: single}\n    empty: {status: 404}\n",
+        ),
+    )
+    .expect("compiles")
+    .to_canonical_json();
+    let text = single.replace(
+        "\"order\": \"single\",",
+        "\"order\": \"single\", \"total\": \"count\",",
+    );
+    assert_ne!(text, single);
+    let error = HttpIr::from_json(&text)
+        .expect_err("a count beside one row")
+        .to_string();
+    assert!(error.contains("total"), "{error}");
+}
+
 // --- authentication (beyond10x/ess#681) ---------------------------------------------------------
 
 /// The fixture with one actor granted both commands: `authentication` binds a model that says who
