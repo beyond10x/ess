@@ -4,7 +4,9 @@
 # Decides how much of the gate a release tag runs. A minor or major release (`X.Y.0`) runs the
 # full gate. A hotfix (`X.Y.Z` with Z > 0) runs the targeted gate instead: the checks, and the tests
 # of the workspace crates it changed plus their direct dependents. Anything this cannot map to a
-# crate falls back to the full gate, so an unexpected change is never tested less.
+# crate falls back to the full gate, so an unexpected change is never tested less. So does a
+# change whose selected crates hold `ess-cli`, `ess-conformance` or `ess-synth`, whose tests do
+# not fit the targeted job's limit.
 #
 # Prints `scope=full|targeted`, `previous=<tag>`, `packages=<space-separated names>` and
 # `reason=<text>`, one per line, and appends them to "$GITHUB_OUTPUT" when that is set. Reads only
@@ -107,4 +109,15 @@ dependents=$(printf '%s' "$metadata" | jq -r --arg changed "$changed" '
   | select(any(.dependencies[]; (.path != null) and (.name as $n | $set | index($n))))
   | .name')
 packages=$(printf '%s\n' $changed $dependents | sort -u | tr '\n' ' ' | sed 's/ $//')
+
+# Crates whose tests do not fit the targeted job's limit. 0.99.3 changed ess-conformance, which
+# selected these three among seven crates: 8,685 tests in 1,188 binaries on one runner, and the
+# job was cancelled at its 60-minute limit with 2,734 run. The full gate deals them over 20 shards.
+large="ess-cli ess-conformance ess-synth"
+for crate in $large; do
+  case " $packages " in
+    *" $crate "*)
+      emit full "$packages" "$crate is selected: its tests do not fit the targeted job's limit" ;;
+  esac
+done
 emit targeted "$packages" "changed: $changed"

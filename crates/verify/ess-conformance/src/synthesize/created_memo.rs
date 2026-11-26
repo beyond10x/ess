@@ -11,24 +11,40 @@
 //!
 //! Answering from memory does not change what a search decides: the beside searches the creation
 //! cut ([`super::related_guard::cuts`]) count as cut again.
+//!
+//! The setup run of a creating branch arranged as its own scenario
+//! ([`super::related_guard`]'s `as_own_scenario`) is kept the same way ([`own_arranged`]): every
+//! scenario of every command that needs such a row asks for it again with the same command,
+//! outcome, chosen values and bound rows, and before it was kept a model of a few hundred
+//! scenarios took about 30 times as long to synthesize as the release before the arrangement took
+//! chosen values.
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use super::{
-    ActorRef, Arrangement, Distinction, Driver, EntityHandle, EssIr, Node, QualifiedName,
-    Unreachable,
+    ActorRef, Arrangement, Distinction, Driver, EntityHandle, EssIr, Invocation, Node,
+    QualifiedName, RefusalCause, ResolvedCommand, Unreachable,
 };
 
-/// The rows created for one model.
+/// The rows created for one model, and its setup runs arranged as their own scenario.
 struct Kept {
     ir: *const EssIr,
     rows: BTreeMap<String, Entry>,
+    own: BTreeMap<String, OwnEntry>,
 }
 
 /// One creation's result, and how many searches for a row beside it cut.
 #[derive(Clone)]
 struct Entry {
     made: Result<Arrangement, Unreachable>,
+    cuts: usize,
+}
+
+/// One setup run arranged as its own scenario, and how many searches for a row beside it cut.
+#[derive(Clone)]
+struct OwnEntry {
+    made: Result<Invocation, RefusalCause>,
     cuts: usize,
 }
 
@@ -69,6 +85,7 @@ pub(super) fn remember(ir: &EssIr) -> Remembered {
         kept.push(Kept {
             ir: at,
             rows: BTreeMap::new(),
+            own: BTreeMap::new(),
         });
         true
     });
@@ -224,4 +241,179 @@ pub(super) fn created_owned(
         }
     });
     created
+}
+
+/// The key a setup run arranged as its own scenario is kept under: every argument and every
+/// thread-local the arrangement reads, the open arrangements and the whole caller-reading context
+/// ([`super::threads::Context`]) among them. `None` for a command the model does not declare as
+/// such (one projected for a related guard), which has no stable name to be kept by.
+///
+/// Of the rows held for the runs advancing them ([`super::subject_fact::holding`]), only those of
+/// an entity the arrangement can reach ([`reach`]) are in the key: the arrangement reads a held row
+/// only for an entity it arranges or the owner of one.
+///
+/// Two thread-locals a scenario sets around its runs are left out, as no arrangement reads them:
+/// the names the scenario's earlier runs captured ([`super::earlier_runs`]), read only where an
+/// outcome scenario arranges its view companions, and the branch under test where it copies no
+/// `Optional` input, for which [`crate::witness::copied_under_test`] answers nothing for every
+/// command ([`crate::witness::under_test_read_key`]). Every scenario of every command that needs
+/// the row asks under a scope of its own, so with either in the key no arrangement is found
+/// again; the committed suite bytes are the proof that the arrangement reads neither.
+fn own_key(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, chosen): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        Option<&BTreeMap<String, Node>>,
+    ),
+) -> Option<String> {
+    let declared = ir
+        .commands()
+        .get(&driver.command.name)
+        .is_some_and(|command| std::ptr::eq(command, driver.command));
+    let outcome = driver
+        .command
+        .outcomes
+        .iter()
+        .position(|outcome| std::ptr::eq(outcome, driver.outcome))
+        .filter(|_| declared)?;
+    Some(format!(
+        "{}|{outcome}|{:?}|{actors:?}|{distinction:?}|{bound:?}|{chosen:?}|{}|{}|{}|{}|{:?}",
+        driver.command.name,
+        driver.effect,
+        super::subject_fact::held_key_within(ir, &reach(ir, driver.command)),
+        crate::witness::under_test_read_key(),
+        super::related_guard::open_key(),
+        super::dropped_key(),
+        super::threads::Context::current(),
+    ))
+}
+
+/// Every qualified name written in `text`, a `Debug` rendering of the model, as
+/// `QualifiedName(<name>)`.
+fn names_in(text: &str) -> BTreeSet<&str> {
+    text.split("QualifiedName(")
+        .skip(1)
+        .filter_map(|rest| rest.split(')').next())
+        .collect()
+}
+
+/// The entities whose rows an arrangement of `command` can arrange or read, a superset: every
+/// entity the command names, by its name or its identity type, and from each such entity its
+/// owner, every entity its declaration names, and every entity named by a command that creates,
+/// moves or deletes its rows, until nothing more is added. Kept per model.
+fn reach(ir: &EssIr, command: &ResolvedCommand) -> Rc<BTreeSet<QualifiedName>> {
+    let make = || {
+        let identities: Vec<(&QualifiedName, String)> = ir
+            .entities()
+            .iter()
+            .map(|(name, entity)| (name, format!("{:?}", entity.identity.type_ref)))
+            .collect();
+        let named = |text: &str| -> Vec<QualifiedName> {
+            let names = names_in(text);
+            identities
+                .iter()
+                .filter(|(name, identity)| {
+                    names.contains(name.to_string().as_str())
+                        || names_in(identity).iter().any(|held| names.contains(held))
+                })
+                .map(|(name, _)| (*name).clone())
+                .collect()
+        };
+        let mut reached: BTreeSet<QualifiedName> = BTreeSet::new();
+        let mut open = named(&format!("{command:?}"));
+        while let Some(entity) = open.pop() {
+            if !reached.insert(entity.clone()) {
+                continue;
+            }
+            // Its owner, and itself for a reference it carries.
+            open.extend(
+                ir.relations_carried_by(&entity)
+                    .values()
+                    .map(|carried| carried.source.clone()),
+            );
+            if let Some(declared) = ir.entities().get(&entity) {
+                open.extend(named(&format!("{declared:?}")));
+            }
+            for writer in ir.commands().values() {
+                let writes = writer.outcomes.iter().any(|outcome| {
+                    outcome
+                        .subject
+                        .as_ref()
+                        .is_some_and(|subject| *subject.entity.name() == entity)
+                        || outcome
+                            .instances
+                            .as_ref()
+                            .is_some_and(|instances| *instances.entity.name() == entity)
+                        || outcome
+                            .affects
+                            .iter()
+                            .any(|affect| *affect.entity.name() == entity)
+                });
+                if writes {
+                    open.extend(named(&format!("{writer:?}")));
+                }
+            }
+        }
+        reached
+    };
+    super::made::kept(ir, &format!("own-scenario reach|{}", command.name), make)
+        .unwrap_or_else(|| Rc::new(make()))
+}
+
+/// `make`'s setup run of `driver` arranged as its own scenario, from memory where this model asked
+/// the same arrangement in the same context before. A model not remembered innermost, and a thread
+/// on which every creation is made afresh ([`unkept`]), is answered by `make` every time.
+pub(super) fn own_arranged(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    asked: (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        Option<&BTreeMap<String, Node>>,
+    ),
+    make: impl FnOnce() -> Result<Invocation, RefusalCause>,
+) -> Result<Invocation, RefusalCause> {
+    let held = !UNKEPT.with(Cell::get)
+        && KEPT.with(|kept| {
+            kept.borrow()
+                .last()
+                .is_some_and(|top| std::ptr::eq(top.ir, ir))
+        });
+    let Some(key) = held
+        .then(|| own_key(ir, driver, actors, distinction, asked))
+        .flatten()
+    else {
+        return make();
+    };
+    let known = KEPT.with(|kept| {
+        kept.borrow()
+            .last()
+            .and_then(|top| top.own.get(&key).cloned())
+    });
+    if let Some(known) = known {
+        super::related_guard::add_cuts(known.cuts);
+        return known.made;
+    }
+    // No borrow is held while making: the arrangement asks the memory too.
+    let before = super::related_guard::cuts();
+    let arranged = make();
+    let cuts = super::related_guard::cuts().saturating_sub(before);
+    KEPT.with(|kept| {
+        if let Some(top) = kept.borrow_mut().last_mut() {
+            if std::ptr::eq(top.ir, ir) {
+                top.own.insert(
+                    key,
+                    OwnEntry {
+                        made: arranged.clone(),
+                        cuts,
+                    },
+                );
+            }
+        }
+    });
+    arranged
 }

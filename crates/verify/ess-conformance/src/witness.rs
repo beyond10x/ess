@@ -2988,6 +2988,16 @@ pub(crate) fn under_test_key() -> String {
     UNDER_TEST.with(|scope| format!("{:?}", scope.borrow()))
 }
 
+/// The scope [`under_test`] holds on this thread as far as a search reads it: empty where none is
+/// open or the branch copies no `Optional` input path, as [`copied_under_test`] then answers
+/// nothing for every command.
+pub(crate) fn under_test_read_key() -> String {
+    UNDER_TEST.with(|scope| match scope.borrow().as_ref() {
+        Some((name, copied)) if !copied.is_empty() => format!("{name}:{copied:?}"),
+        _ => String::new(),
+    })
+}
+
 /// `run`'s result, and how many steps the guard-directed search took on this thread while it ran:
 /// one per truth value it broke a goal down to, pruned or not.
 ///
