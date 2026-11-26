@@ -1348,3 +1348,49 @@ fn go_replay<T>(
     );
     replayed.go.outcomes
 }
+
+/// [`model`] at `ess/38` (beyond10x/ess#640), with `Assign`'s worker named inside a struct input
+/// `pick`: its `when_related:` guards read `input.pick.worker`.
+fn picked_model() -> String {
+    let text = model(BOUND)
+        .replacen("format: ess/27", "format: ess/38", 1)
+        .replacen(
+            "  - {name: queueing.entry.WorkerId, kind: newtype, of: Uuid}\n",
+            "  - {name: queueing.entry.WorkerId, kind: newtype, of: Uuid}\n  - name: queueing.entry.Pick\n    kind: struct\n    fields:\n      - {name: worker, type: queueing.entry.WorkerId}\n",
+            1,
+        )
+        .replacen(
+            "      - {name: entry_id, type: queueing.entry.EntryId}\n      - {name: worker, type: queueing.entry.WorkerId}\n    outcomes:",
+            "      - {name: entry_id, type: queueing.entry.EntryId}\n      - {name: pick, type: queueing.entry.Pick}\n    outcomes:",
+            1,
+        )
+        .replace("input.worker", "input.pick.worker");
+    assert!(
+        text.contains("name: pick, type: queueing.entry.Pick") && !text.contains("input.worker"),
+        "{text}"
+    );
+    text
+}
+
+#[test]
+fn awaiting_a_system_issued_command_guarded_through_a_member_is_unsupported() {
+    let target = Interpreted::for_model(ir_of(&picked_model()));
+    begin(&target);
+    let _free = created(
+        &target,
+        ADD_WORKER,
+        &[("free", Node::Bool(true))],
+        "worker_id",
+    );
+    let entry = created(&target, ENQUEUE, &[], "entry_id");
+    let answer = target.await_outcome(ask(&target, &entry, true, &[]));
+    let Err(error) = &answer else {
+        panic!("awaiting through a member is unsupported: {answer:?}");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("`input.pick.worker`, a member of a struct input"),
+        "{error}"
+    );
+}

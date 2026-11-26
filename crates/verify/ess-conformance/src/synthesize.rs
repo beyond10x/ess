@@ -6049,7 +6049,7 @@ fn run_as(
     );
     let mut listed_after = Vec::new();
     if let Some(list) = listed {
-        supplied.insert(list.field, list.value);
+        supply_at(&mut supplied, &list.field, list.value);
         listed_after = list.after;
     }
     // An input written into a field carrying a `references` relation names rows the scenario
@@ -9296,7 +9296,7 @@ fn with_listed(
         _ => None,
     });
     if let Some(input) = sent {
-        input.insert(field, ScenarioValue::List { items });
+        supply_at(input, &field, ScenarioValue::List { items });
         let resettled = settled(ir, driver.outcome, input, &BTreeMap::new());
         invoked.settled.extend(resettled);
     }
@@ -10233,7 +10233,7 @@ fn supply(
             _ => bound.get(field).cloned(),
         }
     };
-    input
+    let mut supplied = input
         .iter()
         .map(|(field, value)| {
             let shared = held_equal(field)
@@ -10271,15 +10271,24 @@ fn supply(
             };
             (field.clone(), supplied)
         })
-        .collect::<BTreeMap<_, _>>()
-        .into_iter()
-        // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
-        // run but the one `related_list` arranges, which names no missing row.
-        .map(|(field, supplied)| match related_list::empty(command) {
-            Some((listed, empty)) if listed == field => (field, empty),
-            _ => (field, supplied),
-        })
-        .collect()
+        .collect::<BTreeMap<_, _>>();
+    // From ess/38 (beyond10x/ess#640) a row named through a member of a struct input is keyed by
+    // its path, and sent inside the struct.
+    for (field, owner) in bound {
+        if ess_domain::command::input_path::is_path(field) {
+            supply_at(&mut supplied, field, ScenarioValue::instance(owner.clone()));
+        }
+    }
+    // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
+    // run but the one `related_list` arranges, which names no missing row.
+    if let Some((listed, empty)) = related_list::empty(command) {
+        if ess_domain::command::input_path::is_path(listed) {
+            supply_at(&mut supplied, listed, empty);
+        } else if let Some(value) = supplied.get_mut(listed) {
+            *value = empty;
+        }
+    }
+    supplied
 }
 
 /// `true` when any branch of this command is chosen by what the subject already holds.
@@ -13403,7 +13412,9 @@ fn expression_value_at(
 /// What a scenario sends at `input.<field>`: the input, or from ess/22 (Family F A4) the member a
 /// path reaches inside a literal struct input. `None` where nothing is sent there — a member on the
 /// way is missing, or an `Optional` before the last segment is absent — and for a path into an
-/// input that is no literal. A top-level read answers what `supplied.get(field)` does.
+/// input that is no literal. A top-level read answers what `supplied.get(field)` does. From ess/38
+/// (beyond10x/ess#640) a path also walks a [`ScenarioValue::Members`] struct holding an arranged
+/// row, and answers the member it reaches as it is sent: an instance, a list, or a literal.
 pub(crate) fn supplied_at(
     supplied: &BTreeMap<String, ScenarioValue>,
     field: &str,
@@ -13411,17 +13422,92 @@ pub(crate) fn supplied_at(
     if !ess_domain::command::input_path::is_path(field) {
         return supplied.get(field).cloned();
     }
-    let (root, rest) = field.split_once('.')?;
-    let ScenarioValue::Literal { value } = supplied.get(root)? else {
-        return None;
-    };
-    let mut value = value;
-    for segment in rest.split('.') {
-        value = value.as_map()?.get(segment)?;
+    let segments: Vec<&str> = field.split('.').collect();
+    let (root, rest) = segments.split_first()?;
+    let mut value = supplied.get(*root)?;
+    for (at, segment) in rest.iter().enumerate() {
+        match value {
+            ScenarioValue::Members { members } => value = members.get(*segment)?,
+            ScenarioValue::Literal { value } => {
+                let mut value = value;
+                for segment in &rest[at..] {
+                    value = value.as_map()?.get(*segment)?;
+                }
+                return Some(ScenarioValue::Literal {
+                    value: value.clone(),
+                });
+            }
+            _ => return None,
+        }
     }
-    Some(ScenarioValue::Literal {
-        value: value.clone(),
-    })
+    Some(value.clone())
+}
+
+/// Writes `value` at `input.<field>` of a sent input (ess/38, beyond10x/ess#640): a top-level
+/// field is inserted; for a path, every literal struct on the way to an arranged row becomes
+/// [`ScenarioValue::Members`] (each of its members a literal), the suite/32 form of a struct
+/// holding an instance, and a struct left holding literals only is the literal it was. `false`,
+/// with `supplied` unchanged, where a struct on the way is not there.
+pub(crate) fn supply_at(
+    supplied: &mut BTreeMap<String, ScenarioValue>,
+    field: &str,
+    value: ScenarioValue,
+) -> bool {
+    fn written(
+        at: ScenarioValue,
+        segments: &[&str],
+        value: ScenarioValue,
+    ) -> Option<ScenarioValue> {
+        let Some((first, rest)) = segments.split_first() else {
+            return Some(value);
+        };
+        let mut members = match at {
+            ScenarioValue::Members { members } => members,
+            ScenarioValue::Literal {
+                value: Node::Map(map),
+            } => map
+                .into_iter()
+                .map(|(name, member)| (name, ScenarioValue::literal(member)))
+                .collect(),
+            _ => return None,
+        };
+        let member = if rest.is_empty() {
+            value
+        } else {
+            written(members.remove(*first)?, rest, value)?
+        };
+        members.insert((*first).to_owned(), member);
+        // A struct holding no reference stays the literal it is.
+        let literal: Option<BTreeMap<String, Node>> = members
+            .iter()
+            .map(|(name, member)| match member {
+                ScenarioValue::Literal { value } => Some((name.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        Some(match literal {
+            Some(map) => ScenarioValue::literal(Node::Map(map)),
+            None => ScenarioValue::Members { members },
+        })
+    }
+    if !ess_domain::command::input_path::is_path(field) {
+        supplied.insert(field.to_owned(), value);
+        return true;
+    }
+    let segments: Vec<&str> = field.split('.').collect();
+    let Some((root, rest)) = segments.split_first() else {
+        return false;
+    };
+    let Some(at) = supplied.get(*root).cloned() else {
+        return false;
+    };
+    match written(at, rest, value) {
+        Some(value) => {
+            supplied.insert((*root).to_owned(), value);
+            true
+        }
+        None => false,
+    }
 }
 
 /// Whether a value source copies through an input path or falls back to another input (ess/22,
@@ -17643,7 +17729,7 @@ fn refused_here(
         models.mark(caller::InvocationPhase::Arrange, &mut rows);
         steps.extend(rows);
         listed_source = from;
-        supplied.insert(field, ScenarioValue::List { items });
+        supply_at(&mut supplied, &field, ScenarioValue::List { items });
     }
     // The refusal step is sent as the acting caller, whose reading of an input guard over a caller
     // attribute may differ from the arranging caller's: an input refusal it holds for the row
@@ -19159,17 +19245,14 @@ fn fresh_identity(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .find_map(|input| input.get(field).cloned())
+                    .find_map(|input| ess_compiler::ir::read_input(&input, field).cloned())
             })
     };
     let unfresh = || {
         RefusalCause::NoWitness(WitnessGap {
             path: field.to_owned(),
-            type_ref: command
-                .input
-                .iter()
-                .find(|input| input.name == field)
-                .map(|input| input.type_ref.to_string())
+            type_ref: input_type(ir, command, field)
+                .map(ToString::to_string)
                 .unwrap_or_default(),
             reason: "has too few values to name an identity no other scenario sends, so no \
                      instance is known to be unknown",

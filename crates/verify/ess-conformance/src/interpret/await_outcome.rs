@@ -82,6 +82,7 @@ impl Interpreted {
         self.scenario.borrow().facts.check(&request.correlation)?;
         let (command, identity) = awaited(model, request, &observation)?;
         let related = related_inputs(command);
+        top_level(&related, &observation)?;
 
         let forced = self.forced_for(&request.command);
         let externals = forced
@@ -305,6 +306,28 @@ fn related_inputs(command: &ResolvedCommand) -> BTreeMap<&str, &QualifiedName> {
             _ => Vec::new(),
         })
         .collect()
+}
+
+/// Refuses a `when_related:` guard naming its row through a member of a struct input (ess/38,
+/// beyond10x/ess#640): the candidates [`choices`] tries are the command's top-level inputs only.
+fn top_level(
+    related: &BTreeMap<&str, &QualifiedName>,
+    observation: &str,
+) -> Result<(), TargetError> {
+    match related
+        .keys()
+        .find(|field| ess_domain::command::input_path::is_path(field))
+    {
+        Some(path) => Err(TargetError::unsupported(
+            observation,
+            format!(
+                "a `when_related:` guard names its row through `input.{path}`, a member of a \
+                 struct input, and awaiting a system-issued command addressed through a member \
+                 is not interpreted"
+            ),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Each declared input with its candidates in order: `None` for absent.
