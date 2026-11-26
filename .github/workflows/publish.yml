@@ -1,5 +1,5 @@
 # Publishes the release a successful `Release preparation` run prepared: its retained artifact's
-# four archives, SHA256SUMS and notes, as the organization bot, so no agent step stands between a
+# six archives, SHA256SUMS and notes, as the organization bot, so no agent step stands between a
 # green release run and the published release. `release.yml` itself keeps no write authority.
 #
 # The bot's token comes from the organization App (`B10X_BOT_APP_ID`, `B10X_BOT_PRIVATE_KEY`).
@@ -87,10 +87,10 @@ jobs:
           set -euo pipefail
           test -s prepared/notes.md
           cd prepared/dist
-          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
             test -f "ess-$TAG-$target.tar.gz"
           done
-          test "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 4
+          test "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 6
           sha256sum --check --strict SHA256SUMS
 
       - name: Bot token
@@ -121,7 +121,9 @@ jobs:
           gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "ESS $TAG" \
             --notes-file ../notes.md --latest="$latest" \
             "ess-$TAG-aarch64-apple-darwin.tar.gz" "ess-$TAG-aarch64-unknown-linux-gnu.tar.gz" \
+            "ess-$TAG-aarch64-unknown-linux-musl.tar.gz" \
             "ess-$TAG-x86_64-apple-darwin.tar.gz" "ess-$TAG-x86_64-unknown-linux-gnu.tar.gz" \
+            "ess-$TAG-x86_64-unknown-linux-musl.tar.gz" \
             SHA256SUMS
 
       - name: Read the release back
@@ -134,8 +136,8 @@ jobs:
           read -r author draft assets < <(gh release view "$TAG" --repo "$REPOSITORY" \
             --json author,isDraft,assets --jq '"\(.author.login) \(.isDraft) \(.assets | length)"')
           echo "$TAG: author $author, draft $draft, $assets assets"
-          if [ "$author" != "b10x-bot[bot]" ] || [ "$draft" != false ] || [ "$assets" != 5 ]; then
-            echo "::error::release $TAG is not a published bot release with five assets" >&2
+          if [ "$author" != "b10x-bot[bot]" ] || [ "$draft" != false ] || [ "$assets" != 7 ]; then
+            echo "::error::release $TAG is not a published bot release with seven assets" >&2
             exit 1
           fi
           echo "https://github.com/$REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

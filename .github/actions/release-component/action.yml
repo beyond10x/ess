@@ -33,6 +33,10 @@ inputs:
     description: Exact Rust toolchain used for ESS and the repository-owned verification command.
     required: false
     default: "1.85.0"
+  ess-target:
+    description: Rust target ESS is built for, such as x86_64-unknown-linux-musl for a static binary; empty builds for the runner's own target.
+    required: false
+    default: ""
   node-version:
     description: Exact Node major to provision for the verification command; empty disables Node setup.
     required: false
@@ -90,6 +94,16 @@ runs:
       with:
         toolchain: ${{ inputs.rust-toolchain }}
         components: rustfmt
+        targets: ${{ inputs.ess-target }}
+    - name: Provide the musl C toolchain
+      if: endsWith(inputs.ess-target, '-musl')
+      shell: bash
+      env:
+        ESS_TARGET: ${{ inputs.ess-target }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends musl-tools
+        echo "CC_${ESS_TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
     - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
       if: inputs.node-version != ''
       with:
@@ -121,10 +135,11 @@ runs:
       shell: bash
       env:
         ESS_REVISION: ${{ inputs.ess-revision }}
+        ESS_TARGET: ${{ inputs.ess-target }}
       run: >-
         cargo install --locked --git https://github.com/beyond10x/ess.git
-        --rev "$ESS_REVISION" --root "$PWD/target/ess/$ESS_REVISION"
-        --bin ess ess-cli
+        --rev "$ESS_REVISION" ${ESS_TARGET:+--target "$ESS_TARGET"}
+        --root "$PWD/target/ess/$ESS_REVISION" --bin ess ess-cli
     - name: Publish exact ESS release
       shell: bash
       env:

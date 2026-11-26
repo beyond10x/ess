@@ -4,7 +4,7 @@
 # `Output ownership (…)` witnesses — already passed on the tagged tree in a qualifying run of this
 # repository's `ci.yml`: on the commit itself, or on the queue head it merged, whose pull-request
 # run `ci.yml` runs in full (the `prior-gate` step states the whole condition). The native
-# packages are reused from that head's `package.yml` run when it holds all four.
+# packages are reused from that head's `package.yml` run when it holds all six.
 # `publish.yml` publishes the artifact with the organization bot once this workflow succeeds.
 # Atlas observes that published release and documentation bundles asynchronously.
 #
@@ -280,14 +280,14 @@ jobs:
               | sort_by(.run_started_at) | reverse | .[] | "\(.id)"') \
             || decide "" "building the archives: the package runs of head $HEAD are unavailable"
           [ -n "$runs" ] || decide "" "building the archives: no successful queue package run built head $HEAD"
-          # The newest run that still holds all four archives, unexpired.
+          # The newest run that still holds all six archives, unexpired.
           for run in $runs; do
             [[ "$run" =~ ^[0-9]+$ ]] || continue
             held=$(gh api "repos/$REPOSITORY/actions/runs/$run/artifacts?per_page=100" --jq '
                 [.artifacts[] | select(.expired == false) | .name] | join(" ")') \
               || { echo "the artifacts of package run $run are unavailable"; continue; }
             missing=""
-            for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
               case " $held " in
                 *" release-$target "*) ;;
                 *) missing="$missing release-$target" ;;
@@ -298,7 +298,7 @@ jobs:
             fi
             echo "package run $run holds no$missing"
           done
-          decide "" "building the archives: no successful queue package run of head $HEAD holds all four archives"
+          decide "" "building the archives: no successful queue package run of head $HEAD holds all six archives"
 
   gate:
     needs: resolve
@@ -620,13 +620,15 @@ jobs:
           set -euo pipefail
           cd dist
           archive_count=$(find . -maxdepth 1 -type f -name "*.tar.gz" | wc -l | tr -d ' ')
-          if [ "$archive_count" != 4 ]; then
-            echo "::error::expected four release archives; found $archive_count" >&2
+          if [ "$archive_count" != 6 ]; then
+            echo "::error::expected six release archives; found $archive_count" >&2
             exit 1
           fi
           for target in \
             x86_64-unknown-linux-gnu \
             aarch64-unknown-linux-gnu \
+            x86_64-unknown-linux-musl \
+            aarch64-unknown-linux-musl \
             x86_64-apple-darwin \
             aarch64-apple-darwin
           do
@@ -639,19 +641,21 @@ jobs:
           sha256sum --check SHA256SUMS
           cat SHA256SUMS
 
-      - name: Smoke-run the Linux archive prepared for publication
+      - name: Smoke-run the Linux archives prepared for publication
         env:
           TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
           smoke="$RUNNER_TEMP/smoke"
           mkdir -p "$smoke"
-          tar -xzf "dist/ess-$TAG-x86_64-unknown-linux-gnu.tar.gz" -C "$smoke"
-          printed=$("$smoke/ess-$TAG-x86_64-unknown-linux-gnu/ess" --version | awk '{print $NF}')
-          if [ "$printed" != "$TAG" ]; then
-            echo "::error::the prepared Linux binary reports $printed, but the release tag is $TAG" >&2
-            exit 1
-          fi
+          for target in x86_64-unknown-linux-gnu x86_64-unknown-linux-musl; do
+            tar -xzf "dist/ess-$TAG-$target.tar.gz" -C "$smoke"
+            printed=$("$smoke/ess-$TAG-$target/ess" --version | awk '{print $NF}')
+            if [ "$printed" != "$TAG" ]; then
+              echo "::error::the prepared $target binary reports $printed, but the release tag is $TAG" >&2
+              exit 1
+            fi
+          done
 
       # The artifact name binds the annotated tag and resolved source commit. Publication happens
       # in `publish.yml`, with the organization bot, once this run succeeds.

@@ -2541,11 +2541,33 @@ fn a_freshly_installed_gh_stub_runs_while_other_cases_spawn() {
     );
 }
 
+/// The targets a release ships one archive each for, `ess-<tag>-<target>.tar.gz`: beside each
+/// Linux gnu target a static musl one, which runs on a host whose glibc is older than the
+/// runner's.
+const RELEASE_TARGETS: [&str; 6] = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+];
+
+/// The `package.yml` artifact of each of [`RELEASE_TARGETS`].
+const RELEASE_ARTIFACTS: [&str; 6] = [
+    "release-x86_64-unknown-linux-gnu",
+    "release-aarch64-unknown-linux-gnu",
+    "release-x86_64-unknown-linux-musl",
+    "release-aarch64-unknown-linux-musl",
+    "release-x86_64-apple-darwin",
+    "release-aarch64-apple-darwin",
+];
+
 /// Intel macOS is cross-compiled on the Apple Silicon runner — the Intel runner took 16.9 of the
-/// 0.32.0 release's 19.2 minutes — and smoke-run there under Rosetta. What ships does not move:
-/// four archives named `ess-<tag>-<target>.tar.gz`, one `SHA256SUMS` over them.
+/// 0.32.0 release's 19.2 minutes — and smoke-run there under Rosetta. What ships: one archive per
+/// target named `ess-<tag>-<target>.tar.gz`, one `SHA256SUMS` over them.
 #[test]
-fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives() {
+fn the_release_builds_intel_macos_on_apple_silicon_and_names_each_archive_by_its_target() {
     let release = yaml(".github/workflows/release.yml");
     let packaging = yaml(".github/workflows/package.yml");
     let package = &packaging["jobs"]["package"];
@@ -2553,12 +2575,7 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
         .into_iter()
         .map(|row| (row["target"].clone(), row["runner"].clone()))
         .collect();
-    let targets = [
-        "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
-    ];
+    let targets = RELEASE_TARGETS;
     assert_eq!(
         runners.keys().map(String::as_str).collect::<BTreeSet<_>>(),
         BTreeSet::from(targets),
@@ -2629,7 +2646,7 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
         .map(|step| text(&step["run"]))
         .find(|run| run.contains("SHA256SUMS"))
         .expect("the release writes SHA256SUMS");
-    assert!(publish.contains("\"$archive_count\" != 4"), "{publish}");
+    assert!(publish.contains("\"$archive_count\" != 6"), "{publish}");
     assert!(
         publish.contains("-type f -name \"*.tar.gz\""),
         "the release counts only expected-looking names and could retain another archive: {publish}"
@@ -2642,6 +2659,142 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
         assert!(
             publish.contains(target),
             "SHA256SUMS no longer checks {target}"
+        );
+    }
+}
+
+/// Beside each Linux gnu archive a release ships a static musl one, built on the same runner, so
+/// the binary runs on a host whose glibc is older than the runner's. The package job proves the
+/// binary static (no interpreter, no needed library) and runs it in a bare busybox container; the
+/// preparation and the publication check its name and count it, and the publication uploads it.
+#[test]
+// One contract across three workflows, which reads best whole.
+#[allow(clippy::too_many_lines)]
+fn the_release_ships_a_static_musl_archive_beside_each_linux_gnu_archive() {
+    let packaging = yaml(".github/workflows/package.yml");
+    let release = yaml(".github/workflows/release.yml");
+    let publication = yaml(".github/workflows/publish.yml");
+    let package = &packaging["jobs"]["package"];
+    let runners: BTreeMap<String, String> = matrix_rows(package)
+        .into_iter()
+        .map(|row| (row["target"].clone(), row["runner"].clone()))
+        .collect();
+    for (gnu, musl) in [
+        ("x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"),
+        ("aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl"),
+    ] {
+        assert_eq!(
+            runners.get(musl),
+            runners.get(gnu),
+            "{musl} is not packaged on the runner that packages {gnu}"
+        );
+    }
+
+    let steps = package["steps"].as_sequence().expect("package steps");
+    let musl_only = "${{ endsWith(matrix.target, '-musl') }}";
+    let position = |needle: &str| {
+        steps
+            .iter()
+            .position(|step| text(&step["run"]).contains(needle))
+            .unwrap_or_else(|| panic!("package.yml has no step that runs `{needle}`"))
+    };
+    let tools = position("musl-tools");
+    let build = position("cargo build --locked --release --bin ess");
+    let proof = position("docker run");
+    assert!(
+        tools < build && build < proof,
+        "package.yml does not install musl-tools, build, then prove the binary static"
+    );
+    for index in [tools, proof] {
+        assert_eq!(text(&steps[index]["if"]), musl_only, "{:?}", steps[index]);
+    }
+    let tools = text(&steps[tools]["run"]);
+    assert!(
+        tools.contains("=musl-gcc\" >> \"$GITHUB_ENV\""),
+        "the C code a dependency builds is not compiled with musl-gcc: {tools}"
+    );
+    let proof = text(&steps[proof]["run"]);
+    for needle in [
+        "file --brief \"$bin\"",
+        "*\"statically linked\"*",
+        "*\"static-pie linked\"*",
+        "readelf --program-headers --wide \"$bin\"",
+        "INTERP",
+        "readelf --dynamic --wide \"$bin\"",
+        "(NEEDED)",
+        "--network none",
+        "busybox:",
+        "/opt/ess/ess --version",
+        "\"$printed\" != \"$TAG\"",
+    ] {
+        assert!(
+            proof.contains(needle),
+            "the static proof lacks `{needle}`: {proof}"
+        );
+    }
+
+    let prebuilt = text(&prebuilt_step(&release)["run"]);
+    let preparation = release["jobs"]["release"]["steps"]
+        .as_sequence()
+        .expect("release steps")
+        .iter()
+        .map(|step| text(&step["run"]))
+        .find(|run| run.contains("sha256sum *.tar.gz > SHA256SUMS"))
+        .expect("the release writes SHA256SUMS");
+    let smoke = release["jobs"]["release"]["steps"]
+        .as_sequence()
+        .expect("release steps")
+        .iter()
+        .map(|step| text(&step["run"]))
+        .find(|run| run.contains("--version"))
+        .expect("the release smoke-runs no archive");
+    let published = publication["jobs"]["publish"]["steps"]
+        .as_sequence()
+        .expect("publish steps");
+    let named = |name: &str| {
+        let step = published
+            .iter()
+            .find(|step| text(&step["name"]) == name)
+            .unwrap_or_else(|| panic!("publish.yml has no step `{name}`"));
+        text(&step["run"])
+    };
+    let verify = named("Verify the prepared files");
+    let create = named("Publish as the bot");
+    let read_back = named("Read the release back");
+    for target in RELEASE_TARGETS {
+        assert!(
+            prebuilt.contains(target),
+            "a prebuilt run is reused without release-{target}"
+        );
+        assert!(
+            preparation.contains(target),
+            "the preparation does not check {target}"
+        );
+        assert!(
+            verify.contains(target),
+            "publish.yml does not check {target}"
+        );
+        assert!(
+            create.contains(&format!("\"ess-$TAG-{target}.tar.gz\"")),
+            "publish.yml does not upload {target}: {create}"
+        );
+    }
+    assert!(
+        preparation.contains("\"$archive_count\" != 6"),
+        "{preparation}"
+    );
+    assert!(
+        verify.contains("wc -l | tr -d ' ')\" = 6"),
+        "publish.yml does not count six archives: {verify}"
+    );
+    assert!(
+        read_back.contains("\"$assets\" != 7"),
+        "publish.yml does not read back six archives and SHA256SUMS: {read_back}"
+    );
+    for target in ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"] {
+        assert!(
+            smoke.contains(target),
+            "the preparation does not smoke-run the {target} archive: {smoke}"
         );
     }
 }
@@ -2812,7 +2965,7 @@ fn a_queue_run_prebuilds_the_archives_the_tag_publishes_and_the_release_builds_t
         .find(|run| run.contains("--version"))
         .expect("publish never runs a published binary");
     assert!(
-        smoke.contains("ess-$TAG-x86_64-unknown-linux-gnu.tar.gz"),
+        smoke.contains("tar -xzf \"dist/ess-$TAG-$target.tar.gz\""),
         "{smoke}"
     );
 }
@@ -3027,27 +3180,21 @@ fn artifacts(names: &[&str], expired: &[&str]) -> serde_json::Value {
 
 /// A prebuilt run counts only when `prior-gate` reported a merged queue head with the tagged tree,
 /// the run is a successful `package.yml` push run of a queue branch at exactly that head, and it
-/// still holds all four unexpired archives; of several such runs the newest that holds all four
+/// still holds every unexpired archive; of several such runs the newest that holds every one
 /// is used. Every other answer — no head, and every API failure — builds the archives in the
 /// release. `package.yml` runs on the queue push of the head and never at the merge commit a tag
 /// names: keyed on the tagged commit, 0.61.0 and 0.62.0 both built again.
 #[test]
 // One table of cases, which reads best whole.
 #[allow(clippy::too_many_lines)]
-fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_archives() {
+fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_every_archive() {
     let root = Scratch::new("release-prebuilt");
     // The merged head `prior-gate` reported; `prebuilt` never sees the tagged commit.
     let head = "3ec2deb977bb19c292a611dcf92a3e676352864a";
     let other = "5090405eeef545e9731ff362911ed5707e4b9293";
     let runs = package_runs_path(head);
     let workflow = ".github/workflows/package.yml";
-    let four = [
-        "release-x86_64-unknown-linux-gnu",
-        "release-aarch64-unknown-linux-gnu",
-        "release-x86_64-apple-darwin",
-        "release-aarch64-apple-darwin",
-    ];
-    let all = || artifacts(&four, &[]);
+    let all = || artifacts(&RELEASE_ARTIFACTS, &[]);
     let queued = |id| package_run(id, head, "queue/pr-119", workflow, "2026-01-01T00:00:05Z");
     let older = |id| package_run(id, head, "queue/pr-119", workflow, "2026-01-01T00:00:01Z");
     let listing = |list: Vec<serde_json::Value>| json!({ "workflow_runs": list });
@@ -3055,7 +3202,7 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
 
     let cases: Vec<(&str, Answers, &str)> = vec![
         (
-            "a queue run of the head holds all four archives",
+            "a queue run of the head holds every archive",
             vec![(runs.clone(), listing(vec![queued(7)])), (artifacts_of(7), all())],
             "7",
         ),
@@ -3069,10 +3216,10 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
             "9",
         ),
         (
-            "the newest run holds three archives, so the older one that holds all four is published",
+            "the newest run holds five archives, so the older one that holds every one is published",
             vec![
                 (runs.clone(), listing(vec![queued(9), older(8)])),
-                (artifacts_of(9), artifacts(&four[..3], &[])),
+                (artifacts_of(9), artifacts(&RELEASE_ARTIFACTS[..5], &[])),
                 (artifacts_of(8), all()),
             ],
             "8",
@@ -3143,18 +3290,18 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
             "",
         ),
         (
-            "the run holds three of the four archives",
+            "the run holds every archive but the musl ones",
             vec![
                 (runs.clone(), listing(vec![queued(7)])),
-                (artifacts_of(7), artifacts(&four[..3], &[])),
+                (artifacts_of(7), artifacts(&[RELEASE_ARTIFACTS[0], RELEASE_ARTIFACTS[1], RELEASE_ARTIFACTS[4], RELEASE_ARTIFACTS[5]], &[])),
             ],
             "",
         ),
         (
-            "one of the four archives has expired",
+            "one of the six archives has expired",
             vec![
                 (runs.clone(), listing(vec![queued(7)])),
-                (artifacts_of(7), artifacts(&four, &["release-x86_64-apple-darwin"])),
+                (artifacts_of(7), artifacts(&RELEASE_ARTIFACTS, &["release-aarch64-unknown-linux-musl"])),
             ],
             "",
         ),
@@ -4397,15 +4544,7 @@ fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_merged
     let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
     let runs = package_runs_path(commit);
     let held = artifacts_path(7);
-    let four = artifacts(
-        &[
-            "release-x86_64-unknown-linux-gnu",
-            "release-aarch64-unknown-linux-gnu",
-            "release-x86_64-apple-darwin",
-            "release-aarch64-apple-darwin",
-        ],
-        &[],
-    );
+    let every = artifacts(&RELEASE_ARTIFACTS, &[]);
     let run = |field: &str, value: &str| {
         let mut changed = package_run(
             7,
@@ -4431,7 +4570,7 @@ fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_merged
             &root.0,
             index,
             commit,
-            &[(runs.clone(), listing), (held.clone(), four.clone())],
+            &[(runs.clone(), listing), (held.clone(), every.clone())],
         );
         let (decision, log) = answer.split_once('\n').unwrap();
         if !decision.is_empty() {

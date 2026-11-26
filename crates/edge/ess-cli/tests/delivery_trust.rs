@@ -1307,6 +1307,99 @@ fn t16_action_input_environment_and_generic_check_failure_contract() {
         "generic failure\n"
     );
 }
+/// A caller that names `ess-target` gets `ess` built for that target, a static musl binary for
+/// example, with the toolchain and, for musl, the C compiler for it; a caller that names none
+/// installs `ess` for the runner's own target exactly as before.
+#[test]
+fn t16_action_installs_ess_for_a_named_target_and_for_the_runner_by_default() {
+    const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+    let raw = fs::read_to_string(workspace().join(".github/actions/release-component/action.yml"))
+        .unwrap();
+    let action: Value = ess_yaml::from_str(&raw).unwrap();
+    assert_eq!(action["inputs"]["ess-target"]["required"], false);
+    assert_eq!(action["inputs"]["ess-target"]["default"], "");
+    let steps = action["runs"]["steps"].as_array().unwrap();
+    let toolchain = steps
+        .iter()
+        .find(|step| {
+            step["uses"]
+                .as_str()
+                .is_some_and(|uses| uses.starts_with("dtolnay/rust-toolchain@"))
+        })
+        .unwrap();
+    assert_eq!(toolchain["with"]["targets"], "${{ inputs.ess-target }}");
+    let named = |name: &str| {
+        steps
+            .iter()
+            .find(|step| step["name"] == name)
+            .unwrap_or_else(|| panic!("action.yml has no step `{name}`"))
+    };
+    let musl = named("Provide the musl C toolchain");
+    assert_eq!(musl["if"], "endsWith(inputs.ess-target, '-musl')");
+    let musl = musl["run"].as_str().unwrap();
+    assert!(musl.contains("musl-tools"), "{musl}");
+    assert!(musl.contains("=musl-gcc\" >> \"$GITHUB_ENV\""), "{musl}");
+    let install = named("Install exact ESS release");
+    assert_eq!(install["env"]["ESS_TARGET"], "${{ inputs.ess-target }}");
+    let run = install["run"].as_str().unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let calls = dir.path().join("calls");
+    executable::install_bytes(
+        &dir.path().join("cargo"),
+        b"#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CALLS\"\n",
+    )
+    .unwrap();
+    let mut paths = vec![dir.path().to_path_buf()];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    let path = std::env::join_paths(paths).unwrap();
+    for (target, named_target) in [
+        ("", None),
+        (
+            "x86_64-unknown-linux-musl",
+            Some("x86_64-unknown-linux-musl"),
+        ),
+    ] {
+        let out = Command::new("bash")
+            .args(["-euo", "pipefail", "-c", run])
+            .current_dir(dir.path())
+            .env("PATH", &path)
+            .env("CALLS", &calls)
+            .env("ESS_REVISION", REVISION)
+            .env("ESS_TARGET", target)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let calls = fs::read_to_string(&calls).unwrap();
+        let mut args: Vec<&str> = calls.lines().collect();
+        let root = args
+            .iter()
+            .position(|arg| *arg == "--root")
+            .expect("cargo install names no --root");
+        assert!(
+            args[root + 1].ends_with(&format!("/target/ess/{REVISION}")),
+            "{args:?}"
+        );
+        args.drain(root..=root + 1);
+        let mut expected = vec![
+            "install",
+            "--locked",
+            "--git",
+            "https://github.com/beyond10x/ess.git",
+            "--rev",
+            REVISION,
+        ];
+        if let Some(named_target) = named_target {
+            expected.extend(["--target", named_target]);
+        }
+        expected.extend(["--bin", "ess", "ess-cli"]);
+        assert_eq!(args, expected, "ess-target `{target}`");
+    }
+}
 #[test]
 fn t16_actual_action_build_adopt_platform_chart_and_summary_paths_preserve_limits() {
     for (build, mode, carrier) in [

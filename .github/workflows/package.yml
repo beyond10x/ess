@@ -93,6 +93,10 @@ jobs:
             runner: ubuntu-22.04
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-22.04-arm
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-22.04-arm
           - target: x86_64-apple-darwin
             runner: macos-15
           - target: aarch64-apple-darwin
@@ -134,6 +138,19 @@ jobs:
           fi
           /usr/bin/arch -x86_64 /usr/bin/true
 
+      # A musl binary links statically, so it runs on a Linux host whose glibc is older than the
+      # runner's. The C code a dependency builds is compiled with musl-gcc too.
+      - name: Provide the musl C toolchain
+        if: ${{ endsWith(matrix.target, '-musl') }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
       - name: Build and smoke-test the binary
         shell: bash
         env:
@@ -172,6 +189,40 @@ jobs:
           printed=$("$bin" --version | awk '{print $NF}')
           if [ "$printed" != "$TAG" ]; then
             echo "::error::the built binary reports $printed, but the release is $TAG" >&2
+            exit 1
+          fi
+
+      - name: Prove the musl binary static on a system without glibc
+        if: ${{ endsWith(matrix.target, '-musl') }}
+        shell: bash
+        env:
+          TAG: ${{ needs.candidate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          bin="target/$TARGET/release/ess"
+          described=$(file --brief "$bin")
+          echo "$described"
+          case "$described" in
+            *"statically linked"* | *"static-pie linked"*) ;;
+            *)
+              echo "::error::$bin is not statically linked: $described" >&2
+              exit 1
+              ;;
+          esac
+          if readelf --program-headers --wide "$bin" | grep -q INTERP; then
+            echo "::error::$bin names a program interpreter" >&2
+            exit 1
+          fi
+          if readelf --dynamic --wide "$bin" | grep -q '(NEEDED)'; then
+            echo "::error::$bin needs a shared library" >&2
+            exit 1
+          fi
+          printed=$(docker run --rm --network none \
+            --volume "$PWD/target/$TARGET/release:/opt/ess:ro" \
+            busybox:1.37.0 /opt/ess/ess --version | awk '{print $NF}')
+          if [ "$printed" != "$TAG" ]; then
+            echo "::error::the musl binary reports $printed in busybox, but the release is $TAG" >&2
             exit 1
           fi
 

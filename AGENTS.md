@@ -300,16 +300,16 @@ backfill, which may gate a commit older than their test target, skips them. `ci_
 `a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it`) holds both workflows to
 that and runs the step against real Git histories.
 
-The four archives are usually built before the tag exists. `.github/workflows/package.yml` runs
+The six archives are usually built before the tag exists. `.github/workflows/package.yml` runs
 on every `queue/**` push and packages the commit when its workspace version has a dated changelog
 section and no tag yet. That commit is the queue head, never the merge commit a tag names, so the
 release's `prebuilt` step is keyed on the head `prior-gate` resolved (rule 2's head, reported
 whenever its tree is the tagged tree; keyed on the tagged commit, 0.61.0 and 0.62.0 both logged
 "no successful queue package run built …" and built again). It uses that run's archives only when
 all of these hold: a head was resolved, it is a successful `package.yml` push run of a `queue/`
-branch at that head, and it still holds all four `release-<target>` artifacts unexpired. Anything
+branch at that head, and it still holds all six `release-<target>` artifacts unexpired. Anything
 else, including an API failure, calls `package.yml` from the release and builds them there. Either
-way the preparation job checks the four names and `SHA256SUMS` and runs the Linux x86_64 binary's
+way the preparation job checks the six names and `SHA256SUMS` and runs both Linux x86_64 binaries'
 `--version` against the tag. `ci_lanes.rs` runs the `prebuilt` step against canned API answers.
 
 Compile caches are saved only by `main` and pull-request runs (`save-if` on every
@@ -317,9 +317,17 @@ Compile caches are saved only by `main` and pull-request runs (`save-if` on ever
 that no later run can restore. A manual dispatch saves none: a release backfill dispatched from
 `main` builds an old tag's source under `main`'s scope.
 
+A release ships six archives, `ess-<tag>-<target>.tar.gz` for `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
+`x86_64-apple-darwin` and `aarch64-apple-darwin`, and one `SHA256SUMS` over them. Each musl archive
+is built on the runner of its gnu twin with `musl-tools` (`musl-gcc` compiles the C code of a
+dependency) and links statically, so it runs on a host whose glibc is older than the runner's: the
+package job fails unless `file` says statically linked, `readelf` finds no interpreter and no needed
+library, and the binary prints the tag in a `busybox` container without a network. Consumers pin
+the musl archives on Linux.
+
 The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
-there under Rosetta; `lipo -archs` names the architecture that was built. Archive names and
-`SHA256SUMS` are unchanged. Site rendering remains a documentation-validation gate; ordinary
+there under Rosetta; `lipo -archs` names the architecture that was built. Site rendering remains a documentation-validation gate; ordinary
 source releases do not wait for it.
 
 **The GitHub release body is `release-notes/<version>.md`, written by hand.** Whoever prepares
@@ -345,14 +353,14 @@ refuses the workspace version without a valid file; `cargo xtask release notes -
 
 Public CI has read-only GitHub permissions and never creates or edits a Release. A successful
 `Release preparation` run uploads one artifact named `ess-release-<tag>-<commit>`, containing the
-four archives under `dist/`, `dist/SHA256SUMS` and `notes.md`. From a trusted operator environment,
+six archives under `dist/`, `dist/SHA256SUMS` and `notes.md`. From a trusted operator environment,
 the coordinator reads the successful run and its exact head commit, resolves the annotated tag to
 that same commit, and downloads only that exact artifact through
 `b10x-gates gh --repo . --repository beyond10x/ess -- ...`. The wrapper runs `gh` in the `--repo` directory and refuses an argument holding a home-directory path, so run it from an empty download directory outside every checkout with `--repo .` and relative paths; pointed at a checkout, `run download -D <dir>` writes the release files into that checkout. Before publication, verify that the
-artifact contains exactly the four target archives, checksums and notes, run
-`sha256sum --check SHA256SUMS`, and smoke-run the Linux x86_64 archive's `ess --version` against the
+artifact contains exactly the six target archives, checksums and notes, run
+`sha256sum --check SHA256SUMS`, and smoke-run the Linux x86_64 archives' `ess --version` against the
 tag. Through the same bot-authenticated wrapper, create or reconcile a draft Release on that exact
-tag, upload the four archives and `SHA256SUMS`, verify every remote asset, then make the draft
+tag, upload the six archives and `SHA256SUMS`, verify every remote asset, then make the draft
 public. Never use raw `gh` for these writes and never place the App credential in this repository or
 its workflows.
 
@@ -502,7 +510,7 @@ within one hour of the reproduction.
    The runners are shared; 0.91.2's test shards queued for up to 72 minutes behind the 0.92.0 runs.
 8. The release publishes itself on Gate pass: `publish.yml` publishes the prepared artifact as the
    organization bot when the release run succeeds. Check it within five minutes: the release
-   exists, its author is `b10x-bot[bot]`, it has four archives and `SHA256SUMS`. The session that
+   exists, its author is `b10x-bot[bot]`, it has six archives and `SHA256SUMS`. The session that
    pushed the tag owns this check.
 
 A tagged hotfix commit reaches main through a merge commit, never a squash, so the tag stays on main.
