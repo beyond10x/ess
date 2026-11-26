@@ -4069,11 +4069,22 @@ fn prepare_with(
     } else {
         input_for(ir, command, outcome, Distinction::PLAIN)?
     };
+    let missing = super::related_guard::missing_named(outcome)
+        .filter(|_| super::related_guard::uses(command));
+    // A row the branch refuses as missing that the input addressing the subject names is the
+    // subject itself: a missing addressed row is answered at its existence or held state before the
+    // branch reads it (`docs/design/generic-language-features.md` § G4), so no arrangement reaches
+    // the branch, as `related_guard::arranged_at` refuses it.
+    if let Some(via) = missing {
+        if reading(command, outcome).is_some_and(|subject| {
+            matches!(&subject.instance, ResolvedInstance::Supplied { field } if field.name == via)
+        }) {
+            return Err(super::related_guard::unarranged());
+        }
+    }
     let mut setup = subject_setup(ir, command, outcome, actors)?;
     // A row the branch refuses as missing is named by an identity no row carries (ess/32).
-    if let Some(via) =
-        super::related_guard::missing_named(outcome).filter(|_| super::related_guard::uses(command))
-    {
+    if let Some(via) = missing {
         let fresh = super::fresh_identity(ir, command, via, Some(&input))?;
         input.insert(via.to_owned(), fresh);
     }
