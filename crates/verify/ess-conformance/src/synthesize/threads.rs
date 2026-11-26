@@ -131,6 +131,11 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
         "COMPANION_WORK",
         Handling::Counter,
     ),
+    (
+        "synthesize/related_guard.rs",
+        "FIXED_TRIED",
+        Handling::Counter,
+    ),
     ("synthesize/related_guard.rs", "OWN_OPEN", Handling::Scope),
     (
         "synthesize/related_guard.rs",
@@ -492,6 +497,8 @@ work! {
     prepare_made: u64 = prepare_memo::taken_made();
     companion_asked: u64 = related_guard::taken_companion_work().0;
     companion_searched: u64 = related_guard::taken_companion_work().1;
+    fixed_searched: u64 = related_guard::taken_fixed_tried().0;
+    fixed_tried: u64 = related_guard::taken_fixed_tried().1;
     own_overlay_built: u64 = related_guard::taken_own_overlay_work().0;
     own_overlay_asked_at_the_bound: u64 = related_guard::taken_own_overlay_work().1;
     own_overlay_asked: u64 = related_guard::taken_own_overlay_work().2;
@@ -546,6 +553,7 @@ impl Work {
         "synthesize/prepare_memo.rs:ASKED",
         "synthesize/prepare_memo.rs:MADE",
         "synthesize/related_guard.rs:COMPANION_WORK",
+        "synthesize/related_guard.rs:FIXED_TRIED",
         "synthesize/related_guard.rs:OWN_OVERLAY_WORK",
         "synthesize/related_guard.rs:OWN_WORK",
         "synthesize/row_set.rs:ATTEMPTS",
@@ -594,6 +602,7 @@ impl Work {
         prepare_memo::add_asked(self.prepare_asked);
         prepare_memo::add_made(self.prepare_made);
         related_guard::add_companion_work((self.companion_asked, self.companion_searched));
+        related_guard::add_fixed_tried((self.fixed_searched, self.fixed_tried));
         related_guard::add_own_overlay_work((
             self.own_overlay_built,
             self.own_overlay_asked_at_the_bound,

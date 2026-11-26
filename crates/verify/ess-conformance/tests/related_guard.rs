@@ -542,3 +542,88 @@ fn issue_211_the_interpreted_target_executes_the_complete_sign_in_suite() {
         .iter()
         .all(|run| run.status == Status::Passed));
 }
+
+/// A coupon is blocked when it is retired or gold, and only a gold coupon can be retired, so no
+/// row is retired and not gold: the branch's scenario stands, and one row of its disjunction
+/// cannot be arranged.
+const COUPON: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.shop
+types:
+  - {name: demo.shop.CouponId, kind: newtype, of: String}
+  - {name: demo.shop.UseId, kind: newtype, of: String}
+  - {name: demo.shop.Tier, kind: enum, variants: [gold, plain]}
+entities:
+  - name: demo.shop.Coupon
+    identity: {name: coupon_id, type: demo.shop.CouponId}
+    fields: [{name: tier, type: demo.shop.Tier}]
+    lifecycle: {initial: Active, states: [Active, Retired], terminal: [Retired], transitions: [{name: retire, from: [Active], to: Retired}]}
+  - name: demo.shop.Use
+    identity: {name: use_id, type: demo.shop.UseId}
+    fields: [{name: coupon_id, type: demo.shop.CouponId}]
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - {name: demo.shop.Clerk, may: [demo.shop.AddCoupon, demo.shop.RetireCoupon, demo.shop.UseCoupon]}
+errors:
+  - {name: demo.shop.Missing, summary: No such coupon.}
+  - {name: demo.shop.Blocked, summary: The coupon is blocked.}
+commands:
+  - name: demo.shop.AddCoupon
+    input: [{name: coupon_id, type: demo.shop.CouponId}, {name: tier, type: demo.shop.Tier}]
+    outcomes:
+      - {name: added, creates: demo.shop.Coupon, instance: coupon_id, sets: {tier: input.tier}, emits: [demo.shop.Added], payload: {demo.shop.Added: {coupon_id: input.coupon_id}}}
+  - name: demo.shop.RetireCoupon
+    input: [{name: coupon_id, type: demo.shop.CouponId}]
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: not-gold, when_subject: {predicate: tier != gold}, error: demo.shop.Blocked}
+      - {name: retired, moves: demo.shop.Coupon.retire, instance: coupon_id, emits: [demo.shop.Retired], payload: {demo.shop.Retired: {coupon_id: input.coupon_id}}}
+  - name: demo.shop.UseCoupon
+    input: [{name: use_id, type: demo.shop.UseId}, {name: coupon_id, type: demo.shop.CouponId}]
+    outcomes:
+      - {name: no-coupon, when_related: {via: input.coupon_id, exists: false}, error: demo.shop.Missing}
+      - {name: blocked, when_related: {via: input.coupon_id, predicate: {any: [state == Retired, tier == gold]}}, error: demo.shop.Blocked}
+      - {name: used, creates: demo.shop.Use, instance: use_id, sets: {coupon_id: input.coupon_id}, emits: [demo.shop.Used], payload: {demo.shop.Used: {use_id: input.use_id}}}
+events:
+  - {name: demo.shop.Added, fields: [{name: coupon_id, type: demo.shop.CouponId}]}
+  - {name: demo.shop.Retired, fields: [{name: coupon_id, type: demo.shop.CouponId}]}
+  - {name: demo.shop.Used, fields: [{name: use_id, type: demo.shop.UseId}]}
+";
+
+/// A row of a related guard's disjunction that no arrangement reaches is refused beside the
+/// branch's scenario, which the suite holds: the refusal says so and does not call the scenario
+/// missing.
+#[test]
+fn a_related_boundary_no_arrangement_reaches_is_refused_beside_the_scenario_it_leaves_standing() {
+    const BLOCKED: &str = "demo.shop.UseCoupon/outcome/blocked";
+    let result = synthesis(COUPON);
+    assert!(
+        result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == BLOCKED),
+        "the branch's scenario is written"
+    );
+    let refusals: Vec<_> = result
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .is_some_and(|id| id.to_string() == BLOCKED)
+        })
+        .collect();
+    assert!(!refusals.is_empty(), "{:#?}", result.refusals);
+    for refusal in refusals {
+        let text = refusal.to_string();
+        assert!(refusal.stands, "{text}");
+        assert!(
+            text.contains(&format!("has a scenario `{BLOCKED}`")),
+            "{text}"
+        );
+        assert!(!text.contains("has no scenario"), "{text}");
+    }
+}
