@@ -214,7 +214,9 @@
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
 //! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
 //! | `request: {query: [input.<field>, …]}` beside a body | each listed field is an `in: query` parameter under its wire name, in the order listed, by the rules of `encoding: query`, and is in neither the request body nor `{command}.Input` (beyond10x/ess#754) |
+//! | `lists: {<name>: comma}` | the `List` query parameter `<name>` has `style: form` and `explode: false`, one comma-joined value, required unless `Optional`; a `form` body's list has the same in the media type's `encoding` under its wire name, and the body's description names it |
 //! | `request: {unknown: ignore}` beside `json` or `form` | `{command}.Input` is `additionalProperties: true`, and the request body says that what no field names is ignored and what the path carries must equal the path's value |
+//! | `request: {members: {<field>: <member.path>}}` beside `json` | `{command}.Input` is nested: each mapped field's property under its member path, each object a path opens `{type: object, properties, required, additionalProperties}`, required when it holds a required property and open under `unknown: ignore` |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
@@ -505,6 +507,7 @@ fn document(
             .and_then(|binding| binding.ir().servers().get(component.name.as_str()))
             .cloned()
             .unwrap_or_default(),
+        cors: binding.and_then(|binding| binding.ir().cors()).cloned(),
         tags: tags(ir, component),
         paths: paths(ir, component, binding),
         components: Components {
@@ -816,6 +819,8 @@ fn paths(
     let checked = http::grants_checked_on(ir, component);
 
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
+    let mut groups: Vec<(String, http::Method, Sharing<'_>)> = Vec::new();
+    let mut preflights: BTreeMap<String, Vec<(http::Method, &ess_http::Cors)>> = BTreeMap::new();
     for route in http::bound_routes(ir, component, binding) {
         // A standard refusal's override applies to the routes the binding names, never to a
         // derived one (decided for stage 2, answer 17). A route's own override stands in place of
@@ -847,9 +852,396 @@ fn paths(
             ),
         };
         served.security = security_of(binding, route.declared);
-        *out.entry(route.path).or_default().slot(route.method) = Some(served);
+        if let Some(cors) = binding.and_then(|binding| binding.ir().cors_on(route.declared)) {
+            origin_headers(&mut served.responses, cors);
+            preflights
+                .entry(route.path.clone())
+                .or_default()
+                .push((route.method, cors));
+        }
+        match groups
+            .iter_mut()
+            .find(|(path, method, _)| *path == route.path && *method == route.method)
+        {
+            Some((_, _, sharing)) => sharing.push((route.declared, served)),
+            None => groups.push((route.path, route.method, vec![(route.declared, served)])),
+        }
+    }
+    for (path, method, mut sharing) in groups {
+        let served = if sharing.len() == 1 {
+            sharing.remove(0).1
+        } else {
+            shared_operation(binding, sharing)
+        };
+        *out.entry(path).or_default().slot(method) = Some(served);
+    }
+    for (path, covered) in preflights {
+        out.entry(path).or_default().options = Some(preflight(&covered));
     }
     out
+}
+
+/// The `Access-Control-Allow-Origin` header of an answer `cors` covers, as its schema states it:
+/// `*` for any origin, else one of the origins listed.
+fn allow_origin(cors: &ess_http::Cors) -> Value {
+    match &cors.origins {
+        ess_http::Origins::Any => json!({"type": "string", "const": "*"}),
+        ess_http::Origins::Listed(origins) => json!({"type": "string", "enum": origins}),
+    }
+}
+
+/// Adds to each of `responses` the headers an answer `cors` covers carries
+/// (`ae3a-a-binding-declares-which-origins-may-read-its-answers`): `Access-Control-Allow-Origin`,
+/// and `Vary: Origin` when the origins are listed, since the answer then depends on `Origin`. A
+/// header the binding declares itself is kept.
+fn origin_headers(responses: &mut BTreeMap<String, Response>, cors: &ess_http::Cors) {
+    for response in responses.values_mut() {
+        response
+            .headers
+            .entry("Access-Control-Allow-Origin".to_owned())
+            .or_insert_with(|| ResponseHeader {
+                description: "The origin that may read this answer, written when the request's \
+                              `Origin` is one the policy admits (`x-ess-cors`)."
+                    .to_owned(),
+                required: None,
+                schema: written(allow_origin(cors)),
+            });
+        if matches!(cors.origins, ess_http::Origins::Listed(_)) {
+            response
+                .headers
+                .entry("Vary".to_owned())
+                .or_insert_with(|| ResponseHeader {
+                    description: "The answer depends on the request's `Origin`.".to_owned(),
+                    required: None,
+                    schema: written(json!({"type": "string", "const": "Origin"})),
+                });
+        }
+    }
+}
+
+/// The schema of the preflight's `Access-Control-Allow-Origin` on a path whose `covered`
+/// operations stand under these policies: `*` when one admits any origin, else one of the origins
+/// they list, each once, in the order first listed.
+fn preflight_origins(covered: &[(http::Method, &ess_http::Cors)]) -> Value {
+    if covered
+        .iter()
+        .any(|(_, cors)| cors.origins == ess_http::Origins::Any)
+    {
+        return json!({"type": "string", "const": "*"});
+    }
+    let mut listed: Vec<&String> = Vec::new();
+    for (_, cors) in covered {
+        if let ess_http::Origins::Listed(origins) = &cors.origins {
+            for origin in origins {
+                if !listed.contains(&origin) {
+                    listed.push(origin);
+                }
+            }
+        }
+    }
+    json!({"type": "string", "enum": listed})
+}
+
+/// The `options` operation of a path whose `covered` operations, each by its method and the policy
+/// that stands on it, a page on another origin may read: the preflight, answered `204` with the
+/// `Access-Control-Allow-*` headers. The methods are the covered ones; where every covered
+/// operation stands under one policy each header states its value, and otherwise its type, the
+/// policy of each method being in `x-ess-cors`.
+fn preflight(covered: &[(http::Method, &ess_http::Cors)]) -> Value {
+    let methods: BTreeSet<&str> = covered.iter().map(|(method, _)| method.as_str()).collect();
+    let one = covered
+        .windows(2)
+        .all(|pair| pair[0].1 == pair[1].1)
+        .then(|| covered.first().map(|(_, cors)| *cors))
+        .flatten();
+    let header =
+        |description: &str, schema: Value| json!({"description": description, "schema": schema});
+    let mut headers = Map::new();
+    headers.insert(
+        "Access-Control-Allow-Origin".to_owned(),
+        header(
+            "The origin that may read the answers of this path.",
+            preflight_origins(covered),
+        ),
+    );
+    headers.insert(
+        "Access-Control-Allow-Methods".to_owned(),
+        header(
+            "The methods a page on another origin may send on this path.",
+            json!({"type": "string", "const": methods.into_iter().collect::<Vec<_>>().join(", ")}),
+        ),
+    );
+    let stated = |text: Option<String>, kind: &str| match text {
+        Some(text) => json!({"type": kind, "const": text}),
+        None => json!({"type": kind}),
+    };
+    if covered.iter().any(|(_, cors)| !cors.headers.is_empty()) {
+        headers.insert(
+            "Access-Control-Allow-Headers".to_owned(),
+            header(
+                "The request headers a page on another origin may send.",
+                stated(one.map(|cors| cors.headers.join(", ")), "string"),
+            ),
+        );
+    }
+    if covered.iter().any(|(_, cors)| cors.credentials) {
+        headers.insert(
+            "Access-Control-Allow-Credentials".to_owned(),
+            header(
+                "A page may send credentials and read the answer.",
+                json!({"type": "string", "const": "true"}),
+            ),
+        );
+    }
+    if covered.iter().any(|(_, cors)| cors.max_age.is_some()) {
+        let schema = match one.and_then(|cors| cors.max_age) {
+            Some(age) => json!({"type": "integer", "const": age}),
+            None => json!({"type": "integer"}),
+        };
+        headers.insert(
+            "Access-Control-Max-Age".to_owned(),
+            header(
+                "How long, in seconds, a browser may hold this answer.",
+                schema,
+            ),
+        );
+    }
+    if covered
+        .iter()
+        .any(|(_, cors)| matches!(cors.origins, ess_http::Origins::Listed(_)))
+    {
+        headers.insert(
+            "Vary".to_owned(),
+            header(
+                "The answer depends on the request's `Origin`.",
+                json!({"type": "string", "const": "Origin"}),
+            ),
+        );
+    }
+    let policies: Map<String, Value> = covered
+        .iter()
+        .map(|(method, cors)| {
+            (
+                method.keyword().to_owned(),
+                serde_json::to_value(cors).unwrap_or_default(),
+            )
+        })
+        .collect();
+    json!({
+        "summary": "The cross-origin preflight of this path.",
+        "description": "A browser asks before a page on another origin sends a request it may \
+                        not send unasked; the answer states what the policy of each method admits \
+                        (`x-ess-cors`).",
+        "x-ess-cors": policies,
+        "responses": {"204": {"description": "What a page on another origin may send and read.", "headers": headers}}
+    })
+}
+
+/// ESS's own answer to a `malformed` request, where the binding declares none.
+const MALFORMED: &str = "400";
+
+/// The operations written for one method and path, each with the binding's route it was written
+/// from, if any.
+type Sharing<'a> = Vec<(Option<&'a ess_http::Route>, Operation)>;
+
+/// The `select` of a declared route, if it has one.
+fn select_of(declared: Option<&ess_http::Route>) -> Option<&ess_http::Selection> {
+    declared.and_then(|route| route.select.as_ref())
+}
+
+/// The `discriminator` a shared request body can carry, as far as the routes read so far leave it.
+enum Discriminator {
+    /// No route read yet.
+    Unread,
+    /// Every alternative so far tests this one top-level member, for a string.
+    Member(String),
+    /// One alternative does not, or a route is the catch-all.
+    Lost,
+}
+
+/// `discriminator` after `chosen`, each string `chosen` selects mapped to `schema`'s `$ref`.
+fn discriminate(
+    chosen: &ess_http::Selection,
+    schema: &Value,
+    discriminator: &mut Discriminator,
+    mapping: &mut serde_json::Map<String, Value>,
+) {
+    for alternative in chosen.alternatives() {
+        let tests: Vec<_> = alternative.tests().collect();
+        let property = match &*discriminator {
+            Discriminator::Unread => None,
+            Discriminator::Member(property) => Some(property.as_str()),
+            Discriminator::Lost => return,
+        };
+        match (tests.as_slice(), schema.get("$ref")) {
+            ([(member, ess_http::MemberLiteral::String(value))], Some(target))
+                if member.segments().len() == 1
+                    && property.is_none_or(|property| property == member.top()) =>
+            {
+                *discriminator = Discriminator::Member(member.top().to_owned());
+                mapping.insert(value.clone(), target.clone());
+            }
+            _ => *discriminator = Discriminator::Lost,
+        }
+    }
+}
+
+/// Adds to `status`, the answer a closed set of selecting routes gives a body none of them selects,
+/// that it gives it.
+fn state_unselected(responses: &mut BTreeMap<String, Response>, status: String) {
+    let unselected =
+        "A body no route selects is answered as `malformed`: no route on this method and path takes it.";
+    responses
+        .entry(status)
+        .and_modify(|response| {
+            response.description = format!("{} {unselected}", response.description);
+        })
+        .or_insert_with(|| Response {
+            description: unselected.to_owned(),
+            headers: BTreeMap::new(),
+            content: None,
+            outcomes: None,
+            representations: None,
+        });
+}
+
+/// One operation for the routes `sharing` one method and path, each chosen by its `select`
+/// (`ae1b-openapi-writes-a-shared-route-as-one-operation`): the first route's `operationId` in the
+/// compiled order of the binding (path, method, operation), `x-ess-operations` naming every route
+/// in that order, a request body `oneOf` each route's own, with `OpenAPI`'s `discriminator` where
+/// every route tests one and the same top-level member for strings and none is the catch-all, and
+/// the responses merged per status. A closed set, without a catch-all, states that a body no route
+/// selects is answered as `malformed`.
+fn shared_operation(binding: Option<&http::Binding>, mut sharing: Sharing<'_>) -> Operation {
+    sharing.sort_by(|(left, _), (right, _)| {
+        left.map(|route| &route.operation)
+            .cmp(&right.map(|route| &route.operation))
+    });
+    let open = sharing
+        .iter()
+        .any(|(declared, _)| select_of(*declared).is_none());
+    let malformed = sharing
+        .first()
+        .and_then(|(declared, _)| declared.zip(binding))
+        .and_then(|(route, binding)| {
+            binding
+                .refusals_on(route)
+                .get(&ess_http::RefusalKey::Malformed)
+                .map(|refusal| refusal.status.to_string())
+        });
+    let mut one_of = Vec::new();
+    let mut mapping = serde_json::Map::new();
+    let mut discriminator = Discriminator::Unread;
+    let mut listed = Vec::new();
+    let mut by_status: BTreeMap<String, Vec<(String, Response)>> = BTreeMap::new();
+    let mut first: Option<Operation> = None;
+    for (declared, operation) in sharing {
+        let name = declared.map_or_else(String::new, |route| route.operation.name().to_owned());
+        let chosen = select_of(declared);
+        listed.push(json!({
+            "operationId": operation.id,
+            "command": name,
+            "select": chosen.map_or_else(|| json!("otherwise"), |chosen| serde_json::to_value(chosen).unwrap_or_default()),
+        }));
+        let mut schema = operation
+            .request_body
+            .as_ref()
+            .and_then(|body| body.content.get(MEDIA_TYPE))
+            .and_then(|media| serde_json::to_value(&media.schema).ok())
+            .unwrap_or_else(|| json!({"type": "object"}));
+        match chosen {
+            None => {
+                schema["description"] = json!(
+                    "The catch-all: it takes every body no other route on this method and path \
+                     selects."
+                );
+                discriminator = Discriminator::Lost;
+            }
+            Some(chosen) => discriminate(chosen, &schema, &mut discriminator, &mut mapping),
+        }
+        one_of.push(schema);
+        let mut operation = operation;
+        for (status, response) in std::mem::take(&mut operation.responses) {
+            by_status
+                .entry(status)
+                .or_default()
+                .push((name.clone(), response));
+        }
+        if first.is_none() {
+            first = Some(operation);
+        }
+    }
+    let mut merged = first.expect("a shared route has at least two operations");
+    let mut body = json!({"oneOf": one_of});
+    if let Discriminator::Member(property) = discriminator {
+        body["discriminator"] = json!({"propertyName": property, "mapping": mapping});
+    }
+    merged.operations = listed;
+    merged.summary = None;
+    merged.description = Some(
+        "Several commands share this method and path, each chosen by the members of the JSON body \
+         it selects (`x-ess-operations`)."
+            .to_owned(),
+    );
+    merged.request_body = Some(RequestBody {
+        description: format!(
+            "One of the bodies of the commands sharing this method and path, told apart by the \
+             members each selects.{}",
+            if open {
+                ""
+            } else {
+                " A body no route selects is answered as `malformed`."
+            }
+        ),
+        required: true,
+        content: content(body),
+    });
+    merged.responses = by_status
+        .into_iter()
+        .map(|(status, answers)| (status, merged_response(answers)))
+        .collect();
+    if !open {
+        state_unselected(
+            &mut merged.responses,
+            malformed.unwrap_or_else(|| MALFORMED.to_owned()),
+        );
+    }
+    merged
+}
+
+/// One status's answers of the routes sharing a method and path, each with its command: one, or
+/// several written alike, as it is; otherwise one response whose body is `oneOf` theirs and whose
+/// description names each command.
+fn merged_response(mut answers: Vec<(String, Response)>) -> Response {
+    let alike = answers
+        .windows(2)
+        .all(|pair| serde_json::to_value(&pair[0].1).ok() == serde_json::to_value(&pair[1].1).ok());
+    if alike {
+        return answers.remove(0).1;
+    }
+    let description = answers
+        .iter()
+        .map(|(command, response)| format!("`{command}`: {}", response.description))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let bodies: Vec<Value> = answers
+        .iter()
+        .filter_map(|(_, response)| response.content.as_ref()?.get(MEDIA_TYPE))
+        .filter_map(|media| serde_json::to_value(&media.schema).ok())
+        .collect();
+    let outcomes: Vec<String> = answers
+        .iter()
+        .filter_map(|(_, response)| response.outcomes.clone())
+        .flatten()
+        .collect();
+    let (_, first) = answers.remove(0);
+    Response {
+        description,
+        headers: first.headers,
+        content: (!bodies.is_empty()).then(|| content(json!({"oneOf": bodies}))),
+        outcomes: (!outcomes.is_empty()).then_some(outcomes),
+        representations: None,
+    }
 }
 
 /// The challenges of the default `unauthenticated` answer of a route that requires a scheme
@@ -1001,9 +1393,9 @@ fn operation(
         )
     });
     if request.encoding == ess_http::Encoding::Query {
-        parameters.extend(query_parameters(command, &carried));
+        parameters.extend(query_parameters(command, &carried, declared));
     }
-    parameters.extend(listed_parameters(command, &request));
+    parameters.extend(listed_parameters(command, &request, declared));
     // What the path or the query string carries is not in the body.
     let mut outside = carried.clone();
     outside.extend(queried.iter().copied());
@@ -1013,6 +1405,7 @@ fn operation(
             .and_then(|route| route.operation_id.clone())
             .unwrap_or_else(|| command.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
+        operations: Vec::new(),
         max_request_bytes: bound_request,
         periodic: ir
             .bindings()
@@ -1077,8 +1470,13 @@ fn operation(
 /// A field is required unless it is `Optional` or a `List`, or the command declares
 /// `input_absent:`, whose branch answers a request that carries no input at all. A `List` repeats
 /// its key once per element (`style: form`, `explode: true`), the rule a view's parameters follow,
-/// and an absent key is the empty list, as both generated servers read it.
-fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<Parameter> {
+/// and an absent key is the empty list, as both generated servers read it; one the route's `lists`
+/// names is one comma-joined value, required as a scalar is ([`list_style`], [`repeated`]).
+fn query_parameters(
+    command: &ResolvedCommand,
+    carried: &BTreeSet<&str>,
+    declared: Option<&ess_http::Route>,
+) -> Vec<Parameter> {
     let answers_absent = command
         .outcomes
         .iter()
@@ -1097,18 +1495,45 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
                     field.name
                 )
             }),
-            required: !field.type_ref.is_optional() && !is_list(&field.type_ref) && !answers_absent,
-            style: is_list(&field.type_ref).then_some("form"),
-            explode: is_list(&field.type_ref).then_some(true),
+            required: !field.type_ref.is_optional()
+                && !repeated(&field.type_ref, &field.name, declared)
+                && !answers_absent,
+            style: list_style(&field.type_ref, &field.name, declared).0,
+            explode: list_style(&field.type_ref, &field.name, declared).1,
             schema: embedded(&types::field(field)),
         })
         .collect()
 }
 
+/// A query parameter's `style` and `explode`: none for a parameter that is no list; for a list,
+/// `form` repeating its key once per element (`explode: true`), or one comma-joined value
+/// (`explode: false`, `OpenAPI` 3.1 § 4.8.12.4) when the bound route's `lists` names it.
+fn list_style(
+    type_ref: &ResolvedTypeRef,
+    name: &str,
+    declared: Option<&ess_http::Route>,
+) -> (Option<&'static str>, Option<bool>) {
+    if !is_list(type_ref) {
+        return (None, None);
+    }
+    (Some("form"), Some(repeated(type_ref, name, declared)))
+}
+
+/// Whether a parameter is a list that repeats its key once per element: a list the bound route's
+/// `lists` does not name. Such a list is never required, its absent key the empty list; a
+/// comma-joined one is one value, required unless it is `Optional`.
+fn repeated(type_ref: &ResolvedTypeRef, name: &str, declared: Option<&ess_http::Route>) -> bool {
+    is_list(type_ref) && !declared.is_some_and(|route| route.lists.contains_key(name))
+}
+
 /// The input fields a route's `request.query` reads beside its body (beyond10x/ess#754), each an
 /// `in: query` parameter under its wire name, in the order the binding lists them, by the rules of
 /// [`query_parameters`]: required as the field is, a `List` repeating its key once per element.
-fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> Vec<Parameter> {
+fn listed_parameters(
+    command: &ResolvedCommand,
+    request: &ess_http::Request,
+    declared: Option<&ess_http::Route>,
+) -> Vec<Parameter> {
     request
         .query_fields()
         .filter_map(|name| command.input.iter().find(|field| field.name == name))
@@ -1121,9 +1546,10 @@ fn listed_parameters(command: &ResolvedCommand, request: &ess_http::Request) -> 
                     field.name
                 )
             }),
-            required: !field.type_ref.is_optional() && !is_list(&field.type_ref),
-            style: is_list(&field.type_ref).then_some("form"),
-            explode: is_list(&field.type_ref).then_some(true),
+            required: !field.type_ref.is_optional()
+                && !repeated(&field.type_ref, &field.name, declared),
+            style: list_style(&field.type_ref, &field.name, declared).0,
+            explode: list_style(&field.type_ref, &field.name, declared).1,
             schema: embedded(&types::field(field)),
         })
         .collect()
@@ -1194,7 +1620,7 @@ fn query(
             param.name
         )
     });
-    parameters.extend(view_parameters(view, &carried(declared)));
+    parameters.extend(view_parameters(view, &carried(declared), declared));
     let domain = ir.domain(&view.domain);
     // A read-granted view on a surface that checks grants answers the standard refusal too
     // (beyond10x/ess#286); an open view, and every view of a model naming none, keeps its bytes.
@@ -1236,6 +1662,7 @@ fn query(
             .and_then(|route| route.operation_id.clone())
             .unwrap_or_else(|| view.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
+        operations: Vec::new(),
         max_request_bytes: None,
         periodic: Vec::new(),
         summary: Some(view.naming.display_or(&view.name).to_owned()),
@@ -1576,17 +2003,13 @@ fn request_body(
         ess_http::Encoding::Multipart => {
             return multipart(ir, command, carried, request, declared, &ignored("part"));
         }
-        ess_http::Encoding::Form => (
-            format!(
-                "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, \
-                 each field under its wire name, a list repeating its key once per element.{}",
-                command.name,
-                ignored("parameter")
-            ),
-            content_as(FORM_MEDIA_TYPE, schema),
-        ),
+        ess_http::Encoding::Form => form_body(command, carried, declared, schema, &ignored),
         ess_http::Encoding::Json | ess_http::Encoding::Query => (
-            format!("The input `{}` declares.{}", command.name, ignored("member")),
+            format!(
+                "The input `{}` declares.{}",
+                command.name,
+                ignored("member")
+            ),
             content(schema),
         ),
     };
@@ -1596,6 +2019,63 @@ fn request_body(
         required: http::body_required_without(command, carried),
         content,
     })
+}
+
+/// A `form` route's request body's description and content: each field under its wire name, a list
+/// repeating its key once per element, except a list in the body the route's `lists` names, which
+/// is one comma-joined value, stated in the media type's `encoding` (`style: form`,
+/// `explode: false`).
+fn form_body(
+    command: &ResolvedCommand,
+    carried: &BTreeSet<&str>,
+    declared: Option<&ess_http::Route>,
+    schema: Value,
+    ignored: &dyn Fn(&str) -> String,
+) -> (String, BTreeMap<String, MediaType>) {
+    let joined: Vec<&str> = command
+        .input
+        .iter()
+        .filter(|field| {
+            !carried.contains(field.name.as_str())
+                && declared.is_some_and(|route| route.lists.contains_key(&field.name))
+        })
+        .map(types::wire_name)
+        .collect();
+    let lists = if joined.is_empty() {
+        "a list repeating its key once per element".to_owned()
+    } else {
+        let named: Vec<String> = joined.iter().map(|wire| format!("`{wire}`")).collect();
+        format!(
+            "a list repeating its key once per element, except {}, one comma-joined value",
+            list(&named)
+        )
+    };
+    let description = format!(
+        "The input `{}` declares, form-encoded as the `ess-http/1` binding declares: UTF-8, each \
+         field under its wire name, {lists}.{}",
+        command.name,
+        ignored("parameter")
+    );
+    let mut content = content_as(FORM_MEDIA_TYPE, schema);
+    if !joined.is_empty() {
+        let encoding = joined
+            .into_iter()
+            .map(|wire| {
+                (
+                    wire.to_owned(),
+                    PartEncoding {
+                        content_type: None,
+                        style: Some("form"),
+                        explode: Some(false),
+                    },
+                )
+            })
+            .collect();
+        if let Some(media) = content.get_mut(FORM_MEDIA_TYPE) {
+            media.encoding = Some(encoding);
+        }
+    }
+    (description, content)
 }
 
 /// A `multipart` route's request body (beyond10x/ess#754): `multipart/form-data` holding an object
@@ -1660,7 +2140,9 @@ fn multipart(
             encoding.insert(
                 wire.to_owned(),
                 PartEncoding {
-                    content_type: part.media_types.join(", "),
+                    content_type: Some(part.media_types.join(", ")),
+                    style: None,
+                    explode: None,
                 },
             );
         }
@@ -3030,6 +3512,232 @@ fn schemas(
     out
 }
 
+/// `{command}.Input`, the object of the input fields `body` the request body carries, nested as
+/// its route's `request.members` read them ([`nested_input`]).
+fn input_schema(
+    command: &ResolvedCommand,
+    body: &[ResolvedField],
+    request: &ess_http::Request,
+    select: Option<&ess_http::Selection>,
+) -> Fragment {
+    // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
+    // open body.
+    let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
+        UndeclaredFields::Ignored
+    } else {
+        UndeclaredFields::Refused
+    };
+    let flat = embedded(&types::message(&Message {
+        fields: body,
+        undeclared_fields,
+        ..Message::of_command(command)
+    }));
+    nested_input(flat, command, request, select)
+}
+
+/// `{command}.Input` as the body carries it when its route reads input fields from nested members
+/// (`request.members`): each mapped field's property moved under its member path, every object the
+/// paths open `{type: object, properties, required, additionalProperties}`, required when it holds
+/// a required property, and open exactly when the route ignores what no field names. The flat
+/// `input` as it is without `members`.
+fn nested_input(
+    input: Fragment,
+    command: &ResolvedCommand,
+    request: &ess_http::Request,
+    select: Option<&ess_http::Selection>,
+) -> Fragment {
+    let Fragment::Mapping(mut object) = input else {
+        return input;
+    };
+    if request.members.is_empty() && select.is_none() {
+        return Fragment::Mapping(object);
+    }
+    let Some(Fragment::Mapping(properties)) = object.get("properties").cloned() else {
+        return Fragment::Mapping(object);
+    };
+    let required = match object.get("required") {
+        Some(Fragment::Sequence(required)) => required.clone(),
+        _ => Vec::new(),
+    };
+    let paths: BTreeMap<&str, &[String]> = command
+        .input
+        .iter()
+        .filter_map(|field| {
+            request
+                .member(&field.name)
+                .map(|path| (types::wire_name(field), path.segments()))
+        })
+        .collect();
+    let mut level = Level::default();
+    for (name, schema) in properties {
+        let Fragment::String(wire) = &name else {
+            continue;
+        };
+        let top = [wire.clone()];
+        let path = paths.get(wire.as_str()).copied().unwrap_or(&top);
+        level.insert(path, schema, required.contains(&name));
+    }
+    if let Some(select) = select {
+        level.select(select);
+    }
+    let open = request.unknown == ess_http::Unknown::Ignore;
+    let (nested, required) = level.into_fragments(open);
+    object.insert("properties".into(), Fragment::Mapping(nested));
+    if !required.is_empty() {
+        object.insert("required".into(), Fragment::Sequence(required));
+    }
+    Fragment::Mapping(object)
+}
+
+/// One object level of a nested `{command}.Input`: its members in the order first met, each a
+/// property's schema with whether it is required, or an object level a member path opens.
+#[derive(Default)]
+struct Level(Vec<(String, Nested)>);
+
+/// One member of a [`Level`]: a property's schema with whether it is required, or a level.
+enum Nested {
+    Property(Fragment, bool),
+    Object(Level),
+}
+
+impl Level {
+    /// Files `schema` under `path`, opening each object on the way.
+    fn insert(&mut self, path: &[String], schema: Fragment, required: bool) {
+        let [first, rest @ ..] = path else {
+            return;
+        };
+        if rest.is_empty() {
+            self.0
+                .push((first.clone(), Nested::Property(schema, required)));
+            return;
+        }
+        let index = self
+            .0
+            .iter()
+            .position(|(name, member)| name == first && matches!(member, Nested::Object(_)))
+            .unwrap_or_else(|| {
+                self.0
+                    .push((first.clone(), Nested::Object(Level::default())));
+                self.0.len() - 1
+            });
+        if let Nested::Object(level) = &mut self.0[index].1 {
+            level.insert(rest, schema, required);
+        }
+    }
+
+    /// Writes what a route's `select` tests: each tested member `const` its literal, or `enum` its
+    /// literals where the alternatives test it for several, and required where every alternative
+    /// tests it; a member no input field is read from is declared with that keyword alone.
+    fn select(&mut self, select: &ess_http::Selection) {
+        let alternatives = select.alternatives();
+        let mut members: Vec<&ess_http::MemberPath> = alternatives
+            .iter()
+            .flat_map(|alternative| alternative.tests().map(|(member, _)| member))
+            .collect();
+        members.sort();
+        members.dedup();
+        for member in members {
+            let mut literals: Vec<Value> = Vec::new();
+            for literal in alternatives
+                .iter()
+                .filter_map(|alternative| alternative.literal(member))
+            {
+                let value = literal.to_json();
+                if !literals.contains(&value) {
+                    literals.push(value);
+                }
+            }
+            let everywhere = alternatives
+                .iter()
+                .all(|alternative| alternative.literal(member).is_some());
+            let keyword = match literals.as_slice() {
+                [one] => ("const", one.clone()),
+                _ => ("enum", Value::Array(literals)),
+            };
+            self.test(member.segments(), &keyword, everywhere);
+        }
+    }
+
+    /// Adds `keyword` to the property at `path`, declaring it when no field is read from there.
+    fn test(&mut self, path: &[String], keyword: &(&str, Value), required: bool) {
+        let [first, rest @ ..] = path else {
+            return;
+        };
+        if !rest.is_empty() {
+            let index = self.object(first);
+            if let Nested::Object(level) = &mut self.0[index].1 {
+                level.test(rest, keyword, required);
+            }
+            return;
+        }
+        let found = self
+            .0
+            .iter_mut()
+            .find(|(name, member)| name == first && matches!(member, Nested::Property(..)));
+        if let Some((_, Nested::Property(schema, needed))) = found {
+            if let Fragment::Mapping(schema) = schema {
+                schema.insert(keyword.0.into(), written(keyword.1.clone()));
+            }
+            *needed |= required;
+        } else {
+            let mut schema = ess_yaml::Mapping::new();
+            schema.insert(keyword.0.into(), written(keyword.1.clone()));
+            self.0.push((
+                first.clone(),
+                Nested::Property(Fragment::Mapping(schema), required),
+            ));
+        }
+    }
+
+    /// The index of the object level `name`, opened when it is not there yet.
+    fn object(&mut self, name: &str) -> usize {
+        self.0
+            .iter()
+            .position(|(held, member)| held == name && matches!(member, Nested::Object(_)))
+            .unwrap_or_else(|| {
+                self.0
+                    .push((name.to_owned(), Nested::Object(Level::default())));
+                self.0.len() - 1
+            })
+    }
+
+    /// Whether it holds a required property at any depth.
+    fn required(&self) -> bool {
+        self.0.iter().any(|(_, member)| match member {
+            Nested::Property(_, required) => *required,
+            Nested::Object(level) => level.required(),
+        })
+    }
+
+    /// Its `properties` and its `required` names, each object level written out.
+    fn into_fragments(self, open: bool) -> (ess_yaml::Mapping, Vec<Fragment>) {
+        let mut properties = ess_yaml::Mapping::new();
+        let mut required = Vec::new();
+        for (name, member) in self.0 {
+            let (schema, needed) = match member {
+                Nested::Property(schema, needed) => (schema, needed),
+                Nested::Object(level) => {
+                    let needed = level.required();
+                    let (nested, names) = level.into_fragments(open);
+                    let mut object = ess_yaml::Mapping::new();
+                    object.insert("type".into(), "object".into());
+                    object.insert("properties".into(), Fragment::Mapping(nested));
+                    if !names.is_empty() {
+                        object.insert("required".into(), Fragment::Sequence(names));
+                    }
+                    object.insert("additionalProperties".into(), Fragment::Bool(open));
+                    (Fragment::Mapping(object), needed)
+                }
+            };
+            if needed {
+                required.push(Fragment::String(name.clone()));
+            }
+            properties.insert(Fragment::String(name), schema);
+        }
+        (properties, required)
+    }
+}
+
 /// The schemas one accepted command's operation needs, under its binding `route` if it has one,
 /// and the named types they reach, as [`schemas`] describes.
 fn command_schemas<'a>(
@@ -3059,20 +3767,14 @@ fn command_schemas<'a>(
     // (beyond10x/ess#754): a file part is not the base64 string that schema holds.
     let parted = encoding == ess_http::Encoding::Multipart;
     if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare && !parted {
-        // A route that ignores what no field names (`unknown: ignore`, beyond10x/ess#752) reads an
-        // open body.
-        let undeclared_fields = if request.unknown == ess_http::Unknown::Ignore {
-            UndeclaredFields::Ignored
-        } else {
-            UndeclaredFields::Refused
-        };
         out.insert(
             format!("{}.Input", command.name),
-            embedded(&types::message(&Message {
-                fields: &body,
-                undeclared_fields,
-                ..Message::of_command(command)
-            })),
+            input_schema(
+                command,
+                &body,
+                &request,
+                route.and_then(|route| route.select.as_ref()),
+            ),
         );
     }
     roots.extend(types::field_leaves(&command.input));
@@ -3893,6 +4595,10 @@ struct Document {
     /// the first is the default. Absent without them: the model has no URL for a component.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     servers: Vec<ess_http::Server>,
+    /// Which origins an `ess-http/1` binding lets read the answers of every route that states no
+    /// policy of its own; absent without one.
+    #[serde(rename = "x-ess-cors", skip_serializing_if = "Option::is_none")]
+    cors: Option<ess_http::Cors>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<Tag>,
     paths: BTreeMap<String, PathItem>,
@@ -3955,6 +4661,10 @@ struct PathItem {
     post: Option<Operation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delete: Option<Operation>,
+    /// The cross-origin preflight, on a path a `cors` policy covers ([`preflight`]); absent
+    /// everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     patch: Option<Operation>,
 }
@@ -3986,6 +4696,11 @@ struct Operation {
     /// where they are derived, so a document generated without a binding keeps its bytes.
     #[serde(rename = "x-ess-route-source", skip_serializing_if = "Option::is_none")]
     route_source: Option<&'static str>,
+    /// Every route sharing this method and path, in the compiled order of the binding, each
+    /// `{operationId, command, select}`, the catch-all's select `otherwise`; empty, and omitted,
+    /// for a route of its own.
+    #[serde(rename = "x-ess-operations", skip_serializing_if = "Vec::is_empty")]
+    operations: Vec<Value>,
     /// The largest request body, in bytes, the operation reads; absent where nothing bounds it, so
     /// a document generated without a limit keeps its bytes.
     #[serde(
@@ -4128,12 +4843,17 @@ struct MediaType {
     encoding: Option<BTreeMap<String, PartEncoding>>,
 }
 
-/// One part's Encoding Object: the media types it may carry, comma-separated (`OpenAPI` 3.1
-/// § 4.8.15).
+/// One property's Encoding Object (`OpenAPI` 3.1 § 4.8.15): a `multipart` part's media types,
+/// comma-separated, or a `form` body list's `style` and `explode` when it is one comma-joined
+/// value.
 #[derive(Debug, serde::Serialize)]
 struct PartEncoding {
-    #[serde(rename = "contentType")]
-    content_type: String,
+    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
+    content_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    style: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explode: Option<bool>,
 }
 
 /// Everything the document's `$ref`s resolve against.
@@ -4165,8 +4885,14 @@ struct BindingAccessor {
 /// type it is declared at, because `paging:` declares that a read sending neither answers every row.
 /// A `List<T>` parameter repeats its key once per element, `queues=1&queues=2` (beyond10x/ess#438):
 /// `style: form` and `explode: true` are `OpenAPI`'s default for a query parameter, stated so that no
-/// reader settles on `queues=1,2`, which is ambiguous for an element holding a comma.
-fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Parameter> {
+/// reader settles on `queues=1,2`, which is ambiguous for an element holding a comma. A parameter
+/// the bound route's `lists` names is that one comma-joined value, `explode: false`
+/// ([`list_style`]).
+fn view_parameters(
+    view: &ResolvedView,
+    carried: &BTreeSet<&str>,
+    declared: Option<&ess_http::Route>,
+) -> Vec<Parameter> {
     view.params
         .iter()
         .filter(|param| !carried.contains(param.name.as_str()))
@@ -4205,8 +4931,8 @@ fn view_parameters(view: &ResolvedView, carried: &BTreeSet<&str>) -> Vec<Paramet
                         )
                     }),
                     required: !matches!(param.type_ref, ResolvedTypeRef::Optional { .. }),
-                    style: is_list(&param.type_ref).then_some("form"),
-                    explode: is_list(&param.type_ref).then_some(true),
+                    style: list_style(&param.type_ref, &param.name, declared).0,
+                    explode: list_style(&param.type_ref, &param.name, declared).1,
                     schema: embedded(&types::field(param)),
                 },
             }

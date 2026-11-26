@@ -73,6 +73,11 @@ impl ModelTypes {
     /// one is refused as `unpublished_body`, naming the command and why. Responses and view rows
     /// are published unchanged under a binding, so their roots are too. With `None`, it is
     /// [`Self::select`].
+    ///
+    /// A binding whose routes carry `request.members`, `select`, `lists` or `cors`, or which
+    /// declares `cors` itself, is refused as `unread_binding_key`, by each route's command or view
+    /// and key, whatever the roots: the selection does not read them yet
+    /// ([`crate::http::Binding::read_by`]).
     pub fn select_bound(
         ir: &EssIr,
         roots: &BTreeSet<String>,
@@ -88,6 +93,15 @@ impl ModelTypes {
                 rule: "empty_roots",
                 detail: "select at least one model type".to_owned(),
             });
+        }
+        if let Some(Err(unread)) = binding.map(|binding| binding.read_by("model type selection")) {
+            for (operation, reason) in unread.0 {
+                errors.insert(ModelTypeError {
+                    name: operation.name().to_owned(),
+                    rule: "unread_binding_key",
+                    detail: crate::http::Unprojectable(vec![(operation, reason)]).to_string(),
+                });
+            }
         }
         for root in roots {
             if let Err(error) =

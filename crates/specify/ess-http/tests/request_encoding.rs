@@ -52,7 +52,12 @@ fn model() -> EssIr {
 /// field of which has a flat spelling; `catalog.items.ShapeItems` adds a field of each type that
 /// has none.
 fn shaped_model() -> EssIr {
-    let text = MODEL
+    model_from(&shaped_text())
+}
+
+/// The text of [`shaped_model`].
+fn shaped_text() -> String {
+    MODEL
         .replace(
             "  - {name: catalog.items.ItemId, kind: newtype, of: String}\n",
             "  - {name: catalog.items.ItemId, kind: newtype, of: String}
@@ -99,8 +104,7 @@ fn shaped_model() -> EssIr {
         .replace(
             "accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}",
             "accepts: {commands: [catalog.items.FindItems, catalog.items.ListItem, catalog.items.ShapeItems, catalog.items.TouchItem]}",
-        );
-    model_from(&text)
+        )
 }
 
 /// The routes ESS derives for `ir`, written out the way `ess_gen::http::routes` derives them for
@@ -907,4 +911,216 @@ fn compiled_ir_with_a_request_out_of_its_rules_is_refused_naming_the_key() {
     .expect_err("request on a view")
     .to_string();
     assert!(error.contains("routes[0].request"), "{error}");
+}
+
+// --- `lists` (`story:a-query-list-may-travel-comma-joined`) ---
+
+/// The shaped model with two views whose parameters are lists: `ByTitles(titles: List<String>)`
+/// and `Changes(kinds: Optional<List<String>>)`, the story's reproduction.
+fn listing_model() -> EssIr {
+    let text = shaped_text().replace(
+        "components:\n",
+        "  - name: catalog.items.ByTitles
+    source: catalog.items.Item
+    params:
+      - {name: titles, type: List<String>}
+    filter: {exists: {in: param.titles, as: t, that: title == t}}
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: title, type: String}
+  - name: catalog.items.Changes
+    source: catalog.items.Item
+    params:
+      - {name: kinds, type: Optional<List<String>>}
+    filter: {exists: {in: param.kinds, as: k, that: title == k}}
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: title, type: String}
+components:\n",
+    );
+    model_from(&text)
+}
+
+#[test]
+fn a_list_may_travel_comma_joined_and_is_written_only_where_declared() {
+    let ir = listing_model();
+    let find = |request: &str| {
+        format!(
+            "routes:\n  - command: catalog.items.FindItems\n    {request}\n    lists: {{labels: comma}}\n"
+        )
+    };
+    let cases = [
+        (
+            "routes:\n  - view: catalog.items.Changes\n    method: get\n    path: /changes\n    lists: {kinds: comma}\n"
+                .to_owned(),
+            "kinds",
+        ),
+        (
+            "routes:\n  - view: catalog.items.ByTitles\n    method: get\n    lists: {titles: comma}\n"
+                .to_owned(),
+            "titles",
+        ),
+        (find("method: post\n    request: {encoding: form}"), "labels"),
+        (find("method: get\n    request: {encoding: query}"), "labels"),
+        (find("method: post\n    request: {query: [input.labels]}"), "labels"),
+        (
+            find("method: patch\n    request: {encoding: multipart, query: [input.labels]}"),
+            "labels",
+        ),
+    ];
+    for (routes, name) in cases {
+        let json = compiled(&ir, &routes)
+            .unwrap_or_else(|refused| panic!("{routes}: {refused}"))
+            .to_canonical_json();
+        let lists = format!("\"lists\": {{\n        \"{name}\": \"comma\"\n      }}");
+        assert!(json.contains(&lists), "{json}");
+        assert_eq!(json.matches("\"lists\"").count(), 1, "{json}");
+        let read = HttpIr::from_json(&json).expect("the compiled IR reads back");
+        assert_eq!(read.to_canonical_json(), json, "round trip changed bytes");
+    }
+    // Without `lists`, a list repeats its key and compiled IR writes no `lists`.
+    let plain = "routes:\n  - view: catalog.items.ByTitles\n    method: get\n";
+    let json = compiled(&ir, plain).expect("compiles").to_canonical_json();
+    assert!(!json.contains("\"lists\""), "{json}");
+}
+
+#[test]
+fn ess_http_021_a_list_form_out_of_its_rules_is_refused_at_its_name() {
+    let ir = listing_model();
+    let find = |request: &str, lists: &str| {
+        format!(
+            "routes:
+  - command: catalog.items.FindItems
+    method: post
+    path: /find/{{item_id}}
+    parameters: {{item_id: input.item_id}}
+    request: {request}
+    lists: {lists}
+"
+        )
+    };
+    let view = |name: &str, lists: &str| {
+        format!("routes:\n  - view: catalog.items.{name}\n    method: get\n    lists: {lists}\n")
+    };
+    let cases = [
+        (
+            "an input field the command does not declare",
+            find("{encoding: form}", "{nope: comma}"),
+            "nope",
+        ),
+        (
+            "a parameter the view does not declare",
+            view("ByTitles", "{nope: comma}"),
+            "nope",
+        ),
+        (
+            "carried by the path",
+            find("{encoding: form}", "{item_id: comma}"),
+            "item_id",
+        ),
+        (
+            "not a list",
+            find("{encoding: form}", "{flag: comma}"),
+            "flag",
+        ),
+        (
+            "a view parameter that is not a list",
+            view("ItemById", "{item_id: comma}"),
+            "item_id",
+        ),
+        (
+            "a list in a json body",
+            find("{encoding: json}", "{labels: comma}"),
+            "labels",
+        ),
+        (
+            "a list in a multipart part",
+            find("{encoding: multipart}", "{labels: comma}"),
+            "labels",
+        ),
+        (
+            "a word other than comma",
+            find("{encoding: form}", "{labels: pipe}"),
+            "labels",
+        ),
+        (
+            "named twice",
+            find("{encoding: form}", "{labels: comma, labels: comma}"),
+            "labels",
+        ),
+    ];
+    for (case, routes, name) in cases {
+        let result = compiled(&ir, &routes);
+        assert_eq!(
+            located(result.clone()),
+            [refused("ESS-HTTP-021", &format!("routes[0].lists.{name}"))],
+            "{case}"
+        );
+        let shown = worded(result);
+        assert!(shown[0].contains(&format!("`{name}`")), "{case}: {shown:?}");
+    }
+    assert_eq!(
+        located(compiled(&ir, &find("{encoding: form}", "{}"))),
+        [refused("ESS-HTTP-021", "routes[0].lists")]
+    );
+}
+
+#[test]
+fn ess_http_012_a_refinement_restates_the_lists_of_every_refined_route() {
+    let ir = listing_model();
+    let listed =
+        "routes:\n  - view: catalog.items.ByTitles\n    method: get\n    path: /titles\n    lists: {titles: comma}\n";
+    let plain = "routes:\n  - view: catalog.items.ByTitles\n    method: get\n    path: /titles\n";
+    let refined = refined_from(&ir, listed);
+    assert_eq!(located(refining(&ir, &refined, listed)), []);
+    assert_eq!(
+        located(refining(&ir, &refined, plain)),
+        [refused("ESS-HTTP-012", "routes[0].lists")]
+    );
+    let refined = refined_from(&ir, plain);
+    assert_eq!(
+        located(refining(&ir, &refined, listed)),
+        [refused("ESS-HTTP-012", "routes[0].lists")]
+    );
+}
+
+#[test]
+fn compiled_ir_with_a_list_form_out_of_its_rules_is_refused_naming_the_key() {
+    let ir = listing_model();
+    let routes = "routes:
+  - command: catalog.items.FindItems
+    method: post
+    path: /find/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: form}
+    lists: {labels: comma}
+";
+    let json = compiled(&ir, routes).expect("compiles").to_canonical_json();
+    let lists = "\"lists\": {\n        \"labels\": \"comma\"\n      }";
+    assert!(json.contains(lists), "{json}");
+    for (written, named) in [
+        ("\"lists\": {}", "lists"),
+        ("\"lists\": {\"labels\": \"pipe\"}", "pipe"),
+        (
+            "\"lists\": {\"labels\": \"comma\", \"flag\": \"comma\"}",
+            "lists",
+        ),
+        (
+            "\"lists\": {\"item_id\": \"comma\"}",
+            "routes[0].lists.item_id",
+        ),
+    ] {
+        let broken = json.replace(lists, written);
+        assert_ne!(broken, json);
+        let error = HttpIr::from_json(&broken).expect_err(written).to_string();
+        assert!(error.contains(named), "{written}: {error}");
+    }
+    // A list in a `json` body: the request written away leaves the default encoding.
+    let form = "\"request\": {\n        \"encoding\": \"form\"\n      },\n      ";
+    let json_body = json.replace(form, "");
+    assert_ne!(json_body, json);
+    let error = HttpIr::from_json(&json_body)
+        .expect_err("a list in a json body")
+        .to_string();
+    assert!(error.contains("routes[0].lists.labels"), "{error}");
 }

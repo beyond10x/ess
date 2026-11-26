@@ -174,6 +174,53 @@ or `single` they write all use the wire name, and the model name is an unknown k
 takes its wire name the same way. `naming: {wire}` is not a view field's key and is refused as an
 unknown field.
 
+### Several operations on one route
+
+Command routes of one component and method may share a template when `select:` tells them apart
+(`ae1a-several-operations-share-one-route-by-body-members`). A select is a map from a member path
+of the `json` body (the grammar of `request.members`) to a literal, a string, a Boolean or an
+integer, or a list of such maps, each an alternative of one operation, so `ESS-HTTP-005` keeps its
+meaning:
+
+```yaml
+routes:
+  - {command: demo.desk.OpenTicket, method: post, path: /hooks, select: {kind: opened}}
+  - {command: demo.desk.CloseTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+  - {command: demo.desk.ReopenTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: demo.desk.IgnoreHook, method: post, path: /hooks}        # the catch-all
+  - command: demo.desk.ChangeLabel
+    method: post
+    path: /v2/hooks
+    select: [{object: label, action: added}, {object: label, action: removed}]
+```
+
+The rule is the template rule of 0.89.0, applied to members:
+
+- A member a select does not name matches any value, an absent member included.
+- Two selects meet when one body can match both. The same tests are `ESS-HTTP-010`, as two
+  catch-alls are. One that tests every member the other tests, with the same literals, and more is
+  nested: the more specific answers. Each testing a member the other leaves open is crossed:
+  `ESS-HTTP-011`, naming both members and a body that matches both.
+- A route on the shared template without `select` is the catch-all, and makes the set open.
+  Without one the set is closed: a body no select matches is `malformed`, answered with the
+  binding's or the route's `malformed` refusal, a `4xx`.
+- A tested member may be one an input field is read from, at the top level under its wire name or
+  through `request.members`; that field receives the body's value, and its type must admit the
+  literal. A tested member is never an undeclared member, under `unknown: refuse` or `ignore`. A
+  member above or inside the member a field is read from is refused.
+- `ESS-HTTP-020` refuses, at `routes[i].select`: `select` on a view, beside `form`, `query`,
+  `multipart` or a bare `body`, or on `get`; a value that is not a map or a list of maps; an empty
+  map or list; a path breaking the member grammar; a literal that is `null`, a list, an object or
+  a number that is not an integer; two members of one map one above the other; a literal the field
+  on its member does not admit; and two alternatives of one route that meet.
+- A route sharing a template with a select is a `json` body that is the input object, or the two
+  are `ESS-HTTP-010`. A derived route never shares a template with a declared one.
+- Compiled IR writes `select` only where it is declared, one alternative as its map in member
+  order and several as a list in the order written, so every binding without it compiles to the
+  bytes it did. No format version: a reader without the key refuses `select` by name. A refinement
+  restates `select` (`ESS-HTTP-012`).
+- OpenAPI writes the routes sharing a method and path as one operation ("What OpenAPI writes (k4)"). The generated servers, the generated UIs and `ess generate types --http` refuse a binding whose routes carry `select`, naming the route, the key and the target, until they read it.
+
 ### Which operations a binding may name
 
 - A command a component `accepts`. Every such command has an OpenAPI route today (`http.rs:392-411`).
@@ -203,9 +250,9 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-007` | a path that breaks the template grammar | `routes[i].path` and the offending segment |
 | `ESS-HTTP-008` | a variable not mapped, mapped twice, reading a source another variable of the route already reads (a request path would give it two values), or a mapping for no variable | `routes[i].parameters.<name>`; for a source read twice, the second variable of the path that reads it |
 | `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry (any but `String`, `Integer`, `Boolean`, `Decimal`, `Timestamp`, `Duration`, `Uuid`, an enum, or an unconstrained newtype of one of them) | `routes[i].parameters.<name>`, the source, its type |
-| `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
-| `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates") | both operations, a path both match, and the segment where each holds its literal |
-| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body` or `request.query` | `routes[i].method`, `routes[i].path`, `routes[i].request.body` or `routes[i].request.query`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
+| `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived; two declared command routes on one template whose `select` tests the same members for the same literals, two without `select`, or a `select` beside a route whose body is not a `json` input object (the message names `select:` when both are declared) | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
+| `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates"); two declared routes on one template whose selects cross, each testing a body member the other leaves open ("Several operations on one route") | both operations, a path both match, and the segment where each holds its literal |
+| `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, drops a route of the refined binding, or adds, drops or changes a route's `request.body`, `request.query`, `request.members` or `select` | `routes[i].method`, `routes[i].path`, `routes[i].request.body`, `routes[i].request.query`, `routes[i].request.members` or `routes[i].select`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
 
@@ -339,6 +386,43 @@ default, `refuse`, keeps ESS's closed bodies. A key whose percent-decoding fails
 because every declared name is UTF-8, so it is unknown: ignored with its value under `ignore`, and
 malformed under `refuse`.
 
+A route may write a list as one comma-joined value instead
+(`story:a-query-list-may-travel-comma-joined`, AE-D13 A), for a filter like `?kinds=opened,closed`:
+
+```yaml
+  - view: tickets.desk.Changes
+    method: get
+    path: /changes
+    lists: {kinds: comma}
+```
+
+- `lists` maps an input field of the command or a parameter of the view, by its declared name, to
+  `comma`, the only form. The name is a `List` of scalars, `Optional` or not, that the query string
+  or a `form` body carries: a view's parameter, or a command's field on a route encoded `form` or
+  `query`, or one `request.query` lists. Everything else is refused at `routes[i].lists.<name>`
+  (`ESS-HTTP-021`): a name the command or view does not declare, one named twice, one the path
+  carries, one of another type, a list in a `json` or `multipart` body, which carries a list in its
+  own form, and a form other than `comma`. `lists: {}` is refused at `routes[i].lists`.
+- The value is the elements' texts joined by `,`, and the key appears once: a second occurrence is
+  malformed, as for a scalar. The empty value is the empty list; an absent key is an absent
+  `Optional` list and malformed for a list that is not `Optional`. An element holding `,` cannot be
+  written, and a server reading an element split by a comma reads two elements, as RFC 3986 permits
+  for a comma in a query value. No leniency is stated: a strict writer stays readable by a lenient
+  server, and the contract names the form a caller must send.
+- Compiled IR writes `lists` in name order and only where declared, so a binding without it
+  compiles to the bytes it did. No format version moves: an older reader refuses `lists` by name.
+  The reader refuses a name the path carries and, on a command, a name neither a `form` or `query`
+  encoding nor `request.query` carries. A refinement restates the `lists` of every route it restates
+  (`ESS-HTTP-012`).
+- The OpenAPI document writes such a query parameter with `style: form, explode: false` (OpenAPI
+  3.1 § 4.8.12.4), required unless it is `Optional`, and a `form` body's list with the same `style` and `explode` in the media type's
+  Encoding Object under its wire name; the body's description names it.
+- The protocol kind is not touched: a protocol model keeps taking the filter's verdict as an input,
+  and the binding owns the text form.
+- The generated servers, the generated UIs and `ess generate types --http` refuse a binding whose
+  routes carry `lists`, naming the route, the key and the target, until they read it
+  (`ae12a-servers-and-apps-split-and-join-a-comma-list`).
+
 `unknown: ignore` is admitted beside `json` too (beyond10x/ess#752,
 `story:a-json-request-may-ignore-undeclared-members-and-echoed-path-fields`), for a client that
 reads a resource, changes one member and sends the whole object back. One rule holds for all three
@@ -447,6 +531,41 @@ mirrors `response.<field>` on the response side
 - Compiled IR writes `body` only when it is declared, so every binding without one compiles to the
   bytes it compiled to before. No format version: a reader without the key refuses `request.body`
   as an unknown field by name, as stage 1 refused every stage-2 key.
+
+A `json` request may read input fields from nested members of its body: `request.members`, a map
+from an input field to a member path, one or more member names joined by `.`, each name non-empty
+and holding no `.` (`ae1d-a-json-request-reads-an-input-from-a-nested-member`). The command's input
+stays flat, so a row is still addressed by a top-level input field; only the wire nests:
+
+```yaml
+  - command: demo.desk.CloseTicket
+    method: post
+    path: /hooks
+    request: {encoding: json, members: {ticket_id: data.ticket_id, reason: data.reason}}
+    # body: {"kind": "closed", "data": {"ticket_id": "t-1", "reason": "done"}}
+```
+
+- A mapped field is read from its member; every other input field the path and `request.query` do
+  not carry stays a top-level member under its wire name.
+- A field that is not `Optional` under a missing object is `malformed`, as a missing top-level
+  member is. An `Optional` field under a missing object reads as absent.
+- Under `unknown: refuse` a member no field names is `malformed` at every level `members` opens;
+  under `unknown: ignore` it is ignored at every such level.
+- `ESS-HTTP-020` refuses, at `routes[i].request.members.<field>`: a key that is not an input field
+  of the command; a field the path or `request.query` carries; `members` beside `form`, `query`,
+  `multipart` or a bare `body`, on a `get` command and on a view; a path with an empty name; two
+  fields on one path; one path an object above another (`data` beside `data.ticket_id`); and a path
+  starting at the top-level member an unmapped field is carried under, its wire name. `members`
+  written empty is refused at `routes[i].request.members`.
+- A refinement keeps the `members` of a route it restates (`ESS-HTTP-012`).
+- Compiled IR writes `members` in the command's field order, only when it is declared, so every
+  binding without it compiles to the bytes it compiled to before. No format version: a reader
+  without the key refuses `request.members` as an unknown field by name.
+- OpenAPI writes `{command}.Input` nested: each object a path opens is
+  `{type: object, properties, required, additionalProperties}`, required when it holds a field
+  that is not `Optional`, and open under `unknown: ignore`.
+- The generated servers, the generated UIs and `ess generate types --http` refuse a binding whose
+  routes carry `request.members`, naming the route, the key and the target, until they read it.
 
 A command route on `post`, `put`, `patch` or `delete` may read chosen input fields from the query
 string beside its body: `request.query`, a list of `input.<field>`
@@ -689,7 +808,7 @@ and its answers.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field neither the path nor `request.query` carries; a `query` beside `encoding: query`, on a `get` command or written empty, an entry that is not `input.<field>` naming an input field, one listed twice, and one the path, the bare `body` or a part carries | `routes[i].request.encoding`, `routes[i].request.unknown`, `routes[i].request.body` or `routes[i].request.query`, and for a field left out, the field |
+| `ESS-HTTP-020` | an encoding outside the set; `form`, `json` or `multipart` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` beside a bare `body`, or an `unknown` value outside `refuse` and `ignore`; a `body` on a view, beside `form` or `query`, or on a `get` command, one that is not `input.<field>` naming an input field of the command, one naming an `Optional` field or a field the path carries, and each other input field neither the path nor `request.query` carries; a `query` beside `encoding: query`, on a `get` command or written empty, an entry that is not `input.<field>` naming an input field, one listed twice, and one the path, the bare `body` or a part carries; `request.members` written empty, on a view, beside `form`, `query`, `multipart` or a bare `body`, or on a `get` command, a key that is not an input field, a field the path or `request.query` carries, a path with an empty name, two fields on one path, one path an object above another, and a path starting at an unmapped field's wire name; `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, or on `get`, a value that is not a map or a list of maps, an empty map or list, a member path with an empty name, a literal that is not a string, a Boolean or an integer, two members one above the other, a literal the type of the input field on its member does not admit, a member above or inside a field's member, and two alternatives of one route that meet | `routes[i].select`, `routes[i].request.encoding`, `routes[i].request.unknown`, `routes[i].request.body`, `routes[i].request.query`, `routes[i].request.members` or `routes[i].request.members.<field>`, and for a field left out, the field |
 | `ESS-HTTP-021` | a `form`, `query` or `multipart` field, or a field `request.query` lists, whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
@@ -703,6 +822,7 @@ and its answers.
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 | `ESS-HTTP-034` | a `limits.request_bytes` outside 1 to 16777216 bytes; a route `limits` on a route that reads no request body (a view, a `get` command, a `request: {encoding: query}` command) | `limits.request_bytes`, `routes[i].limits.request_bytes` or `routes[i].limits` |
 | `ESS-HTTP-036` | `parts` beside an encoding other than `multipart`; a `parts` key that is not a `Bytes` input field (or an `Optional` one, or a newtype of either), or an entry stating nothing; a `filename` or `media_type` that is not `input.<field>` naming a `String` input field, or one the path, a part or another attribute carries; an empty `media_types`, an entry that is not an RFC 6838 `type/subtype`, or one entry twice | `routes[i].request.parts`, `….parts.<field>`, `….parts.<field>.filename`, `….media_type` or `….media_types` |
+| `ESS-HTTP-038` | `origins: any` beside `credentials: true`; `origins` neither `any` nor a list of strings, or empty; an origin that is not `scheme://host[:port]`, or one given twice; a `headers` or `expose` name that is not a token, or one given twice ignoring case; an `expose` name no covered route declares; `max_age` outside `0..=86400`; a route `cors` other than `none` or a map ("Cross-origin reads") | `cors.<key>` or `routes[i].cors.<key>`, `routes[i].cors` |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
 missing `status` in a listed outcome or refusal, and an unknown key anywhere, are parse refusals
@@ -919,6 +1039,26 @@ on every bound operation that can answer it, and a route's own override on that 
 the binding bounds carries `x-ess-request-max-bytes` and the `too_large` answer as one more response
 (`413` with `{"refused": ...}` where the binding declares no `too_large`); a binding that declares
 neither key writes no new byte.
+
+Routes sharing one method and path by `select:` are one operation
+(`ae1b-openapi-writes-a-shared-route-as-one-operation`), since a path item holds one operation per
+method:
+
+- `operationId` is the `operation_id`, or else the qualified name, of the first sharing route in the
+  compiled order of the binding (path, method, operation), and `x-ess-operations` lists every
+  sharing route in that order as `{operationId, command, select}`, the select as compiled and the
+  catch-all's `otherwise`. The same routes written in another order give the same bytes.
+- `requestBody` is `oneOf` the commands' request schemas. Each selecting route's
+  `{command}.Input` holds its tested members `const` (`enum` where its alternatives test a member
+  for several literals), nested as `request.members` nests, and required where every alternative
+  tests them. Where every route tests one and the same top-level member for strings and none is
+  the catch-all, OpenAPI's `discriminator` (`propertyName`, `mapping` to the `{command}.Input`
+  schemas) is written too. The catch-all's entry says it takes every body the others do not.
+- `responses` merge per status: one command's answer, or answers written alike, as they are;
+  otherwise `oneOf` the bodies, the description naming each command.
+- A closed set, without a catch-all, states under the `malformed` status (the binding's, else
+  `400`) that a body no route selects is answered as `malformed`.
+- A binding without `select` keeps its bytes.
 
 ## Operation ids and servers
 
@@ -1143,6 +1283,58 @@ routes:
   by name, in name order, and `required` when not empty) after `servers`, and each route's
   `authentication` after its `operation_id`, both absent when not declared, so every binding
   without them compiles to the same bytes.
+
+## Cross-origin reads
+
+Which browser pages on other origins may read a route's answers is a policy of the server, not a
+header an author copies onto every outcome (`ae3a-a-binding-declares-which-origins-may-read-its-answers`,
+decision S6, option A). The binding states it once:
+
+```yaml
+cors:
+  origins: [https://desk.example.test]   # or `any`
+  credentials: false                       # default false
+  headers: [Authorization]                 # request headers a page may send; default none
+  expose: [X-Response-Time]                # response headers a page may read; default none
+  max_age: 600                             # seconds; default absent
+routes:
+  - {view: tickets.desk.OpenTickets, method: get, path: /tickets}
+  - {command: tickets.desk.CloseTicket, method: post, path: /tickets/close, cors: none}
+```
+
+- **Which routes.** The top-level `cors` applies to every route, derived ones included. A route's
+  `cors: none` takes that route out; a route's own `cors:` map stands in its place on that route.
+  Absent `cors`, no cross-origin read: no CORS answer, as before.
+- **Methods.** The preflight's methods are derived: on a path, the methods of the routes the policy
+  covers.
+- **What compiling checks.** `ESS-HTTP-038`, each at its key: `origins: any` beside
+  `credentials: true` (the Fetch standard forbids the wildcard with credentials); an `origins` that
+  is neither `any` nor a list of strings, or an empty list; an origin that is not
+  `scheme://host[:port]` (a path, a trailing `/` included, a query, a fragment, userinfo or a `*`
+  in it), or one given twice; a header name in `headers` or `expose` that is not an RFC 9110
+  token, or one given twice ignoring case; an `expose` name no covered route declares (its
+  outcomes, `errors`, refusals or representations); `max_age` outside `0..=86400`; a route `cors`
+  other than `none` or a map.
+- **Refinement.** A server binding may list fewer origins than the protocol binding, on the
+  binding's policy and on each route's, and may not widen them: a policy where the refined binding
+  has none, one left out where it has one, an origin it does not list, or `any` over a list is
+  `ESS-HTTP-012` at `cors`, `cors.origins`, `routes[i].cors` or `routes[i].cors.origins`.
+  `credentials`, `headers`, `expose` and `max_age` are restated exactly.
+- **What OpenAPI writes.** `x-ess-cors` holds the binding's policy on the document. Each covered
+  path gains an `options` operation answering `204` with `Access-Control-Allow-Origin`,
+  `Access-Control-Allow-Methods` and, where the policy states them, `Access-Control-Allow-Headers`,
+  `Access-Control-Allow-Credentials`, `Access-Control-Max-Age` and `Vary: Origin`; its
+  `x-ess-cors` holds the policy of each method. Each answer of a covered operation gains
+  `Access-Control-Allow-Origin`, and `Vary: Origin` when the origins are listed.
+- **What the servers and apps do.** The generated servers, the generated UIs and
+  `ess generate types --http` refuse a binding with `cors` until they read it (`ae3b`): a route's
+  own `cors`, `none` included, by the route and the key, and the binding's own `cors` by every
+  route it covers, derived ones included. `none` is refused too, though a target that answers no
+  cross-origin read honours it by doing nothing, so that no target states a policy it was not
+  built to state.
+- **Format.** `ess-http/1` and `ess-http-ir/1` gain the optional key `cors`, at the top after
+  `authentication` and on a route after `limits`, written only where declared; every binding
+  without it compiles to the same bytes.
 
 ## Still refused
 

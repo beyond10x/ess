@@ -472,3 +472,101 @@ fn adversary_a_refused_response_root_does_not_blame_answers_the_route_never_list
         }
     }
 }
+
+/// A binding whose routes carry `request.members` or `select` is refused, by the command, the route
+/// and the key, until the selection reads them: it would publish a flat `<command>.input`, and
+/// none of the members a shared route selects by.
+#[test]
+fn a_binding_with_members_or_select_is_refused_by_name() {
+    let ir = compiled();
+    for (routes, key, route) in [
+        (
+            "routes:\n  - command: demo.notes.Create\n    method: put\n    path: \
+             /notes/{note_id}\n    parameters: {note_id: input.note_id}\n    request: \
+             {members: {title: data.title}}\n",
+            "`request.members`",
+            "`put /notes/{note_id}`",
+        ),
+        (
+            "routes:\n  - {command: demo.notes.Create, method: post, path: /notes, select: \
+             {kind: create}}\n  - {command: demo.notes.Pin, method: post, path: /notes, \
+             select: {kind: pin}}\n",
+            "`select`",
+            "`post /notes`",
+        ),
+    ] {
+        let binding = bound_by(&ir, routes);
+        let Err(errors) =
+            ModelTypes::select_bound(&ir, &roots(&["demo.notes.Create.input"]), Some(&binding))
+        else {
+            panic!("model types were selected under a binding whose {key} they do not read");
+        };
+        assert!(
+            errors.iter().any(|error| error.name == "demo.notes.Create"
+                && error.rule == "unread_binding_key"
+                && error.detail.contains(route)
+                && error.detail.contains(key)
+                && error.detail.contains("does not read it yet")),
+            "{errors:#?}"
+        );
+    }
+}
+
+/// A binding whose routes carry `lists` or `cors`, or which declares `cors` itself, is refused, by
+/// the operation, the route and the key, until the selection reads them. A route's `cors: none`
+/// is refused too, though the types a selection publishes would be the same under it.
+#[test]
+fn a_binding_with_lists_or_cors_is_refused_by_name() {
+    let view = "  - name: demo.notes.Notes\n    source: demo.notes.Note\n";
+    assert!(SOURCE.contains(view), "the fixture's view");
+    let source = SOURCE.replace(
+        view,
+        &format!(
+            "{view}    params:\n      - {{name: titles, type: List<String>}}\n    filter: \
+             {{exists: {{in: param.titles, as: t, that: title == t}}}}\n"
+        ),
+    );
+    let mut sources = SourceMap::new();
+    sources.insert(Source::DOCUMENT, source.clone());
+    let specification =
+        Specification::assemble([(Source::document(), RawSpecFile::parse(&source).unwrap())])
+            .unwrap();
+    let ir = compile(&specification, &sources).unwrap();
+    for (keys, name, key, route) in [
+        (
+            "routes:\n  - {view: demo.notes.Notes, method: get, path: /notes, lists: {titles: \
+             comma}}\n",
+            "demo.notes.Notes",
+            "`lists`",
+            "`get /notes`",
+        ),
+        (
+            "routes:\n  - {command: demo.notes.Create, method: post, path: /notes, cors: none}\n",
+            "demo.notes.Create",
+            "`cors`",
+            "`post /notes`",
+        ),
+        (
+            "cors: {origins: [https://app.example]}\nroutes:\n  - {command: demo.notes.Create, \
+             method: post, path: /notes}\n",
+            "demo.notes.Create",
+            "the binding's `cors`",
+            "`post /notes`",
+        ),
+    ] {
+        let binding = bound_by(&ir, keys);
+        let Err(errors) =
+            ModelTypes::select_bound(&ir, &roots(&["demo.notes.Create.input"]), Some(&binding))
+        else {
+            panic!("model types were selected under a binding whose {key} they do not read");
+        };
+        assert!(
+            errors.iter().any(|error| error.name == name
+                && error.rule == "unread_binding_key"
+                && error.detail.contains(route)
+                && error.detail.contains(key)
+                && error.detail.contains("does not read it yet")),
+            "{errors:#?}"
+        );
+    }
+}

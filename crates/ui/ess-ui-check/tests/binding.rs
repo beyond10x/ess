@@ -941,3 +941,149 @@ fn every_compiled_answer_form_is_carried_or_refused() {
         "{refusals:#?}"
     );
 }
+
+/// A binding whose routes carry `request.members` or `select` is refused, naming the binding's
+/// file, the route and the key, until a generated UI reads them: it would send a flat body, and
+/// none of the members a shared route selects by.
+#[test]
+fn a_binding_with_members_or_select_is_refused_by_name() {
+    let sources = shop_with_components(&[]);
+    let ir = compile_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let text = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: add, component: form, \
+          does: stock.AddItem, fields: [label]}]}",
+    );
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    for (routes, key, route) in [
+        (
+            "  - {command: shop.stock.AddItem, method: post, path: /items, request: {members: \
+             {label: data.label}}}\n",
+            "`request.members`",
+            "`post /items`",
+        ),
+        (
+            "  - {command: shop.stock.AddItem, method: post, path: /entries, select: {kind: \
+             item}}\n  - {command: shop.audit.RecordEntry, method: post, path: /entries, \
+             select: {kind: entry}}\n",
+            "`select`",
+            "`post /entries`",
+        ),
+    ] {
+        let declared = format!(
+            "type: ess-http/1\nspecification:\n  system: shop\n  version: v1\n  source_digest: \
+             sha256:{}\nroutes:\n{routes}",
+            ir.source_digest()
+        );
+        let spec = ess_gen::ess_http::HttpSpec::from_yaml(&declared).expect("parses");
+        let compiled = ess_gen::ess_http::compile(&spec, &ir, &http::derived(&ir))
+            .unwrap_or_else(|refused| panic!("compiles: {refused}"));
+        let routed = http::Binding::new(compiled).expect("every route has a path");
+        let over = ess_ui_check::HttpBinding {
+            path: Path::new("shop-http.yaml"),
+            binding: &routed,
+        };
+        let Err(BindingError::Refused(refusals)) =
+            ess_ui_check::binding_over(&document, &sources, Some(over))
+        else {
+            panic!("a UI was bound to a binding whose {key} it does not read");
+        };
+        assert!(
+            refusals
+                .iter()
+                .any(|refusal| refusal.path == "shop-http.yaml"
+                    && refusal.message.contains("command `shop.stock.AddItem`")
+                    && refusal.message.contains(route)
+                    && refusal.message.contains(key)
+                    && refusal
+                        .message
+                        .contains("generated UI does not read it yet")),
+            "{refusals:#?}"
+        );
+    }
+}
+
+/// A binding whose routes carry `lists` or `cors`, or which declares `cors` itself, is refused,
+/// naming the binding's file, the route and the key, until a generated UI reads them: it would
+/// repeat a list's key where the route joins it with commas, and a browser enforces what `cors`
+/// states only against a server that answers it. A route's `cors: none` is refused too, though a
+/// UI served from the API's own origin honours it by doing nothing.
+#[test]
+fn a_binding_with_lists_or_cors_is_refused_by_name() {
+    let mut sources = shop_with_components(&[]);
+    let stock = sources
+        .iter_mut()
+        .find(|(label, _)| label == "domains/stock.yaml")
+        .expect("the stock domain");
+    let view = "  - name: shop.stock.Items\n    source: shop.stock.Item\n";
+    assert!(stock.1.contains(view), "the fixture's view");
+    stock.1 = stock.1.replace(
+        view,
+        &format!(
+            "{view}    params:\n      - {{name: labels, type: List<String>}}\n    filter: \
+             {{exists: {{in: param.labels, as: l, that: label == l}}}}\n"
+        ),
+    );
+    let ir = compile_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let text = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: add, component: form, \
+          does: stock.AddItem, fields: [label]}]}",
+    );
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    for (keys, operation, key, route) in [
+        (
+            "routes:\n  - {view: shop.stock.Items, method: get, path: /items, lists: {labels: \
+             comma}}\n",
+            "view `shop.stock.Items`",
+            "`lists`",
+            "`get /items`",
+        ),
+        (
+            "routes:\n  - {command: shop.stock.AddItem, method: post, path: /items, cors: none}\n",
+            "command `shop.stock.AddItem`",
+            "`cors`",
+            "`post /items`",
+        ),
+        (
+            "cors: {origins: [https://app.example]}\nroutes:\n  - {command: shop.stock.AddItem, \
+             method: post, path: /items}\n",
+            "command `shop.stock.AddItem`",
+            "the binding's `cors`",
+            "`post /items`",
+        ),
+    ] {
+        let declared = format!(
+            "type: ess-http/1\nspecification:\n  system: shop\n  version: v1\n  source_digest: \
+             sha256:{}\n{keys}",
+            ir.source_digest()
+        );
+        let spec = ess_gen::ess_http::HttpSpec::from_yaml(&declared).expect("parses");
+        let compiled = ess_gen::ess_http::compile(&spec, &ir, &http::derived(&ir))
+            .unwrap_or_else(|refused| panic!("compiles: {refused}"));
+        let routed = http::Binding::new(compiled).expect("every route has a path");
+        let over = ess_ui_check::HttpBinding {
+            path: Path::new("shop-http.yaml"),
+            binding: &routed,
+        };
+        let Err(BindingError::Refused(refusals)) =
+            ess_ui_check::binding_over(&document, &sources, Some(over))
+        else {
+            panic!("a UI was bound to a binding whose {key} it does not read");
+        };
+        assert!(
+            refusals
+                .iter()
+                .any(|refusal| refusal.path == "shop-http.yaml"
+                    && refusal.message.contains(operation)
+                    && refusal.message.contains(route)
+                    && refusal.message.contains(key)
+                    && refusal
+                        .message
+                        .contains("generated UI does not read it yet")),
+            "{refusals:#?}"
+        );
+    }
+}

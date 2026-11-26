@@ -156,10 +156,36 @@ The document follows those keys on the routes that use them:
   on a `get` or a `delete` command, removes the request body, and each input field the path does
   not carry becomes an `in: query` parameter under its wire name (a `List` repeats its key,
   `style: form`, `explode: true`, and is not required: an absent key is the empty list).
+- `lists: {<name>: comma}` on a route writes one list as a single comma-joined value instead,
+  `?kinds=opened,closed`: a view's parameter, or a command's field under `encoding: form` or
+  `query` or listed in `request.query`. The parameter gets `style: form`, `explode: false`, and is
+  required unless it is `Optional`; the empty value is the empty list, and an element cannot hold a
+  comma. A list in a `json` or `multipart` body, one the path carries, or a name that is no list of
+  scalars is refused (`ESS-HTTP-021`). Only the OpenAPI document reads `lists` so far: the
+  generated servers and UIs and `ess generate types --http` refuse a binding that carries it,
+  naming the route.
 - `body: input.<field>` beside `encoding: json` (or no `encoding`) sends that one input field as
   the whole request body, bare: the request body's schema is the field's own, a list
   `{type: array, items: …}`, and no `{command}.Input` is written. The field may not be `Optional`,
   and the path must carry every other input field.
+- `members: {<field>: <member.path>}` beside `encoding: json` (or no `encoding`) reads an input
+  field from a nested member of the body, the path being member names joined by `.`; the input
+  stays flat, and every other field stays a top-level member. `{command}.Input` is written nested,
+  each object required when it holds a field that is not `Optional`. A required field under a
+  missing object is malformed; an `Optional` one reads as absent. Only the OpenAPI document reads
+  `members` so far: the generated servers and UIs and `ess generate types --http` refuse a binding
+  that maps one, naming the route. `ESS-HTTP-020` refuses a key
+  that is no input field, a field the path or `request.query` carries, `members` beside `form`,
+  `query`, `multipart` or a bare `body`, on `get` or on a view, an empty name, two fields on one
+  path, one path an object above another, and a path starting at an unmapped field's wire name:
+
+  ```yaml
+  - command: catalog.desk.CloseTicket
+    method: post
+    path: /hooks
+    request: {members: {ticket_id: data.ticket_id, reason: data.reason}}
+    # {"kind": "closed", "data": {"ticket_id": "t-1", "reason": "done"}}
+  ```
 - `unknown: ignore` beside `json`, `form` or `query` ignores a member or key no input field names,
   for a client that sends a whole object back, and `{command}.Input` is written with
   `additionalProperties: true`. A member the path carries is admitted when it equals the path's
@@ -236,6 +262,45 @@ The document follows those keys on the routes that use them:
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
 
+### Several commands on one route
+
+Command routes of one component may share a method and path when `select:` tells them apart by
+literal values of members of the `json` body. A member path is member names joined by `.`; a
+literal is a string, a Boolean or an integer; a list of maps gives one command several
+alternatives:
+
+```yaml
+routes:
+  - {command: catalog.desk.OpenTicket, method: post, path: /hooks, select: {kind: opened}}
+  - {command: catalog.desk.CloseTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+  - {command: catalog.desk.ReopenTicket, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: catalog.desk.IgnoreHook, method: post, path: /hooks}
+  - command: catalog.desk.ChangeLabel
+    method: post
+    path: /v2/hooks
+    select: [{object: label, action: added}, {object: label, action: removed}]
+```
+
+- A member a select does not name matches anything, an absent member too. Of two selects one body
+  matches, the one testing more members answers; two testing the same members for the same
+  literals are `ESS-HTTP-010`, and two each testing a member the other leaves open are
+  `ESS-HTTP-011`.
+- The route without `select` is the catch-all. Without one, a body no select matches is
+  `malformed`, a `4xx`.
+- A tested member an input field is read from must hold a literal the field's type admits.
+- `select` on a view, beside `form`, `query`, `multipart` or a bare `body`, on `get`, written
+  empty, or with two alternatives one body matches is `ESS-HTTP-020`.
+- The OpenAPI document writes the shared method and path as one operation. Its `operationId` is
+  that of the first sharing route in the compiled order of the binding (path, method, operation),
+  and `x-ess-operations` lists every sharing route in that order with its select, the catch-all's
+  `otherwise`, so the order the routes are written in does not change the document. The request
+  body is `oneOf` each command's `{command}.Input`, whose tested members are `const` and required;
+  one top-level string member and no catch-all also writes a `discriminator`. Answers on one
+  status are merged, and a set without a catch-all states that a body no route selects is
+  `malformed`.
+- Only the OpenAPI document reads `select` so far: the generated servers and UIs and
+  `ess generate types --http` refuse a binding that carries it, naming the route.
+
 ### Answer a view as CSV
 
 A view route may answer its rows as CSV when the query holds a value you choose, and as JSON
@@ -294,6 +359,37 @@ routes:
   chunked body up to the bound plus one byte and then refuses it. Send `Content-Length`.
 - The OpenAPI document names the bound of each such operation under `x-ess-request-max-bytes` and
   lists the answer as one more response.
+
+### Let pages on other origins read the answers
+
+A binding may state which browser origins may read its answers, once for every route:
+
+```yaml
+cors:
+  origins: [https://desk.example.test]
+  headers: [Authorization]
+  max_age: 600
+routes:
+  - {view: catalog.orders.OpenOrders, method: get, path: /orders}
+  - {command: catalog.orders.PurgeOrders, method: post, path: /orders/purge, cors: none}
+```
+
+- `origins` is `any` or a list of origins, each `scheme://host` or `scheme://host:port` with no
+  path, not even a trailing `/`. `credentials: true` lets a page send credentials and needs listed
+  origins: `any` beside it is refused. `headers` lists the request headers a page may send,
+  `expose` the response headers it may read, each one a covered route declares. `max_age` is at
+  most 86400 seconds.
+- It covers every route, derived ones too. `cors: none` on a route takes it out, and a route's own
+  `cors:` map replaces the binding's on that route. A binding without `cors` admits no
+  cross-origin read.
+- A server binding may list fewer origins than its protocol binding, never more, and restates the
+  other keys (`ESS-HTTP-012`). Every other mistake is `ESS-HTTP-038`, at its key.
+- The OpenAPI document states the policy under `x-ess-cors`, adds an `options` operation answering
+  the preflight `204` on each covered path, and an `Access-Control-Allow-Origin` header to each
+  covered answer.
+- Only the OpenAPI document reads `cors` so far: the generated servers and UIs and
+  `ess generate types --http` refuse a binding with `cors`, a route's `cors: none` included,
+  naming each route it covers.
 
 ### Operation ids and servers
 

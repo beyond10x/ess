@@ -1626,11 +1626,29 @@ pub struct HttpBinding<'a> {
 /// naming the binding's file, since the server synthesized from it is the one the UI is generated
 /// for; and a command whose route reads its input as anything but a JSON body (`form`, `query`),
 /// which no generated UI sends.
+///
+/// A binding whose routes carry `request.members`, `select`, `lists` or `cors`, or which declares
+/// `cors` itself, is refused whole, before the document is read, one refusal per route and key at
+/// the binding's file: no generated UI reads them yet ([`http::Binding::read_by`]).
 pub fn binding_over(
     document: &Document,
     sources: &[(String, String)],
     http: Option<HttpBinding<'_>>,
 ) -> Result<Binding, BindingError> {
+    if let Some(over) = http {
+        if let Err(unread) = over.binding.read_by("generated UI") {
+            return Err(BindingError::Refused(
+                unread
+                    .0
+                    .into_iter()
+                    .map(|route| Refusal {
+                        path: over.path.display().to_string(),
+                        message: http::Unprojectable(vec![route]).to_string(),
+                    })
+                    .collect(),
+            ));
+        }
+    }
     let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
     let model = Model::index(&ir);
     let served = Surface::of(&ir, http);

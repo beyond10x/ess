@@ -311,3 +311,237 @@ fn a_binding_without_body_compiles_to_the_same_bytes() {
     assert_ne!(foreign, json);
     assert!(HttpIr::from_json(&foreign).is_err(), "{foreign}");
 }
+
+// --- `request.members` (`ae1d-a-json-request-reads-an-input-from-a-nested-member`) ---
+
+/// An envelope: `board_id` and `title` under `data`, `note` a top-level member as before. The map
+/// is written out of field order; compiled IR writes it in field order.
+const ENVELOPE: &str = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {encoding: json, members: {title: data.title, board_id: data.board_id}}
+";
+
+#[test]
+fn a_json_request_reads_an_input_from_a_nested_member() {
+    let ir = model();
+    let http = compiled(&ir, ENVELOPE).expect("compiles");
+    let json = http.to_canonical_json();
+    assert!(
+        json.contains(
+            "      \"request\": {\n        \"members\": {\n          \"board_id\": \"data.board_id\",\n          \"title\": \"data.title\"\n        }\n      }\n"
+        ),
+        "{json}"
+    );
+    let route = http
+        .route(&Operation::Command("catalog.board.RenameBoard".into()))
+        .expect("routed");
+    let request = route.request.as_ref().expect("a request");
+    let read: Vec<(&str, String)> = request
+        .members
+        .iter()
+        .map(|(field, member)| (field, member.to_string()))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            ("board_id", "data.board_id".to_owned()),
+            ("title", "data.title".to_owned())
+        ]
+    );
+    assert_eq!(
+        request
+            .member("title")
+            .map(|member| member.segments().to_vec()),
+        Some(vec!["data".to_owned(), "title".to_owned()])
+    );
+    assert_eq!(request.member("note"), None);
+    let back = HttpIr::from_json(&json).expect("the compiled IR reads back");
+    assert_eq!(back.to_canonical_json(), json, "round trip changed bytes");
+    // A deeper path, and `unknown: ignore` beside it.
+    let deeper = ENVELOPE
+        .replace("data.title", "event.data.title")
+        .replace("encoding: json,", "unknown: ignore,");
+    assert_eq!(located(&compiled(&ir, &deeper)), []);
+}
+
+fn members_refused(index: usize, field: &str) -> (&'static str, String) {
+    (
+        "ESS-HTTP-020",
+        format!("routes[{index}].request.members.{field}"),
+    )
+}
+
+#[test]
+fn a_member_naming_no_input_field_or_one_carried_elsewhere_is_refused() {
+    let ir = model();
+    for (request, field, says) in [
+        (
+            "{members: {nobody: data.nobody}}",
+            "nobody",
+            "no input field",
+        ),
+        (
+            "{members: {note: data.note}, query: [input.note]}",
+            "note",
+            "query",
+        ),
+        (
+            "{encoding: form, members: {note: data.note}}",
+            "note",
+            "`form`",
+        ),
+        (
+            "{encoding: multipart, members: {note: data.note}}",
+            "note",
+            "`multipart`",
+        ),
+        (
+            "{body: input.title, members: {note: data.note}}",
+            "note",
+            "body",
+        ),
+    ] {
+        let routes = format!(
+            "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /boards/{{board_id}}/rename
+    parameters: {{board_id: input.board_id}}
+    request: {request}
+"
+        );
+        let result = compiled(&ir, &routes);
+        let found = located(&result);
+        assert!(
+            found.contains(&members_refused(0, field)),
+            "{request}: {found:?}"
+        );
+        let shown = worded(&result);
+        assert!(
+            shown.iter().any(|line| line.contains(says)),
+            "{request}: {shown:?}"
+        );
+    }
+    // The path carries `board_id`.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /boards/{board_id}/rename
+    parameters: {board_id: input.board_id}
+    request: {members: {board_id: data.board_id}}
+";
+    assert_eq!(
+        located(&compiled(&ir, routes)),
+        [members_refused(0, "board_id")]
+    );
+    // `query` on `delete`, and any body on `get`.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: delete
+    path: /boards/{board_id}/title
+    parameters: {board_id: input.board_id}
+    request: {encoding: query, members: {title: data.title}}
+  - command: catalog.board.UpdateCard
+    method: get
+    path: /boards/{board_id}/cards/{card_id}
+    parameters: {board_id: input.board_id, card_id: input.card_id}
+    request: {members: {title: data.title}}
+";
+    let found = located(&compiled(&ir, routes));
+    assert!(found.contains(&members_refused(0, "title")), "{found:?}");
+    assert!(found.contains(&members_refused(1, "title")), "{found:?}");
+    // A view takes no request at all.
+    let routes = "routes:
+  - view: catalog.board.BoardById
+    method: get
+    path: /boards/{board_id}
+    parameters: {board_id: param.board_id}
+    request: {members: {board_id: data.board_id}}
+";
+    assert_eq!(
+        located(&compiled(&ir, routes)),
+        [members_refused(0, "board_id")]
+    );
+}
+
+#[test]
+fn a_member_path_breaking_the_grammar_or_meeting_another_is_refused() {
+    let ir = model();
+    for (members, field, says) in [
+        ("{title: data..title}", "title", "empty"),
+        ("{title: .title}", "title", "empty"),
+        ("{title: data.}", "title", "empty"),
+        ("{title: ''}", "title", "empty"),
+        // Two fields on one member, in field order the second refused.
+        ("{note: data.x, title: data.x}", "note", "`title`"),
+        // One path a prefix of another.
+        ("{title: data, note: data.note}", "note", "`title`"),
+        (
+            "{title: data.title.text, note: data.title}",
+            "note",
+            "`title`",
+        ),
+        // A top-level member that is an unmapped field's wire name, or the object above one.
+        ("{note: title}", "note", "`title`"),
+        ("{note: title.note}", "note", "`title`"),
+    ] {
+        let routes = format!(
+            "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {{members: {members}}}
+"
+        );
+        let result = compiled(&ir, &routes);
+        assert_eq!(located(&result), [members_refused(0, field)], "{members}");
+        let shown = worded(&result);
+        assert!(shown[0].contains(says), "{members}: {shown:?}");
+    }
+    // Written empty.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {members: {}}
+";
+    assert_eq!(
+        located(&compiled(&ir, routes)),
+        [("ESS-HTTP-020", "routes[0].request.members".to_owned())]
+    );
+}
+
+#[test]
+fn compiled_members_hold_to_their_rules_when_read_back() {
+    let ir = model();
+    let json = compiled(&ir, ENVELOPE)
+        .expect("compiles")
+        .to_canonical_json();
+    let members = "        \"members\": {\n          \"board_id\": \"data.board_id\",\n          \"title\": \"data.title\"\n        }\n";
+    assert!(json.contains(members), "{json}");
+    for (broken, why) in [
+        (
+            "        \"members\": {\n          \"board_id\": \"data..board_id\",\n          \"title\": \"data.title\"\n        }\n",
+            "an empty segment",
+        ),
+        (
+            "        \"members\": {\n          \"board_id\": \"data\",\n          \"title\": \"data.title\"\n        }\n",
+            "a prefix",
+        ),
+        (
+            "        \"members\": {\n          \"board_id\": \"data.title\",\n          \"title\": \"data.title\"\n        }\n",
+            "one path twice",
+        ),
+        ("        \"members\": {}\n", "written empty"),
+        (
+            "        \"encoding\": \"form\",\n        \"members\": {\n          \"board_id\": \"data.board_id\",\n          \"title\": \"data.title\"\n        }\n",
+            "beside `form`",
+        ),
+    ] {
+        let edited = json.replace(members, broken);
+        assert_ne!(edited, json, "{why}");
+        assert!(HttpIr::from_json(&edited).is_err(), "{why}: {edited}");
+    }
+}

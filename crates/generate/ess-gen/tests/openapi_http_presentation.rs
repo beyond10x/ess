@@ -12,6 +12,8 @@
 //! an `in: query` parameter and in no request body (beyond10x/ess#754,
 //! `story:a-command-route-reads-chosen-inputs-from-the-query-beside-its-body`).
 
+use std::fmt::Write as _;
+
 use ess_compiler::resolve::compile as compile_model;
 use ess_compiler::source::SourceMap;
 use ess_compiler::EssIr;
@@ -356,6 +358,267 @@ fn a_listed_query_field_is_a_query_parameter_and_in_no_body() {
     assert!(schema["properties"].get("tags").is_none(), "{schema}");
 }
 
+// --- `request.members` (`ae1d-a-json-request-reads-an-input-from-a-nested-member`) ---
+
+const BOARD: &str = include_str!("../../../specify/ess-http/tests/fixtures/board.yaml");
+
+#[test]
+fn a_nested_member_is_written_nested_with_required_per_level() {
+    let ir = model_of(&[("board.yaml", BOARD)]);
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {members: {board_id: event.board_id, title: event.data.title, note: event.data.note}}
+";
+    let written = documents(&ir, binding(&ir, routes));
+    let document = as_json(&written["openapi/board-service.yaml"]);
+    let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
+    assert_eq!(
+        input["properties"]
+            .as_object()
+            .map(|object| object.keys().collect::<Vec<_>>()),
+        Some(vec![&"event".to_owned()]),
+        "{input}"
+    );
+    assert_eq!(input["required"], json!(["event"]), "{input}");
+    let event = &input["properties"]["event"];
+    assert_eq!(event["type"], "object", "{event}");
+    assert_eq!(event["additionalProperties"], false, "{event}");
+    assert_eq!(event["required"], json!(["board_id", "data"]), "{event}");
+    let data = &event["properties"]["data"];
+    assert_eq!(data["required"], json!(["title"]), "{data}");
+    assert_eq!(data["properties"]["title"]["type"], "string", "{data}");
+    assert!(data["properties"].get("note").is_some(), "{data}");
+    assert_eq!(
+        document["paths"]["/hooks"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+            ["$ref"],
+        "#/components/schemas/catalog.board.RenameBoard.Input"
+    );
+
+    // An object holding only `Optional` fields is not required; `unknown: ignore` opens each level.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+    request: {unknown: ignore, members: {note: meta.note}}
+";
+    let written = documents(&ir, binding(&ir, routes));
+    let document = as_json(&written["openapi/board-service.yaml"]);
+    let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
+    assert_eq!(input["required"], json!(["board_id", "title"]), "{input}");
+    assert_eq!(
+        input["properties"]["meta"]["additionalProperties"], true,
+        "{input}"
+    );
+    assert!(
+        input["properties"]["meta"].get("required").is_none(),
+        "{input}"
+    );
+
+    // Without `members` the schema is flat, as before.
+    let routes = "routes:
+  - command: catalog.board.RenameBoard
+    method: post
+    path: /hooks
+";
+    let written = documents(&ir, binding(&ir, routes));
+    let document = as_json(&written["openapi/board-service.yaml"]);
+    let input = &document["components"]["schemas"]["catalog.board.RenameBoard.Input"];
+    assert_eq!(input["required"], json!(["board_id", "title"]), "{input}");
+    assert!(input["properties"].get("note").is_some(), "{input}");
+}
+
+// --- a shared route (`ae1b-openapi-writes-a-shared-route-as-one-operation`) ---
+
+/// A desk accepting `catalog.desk.Hook0` to `Hook<count - 1>`, each taking `ticket_id`, a `String`
+/// `kind` and an `Optional<Boolean>` `reopen`.
+fn desk(count: usize) -> EssIr {
+    let names: Vec<String> = (0..count)
+        .map(|n| format!("catalog.desk.Hook{n}"))
+        .collect();
+    let commands = names.iter().fold(String::new(), |mut commands, name| {
+        write!(
+            commands,
+            "  - name: {name}
+    input:
+      - {{name: ticket_id, type: catalog.desk.TicketId}}
+      - {{name: kind, type: String}}
+      - {{name: reopen, type: Optional<Boolean>}}
+    outcomes:
+      - name: done
+        emits: [catalog.desk.Hooked]
+        payload:
+          catalog.desk.Hooked: {{ticket_id: input.ticket_id}}
+"
+        )
+        .expect("writes");
+        commands
+    });
+    let text = format!(
+        "format: ess/22
+system: catalog
+version: v1
+domain: catalog.desk
+types:
+  - {{name: catalog.desk.TicketId, kind: newtype, of: String}}
+entities:
+  - name: catalog.desk.Ticket
+    identity: {{name: ticket_id, type: catalog.desk.TicketId}}
+    fields:
+      - {{name: title, type: String}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open], transitions: []}}
+events:
+  - name: catalog.desk.Hooked
+    fields:
+      - {{name: ticket_id, type: catalog.desk.TicketId}}
+commands:
+{commands}components:
+  - component: desk
+    reached_by: network
+    owns: {{domains: [catalog.desk]}}
+    accepts:
+      commands: [{}]
+    publishes:
+      events: [catalog.desk.Hooked]
+",
+        names.join(", ")
+    );
+    model_of(&[("desk.yaml", text.as_str())])
+}
+
+const OPEN_SET: &str = "routes:
+  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}
+  - command: catalog.desk.Hook3
+    method: post
+    path: /hooks
+    outcomes: {done: {status: 204, body: none}}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+";
+
+fn shared_document(ir: &EssIr, routes: &str) -> (String, Value) {
+    let written = documents(ir, binding(ir, routes));
+    let text = written["openapi/desk.yaml"].clone();
+    let document = as_json(&text);
+    (text, document)
+}
+
+#[test]
+fn a_shared_route_is_one_operation_naming_every_command() {
+    let ir = desk(4);
+    let (text, document) = shared_document(&ir, OPEN_SET);
+    let operation = &document["paths"]["/hooks"]["post"];
+    let listed = operation["x-ess-operations"].as_array().expect("listed");
+    assert_eq!(listed.len(), 4, "{operation}");
+    assert_eq!(operation["operationId"], "catalog.desk.Hook0");
+    assert_eq!(
+        listed[0],
+        json!({"operationId": "catalog.desk.Hook0", "command": "catalog.desk.Hook0", "select": {"kind": "opened"}})
+    );
+    assert_eq!(
+        listed[1]["select"],
+        json!({"data.reopen": false, "kind": "closed"})
+    );
+    assert_eq!(listed[3]["select"], "otherwise");
+    let schema = &operation["requestBody"]["content"]["application/json"]["schema"];
+    let one_of = schema["oneOf"].as_array().expect("oneOf");
+    assert_eq!(one_of.len(), 4, "{schema}");
+    assert!(schema.get("discriminator").is_none(), "{schema}");
+    assert_eq!(
+        one_of[0]["$ref"],
+        "#/components/schemas/catalog.desk.Hook0.Input"
+    );
+    assert!(one_of[3]["description"].is_string(), "{schema}");
+    let schemas = &document["components"]["schemas"];
+    let opened = &schemas["catalog.desk.Hook0.Input"];
+    assert_eq!(opened["properties"]["kind"]["const"], "opened", "{opened}");
+    let reopened = &schemas["catalog.desk.Hook2.Input"];
+    assert_eq!(
+        reopened["properties"]["data"]["properties"]["reopen"]["const"], true,
+        "{reopened}"
+    );
+    assert!(
+        reopened["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&json!("data"))),
+        "{reopened}"
+    );
+    let catch_all = &schemas["catalog.desk.Hook3.Input"];
+    assert!(
+        catch_all["properties"]["kind"].get("const").is_none(),
+        "{catch_all}"
+    );
+    // The catch-all's `204` and the others' answers are merged per status.
+    let responses = operation["responses"].as_object().expect("responses");
+    assert!(responses.contains_key("204"), "{operation}");
+    assert!(responses.len() >= 2, "{operation}");
+    // The same routes written in another order give the same bytes.
+    let swapped = OPEN_SET.replace(
+        "  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}\n  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}\n",
+        "  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}\n  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}\n",
+    );
+    assert_ne!(swapped, OPEN_SET);
+    assert_eq!(shared_document(&ir, &swapped).0, text);
+}
+
+#[test]
+fn a_closed_set_states_its_malformed_answer_and_one_string_member_is_a_discriminator() {
+    let ir = desk(9);
+    let mut routes = String::from("routes:\n");
+    let mut n = 0;
+    for object in ["label", "ticket", "user"] {
+        for action in ["added", "removed", "changed"] {
+            writeln!(
+                routes,
+                "  - {{command: catalog.desk.Hook{n}, method: post, path: /v2/hooks, select: {{object: {object}, action: {action}}}}}"
+            )
+            .expect("writes");
+            n += 1;
+        }
+    }
+    let (_, document) = shared_document(&ir, &routes);
+    let operation = &document["paths"]["/v2/hooks"]["post"];
+    let schema = &operation["requestBody"]["content"]["application/json"]["schema"];
+    assert_eq!(
+        schema["oneOf"].as_array().map(Vec::len),
+        Some(9),
+        "{schema}"
+    );
+    assert!(schema.get("discriminator").is_none(), "{schema}");
+    let input = &document["components"]["schemas"]["catalog.desk.Hook4.Input"];
+    assert_eq!(input["properties"]["object"]["const"], "ticket", "{input}");
+    assert_eq!(input["properties"]["action"]["const"], "removed", "{input}");
+    let unselected = operation["responses"]
+        .as_object()
+        .expect("responses")
+        .values()
+        .any(|response| {
+            response["description"]
+                .as_str()
+                .is_some_and(|text| text.contains("no route selects"))
+        });
+    assert!(unselected, "{operation}");
+
+    // One top-level `String` member, a closed set: OpenAPI's discriminator.
+    let routes = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /v3/hooks, select: {kind: a}}
+  - {command: catalog.desk.Hook1, method: post, path: /v3/hooks, select: [{kind: b}, {kind: c}]}
+";
+    let (_, document) = shared_document(&ir, routes);
+    let schema = &document["paths"]["/v3/hooks"]["post"]["requestBody"]["content"]
+        ["application/json"]["schema"];
+    assert_eq!(
+        schema["discriminator"],
+        json!({"propertyName": "kind", "mapping": {
+            "a": "#/components/schemas/catalog.desk.Hook0.Input",
+            "b": "#/components/schemas/catalog.desk.Hook1.Input",
+            "c": "#/components/schemas/catalog.desk.Hook1.Input"
+        }}),
+        "{schema}"
+    );
+}
+
 // --- authentication (beyond10x/ess#681, `story:an-http-binding-projects-its-security-schemes`) ---
 
 /// The orders fixture with an actor granted both commands: `authentication` needs an actor.
@@ -506,6 +769,301 @@ fn a_binding_without_authentication_projects_no_security() {
                 operation.get("security").is_none() && operation["responses"].get("401").is_none(),
                 "{method} {path}: {operation}"
             );
+        }
+    }
+}
+
+// --- `cors:` (`ae3a-a-binding-declares-which-origins-may-read-its-answers`) ---
+
+const CORS_ROUTES: &str = "routes:
+  - command: catalog.items.ListItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+  - view: catalog.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters: {item_id: param.item_id}
+";
+
+fn cors_document(ir: &EssIr, keys: &str) -> (String, Value) {
+    let written = documents(ir, binding(ir, keys));
+    let text = written["openapi/items-service.yaml"].clone();
+    let document = as_json(&text);
+    (text, document)
+}
+
+/// The `const` or `enum` of one header of `response`.
+fn header_schema<'a>(response: &'a Value, name: &str) -> &'a Value {
+    &response["headers"][name]["schema"]
+}
+
+#[test]
+fn a_cors_policy_writes_the_preflight_and_the_origin_header_of_each_covered_answer() {
+    let ir = model_of(&[("catalog.yaml", MODEL)]);
+    let policy = "cors:
+  origins: [https://desk.example.test]
+  credentials: true
+  headers: [Authorization]
+  max_age: 600
+";
+    let (_, document) = cors_document(&ir, &format!("{policy}{CORS_ROUTES}"));
+    assert_eq!(
+        document["x-ess-cors"],
+        json!({
+            "origins": ["https://desk.example.test"],
+            "credentials": true,
+            "headers": ["Authorization"],
+            "max_age": 600
+        })
+    );
+    let item = &document["paths"]["/items/{item_id}"];
+    let preflight = &item["options"]["responses"]["204"];
+    assert!(preflight.is_object(), "{item}");
+    assert!(item["options"].get("operationId").is_none(), "{item}");
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Methods")["const"],
+        "GET, PUT"
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Origin")["enum"],
+        json!(["https://desk.example.test"])
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Headers")["const"],
+        "Authorization"
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Allow-Credentials")["const"],
+        "true"
+    );
+    assert_eq!(
+        header_schema(preflight, "Access-Control-Max-Age")["const"],
+        600
+    );
+    assert_eq!(header_schema(preflight, "Vary")["const"], "Origin");
+    for method in ["put", "get"] {
+        let responses = item[method]["responses"].as_object().expect("responses");
+        assert!(!responses.is_empty());
+        for (status, response) in responses {
+            assert_eq!(
+                header_schema(response, "Access-Control-Allow-Origin")["enum"],
+                json!(["https://desk.example.test"]),
+                "{method} {status}"
+            );
+            assert_eq!(
+                header_schema(response, "Vary")["const"],
+                "Origin",
+                "{method} {status}"
+            );
+        }
+    }
+    // The binding's policy covers a derived route too.
+    let derived = &document["paths"]["/items/commands/TouchItem"];
+    assert_eq!(
+        header_schema(
+            &derived["options"]["responses"]["204"],
+            "Access-Control-Allow-Methods"
+        )["const"],
+        "POST"
+    );
+}
+
+#[test]
+fn a_cors_policy_of_any_origin_none_or_a_routes_own_writes_its_own_headers() {
+    let ir = model_of(&[("catalog.yaml", MODEL)]);
+    // Any origin: `*`, and no `Vary`.
+    let (_, document) = cors_document(&ir, &format!("cors: {{origins: any}}\n{CORS_ROUTES}"));
+    let item = &document["paths"]["/items/{item_id}"];
+    let answer = item["put"]["responses"]
+        .as_object()
+        .and_then(|responses| responses.values().next())
+        .expect("an answer");
+    assert_eq!(
+        header_schema(answer, "Access-Control-Allow-Origin")["const"],
+        "*"
+    );
+    assert!(answer["headers"].get("Vary").is_none(), "{answer}");
+    let preflight = &item["options"]["responses"]["204"];
+    for absent in [
+        "Access-Control-Allow-Headers",
+        "Access-Control-Allow-Credentials",
+        "Access-Control-Max-Age",
+        "Vary",
+    ] {
+        assert!(preflight["headers"].get(absent).is_none(), "{absent}");
+    }
+    // A route under `cors: none` gets no header and leaves the preflight's methods.
+    let closed = CORS_ROUTES.replace(
+        "    parameters: {item_id: param.item_id}\n",
+        "    parameters: {item_id: param.item_id}\n    cors: none\n",
+    );
+    let (_, document) = cors_document(&ir, &format!("cors: {{origins: any}}\n{closed}"));
+    let item = &document["paths"]["/items/{item_id}"];
+    assert_eq!(
+        header_schema(
+            &item["options"]["responses"]["204"],
+            "Access-Control-Allow-Methods"
+        )["const"],
+        "PUT"
+    );
+    assert!(
+        item["get"]["responses"]["200"]["headers"]
+            .get("Access-Control-Allow-Origin")
+            .is_none(),
+        "{item}"
+    );
+    // A route's own policy only: the document states no binding policy, the path of the route
+    // alone has a preflight.
+    let own = CORS_ROUTES.replace(
+        "    parameters: {item_id: input.item_id}\n",
+        "    parameters: {item_id: input.item_id}\n    cors: {origins: any}\n",
+    );
+    let (_, document) = cors_document(&ir, &own);
+    assert!(document.get("x-ess-cors").is_none(), "{document}");
+    assert!(
+        document["paths"]["/items/commands/TouchItem"]
+            .get("options")
+            .is_none(),
+        "{document}"
+    );
+    assert_eq!(
+        header_schema(
+            &document["paths"]["/items/{item_id}"]["options"]["responses"]["204"],
+            "Access-Control-Allow-Methods"
+        )["const"],
+        "PUT"
+    );
+    // Without `cors`, no CORS byte.
+    let (text, _) = cors_document(&ir, CORS_ROUTES);
+    for absent in ["Access-Control", "x-ess-cors", "options:", "Vary"] {
+        assert!(!text.contains(absent), "{absent}");
+    }
+}
+
+// --- `lists` (`ae12a-a-query-list-may-travel-comma-joined`) ---
+
+/// The catalog with a view whose parameter is a list and three accepted commands carrying a list:
+/// in the query string, in a form body, and in the query string beside a `json` body.
+fn listing_model() -> EssIr {
+    let command = |name: &str| {
+        format!(
+            "  - name: catalog.items.{name}
+    input:
+      - {{name: item_id, type: catalog.items.ItemId}}
+      - {{name: labels, type: List<String>}}
+    outcomes:
+      - name: done
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {{item_id: input.item_id}}
+"
+        )
+    };
+    let commands: String = ["FindItems", "FileItems", "SeekItems"]
+        .map(command)
+        .concat();
+    let text = MODEL
+        .replace(
+            "  - name: catalog.items.PurgeItems\n",
+            &format!("{commands}  - name: catalog.items.PurgeItems\n"),
+        )
+        .replace(
+            "components:\n",
+            "  - name: catalog.items.ByTitles
+    source: catalog.items.Item
+    params:
+      - {name: titles, type: List<String>}
+    filter: {exists: {in: param.titles, as: t, that: title == t}}
+    fields:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: title, type: String}
+components:\n",
+        )
+        .replace(
+            "accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}",
+            "accepts: {commands: [catalog.items.FileItems, catalog.items.FindItems, catalog.items.ListItem, catalog.items.SeekItems, catalog.items.TouchItem]}",
+        );
+    model_of(&[("catalog.yaml", &text)])
+}
+
+/// The listing routes, each with `lists` when `comma` holds.
+fn listing_routes(comma: bool) -> String {
+    let lists = |name: &str| {
+        if comma {
+            format!("    lists: {{{name}: comma}}\n")
+        } else {
+            String::new()
+        }
+    };
+    format!(
+        "routes:
+  - view: catalog.items.ByTitles
+    method: get
+    path: /titles
+{}  - command: catalog.items.FindItems
+    method: get
+    path: /find
+    request: {{encoding: query}}
+{}  - command: catalog.items.FileItems
+    method: post
+    path: /file
+    request: {{encoding: form}}
+{}  - command: catalog.items.SeekItems
+    method: post
+    path: /seek
+    request: {{query: [input.labels]}}
+{}",
+        lists("titles"),
+        lists("labels"),
+        lists("labels"),
+        lists("labels")
+    )
+}
+
+/// `name`'s `style`, `explode` and `required` in `operation`'s query parameters.
+fn list_style<'a>(operation: &'a Value, name: &str) -> (&'a Value, &'a Value, &'a Value) {
+    let parameter = query_parameters(operation)
+        .into_iter()
+        .find(|parameter| parameter["name"] == name)
+        .unwrap_or_else(|| panic!("{name}: {operation}"));
+    (
+        &parameter["style"],
+        &parameter["explode"],
+        &parameter["required"],
+    )
+}
+
+#[test]
+fn a_comma_list_is_a_form_parameter_that_does_not_explode() {
+    let ir = listing_model();
+    for (comma, explode) in [(true, false), (false, true)] {
+        let written = documents(&ir, binding(&ir, &listing_routes(comma)));
+        let document = as_json(&written["openapi/items-service.yaml"]);
+        let paths = &document["paths"];
+        // A view parameter is required unless `Optional`; a command's repeated list never is, and a
+        // comma-joined one is one value, required as a scalar is.
+        for (path, method, name, required) in [
+            ("/titles", "get", "titles", true),
+            ("/find", "get", "labels", comma),
+            ("/seek", "post", "labels", comma),
+        ] {
+            assert_eq!(
+                list_style(&paths[path][method], name),
+                (&json!("form"), &json!(explode), &json!(required)),
+                "{path}: comma {comma}"
+            );
+        }
+        let form =
+            &paths["/file"]["post"]["requestBody"]["content"]["application/x-www-form-urlencoded"];
+        if comma {
+            assert_eq!(
+                form["encoding"],
+                json!({"labels": {"style": "form", "explode": false}}),
+                "{form}"
+            );
+        } else {
+            assert!(form.get("encoding").is_none(), "{form}");
         }
     }
 }

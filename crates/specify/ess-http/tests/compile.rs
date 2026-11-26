@@ -1314,6 +1314,7 @@ fn every_code_this_crate_can_emit_is_one_of_the_codes_built_so_far() {
                     | "ESS-HTTP-035"
                     | "ESS-HTTP-036"
                     | "ESS-HTTP-037"
+                    | "ESS-HTTP-038"
             ),
             "{code}"
         );
@@ -1689,5 +1690,308 @@ fn compiled_ir_with_a_malformed_refined_digest_is_refused_naming_the_key() {
         assert_ne!(text, json);
         let error = HttpIr::from_json(&text).expect_err(bad).to_string();
         assert!(error.contains("`refines`"), "{bad}: {error}");
+    }
+}
+
+// --- `select:` (`ae1a-several-operations-share-one-route-by-body-members`) ---
+
+/// A desk that accepts `count` commands `catalog.desk.Hook0`, `Hook1`, …, each taking a ticket's
+/// identity, a `String` `kind`, an `Optional<Boolean>` `reopen` and an enum `shade`.
+fn desk(count: usize) -> EssIr {
+    let mut text = String::from(
+        "format: ess/22
+system: catalog
+version: v1
+domain: catalog.desk
+types:
+  - {name: catalog.desk.TicketId, kind: newtype, of: String}
+  - {name: catalog.desk.Shade, kind: enum, variants: [red, blue]}
+entities:
+  - name: catalog.desk.Ticket
+    identity: {name: ticket_id, type: catalog.desk.TicketId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: catalog.desk.Hooked
+    fields:
+      - {name: ticket_id, type: catalog.desk.TicketId}
+commands:
+",
+    );
+    let names: Vec<String> = (0..count)
+        .map(|n| format!("catalog.desk.Hook{n}"))
+        .collect();
+    for name in &names {
+        write!(
+            text,
+            "  - name: {name}
+    input:
+      - {{name: ticket_id, type: catalog.desk.TicketId}}
+      - {{name: kind, type: String}}
+      - {{name: reopen, type: Optional<Boolean>}}
+      - {{name: shade, type: catalog.desk.Shade}}
+    outcomes:
+      - name: done
+        emits: [catalog.desk.Hooked]
+        payload:
+          catalog.desk.Hooked: {{ticket_id: input.ticket_id}}
+"
+        )
+        .expect("writes");
+    }
+    write!(
+        text,
+        "components:
+  - component: desk
+    reached_by: network
+    owns: {{domains: [catalog.desk]}}
+    accepts:
+      commands: [{}]
+    publishes:
+      events: [catalog.desk.Hooked]
+",
+        names.join(", ")
+    )
+    .expect("writes");
+    model_from(&text)
+}
+
+/// The open set: three selects and a catch-all on `post /hooks`, and a list of alternatives on
+/// `post /v2/hooks`.
+const OPEN_SET: &str = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks, select: {kind: closed, data.reopen: false}}
+  - {command: catalog.desk.Hook2, method: post, path: /hooks, select: {kind: closed, data.reopen: true}}
+  - {command: catalog.desk.Hook3, method: post, path: /hooks}
+  - command: catalog.desk.Hook4
+    method: post
+    path: /v2/hooks
+    select: [{object: label, action: added}, {object: label, action: removed}]
+";
+
+#[test]
+fn several_operations_share_one_route_by_body_members() {
+    let ir = desk(5);
+    // Without `select` two routes on one template stay one route, and the message names the way out.
+    let reproduction = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /hooks}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks}
+";
+    assert_eq!(
+        routes_refusals(&ir, reproduction),
+        [refused("ESS-HTTP-010", "routes[1]")]
+    );
+    assert!(
+        messages(&ir, reproduction)[0].contains("`select:`"),
+        "{:?}",
+        messages(&ir, reproduction)
+    );
+    let spec = HttpSpec::from_yaml(&(header(&ir) + OPEN_SET)).expect("parses");
+    let http = compile(&spec, &ir, &derived(&ir)).unwrap_or_else(|errors| panic!("{errors}"));
+    let json = http.to_canonical_json();
+    // A map in member order, a list in the order written.
+    for written in [
+        "      \"select\": {\n        \"data.reopen\": false,\n        \"kind\": \"closed\"\n      }\n",
+        "      \"select\": {\n        \"kind\": \"opened\"\n      }\n",
+        "      \"select\": [\n        {\n          \"action\": \"added\",\n          \"object\": \"label\"\n        },\n        {\n          \"action\": \"removed\",\n          \"object\": \"label\"\n        }\n      ]\n",
+    ] {
+        assert!(json.contains(written), "{written}\n{json}");
+    }
+    assert_eq!(json.matches("\"select\"").count(), 4, "{json}");
+    let back = HttpIr::from_json(&json).expect("reads back");
+    assert_eq!(back.to_canonical_json(), json);
+    let catch_all = http
+        .route(&Operation::Command("catalog.desk.Hook3".into()))
+        .expect("routed");
+    assert!(catch_all.select.is_none());
+    let reopen = http
+        .route(&Operation::Command("catalog.desk.Hook2".into()))
+        .and_then(|route| route.select.as_ref())
+        .expect("selected");
+    assert_eq!(reopen.to_string(), "{data.reopen: true, kind: closed}");
+    // The same select written as a list of one compiles to the same bytes.
+    let listed = OPEN_SET.replace("select: {kind: opened}", "select: [{kind: opened}]");
+    assert_ne!(listed, OPEN_SET);
+    let spec = HttpSpec::from_yaml(&(header(&ir) + &listed)).expect("parses");
+    assert_eq!(
+        compile(&spec, &ir, &derived(&ir))
+            .expect("compiles")
+            .to_canonical_json(),
+        json
+    );
+}
+
+#[test]
+fn a_closed_set_of_nine_selects_compiles() {
+    let ir = desk(9);
+    let mut routes = String::from("routes:\n");
+    for (n, (object, action)) in ["label", "ticket", "user"]
+        .iter()
+        .flat_map(|object| {
+            ["added", "removed", "changed"]
+                .iter()
+                .map(move |action| (object, action))
+        })
+        .enumerate()
+    {
+        writeln!(
+            routes,
+            "  - {{command: catalog.desk.Hook{n}, method: post, path: /v2/hooks, select: {{object: {object}, action: {action}}}}}"
+        )
+        .expect("writes");
+    }
+    let spec = HttpSpec::from_yaml(&(header(&ir) + &routes)).expect("parses");
+    let http = compile(&spec, &ir, &derived(&ir)).unwrap_or_else(|errors| panic!("{errors}"));
+    let selected: Vec<String> = http
+        .routes()
+        .iter()
+        .filter_map(|route| route.select.as_ref().map(ToString::to_string))
+        .collect();
+    assert_eq!(selected.len(), 9, "{selected:?}");
+    assert!(
+        selected.contains(&"{action: removed, object: ticket}".to_owned()),
+        "{selected:?}"
+    );
+}
+
+#[test]
+fn selects_that_meet_are_refused_naming_both_routes() {
+    let ir = desk(3);
+    // The same tests, and two catch-alls.
+    let same = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks, select: {kind: opened}}
+";
+    assert_eq!(
+        routes_refusals(&ir, same),
+        [refused("ESS-HTTP-010", "routes[1]")]
+    );
+    // Crossed: each tests a member the other leaves open.
+    let crossed = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks, select: {object: label}}
+";
+    assert_eq!(
+        routes_refusals(&ir, crossed),
+        [refused("ESS-HTTP-011", "routes[1]")]
+    );
+    let message = &messages(&ir, crossed)[0];
+    for named in [
+        "`kind`",
+        "`object`",
+        "routes[0]",
+        "{\"kind\": \"opened\", \"object\": \"label\"}",
+    ] {
+        assert!(message.contains(named), "{named}: {message}");
+    }
+    // A catch-all that is not a `json` body cannot be told apart by members.
+    let form = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /hooks, select: {kind: opened}}
+  - {command: catalog.desk.Hook1, method: post, path: /hooks, request: {encoding: form}}
+";
+    assert_eq!(
+        routes_refusals(&ir, form),
+        [refused("ESS-HTTP-010", "routes[1]")]
+    );
+    // A derived route never shares a template with a declared one.
+    let derived_path = "routes:
+  - {command: catalog.desk.Hook0, method: post, path: /items/commands/Hook1, select: {kind: opened}}
+";
+    assert_eq!(
+        routes_refusals(&ir, derived_path),
+        [refused("ESS-HTTP-010", "routes[0]")]
+    );
+}
+
+#[test]
+fn a_select_breaking_its_rules_is_refused_at_its_key() {
+    let ir = desk(1);
+    for (route, says) in [
+        ("method: post, path: /hooks, select: {}", "empty"),
+        ("method: post, path: /hooks, select: []", "empty"),
+        ("method: post, path: /hooks, select: {kind: null}", "literal"),
+        ("method: post, path: /hooks, select: {kind: [a]}", "literal"),
+        ("method: post, path: /hooks, select: {kind: {a: b}}", "literal"),
+        ("method: post, path: /hooks, select: {kind: 1.5}", "literal"),
+        ("method: post, path: /hooks, select: {data..kind: a}", "member path"),
+        ("method: post, path: /hooks, select: {data: a, data.kind: b}", "above"),
+        ("method: post, path: /hooks, select: opened", "map"),
+        ("method: post, path: /hooks, select: {kind: true}", "`kind`"),
+        ("method: post, path: /hooks, select: {reopen: 'yes'}", "`reopen`"),
+        ("method: post, path: /hooks, select: {shade: green}", "`shade`"),
+        ("method: post, path: /hooks, request: {encoding: form}, select: {kind: a}", "`form`"),
+        ("method: post, path: '/hooks/{ticket_id}', parameters: {ticket_id: input.ticket_id}, request: {body: input.kind}, select: {object: a}", "bare"),
+        ("method: get, path: /hooks, request: {encoding: query}, select: {object: a}", "`query`"),
+        ("method: post, path: /hooks, request: {members: {kind: data.kind}}, select: {data: a}", "`kind`"),
+        ("method: post, path: /hooks, select: [{object: a}, {object: a}]", "alternative"),
+        ("method: post, path: /hooks, select: [{object: a}, {object: a, action: b}]", "alternative"),
+        ("method: post, path: /hooks, select: [{object: a}, {action: b}]", "alternative"),
+    ] {
+        let routes = format!("routes:\n  - {{command: catalog.desk.Hook0, {route}}}\n");
+        let found = routes_refusals(&ir, &routes);
+        assert!(
+            found.contains(&refused("ESS-HTTP-020", "routes[0].select")),
+            "{route}: {found:?}"
+        );
+        let shown = messages(&ir, &routes);
+        assert!(
+            shown.iter().any(|message| message.contains(says)),
+            "{route}: {shown:?}"
+        );
+    }
+    // Literals the fields on their members admit compile.
+    for route in [
+        "select: {kind: opened, reopen: true, shade: red}",
+        "select: {data.kind: 3, object: label}",
+        "request: {members: {kind: data.kind}}, select: {data.kind: opened, data.extra: 1}",
+    ] {
+        let routes = format!(
+            "routes:\n  - {{command: catalog.desk.Hook0, method: post, path: /hooks, {route}}}\n"
+        );
+        assert_eq!(routes_refusals(&ir, &routes), [], "{route}");
+    }
+    // A view takes no body.
+    let view = "routes:
+  - {view: catalog.items.ItemById, method: get, path: '/items/{item_id}', parameters: {item_id: param.item_id}, select: {kind: a}}
+";
+    let catalog = model();
+    assert_eq!(
+        routes_refusals(&catalog, view),
+        [refused("ESS-HTTP-020", "routes[0].select")]
+    );
+}
+
+#[test]
+fn a_compiled_select_breaking_its_rules_is_refused_when_read_back() {
+    let ir = desk(5);
+    let spec = HttpSpec::from_yaml(&(header(&ir) + OPEN_SET)).expect("parses");
+    let json = compile(&spec, &ir, &derived(&ir))
+        .expect("compiles")
+        .to_canonical_json();
+    let opened = "      \"select\": {\n        \"kind\": \"opened\"\n      }\n";
+    assert!(json.contains(opened), "{json}");
+    for (broken, why) in [
+        ("      \"select\": {}\n", "empty"),
+        (
+            "      \"select\": [\n        {\n          \"kind\": \"opened\"\n        }\n      ]\n",
+            "a list of one",
+        ),
+        (
+            "      \"select\": {\n        \"kind\": null\n      }\n",
+            "a null literal",
+        ),
+        (
+            "      \"select\": {\n        \"kind..x\": \"opened\"\n      }\n",
+            "a broken path",
+        ),
+        (
+            "      \"select\": {\n        \"kind\": \"opened\",\n        \"data\": 1\n      }\n",
+            "out of member order",
+        ),
+    ] {
+        let edited = json.replace(opened, broken);
+        assert_ne!(edited, json, "{why}");
+        assert!(HttpIr::from_json(&edited).is_err(), "{why}");
     }
 }
