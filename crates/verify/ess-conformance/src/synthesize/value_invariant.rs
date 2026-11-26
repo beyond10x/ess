@@ -508,11 +508,13 @@ fn observed_at(
                         params,
                     });
                     steps.push(ScenarioStep::ExpectView {
+                        shape: crate::scenario::PayloadShape::default(),
                         view: name,
                         expectation,
                     });
                 }
                 AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view: name,
                     params,
                     expectation,

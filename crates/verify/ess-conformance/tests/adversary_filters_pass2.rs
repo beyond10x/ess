@@ -83,6 +83,7 @@ fn expectations(synthesis: &Synthesis, view: &str) -> Vec<(String, Vec<ViewExpec
                 .iter()
                 .filter_map(|step| match step {
                     ScenarioStep::ExpectView {
+                        shape: _,
                         view: name,
                         expectation,
                     }

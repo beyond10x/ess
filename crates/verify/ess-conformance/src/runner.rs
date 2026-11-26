@@ -744,7 +744,11 @@ impl<C: Clock> Runner<C> {
                 count: Some(count),
             } => self.expect_invocation_count(binding, command, input, *count, run, target),
             ScenarioStep::QueryView { view, params } => self.query_view(view, params, run, target),
-            ScenarioStep::ExpectView { view, expectation } => expect_view(view, expectation, run),
+            ScenarioStep::ExpectView {
+                view,
+                expectation,
+                shape,
+            } => expect_view(view, expectation, shape, run),
             ScenarioStep::EventuallyEvent {
                 event,
                 payload,
@@ -754,7 +758,8 @@ impl<C: Clock> Runner<C> {
                 view,
                 params,
                 expectation,
-            } => self.eventually_view(view, params, expectation, run, target),
+                shape,
+            } => self.eventually_view(view, params, expectation, shape, run, target),
             ScenarioStep::MarkInstant { instant } => mark_instant(instant, run, target),
             ScenarioStep::HoldNow { seconds } => {
                 hold_now(*seconds, self.step_instant.is_some(), run, target)
@@ -1185,6 +1190,7 @@ impl<C: Clock> Runner<C> {
         view: &ViewRef,
         params: &BTreeMap<String, ScenarioValue>,
         expectation: &ViewExpectation,
+        shape: &PayloadShape,
         run: &mut Run,
         target: &T,
     ) -> Flow {
@@ -1239,6 +1245,11 @@ impl<C: Clock> Runner<C> {
             let verdict = decide(&required, &result);
             match verdict {
                 Verdict::Satisfied | Verdict::Undecidable { .. } | Verdict::Broken(_) => {
+                    if let Some(check) =
+                        row_shape(CheckCode::EventualView, view, shape, &result.rows, &run.id)
+                    {
+                        run.record(check);
+                    }
                     run.last_view = Some((view.clone(), result));
                     run.record(view_check(
                         CheckCode::EventualView,
@@ -1250,6 +1261,11 @@ impl<C: Clock> Runner<C> {
                     return Flow::Continue;
                 }
                 Verdict::Unsatisfied(_) if deadline.has_passed(self.clock.now()) => {
+                    if let Some(check) =
+                        row_shape(CheckCode::EventualView, view, shape, &result.rows, &run.id)
+                    {
+                        run.record(check);
+                    }
                     run.last_view = Some((view.clone(), result));
                     let mut check =
                         view_check(CheckCode::EventualView, &run.id, view, &required, &verdict);
@@ -2777,7 +2793,12 @@ fn unread_for_want_of_a_token(view: &ViewRef, run: &mut Run) -> bool {
 /// An expectation that names a different view from the query before it is a **suite** defect, and it
 /// is refused rather than silently asserted against whatever happened to be in hand — which would be
 /// a mis-assertion nobody could see in a passing run.
-fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> Flow {
+fn expect_view(
+    view: &ViewRef,
+    expectation: &ViewExpectation,
+    shape: &PayloadShape,
+    run: &mut Run,
+) -> Flow {
     if unread_for_want_of_a_token(view, run) {
         return Flow::Continue;
     }
@@ -2814,8 +2835,59 @@ fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> 
     }
     let verdict = decide(&required, result);
     let check = view_check(CheckCode::View, &run.id, view, &required, &verdict);
+    let rows = row_shape(CheckCode::View, view, shape, &result.rows, &run.id);
     run.record(check);
+    if let Some(rows) = rows {
+        run.record(rows);
+    }
     Flow::Continue
+}
+
+/// Holds every row a read of `view` returned to the view's declared fields (beyond10x/ess#680,
+/// `docs/design/view-row-shape.md`), the failed check naming each row and leaf that does
+/// not conform. The leaf rule is the event payload's: [`reach_into`] and
+/// [`LeafShape::admits`](crate::scenario::LeafShape::admits). An empty shape fails nothing.
+fn row_shape(
+    code: CheckCode,
+    view: &ViewRef,
+    shape: &PayloadShape,
+    rows: &[ViewRow],
+    scenario: &ScenarioId,
+) -> Option<CheckResult> {
+    let mut expected = BTreeSet::new();
+    let mut wrong = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        for (path, leaf) in shape.leaves() {
+            let reached = reach_into(row, path);
+            let admitted = match &reached {
+                Reached::Value(value) => leaf.admits(Some(value)),
+                Reached::Absent => leaf.admits(None),
+                Reached::Blocked { .. } => false,
+            };
+            if admitted {
+                continue;
+            }
+            expected.insert(format!("{view}.{path} holds {} on every row", leaf.holds));
+            wrong.push(match reached {
+                Reached::Value(value) => format!("row {index}: {path} = {}", quote(value)),
+                Reached::Absent => format!("row {index}: {path} was not carried"),
+                Reached::Blocked { at, found } => {
+                    format!("row {index}: {at} holds {found}, so {path} is not there to read")
+                }
+            });
+        }
+    }
+    if wrong.is_empty() {
+        return None;
+    }
+    let diagnostic = expected.into_iter().fold(
+        Diagnostic::new(code, scenario.clone()).declared_by(view.clone()),
+        Diagnostic::expected,
+    );
+    Some(CheckResult::failed(
+        format!("view {view}"),
+        diagnostic.observed(wrong.join("; ")),
+    ))
 }
 
 fn capture_complete_subject(

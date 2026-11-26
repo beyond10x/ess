@@ -2838,6 +2838,11 @@ pub enum ScenarioStep {
         view: ViewRef,
         /// What must hold of it.
         expectation: ViewExpectation,
+        /// The view's declared fields, which every row the read returned must carry, flattened as
+        /// an event's are (suite/[`ORDINARY`](crate::view_row_shape::ORDINARY) and later,
+        /// beyond10x/ess#680, `docs/design/view-row-shape.md`).
+        #[serde(default, skip_serializing_if = "PayloadShape::is_empty")]
+        shape: PayloadShape,
     },
     /// Require that this event is observed within the runner's deadline (§15).
     ///
@@ -2869,6 +2874,10 @@ pub enum ScenarioStep {
         params: BTreeMap<String, ScenarioValue>,
         /// What must eventually hold of it.
         expectation: ViewExpectation,
+        /// The declared fields every row of the read that ends the step must carry, as
+        /// [`ExpectView`](Self::ExpectView) requires them.
+        #[serde(default, skip_serializing_if = "PayloadShape::is_empty")]
+        shape: PayloadShape,
     },
     /// Name the instant the scenario has reached, so a later claim can be measured from it.
     ///

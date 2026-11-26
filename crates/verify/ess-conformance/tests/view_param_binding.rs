@@ -115,6 +115,7 @@ fn expectations<'a>(scenario: &'a ConformanceScenario, view: &str) -> Vec<&'a Vi
         .iter()
         .filter_map(|step| match step {
             ScenarioStep::ExpectView {
+                shape: _,
                 view: name,
                 expectation,
             } if name.to_string() == view => Some(expectation),

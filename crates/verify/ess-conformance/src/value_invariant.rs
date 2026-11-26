@@ -316,6 +316,7 @@ pub(crate) fn observed_by(
 ) -> Option<(&crate::scenario::ViewRef, &ValueInvariants)> {
     match step {
         ScenarioStep::ExpectView {
+            shape: _,
             view,
             expectation: ViewExpectation::ValueInvariants(observed),
         }

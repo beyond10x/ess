@@ -545,7 +545,11 @@ fn read_against(
             rewrite_fields(&mut values, declared, last.identity, false);
             fields.retain(|field, _| values.contains_key(field));
         }
-        ScenarioStep::ExpectView { view, expectation }
+        ScenarioStep::ExpectView {
+            shape: _,
+            view,
+            expectation,
+        }
         | ScenarioStep::EventuallyView {
             view, expectation, ..
         } => {

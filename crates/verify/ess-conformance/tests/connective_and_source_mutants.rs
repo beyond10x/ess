@@ -963,6 +963,7 @@ fn placed(synthesis: &Synthesis) -> (BTreeMap<String, Node>, Vec<BTreeMap<String
         .iter()
         .filter_map(|step| match step {
             ScenarioStep::ExpectView {
+                shape: _,
                 view,
                 expectation: ViewExpectation::Contains { fields },
             }

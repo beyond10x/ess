@@ -158,6 +158,7 @@ fn issue_285_an_absent_reference_is_witnessed_with_an_absent_copied_value() {
             .iter()
             .filter_map(|step| match step {
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view,
                     expectation: ViewExpectation::Contains { fields },
                 } if view.to_string() == "demo.costs.CostEntries" => {

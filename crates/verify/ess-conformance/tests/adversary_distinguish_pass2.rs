@@ -76,6 +76,7 @@ fn sent_and_required(synthesis: &Synthesis, command: &str, view: &str) -> Vec<(R
                     pending = (sent.to_string() == command).then(|| literals(input.iter()));
                 }
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view: seen,
                     expectation: ViewExpectation::Contains { fields },
                 }

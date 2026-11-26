@@ -388,6 +388,7 @@ fn changes() -> BTreeMap<String, BTreeMap<String, Node>> {
     for scenario in suite.scenarios.values() {
         for step in &scenario.steps {
             if let ScenarioStep::ExpectView {
+                shape: _,
                 view,
                 expectation: ViewExpectation::ChangedBy { fields, .. },
             }

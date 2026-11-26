@@ -720,8 +720,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "capture_instance" => (&["step", "instance", "entity", "event", "field"], &[]),
         "expect_invocation" => (&["step", "binding", "command"], &["input"]),
         "query_view" => (&["step", "view"], &["params"]),
-        "expect_view" => (&["step", "view", "expectation"], &[]),
-        "eventually_view" => (&["step", "view", "expectation"], &["params"]),
+        "expect_view" => (&["step", "view", "expectation"], &["shape"]),
+        "eventually_view" => (&["step", "view", "expectation"], &["params", "shape"]),
         "mark_instant" => (&["step", "instant"], &[]),
         "hold_now" => (&["step", "seconds"], &[]),
         "expect_not_before" | "expect_within" => (&["step", "instant", "elapsed"], &[]),
@@ -796,6 +796,12 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "shape" if tag == "snapshot_complete_subject" => {
                 let _: crate::subject::SubjectShape = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidSubjectShape", error.to_string()))?;
+            }
+            "shape"
+                if matches!(tag, "expect_view" | "eventually_view")
+                    && major < crate::view_row_shape::ORDINARY =>
+            {
+                return Err(field.error("UnsupportedVocabulary", crate::view_row_shape::REQUIRES));
             }
             "shape" => shape(field, major)?,
             "expectation" => expectation(field, major)?,
@@ -941,6 +947,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::exact_decimal::admit(suite)?;
     crate::entity_fixtures::admit(suite)?;
     crate::member_paths::admit(suite)?;
+    crate::view_row_shape::admit(suite)?;
     crate::system_issued::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;

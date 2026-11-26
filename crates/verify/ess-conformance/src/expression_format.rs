@@ -230,6 +230,7 @@ pub fn text_lengths_used_by(ir: &ess_compiler::EssIr, suite: &ConformanceSuite) 
     suite.scenarios.values().any(|scenario| {
         scenario.steps.iter().any(|step| match step {
             ScenarioStep::ExpectView {
+                shape: _,
                 view,
                 expectation: ViewExpectation::Satisfies { predicate },
             }

@@ -77,10 +77,12 @@ fn reads(scenario: &ConformanceScenario, view: &str) -> Vec<(Fields, Fields)> {
                 params: bound,
             } if read.to_string() == view => params.clone_from(bound),
             ScenarioStep::ExpectView {
+                shape: _,
                 view: read,
                 expectation: ViewExpectation::Contains { fields },
             } if read.to_string() == view => out.push((params.clone(), fields.clone())),
             ScenarioStep::EventuallyView {
+                shape: _,
                 view: read,
                 params: bound,
                 expectation: ViewExpectation::Contains { fields },

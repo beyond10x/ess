@@ -104,6 +104,7 @@ fn a_count_beside_a_maximum_asserts_the_count_change_and_says_the_maximum_is_not
     assert_eq!(
         after[1],
         &ScenarioStep::ExpectView {
+            shape: ess_conformance::scenario::PayloadShape::default(),
             view: "demo.orders.Counted".parse().unwrap(),
             expectation: ViewExpectation::ChangedBy {
                 fields: BTreeMap::from([("orders".to_owned(), n("4"))]),

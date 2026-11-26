@@ -762,3 +762,217 @@ fn an_authored_payload_error_and_row_claim_may_name_a_nested_member_by_path() {
         "{input:#?}"
     );
 }
+
+/// beyond10x/ess#680: a view whose rows each carry `order_id`, `title` and a `placed_at`
+/// timestamp (story:a-view-read-checks-every-rows-shape).
+const ORDERS: &str = "format: ess/37
+system: example
+version: v1
+domain: example.order
+summary: Orders placed with a title and an instant, read back through a view.
+types:
+  - {name: example.order.OrderId, kind: newtype, of: String}
+entities:
+  - name: example.order.Order
+    identity: {name: order_id, type: example.order.OrderId}
+    fields:
+      - {name: title, type: String}
+      - {name: placed_at, type: Timestamp}
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed]}
+actors:
+  - {name: example.order.Buyer, may: [example.order.Place]}
+events:
+  - name: example.order.Placed
+    fields: [{name: order_id, type: example.order.OrderId}]
+commands:
+  - name: example.order.Place
+    input:
+      - {name: title, type: String}
+      - {name: placed_at, type: Timestamp}
+    outcomes:
+      - name: placed
+        creates: example.order.Order
+        instance: order_id
+        sets: {title: input.title, placed_at: input.placed_at}
+        emits: [example.order.Placed]
+        payload: {example.order.Placed: {order_id: {generated: true}}}
+views:
+  - name: example.order.Orders
+    source: example.order.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: example.order.OrderId}
+      - {name: title, type: String}
+      - {name: placed_at, type: Timestamp}
+";
+
+/// The shape every row of `example.order.Orders` is held to.
+fn orders_shape() -> ess_conformance::scenario::PayloadShape {
+    use ess_conformance::scenario::{Holds, LeafShape, PayloadShape};
+    use ess_domain::types::Primitive;
+    let mut shape = PayloadShape::new();
+    for (path, kind) in [
+        ("order_id", Primitive::String),
+        ("placed_at", Primitive::Timestamp),
+        ("title", Primitive::String),
+    ] {
+        shape.insert(path, LeafShape::required(Holds::Primitive { kind }));
+    }
+    shape
+}
+
+/// The synthesized suite of [`ORDERS`], written by hand at `major` with the row shape on every
+/// view step.
+fn orders_suite_at(major: u32) -> ConformanceSuite {
+    let mut suite = ess_conformance::synthesize::synthesize(&ir(ORDERS)).suite;
+    suite.provenance.suite_version =
+        SuiteFormat::parse(&format!("ess-conformance/{major}")).expect("a suite format");
+    let mut carried = 0;
+    for scenario in suite.scenarios.values_mut() {
+        for step in &mut scenario.steps {
+            if let ScenarioStep::ExpectView { shape, .. }
+            | ScenarioStep::EventuallyView { shape, .. } = step
+            {
+                *shape = orders_shape();
+                carried += 1;
+            }
+        }
+    }
+    assert!(carried > 0, "the suite reads the view: {suite:#?}");
+    suite
+}
+
+/// How [`RowFaults`] answers a read of the view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RowFault {
+    None,
+    NoPlacedAt,
+    PlacedAtSeven,
+}
+
+/// The interpreted model, answering every view row with `fault`.
+struct RowFaults {
+    inner: ess_conformance::interpret::Interpreted,
+    fault: RowFault,
+}
+
+impl RowFaults {
+    fn answer(&self, mut result: SemanticViewResult) -> SemanticViewResult {
+        for row in &mut result.rows {
+            match self.fault {
+                RowFault::None => {}
+                RowFault::NoPlacedAt => {
+                    row.remove("placed_at");
+                }
+                RowFault::PlacedAtSeven => {
+                    row.insert("placed_at".into(), serde_json::from_str("7").unwrap());
+                }
+            }
+        }
+        result
+    }
+}
+
+impl ConformanceTarget for RowFaults {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.inner.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.inner.execute_command(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.inner
+            .query_view(request)
+            .map(|result| self.answer(result))
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.inner.observe_invocations(request)
+    }
+}
+
+/// Every check of the run that did not pass, as `expected | observed`.
+fn row_failures(suite: &ConformanceSuite, fault: RowFault) -> Vec<String> {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    let target = RowFaults {
+        inner: ess_conformance::interpret::Interpreted::for_model(ir(ORDERS)),
+        fault,
+    };
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &target)
+        .into_report();
+    report
+        .scenarios
+        .iter()
+        .flat_map(|scenario| &scenario.checks)
+        .filter(|check| check.status != Status::Passed)
+        .map(|check| match &check.diagnostic {
+            Some(diagnostic) => format!(
+                "{} | {}",
+                diagnostic.expected.join("; "),
+                diagnostic.observed.join("; ")
+            ),
+            None => format!("{:?} without a diagnostic", check.status),
+        })
+        .collect()
+}
+
+#[test]
+fn a_view_read_fails_a_row_without_a_declared_field_or_of_another_type() {
+    let suite = orders_suite_at(66);
+    assert_eq!(
+        row_failures(&suite, RowFault::None),
+        Vec::<String>::new(),
+        "every row carries order_id, title and a timestamp placed_at"
+    );
+    let missing = row_failures(&suite, RowFault::NoPlacedAt);
+    assert!(
+        missing
+            .iter()
+            .any(|text| text.contains("row 0") && text.contains("placed_at was not carried")),
+        "the step names the row and the field: {missing:#?}"
+    );
+    let seven = row_failures(&suite, RowFault::PlacedAtSeven);
+    assert!(
+        seven
+            .iter()
+            .any(|text| text.contains("row 0") && text.contains("placed_at = 7")),
+        "the step names the row and the value: {seven:#?}"
+    );
+}
+
+#[test]
+fn a_view_row_shape_below_suite_66_is_refused_naming_the_major() {
+    for major in [26, 64] {
+        let error = AdmittedSuite::from_suite(&orders_suite_at(major))
+            .expect_err("a view row shape needs suite/66")
+            .to_string();
+        assert!(error.contains("suite/66"), "/{major}: {error}");
+    }
+}

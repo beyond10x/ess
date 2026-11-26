@@ -4807,6 +4807,7 @@ fn read(
             });
             for expectation in expectations {
                 steps.push(ScenarioStep::ExpectView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view: name.clone(),
                     expectation,
                 });
@@ -4815,6 +4816,7 @@ fn read(
         AssertionStyle::Eventually => {
             for expectation in expectations {
                 steps.push(ScenarioStep::EventuallyView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view: name.clone(),
                     params: params.clone(),
                     expectation,

@@ -75,6 +75,7 @@ fn sent_and_required(ir: &EssIr, command: &str, view: &str) -> Vec<(Row, Row)> {
                     });
                 }
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view: seen,
                     expectation: ViewExpectation::Contains { fields },
                 }

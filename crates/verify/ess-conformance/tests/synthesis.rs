@@ -473,6 +473,7 @@ fn expectation<'a>(
         .iter()
         .find_map(|step| match step {
             ScenarioStep::ExpectView {
+                shape: _,
                 view: named,
                 expectation,
             } if named.to_string() == view => Some(("expect", expectation)),
@@ -2368,7 +2369,11 @@ fn an_invariant_is_asserted_against_every_view_that_publishes_what_it_reads() {
     let asserted: Vec<(String, String, String)> = steps(&synthesis, id)
         .iter()
         .filter_map(|step| match step {
-            ScenarioStep::ExpectView { view, expectation } => Some(("expect", view, expectation)),
+            ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            } => Some(("expect", view, expectation)),
             ScenarioStep::EventuallyView {
                 view, expectation, ..
             } => Some(("eventually", view, expectation)),
@@ -3998,7 +4003,11 @@ fn a_cleared_field_is_asserted_empty_rather_than_left_unsaid() {
             continue;
         }
         for step in steps(&synthesis, &id) {
-            let (ScenarioStep::ExpectView { view, expectation }
+            let (ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            }
             | ScenarioStep::EventuallyView {
                 view, expectation, ..
             }) = step
@@ -4042,7 +4051,11 @@ fn a_field_set_to_the_empty_string_is_asserted_empty() {
             continue;
         }
         for step in steps(&synthesis, &id) {
-            let (ScenarioStep::ExpectView { view, expectation }
+            let (ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            }
             | ScenarioStep::EventuallyView {
                 view, expectation, ..
             }) = step
@@ -4089,6 +4102,7 @@ fn a_literal_over_a_spellable_primitive_is_asserted_as_that_primitive() {
         }
         for step in steps(&synthesis, &id) {
             let ScenarioStep::ExpectView {
+                shape: _,
                 view,
                 expectation: ViewExpectation::Contains { fields },
             } = step
@@ -4140,7 +4154,11 @@ fn a_field_a_later_act_overwrites_is_not_asserted_at_the_value_an_earlier_one_su
             continue;
         }
         for step in steps(&synthesis, &id) {
-            let (ScenarioStep::ExpectView { view, expectation }
+            let (ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            }
             | ScenarioStep::EventuallyView {
                 view, expectation, ..
             }) = step
@@ -4184,7 +4202,11 @@ fn a_field_an_arrangement_step_overwrote_is_not_asserted_at_what_an_earlier_step
             continue;
         }
         for step in steps(&synthesis, &id) {
-            let (ScenarioStep::ExpectView { view, expectation }
+            let (ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            }
             | ScenarioStep::EventuallyView {
                 view, expectation, ..
             }) = step

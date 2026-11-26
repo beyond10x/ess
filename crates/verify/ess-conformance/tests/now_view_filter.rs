@@ -90,13 +90,15 @@ fn the_view_is_witnessed_either_side_of_its_now_bound() {
     for scenario in suite.scenarios.values() {
         for step in &scenario.steps {
             match step {
-                ScenarioStep::ExpectView { view, expectation } if view.to_string() == VIEW => {
-                    match expectation {
-                        ViewExpectation::Contains { .. } => contains += 1,
-                        ViewExpectation::Excludes { .. } => excludes += 1,
-                        _ => {}
-                    }
-                }
+                ScenarioStep::ExpectView {
+                    shape: _,
+                    view,
+                    expectation,
+                } if view.to_string() == VIEW => match expectation {
+                    ViewExpectation::Contains { .. } => contains += 1,
+                    ViewExpectation::Excludes { .. } => excludes += 1,
+                    _ => {}
+                },
                 ScenarioStep::ExecuteCommand { command, input, .. }
                     if command.to_string() == COMMAND =>
                 {

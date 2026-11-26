@@ -82,10 +82,12 @@ fn reads(
                 params: bound,
             } if read.to_string() == view => params.clone_from(bound),
             ScenarioStep::ExpectView {
+                shape: _,
                 view: read,
                 expectation,
             } if read.to_string() == view => out.push((params.clone(), expectation.clone())),
             ScenarioStep::EventuallyView {
+                shape: _,
                 view: read,
                 params: bound,
                 expectation,

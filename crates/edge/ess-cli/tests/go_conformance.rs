@@ -396,6 +396,7 @@ fn issued_at_descending() -> Vec<Ranking> {
 /// One positional assertion about `billing.invoice.OutstandingInvoices`.
 fn at(position: Position, instance: &str) -> ScenarioStep {
     ScenarioStep::ExpectView {
+        shape: ess_conformance::scenario::PayloadShape::default(),
         view: "billing.invoice.OutstandingInvoices"
             .parse()
             .expect("a view"),
@@ -476,6 +477,7 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
                         params: BTreeMap::new(),
                     },
                     ScenarioStep::ExpectView {
+                        shape: ess_conformance::scenario::PayloadShape::default(),
                         view: "billing.invoice.InvoiceById".parse().expect("a view"),
                         expectation: ViewExpectation::At {
                             order_by: Vec::new(),

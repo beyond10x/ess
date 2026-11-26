@@ -122,6 +122,7 @@ fn omitting<'s>(suite: &'s Suite, field: &str) -> Vec<(String, &'s [ScenarioStep
 fn row_field(steps: &[ScenarioStep], view: &str, field: &str) -> Option<ScenarioValue> {
     steps.iter().rev().find_map(|step| match step {
         ScenarioStep::ExpectView {
+            shape: _,
             view: name,
             expectation: ViewExpectation::Contains { fields },
         } if name.to_string() == view => Some(fields.get(field).cloned()),
@@ -249,7 +250,12 @@ fn a_filtered_view_is_decided_by_the_literal_not_by_the_absent_input() {
     assert!(!seen.is_empty(), "no scenario omits `tier`");
     for (id, steps) in seen {
         for step in steps {
-            if let ScenarioStep::ExpectView { view, expectation } = step {
+            if let ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            } = step
+            {
                 let view = view.to_string();
                 let wrong = match expectation {
                     ViewExpectation::Contains { .. } => view == "demo.orders.StandardRows",

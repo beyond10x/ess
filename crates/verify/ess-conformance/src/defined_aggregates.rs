@@ -43,6 +43,7 @@ pub fn used_by(ir: &EssIr, suite: &ConformanceSuite) -> bool {
     suite.scenarios.values().any(|scenario| {
         scenario.steps.iter().any(|step| match step {
             ScenarioStep::ExpectView {
+                shape: _,
                 view,
                 expectation: ViewExpectation::Satisfies { predicate },
             }

@@ -744,6 +744,7 @@ pub(super) fn observe(
     .into_iter()
     .collect();
     Some(ScenarioStep::EventuallyView {
+        shape: crate::scenario::PayloadShape::default(),
         view: ViewRef::new(view.name.clone()),
         params: BTreeMap::new(),
         expectation: ViewExpectation::Contains { fields },
@@ -1239,9 +1240,14 @@ pub(super) fn eventually(steps: Vec<ScenarioStep>) -> Vec<ScenarioStep> {
             ScenarioStep::QueryView { view, params: read } => {
                 params.insert(view, read);
             }
-            ScenarioStep::ExpectView { view, expectation } => {
+            ScenarioStep::ExpectView {
+                shape: _,
+                view,
+                expectation,
+            } => {
                 let read = params.get(&view).cloned().unwrap_or_default();
                 out.push(ScenarioStep::EventuallyView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view,
                     params: read,
                     expectation,
@@ -3584,6 +3590,7 @@ pub(super) fn rewritten_read(
     // the snapshot above is read, and "unchanged" holds for what it wrote. So the row is also
     // required to hold what the arrangement and the trigger left in it.
     after.push(ScenarioStep::ExpectView {
+        shape: crate::scenario::PayloadShape::default(),
         view: name.clone(),
         expectation: ViewExpectation::Contains { fields },
     });
@@ -3792,6 +3799,7 @@ fn siblings_rest(
         ScenarioValue::literal(Node::Text(state.to_string())),
     );
     Ok(Some(ScenarioStep::EventuallyView {
+        shape: crate::scenario::PayloadShape::default(),
         view: ViewRef::new(view.name.clone()),
         params: BTreeMap::new(),
         expectation: ViewExpectation::Contains { fields },

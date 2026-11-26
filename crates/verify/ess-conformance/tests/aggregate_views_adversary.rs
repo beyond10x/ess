@@ -49,6 +49,7 @@ fn contains(scenario: &ConformanceScenario, view: &str) -> Vec<BTreeMap<String, 
         .iter()
         .filter_map(|step| match step {
             ScenarioStep::ExpectView {
+                shape: _,
                 view: read,
                 expectation,
             }

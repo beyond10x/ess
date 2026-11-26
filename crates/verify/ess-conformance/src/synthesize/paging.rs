@@ -113,11 +113,13 @@ pub(super) fn page_reads(
                     params: sent,
                 });
                 steps.push(ScenarioStep::ExpectView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view: name.clone(),
                     expectation,
                 });
             }
             AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+                shape: crate::scenario::PayloadShape::default(),
                 view: name.clone(),
                 params: sent,
                 expectation,

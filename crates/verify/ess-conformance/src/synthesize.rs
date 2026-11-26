@@ -12448,11 +12448,13 @@ fn absent_read(
                 params,
             },
             ScenarioStep::ExpectView {
+                shape: crate::scenario::PayloadShape::default(),
                 view: name,
                 expectation,
             },
         ],
         AssertionStyle::Eventually => vec![ScenarioStep::EventuallyView {
+            shape: crate::scenario::PayloadShape::default(),
             view: name,
             params,
             expectation,
@@ -15617,11 +15619,13 @@ fn require(
                 });
             }
             steps.push(ScenarioStep::ExpectView {
+                shape: crate::scenario::PayloadShape::default(),
                 view: name.clone(),
                 expectation,
             });
         }
         AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+            shape: crate::scenario::PayloadShape::default(),
             view: name.clone(),
             params,
             expectation,
@@ -15646,11 +15650,13 @@ fn read_again(
                 params,
             });
             steps.push(ScenarioStep::ExpectView {
+                shape: crate::scenario::PayloadShape::default(),
                 view: name.clone(),
                 expectation,
             });
         }
         AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+            shape: crate::scenario::PayloadShape::default(),
             view: name.clone(),
             params,
             expectation,
@@ -18355,6 +18361,7 @@ fn unknown_instance(
                     params: BTreeMap::new(),
                 });
                 steps.push(ScenarioStep::ExpectView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view: name.clone(),
                     expectation: ViewExpectation::Excludes {
                         fields: [(identity.clone(), sent.clone())].into_iter().collect(),
@@ -21895,11 +21902,13 @@ fn assert_satisfied(
                 params,
             },
             ScenarioStep::ExpectView {
+                shape: crate::scenario::PayloadShape::default(),
                 view: name,
                 expectation,
             },
         ],
         AssertionStyle::Eventually => vec![ScenarioStep::EventuallyView {
+            shape: crate::scenario::PayloadShape::default(),
             view: name,
             params,
             expectation,

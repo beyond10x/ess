@@ -4775,10 +4775,14 @@ impl<'a> Compiler<'a> {
                     view: view.clone(),
                     params: bound,
                 });
-                self.steps
-                    .push(ScenarioStep::ExpectView { view, expectation });
+                self.steps.push(ScenarioStep::ExpectView {
+                    shape: crate::scenario::PayloadShape::default(),
+                    view,
+                    expectation,
+                });
             }
             AssertionStyle::Eventually => self.steps.push(ScenarioStep::EventuallyView {
+                shape: crate::scenario::PayloadShape::default(),
                 view,
                 params: bound,
                 expectation,

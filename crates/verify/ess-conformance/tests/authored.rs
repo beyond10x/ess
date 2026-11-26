@@ -603,6 +603,7 @@ mod entity_setup_execution {
         };
         let count = usize::from(fresh);
         let assertion = ScenarioStep::ExpectView {
+            shape: ess_conformance::scenario::PayloadShape::default(),
             view,
             expectation: ViewExpectation::Counts {
                 at_least: Some(count),

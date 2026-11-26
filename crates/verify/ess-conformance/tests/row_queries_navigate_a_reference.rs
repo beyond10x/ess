@@ -123,6 +123,7 @@ fn claims(scenario: &ConformanceScenario, view: &str) -> Vec<Claim> {
         match step {
             ScenarioStep::ExecuteCommand { command, .. } => sent.push(command.to_string()),
             ScenarioStep::ExpectView {
+                shape: _,
                 view: read,
                 expectation,
             }

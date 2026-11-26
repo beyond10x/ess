@@ -94,7 +94,7 @@ fn copied_related_value_filters_matching_and_nonmatching_rows() {
     for view in ["shipping.m.ByOrder", "shipping.m.ByDepot"] {
         assert!(
             packed.steps.iter().any(|step| matches!(step,
-            ScenarioStep::ExpectView { view: name, expectation: ViewExpectation::Excludes { .. } }
+            ScenarioStep::ExpectView { shape: _, view: name, expectation: ViewExpectation::Excludes { .. } }
             if name.to_string() == view)),
             "missing exclusion for {view}: {packed:#?}"
         );

@@ -102,6 +102,7 @@ fn contained_inputs(synthesis: &Synthesis) -> Vec<BTreeMap<String, ScenarioValue
         for step in &scenario.steps {
             let expectation = match step {
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view: name,
                     expectation,
                 }
@@ -349,6 +350,7 @@ fn adv_filters_no_identity_view_is_never_asserted_empty_and_non_empty_at_once() 
         for step in &scenario.steps {
             let expectation = match step {
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view: name,
                     expectation,
                 }
@@ -401,6 +403,7 @@ fn adv_filters_ranked_filtered_view_asserts_order_over_two_matching_rows() {
         for step in &scenario.steps {
             let expectation = match step {
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view: name,
                     expectation,
                 }

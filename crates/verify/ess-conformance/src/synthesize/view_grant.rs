@@ -250,6 +250,7 @@ fn witness(ir: &EssIr, view: &QualifiedName, synthesis: &mut Synthesis) {
                 &arranged,
                 Some(&reader),
                 ScenarioStep::ExpectView {
+                    shape: crate::scenario::PayloadShape::default(),
                     view: view_ref.clone(),
                     expectation: ViewExpectation::Counts {
                         at_least: Some(0),

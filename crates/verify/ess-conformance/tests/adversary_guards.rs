@@ -240,6 +240,7 @@ fn contained_sources(
         for step in &scenario.steps {
             let expectation = match step {
                 ScenarioStep::ExpectView {
+                    shape: _,
                     view: name,
                     expectation,
                 }
