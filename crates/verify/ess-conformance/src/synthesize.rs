@@ -9411,6 +9411,81 @@ fn exampled(
     }
 }
 
+/// `witness`, a further witness sent to `command` on an existing row of `entity`, with each input
+/// that declares an `example:` taking the example at every leaf no decision tells apart, as
+/// [`exampled`] gives a further creation; `None` where nothing changes.
+///
+/// A leaf `guards` read by value, one a branch of the command copies into a field that tells rows
+/// apart ([`told_apart`]), and an input a stored-row guard or a related row reads
+/// ([`decision_inputs`]) keep the witness's value. The caller tries the result before `witness`,
+/// so a branch it does not select still has the witness.
+pub(super) fn exampled_witness(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    witness: &BTreeMap<String, Node>,
+) -> Option<BTreeMap<String, Node>> {
+    if command.examples.is_empty() {
+        return None;
+    }
+    let plain = candidates(ir, command, &[], Distinction::PLAIN)
+        .ok()?
+        .into_iter()
+        .next()?;
+    let mut kept: Vec<String> = guards
+        .iter()
+        .copied()
+        .flat_map(read_by_value)
+        .map(guard_input_path)
+        .collect();
+    for outcome in &command.outcomes {
+        kept.extend(told_apart(ir, entity, outcome, (&plain, witness)));
+    }
+    let decided = decision_inputs(command);
+    let identities: BTreeSet<&str> = command
+        .outcomes
+        .iter()
+        .filter_map(existence::identity_input)
+        .collect();
+    let mut sent = witness.clone();
+    for field in command.examples.keys() {
+        let field = field.as_str();
+        let under = |leaf: &&String| {
+            leaf.as_str() == field
+                || leaf
+                    .strip_prefix(field)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        let leaves: Vec<&String> = kept.iter().filter(under).collect();
+        if command.fixture_inputs.contains_key(field)
+            || identities.contains(field)
+            || decided.contains(field)
+            || leaves.iter().any(|leaf| leaf.as_str() == field)
+        {
+            continue;
+        }
+        let (Some(example), Some(own)) = (plain.get(field), witness.get(field)) else {
+            continue;
+        };
+        if example == own {
+            continue;
+        }
+        let mut mixed = BTreeMap::from([(field.to_owned(), example.clone())]);
+        for leaf in &leaves {
+            set_at(
+                &mut mixed,
+                leaf,
+                ess_compiler::ir::read_input(witness, leaf).cloned(),
+            );
+        }
+        if let Some(value) = mixed.remove(field) {
+            sent.insert(field.to_owned(), value);
+        }
+    }
+    (sent != *witness).then_some(sent)
+}
+
 /// The input paths a creating branch copies into a field that tells its rows apart, dotted from
 /// the input field (`layout.style`, or `layout` for the whole input): the identity, a field a view
 /// over `entity` reads in its filter, order, grouping, aggregate input, computed fields or
