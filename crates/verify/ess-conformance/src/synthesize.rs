@@ -3792,8 +3792,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     synthesis.notes.extend(converted_fields_unasserted(ir));
     disclosure::augment(ir, &mut synthesis);
     // The disclosure scenarios carry the runs of other scenarios, arranged again, so their row-set
-    // sends are decided again too (weft's accounts, 2026-11-26).
-    row_set::contradictions(ir, &mut synthesis.suite, &mut synthesis.refusals);
+    // sends are decided again too (weft's accounts, 2026-11-26). Only they: every other scenario
+    // was decided in its caller reading, over rows the declared model cannot read.
+    row_set::disclosure_contradictions(ir, &mut synthesis.suite, &mut synthesis.refusals);
     // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
     // what the run does not exercise.
     synthesis.notes.extend(
