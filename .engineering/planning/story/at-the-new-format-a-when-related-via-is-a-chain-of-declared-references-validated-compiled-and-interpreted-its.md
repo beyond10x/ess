@@ -12,7 +12,7 @@ relations:
 - derived_from: story:navigation-reaches-any-depth-in-guards
 - depends_on: story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:24:57Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-24T03:24:58Z", actor: "human:timo", revision: 6}
@@ -171,3 +171,13 @@ stays the command's only related row (§ "Several related rows"). The chain this
 the report, `via: [input.<child>, <parent reference>]`. The report adds one case to the
 acceptance: a command whose input names only the child, with a guard reading the held state of
 that child's parent.
+
+## Downstream report 2026-11-26 (2)
+
+A second downstream report (2026-11-26, 0.99.2, the same application, gap 4 again) adds the case of a command that creates its subject and must check its parent.
+
+Fact: the stored-field form does not reach the parent there. `via: <parent>_id` on a branch that `creates:` its subject is refused with `ESS-COMMAND-004` (`conflicting_declaration`): the command "creates its subject: no row holds that field before it" (`crates/specify/ess-domain/src/command/related_guard.rs:1517-1525`). The documentation says the same (`website/docs/reference/predicates.md` § "A stored reference": the guard "is refused on a command that creates its subject, since no row holds the field before the branch").
+
+Checked on `origin/main` at `c0b5f560cb`, read-only (not run here): a creating command can read the parent through the input that names it. `when_related: {via: input.<parent>, exists: false}` and `when_related: {via: input.<parent>, predicate: …}` compose with a `creates:` subject. `predicates.md` § "A guard over another entity's row" says the guard composes "with any subject a branch names, a `creates:` included"; the refusal's own hint names that form ("or read the identity from the input: `via: input.<field>`", `related_guard.rs:1507`); and the repository holds tests of a creating branch beside a related guard (`crates/specify/ess-domain/tests/adversary_related_guard_pass1.rs:91`, `adversary_related_pass2.rs:127`, where the hint's remedy validates). So the supported form for a creating command that checks its parent is `via: input.<parent>`: one hop, with the parent's identity in the input.
+
+What stays open is the second hop: a creating command whose input names only a child and whose guard reads that child's parent. The chain this story opens, `via: [input.<child>, <parent reference>]`, starts from an input and not from a stored field of the new subject, so it would not meet the creation refusal; that is this story's design intent, not a built behaviour.

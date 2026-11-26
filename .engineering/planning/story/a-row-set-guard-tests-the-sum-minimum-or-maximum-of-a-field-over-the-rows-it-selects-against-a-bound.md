@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:related-rows-quantifier-in-a-selector
 - informed_by: story:aggregate-views
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -102,6 +102,8 @@ Each option list names its default, the recommended option A.
 - **RA-D4, the count bound.** A: `count:` takes the same bound in the same change (recommended:
   the sibling asks the same question). B: `count:` keeps its literal.
 
+- The bound may be a field of a row the command addresses or reaches (A), decided by the operator session, 2026-11-26: the downstream case compares the children's sum with the parent's declared length.
+
 ## Acceptance
 
 1. At the next open source format the shape above validates; at the format below it is refused as
@@ -120,3 +122,5 @@ Each option list names its default, the recommended option A.
    `website/docs/reference/predicates.md` and `website/docs/reference/spec-versions.md` say it.
 
 Every new test runs under 5 s; none may pass the 60 s bound, and the test step stays within 120 s.
+
+Added 2026-11-26 (a downstream case): the bound may be a field of a row the command addresses or reaches, per RA-D2 A. Over a parent that declares a length and children that each declare theirs, the guard of a command that adds one child compares the sum of the selected children's lengths with the parent's declared length as written: synthesis arranges children whose sum lies one unit below, on and one unit over that length, and a target that compares with a figure from the input, or with another parent's length, fails the suite.
