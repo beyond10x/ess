@@ -595,3 +595,446 @@ fn the_name_taken_refusal_is_sent_the_name_an_offering_was_published_under() {
         "an offering of the same name is published first: {sent:#?}"
     );
 }
+
+/// The creator [`CATALOG`] fixed, now a route for a command that addresses the row it creates and
+/// refuses a missing row through two inputs (weft's formations, 2026-11-26): `AddToBorder` updates
+/// the component `input.component_id` names and refuses first a missing formation, then a missing
+/// component. The component is arranged through `AddComponent`, which refuses a name already taken
+/// in its formation. Under the one rule the addressed component's existence is read first, and
+/// `AddToBorder` declares no `unknown_instance:`, so a send naming no component reaches no declared
+/// outcome: the `no-such-formation` scenario sent both rows missing beside its own send, and the
+/// interpreted target failed it.
+const FORMATIONS: &str = r#"format: ess/37
+system: p
+version: v1
+domain: p.f
+types:
+  - {name: p.f.FormationId, kind: newtype, of: Uuid}
+  - {name: p.f.ComponentId, kind: newtype, of: Uuid}
+entities:
+  - name: p.f.Formation
+    identity: {name: formation_id, type: p.f.FormationId}
+    fields:
+      - {name: name, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: p.f.Component
+    identity: {name: component_id, type: p.f.ComponentId}
+    fields:
+      - {name: formation_id, type: p.f.FormationId}
+      - {name: name, type: String}
+      - {name: on_border, type: Boolean}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}
+errors:
+  - name: p.f.NoSuchFormation
+  - name: p.f.NoSuchComponent
+  - name: p.f.NameTaken
+events:
+  - name: p.f.Created
+    fields: [{name: formation_id, type: p.f.FormationId}]
+  - name: p.f.Added
+    fields: [{name: component_id, type: p.f.ComponentId}]
+  - name: p.f.Bordered
+    fields: [{name: component_id, type: p.f.ComponentId}]
+commands:
+  - name: p.f.CreateFormation
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: created
+        creates: p.f.Formation
+        instance: formation_id
+        sets: {name: input.name}
+        emits: [p.f.Created]
+        payload: {p.f.Created: {formation_id: {generated: true}}}
+  - name: p.f.AddComponent
+    input:
+      - {name: formation_id, type: p.f.FormationId}
+      - {name: name, type: String}
+    outcomes:
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.f.NoSuchFormation
+      - name: name-taken
+        when_related:
+          entity: p.f.Component
+          where: {all: [formation_id == input.formation_id, name == input.name]}
+          exists: true
+        error: p.f.NameTaken
+      - name: added
+        creates: p.f.Component
+        instance: component_id
+        sets: {formation_id: input.formation_id, name: input.name, on_border: false}
+        emits: [p.f.Added]
+        payload: {p.f.Added: {component_id: {generated: true}}}
+  - name: p.f.AddToBorder
+    input:
+      - {name: formation_id, type: p.f.FormationId}
+      - {name: component_id, type: p.f.ComponentId}
+    outcomes:
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.f.NoSuchFormation
+      - name: no-such-component
+        when_related: {via: input.component_id, exists: false}
+        error: p.f.NoSuchComponent
+      - name: foreign-component
+        when_related: {via: input.component_id, predicate: formation_id != input.formation_id}
+        error: p.f.NoSuchComponent
+      - name: bordered
+        updates: p.f.Component
+        instance: component_id
+        sets: {on_border: true}
+        emits: [p.f.Bordered]
+        payload: {p.f.Bordered: {component_id: input.component_id}}
+  - name: p.f.RemoveFromBorder
+    input:
+      - {name: formation_id, type: p.f.FormationId}
+      - {name: component_id, type: p.f.ComponentId}
+    outcomes:
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.f.NoSuchFormation
+      - name: no-such-component
+        when_related: {via: input.component_id, exists: false}
+        error: p.f.NoSuchComponent
+      - name: foreign-component
+        when_related: {via: input.component_id, predicate: formation_id != input.formation_id}
+        error: p.f.NoSuchComponent
+      - name: namesake
+        when_related:
+          entity: p.f.Component
+          where: {all: [formation_id == input.formation_id, name == "main"]}
+          exists: true
+        error: p.f.NameTaken
+      - name: unbordered
+        updates: p.f.Component
+        instance: component_id
+        sets: {on_border: false}
+        emits: [p.f.Bordered]
+        payload: {p.f.Bordered: {component_id: input.component_id}}
+views:
+  - name: p.f.Components
+    source: p.f.Component
+    consistency: read_your_writes
+    fields:
+      - {name: component_id, type: p.f.ComponentId}
+      - {name: on_border, type: Boolean}
+"#;
+
+/// The `exists: false` branches over the component each command addresses: never reached under
+/// the one rule, as `AddToBorder`'s already was. `RemoveFromBorder`'s, beside a row set, was sent
+/// an arranged component and failed on the interpreted target.
+const ADDRESSED_ABSENT: [&str; 2] = [
+    "p.f.AddToBorder/outcome/no-such-component",
+    "p.f.RemoveFromBorder/outcome/no-such-component",
+];
+
+#[test]
+fn every_scenario_through_the_fixed_creator_passes_its_own_interpreter() {
+    let run = run(FORMATIONS);
+    assert_passes(&run, "p.f.AddToBorder/outcome/no-such-formation");
+    assert_passes(&run, "p.f.RemoveFromBorder/outcome/no-such-formation");
+    let failed: Vec<_> = run
+        .results
+        .iter()
+        .filter(|(_, result)| result.status != Status::Passed)
+        .map(|(id, result)| (id, result.diagnostics().collect::<Vec<_>>()))
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "every synthesized scenario passes the interpreted target: {failed:#?}"
+    );
+}
+
+#[test]
+fn an_absent_branch_over_the_addressed_row_is_refused_as_never_reached() {
+    let run = run(FORMATIONS);
+    for wanted in ADDRESSED_ABSENT {
+        assert!(
+            !run.results.contains_key(wanted),
+            "{wanted} is not synthesized"
+        );
+        let refusals = refused(&run, wanted);
+        assert!(
+            refusals.len() == 1 && refusals[0].contains("is answered by that row's existence"),
+            "{wanted} is refused as never reached: {refusals:#?}"
+        );
+    }
+}
+
+#[test]
+fn no_send_names_a_component_no_row_carries() {
+    let run = run(FORMATIONS);
+    let wanted = "p.f.AddToBorder/outcome/no-such-formation";
+    assert_passes(&run, wanted);
+    for (command, input, outcome) in sends(&run, wanted) {
+        if command == "p.f.AddToBorder" {
+            assert_eq!(
+                input["component_id"]["kind"], "instance",
+                "the addressed component is an arranged row ({outcome}): {input:#}"
+            );
+        }
+    }
+}
+
+/// A row-set refusal that holds over no rows still answers a run that arranges no row for it
+/// (weft's formations, 2026-11-26): `CommitRevision` refuses a formation with no component
+/// (`empty`, `exists: false`) and otherwise creates a `Revision` the formation owns. Passing every
+/// row-set refusal over, a run arranging a revision sent `committed` on a formation with no
+/// component: the revision's own scenario was refused, and the one-time disclosure scenario that
+/// carries such a run, which no row-set walk reads, failed on the interpreted target.
+const REVISIONS: &str = r"format: ess/37
+system: p
+version: v1
+domain: p.f
+types:
+  - {name: p.f.FormationId, kind: newtype, of: Uuid}
+  - {name: p.f.ComponentId, kind: newtype, of: Uuid}
+  - {name: p.f.RevisionId, kind: newtype, of: Uuid}
+  - {name: p.f.KeyId, kind: newtype, of: Uuid}
+entities:
+  - name: p.f.Key
+    identity: {name: key_id, type: p.f.KeyId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Issued, states: [Issued], terminal: [Issued]}
+  - name: p.f.Formation
+    identity: {name: formation_id, type: p.f.FormationId}
+    fields:
+      - {name: name, type: String}
+    relations:
+      - {name: revisions, kind: owns, target: p.f.Revision, cardinality: many, via: formation_id}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: p.f.Component
+    identity: {name: component_id, type: p.f.ComponentId}
+    fields:
+      - {name: formation_id, type: p.f.FormationId}
+      - {name: name, type: String}
+    lifecycle: {initial: Declared, states: [Declared], terminal: [Declared]}
+  - name: p.f.Revision
+    identity: {name: revision_id, type: p.f.RevisionId}
+    fields:
+      - {name: formation_id, type: p.f.FormationId}
+    lifecycle: {initial: Committed, states: [Committed], terminal: [Committed]}
+errors:
+  - name: p.f.NoSuchFormation
+  - name: p.f.Empty
+events:
+  - name: p.f.KeyIssued
+    fields: [{name: key_id, type: p.f.KeyId}]
+  - name: p.f.Created
+    fields: [{name: formation_id, type: p.f.FormationId}]
+  - name: p.f.Added
+    fields: [{name: component_id, type: p.f.ComponentId}]
+  - name: p.f.Committed
+    fields: [{name: revision_id, type: p.f.RevisionId}]
+commands:
+  - name: p.f.IssueKey
+    input:
+      - {name: label, type: String}
+    response:
+      - {name: key_id, type: p.f.KeyId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: p.f.Key
+        instance: key_id
+        returns: true
+        one_time_response: [secret]
+        sets: {label: input.label}
+        emits: [p.f.KeyIssued]
+        payload: {p.f.KeyIssued: {key_id: {response: key_id}}}
+  - name: p.f.CreateFormation
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: created
+        creates: p.f.Formation
+        instance: formation_id
+        sets: {name: input.name}
+        emits: [p.f.Created]
+        payload: {p.f.Created: {formation_id: {generated: true}}}
+  - name: p.f.AddComponent
+    input:
+      - {name: formation_id, type: p.f.FormationId}
+      - {name: name, type: String}
+    outcomes:
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.f.NoSuchFormation
+      - name: added
+        creates: p.f.Component
+        instance: component_id
+        sets: {formation_id: input.formation_id, name: input.name}
+        emits: [p.f.Added]
+        payload: {p.f.Added: {component_id: {generated: true}}}
+  - name: p.f.CommitRevision
+    input:
+      - {name: formation_id, type: p.f.FormationId}
+    outcomes:
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.f.NoSuchFormation
+      - name: empty
+        when_related:
+          entity: p.f.Component
+          where: formation_id == input.formation_id
+          exists: false
+        error: p.f.Empty
+      - name: committed
+        creates: p.f.Revision
+        instance: revision_id
+        sets: {formation_id: input.formation_id}
+        emits: [p.f.Committed]
+        payload: {p.f.Committed: {revision_id: {generated: true}}}
+views:
+  - name: p.f.Revisions
+    source: p.f.Revision
+    consistency: read_your_writes
+    params:
+      - {name: formation_id, type: p.f.FormationId}
+    filter: formation_id == param.formation_id
+    fields:
+      - {name: revision_id, type: p.f.RevisionId}
+      - {name: formation_id, type: p.f.FormationId}
+";
+
+#[test]
+fn a_row_set_refusal_that_holds_over_no_rows_still_answers_an_arranging_run() {
+    let run = run(REVISIONS);
+    assert_refuses_nothing(&run);
+    assert_every_scenario_passes(&run);
+}
+
+/// Every scenario of `run` passes the interpreted target.
+fn assert_every_scenario_passes(run: &Run) {
+    let failed: Vec<_> = run
+        .results
+        .iter()
+        .filter(|(_, result)| result.status != Status::Passed)
+        .map(|(id, result)| (id, result.diagnostics().collect::<Vec<_>>()))
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "every synthesized scenario passes the interpreted target: {failed:#?}"
+    );
+}
+
+/// A row set over the addressed row itself, beside a one-time response (weft's accounts,
+/// 2026-11-26): `Revoke` moves the binding `input.binding_id` names and refuses it first where
+/// that binding's tenant is not `input.tenant_id` (a row set selecting the binding by its
+/// identity). The one-time disclosure scenarios carry the runs of other scenarios, arranged
+/// again, and were built after the row-set walk: one sent `revoked` with a tenant the binding does
+/// not hold, which `other-tenant` answers, and failed on the interpreted target. On main too.
+const BINDINGS: &str = r"format: ess/37
+system: p
+version: v1
+domain: p.t
+types:
+  - {name: p.t.TenantId, kind: newtype, of: Uuid}
+  - {name: p.t.BindingId, kind: newtype, of: Uuid}
+  - {name: p.t.KeyId, kind: newtype, of: Uuid}
+entities:
+  - name: p.t.Key
+    identity: {name: key_id, type: p.t.KeyId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Issued, states: [Issued], terminal: [Issued]}
+  - name: p.t.Tenant
+    identity: {name: tenant_id, type: p.t.TenantId}
+    fields:
+      - {name: name, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: p.t.Binding
+    identity: {name: binding_id, type: p.t.BindingId}
+    fields:
+      - {name: tenant_id, type: p.t.TenantId}
+    lifecycle:
+      initial: Active
+      states: [Active, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: revoke, from: [Active], to: Revoked}
+errors:
+  - name: p.t.NotFound
+  - name: p.t.CrossTenant
+  - name: p.t.StateConflict
+events:
+  - name: p.t.KeyIssued
+    fields: [{name: key_id, type: p.t.KeyId}]
+  - name: p.t.Created
+    fields: [{name: tenant_id, type: p.t.TenantId}]
+  - name: p.t.Bound
+    fields: [{name: binding_id, type: p.t.BindingId}]
+  - name: p.t.Revoked
+    fields: [{name: binding_id, type: p.t.BindingId}]
+commands:
+  - name: p.t.IssueKey
+    input:
+      - {name: label, type: String}
+    response:
+      - {name: key_id, type: p.t.KeyId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: p.t.Key
+        instance: key_id
+        returns: true
+        one_time_response: [secret]
+        sets: {label: input.label}
+        emits: [p.t.KeyIssued]
+        payload: {p.t.KeyIssued: {key_id: {response: key_id}}}
+  - name: p.t.CreateTenant
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: created
+        creates: p.t.Tenant
+        instance: tenant_id
+        sets: {name: input.name}
+        emits: [p.t.Created]
+        payload: {p.t.Created: {tenant_id: {generated: true}}}
+  - name: p.t.Bind
+    input:
+      - {name: tenant_id, type: p.t.TenantId}
+    outcomes:
+      - name: no-such-tenant
+        when_related: {via: input.tenant_id, exists: false}
+        error: p.t.NotFound
+      - name: bound
+        creates: p.t.Binding
+        instance: binding_id
+        sets: {tenant_id: input.tenant_id}
+        emits: [p.t.Bound]
+        payload: {p.t.Bound: {binding_id: {generated: true}}}
+  - name: p.t.Revoke
+    input:
+      - {name: binding_id, type: p.t.BindingId}
+      - {name: tenant_id, type: p.t.TenantId}
+    outcomes:
+      - {name: no-such-binding, unknown_instance: true, error: p.t.NotFound}
+      - name: other-tenant
+        when_related:
+          entity: p.t.Binding
+          where: {all: [binding_id == input.binding_id, tenant_id != input.tenant_id]}
+          exists: true
+        error: p.t.CrossTenant
+      - name: revoked
+        moves: p.t.Binding.revoke
+        instance: binding_id
+        emits: [p.t.Revoked]
+        payload: {p.t.Revoked: {binding_id: input.binding_id}}
+      - {name: wrong-state, wrong_state: true, error: p.t.StateConflict}
+views:
+  - name: p.t.Bindings
+    source: p.t.Binding
+    consistency: read_your_writes
+    fields:
+      - {name: binding_id, type: p.t.BindingId}
+      - {name: state, type: p.t.Binding.State}
+";
+
+#[test]
+fn a_disclosure_scenario_is_held_to_the_row_sets_its_sends_read() {
+    assert_every_scenario_passes(&run(BINDINGS));
+}
