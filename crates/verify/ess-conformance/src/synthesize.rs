@@ -901,6 +901,21 @@ impl fmt::Display for Refusal {
                     self.subject
                 )
             }
+            // The scenario exists; it puts too few rows in an ordered view to check the order
+            // (beyond10x/ess#795).
+            Some(id)
+                if self.stands && matches!(self.cause, RefusalCause::OrderUnwitnessed { .. }) =>
+            {
+                let RefusalCause::OrderUnwitnessed { view, .. } = &self.cause else {
+                    unreachable!("matched above")
+                };
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` without its order of `{view}`",
+                    self.code(),
+                    self.subject
+                )
+            }
             // The scenario exists; a later key of a view's order is not pinned by a tie in it
             // (beyond10x/ess#708).
             Some(id)
@@ -2033,6 +2048,17 @@ impl fmt::Display for RefusalCause {
                 view,
                 entity,
                 arranged,
+                reason: Unreachable::SecondAnswered { via, outcome },
+            } => write!(
+                f,
+                "`{view}` declares an order and this scenario can put {arranged} row(s) in it: \
+                 a second `{entity}` under one `{via}` is answered by `{}` of `{}`",
+                outcome.outcome, outcome.command
+            ),
+            Self::OrderUnwitnessed {
+                view,
+                entity,
+                arranged,
                 reason,
             } => write!(
                 f,
@@ -3091,6 +3117,15 @@ pub enum Unreachable {
         /// The field that links a row to its owner.
         via: String,
     },
+    /// The rows are read by their owner, through the link `via`, and the command creating them
+    /// answers a second row under one owner with a refusal reading the rows already there
+    /// (`when_related: {entity, where: <via> == input.<field>, exists: true}`, beyond10x/ess#795).
+    SecondAnswered {
+        /// The field that links a row to its owner.
+        via: String,
+        /// The branch that answers the second creation.
+        outcome: Box<OutcomeRef>,
+    },
     /// A move on the route reads a related row through a stored field of the row being arranged
     /// (`when_related: {via: <field>}`, ess/22, beyond10x/ess#304), and no arranging run can set
     /// that field so the move's branch is selected: left out, or naming a row of the related entity
@@ -3254,6 +3289,11 @@ impl Unreachable {
                 "an owner under `cardinality: one` holds one row, so an order over one owner's \
                  rows has nothing to rank; declare `cardinality: many` if an owner holds several"
             }
+            Self::SecondAnswered { .. } => {
+                "the creating command refuses a second row under one owner, so an order over one \
+                 owner's rows has nothing to rank; drop `order_by:`, or let a command create a \
+                 second row under the owner"
+            }
             Self::StoredReference { .. } => {
                 "an arranging run sends a branch reading a stored reference with the reference \
                  left out, or naming a row of the related entity arranged one level deep; declare \
@@ -3324,6 +3364,11 @@ impl fmt::Display for Unreachable {
                 f,
                 "the rows are read by the owner `{via}` names, and the owning relation is \
                  `cardinality: one`, so an owner holds one row"
+            ),
+            Self::SecondAnswered { via, outcome } => write!(
+                f,
+                "a second row under one `{via}` is answered by `{}` of `{}`",
+                outcome.outcome, outcome.command
             ),
             Self::StoredReference { outcome, why } => write!(
                 f,
@@ -12543,7 +12588,8 @@ fn arrange_ranked(
             .filter(|(via, _)| reads_root(view, via));
         if let (Some((via, _)), false) = (read_by_owner, shares_owner(ir, beside.entity)) {
             if rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
-                refusals.push(Refusal::about(
+                // The scenario stands without the order (beyond10x/ess#795).
+                refusals.push(Refusal::beside(
                     id,
                     RefusalCause::OrderUnwitnessed {
                         view: name.clone(),
@@ -12559,6 +12605,23 @@ fn arrange_ranked(
             }
         }
         let owner = read_by_owner.map(|(_, owner)| owner);
+        // The subject's owner is there, so a creator reading it through a related guard is decided
+        // on it while the further rows are arranged under it, as a row a run advances is
+        // ([`subject_fact::holding`]): a missing-owner refusal does not answer a second row under
+        // an owner the scenario holds (beyond10x/ess#795).
+        let _held_owner = owner.and_then(|owner| {
+            let belongs = ir.owner_of(beside.entity)?;
+            let row = Arrangement {
+                instance: owner.clone(),
+                state: ir.entity(&belongs.owner).lifecycle.initial.clone(),
+                steps: Vec::new(),
+                source: BTreeSet::new(),
+                settled: BTreeMap::new(),
+                unwritten: BTreeSet::new(),
+                unobserved: BTreeSet::new(),
+            };
+            Some(subject_fact::holding(ir, &belongs.owner, &row))
+        });
         while rows_shown(ir, view, *admits_subject, &companions, &params)
             < paging::rows_wanted(view)
         {
@@ -12581,7 +12644,20 @@ fn arrange_ranked(
                     break
                 }
                 Err(reason) => {
-                    refusals.push(Refusal::about(
+                    // A second row under the subject's owner that the creating command refuses is
+                    // named by that refusal, not by the search that found no row
+                    // (beyond10x/ess#795); the scenario stands without the order.
+                    let reason = read_by_owner
+                        .and_then(|(via, _)| {
+                            row_set::answers_second(ir, beside.entity, via).map(|outcome| {
+                                Unreachable::SecondAnswered {
+                                    via: via.to_owned(),
+                                    outcome: Box::new(outcome),
+                                }
+                            })
+                        })
+                        .unwrap_or(reason);
+                    refusals.push(Refusal::beside(
                         id,
                         RefusalCause::OrderUnwitnessed {
                             view: name.clone(),
