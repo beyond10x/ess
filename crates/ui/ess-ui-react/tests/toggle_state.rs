@@ -173,3 +173,57 @@ fn a_toggle_column_renders_a_read_only_switch() {
 ",
     );
 }
+
+/// `loads.<field>` reads the first row the action's `loads` read answers (beyond10x/ess#723,
+/// C17): before it answers the toggle is disabled and the field absent (off, and an action whose
+/// `visible` reads it hidden); after, `bind`, `checked` and `visible` read the field; a command
+/// the action sends reads it again. The terminal holds the same moments (`ess-ui-tui`,
+/// `tests/toggle_state.rs`).
+#[test]
+fn an_action_reads_the_row_it_loads_once_it_answers_and_again_after_its_command() {
+    run(
+        "loads",
+        "[title]",
+        "        actions:\n          - {name: paused, as: toggle, label: Paused, does: flags.SetPaused, loads: {view: flags.Settings}, bind: {paused: not loads.paused}}\n          - {name: resume, label: Resume, does: flags.Resume, loads: {view: flags.Settings}, visible: loads.paused, bind: {since: loads.since}}",
+        r"
+  let settings = { paused: true, since: '09:00' };
+  let settingsReads = 0;
+  let open;
+  let gate = new Promise((resolve) => { open = resolve; });
+  setDataAdapter({
+    read: async (request) => {
+      if (request.view !== 'flags.Settings') return { rows: rows.map((row) => ({ ...row })), total: rows.length };
+      settingsReads += 1;
+      await gate;
+      return { rows: [{ ...settings }], total: 1 };
+    },
+    send: async (command, input) => { sent.push([command, input]); return { accepted: true }; },
+    loadState: async () => undefined,
+    saveState: async () => undefined,
+  });
+  const resume = () => root.find((node) => node.tag === 'button' && node.props['aria-label'] === 'Resume');
+  await settle();
+  let [toggle] = toggles();
+  assert.ok(toggle, `the toggle is drawn before its row answers: ${root.text()}`);
+  assert.strictEqual(toggle.props.disabled, true, 'drawn disabled until the row answers');
+  assert.strictEqual(toggle.props.checked, false, 'loads.paused is absent before the row answers');
+  assert.equal(resume().length, 0, 'a visible reading the absent field hides its action');
+  open();
+  await settle();
+  [toggle] = toggles();
+  assert.strictEqual(toggle.props.disabled, false, 'enabled once the row answers');
+  assert.strictEqual(toggle.props.checked, true, 'checked reads loads.paused');
+  assert.equal(resume().length, 1, 'visible reads loads.paused');
+  const before = settingsReads;
+  settings = { paused: false, since: '10:00' };
+  resume()[0].props.onClick();
+  for (let i = 0; i < 10; i += 1) await tick();
+  await settle();
+  assert.deepStrictEqual(sent[0], ['flags.Resume', { since: '09:00' }], 'bind reads loads.since');
+  assert.ok(settingsReads > before, 'the command reads the loaded row again');
+  [toggle] = toggles();
+  assert.strictEqual(toggle.props.checked, false, 'the toggle shows the row read again');
+  assert.equal(resume().length, 0, 'visible reads the row read again');
+",
+    );
+}

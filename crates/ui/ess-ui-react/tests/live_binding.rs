@@ -195,19 +195,35 @@ fn fnv(text: &str) -> u64 {
 /// the shell's overlays: `core.tsx` lets a registry inside another be the outer one, forgets a
 /// page's sections when its frame goes, and reports the title's record apart from the row
 /// (`titleRow`); only the whole-project digest moves. `actions.tsx` and the whole-project digest
-/// re-pinned for the fix "an overlay's params are read where its opener stands": every open call
-/// passes the params in scope where the opener stands (`actions.tsx`, `graph_editor.tsx`), and
-/// the overlay host hands them to the overlay it opens (`core.tsx`, `overlays.tsx`).
+/// re-pinned for story:both-renderers-read-one-binding-expression-grammar: a `bind` value may be a
+/// list of expressions, sent as one list (`bound`, `ActionSpec.bind`, beyond10x/ess#723).
+/// `actions.tsx`, `data.ts` and the whole-project digest re-pinned for
+/// story:a-sent-value-may-be-mapped-or-left-out: a read param, a navigation param and a `bind`
+/// entry written `{value, when}` are sent only while `when` holds (`sent`, beyond10x/ess#723).
+/// `actions.tsx` and the whole-project digest re-pinned for story:an-action-names-its-icon: an
+/// action draws its icon's glyph (`glyph`), and no rule draws one dot for every icon.
+/// The whole-project digest re-pinned for
+/// story:a-chart-draws-its-rows-in-the-order-its-sort-declares-and-a-live-insert-keeps-that-order:
+/// the collection's `compareValues` moves to `runtime/compare.ts`, which the chart sorts with too
+/// (beyond10x/ess#723); no file of the pins above changes. `actions.tsx` and the whole-project
+/// digest re-pinned for story:both-renderers-read-one-binding-expression-grammar, C17: an action
+/// reads the row its `loads` read answers (`useRead` in `ActionControl`) and is drawn disabled
+/// until it answers; `expr.ts` admits the `loads` root (beyond10x/ess#723). `actions.tsx` and the
+/// whole-project digest re-pinned for the fix "an overlay's params are read where its opener
+/// stands": every open call passes the params in scope where the opener stands (`actions.tsx`,
+/// `graph_editor.tsx`), and the overlay host hands them to the overlay it opens (`core.tsx`,
+/// `overlays.tsx`). Both re-recorded together at the merge of 0.99.2, which brought that fix
+/// beside the `loads` read: `actions.tsx` and the whole-project digest hold both changes.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x939b_2ed0_a001_98c5),
-    ("src/runtime/actions.tsx", 0x3582_0840_a132_bec7),
+    ("src/runtime/actions.tsx", 0x21d5_9fe3_924f_a5e1),
     ("src/runtime/composites/confirm.tsx", 0xd98b_e5a3_8ad8_4503),
     ("src/runtime/composites/form.tsx", 0x8925_891d_a8af_c1fb),
-    ("src/runtime/data.ts", 0x5284_0c01_17d1_fa7f),
+    ("src/runtime/data.ts", 0x51fa_44ce_7140_2852),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xc4c2_6366_183b_2e2b;
+const PLAIN_PROJECT: u64 = 0xea26_5dc3_fd05_f6cc;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

@@ -65,6 +65,7 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-034",
     "ESS-HTTP-035",
     "ESS-HTTP-036",
+    "ESS-HTTP-037",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -1105,16 +1106,20 @@ pub enum RefusalKey {
     NotGranted,
     /// A request whose body is larger than the route reads; today `413`. Answered with a `4xx`.
     TooLarge,
+    /// A call without the credential its route's `authentication` requires (beyond10x/ess#681);
+    /// `401` with the schemes' challenge when not declared. Answered with a `4xx`.
+    Unauthenticated,
     /// An unfinished realization; today `501`. Answered with a `5xx`.
     Unfinished,
 }
 
 impl RefusalKey {
     /// Every key, in name order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Malformed,
         Self::NotGranted,
         Self::TooLarge,
+        Self::Unauthenticated,
         Self::Unfinished,
     ];
 
@@ -1124,6 +1129,7 @@ impl RefusalKey {
             Self::Malformed => "malformed",
             Self::NotGranted => "not_granted",
             Self::TooLarge => "too_large",
+            Self::Unauthenticated => "unauthenticated",
             Self::Unfinished => "unfinished",
         }
     }
@@ -1137,7 +1143,7 @@ impl RefusalKey {
     /// the unfinished realization.
     fn class(self) -> u16 {
         match self {
-            Self::Malformed | Self::NotGranted | Self::TooLarge => 4,
+            Self::Malformed | Self::NotGranted | Self::TooLarge | Self::Unauthenticated => 4,
             Self::Unfinished => 5,
         }
     }
@@ -1832,6 +1838,10 @@ pub struct RouteSpec {
     /// The `operationId` the route is published under; absent, the operation's qualified name.
     #[serde(default)]
     pub operation_id: Option<String>,
+    /// The schemes a caller of this route authenticates with, any one sufficing, over the
+    /// binding's `authentication.required`; `[]` makes the route open; absent, the binding's.
+    #[serde(default)]
+    pub authentication: Option<Vec<String>>,
     /// The method, as written. Read as text so that one outside the closed set is refused with a
     /// code and a path rather than as a parse error.
     pub method: String,
@@ -2169,6 +2179,106 @@ fn is_pchar(c: char) -> bool {
         )
 }
 
+/// How a caller of the binding's routes proves who it is, as written (beyond10x/ess#681,
+/// `docs/design/http-presentation-binding.md`, "Authentication").
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthenticationSpec {
+    /// The schemes by name, each an RFC 9110 token; required.
+    pub schemes: Entries<SchemeSpec>,
+    /// The schemes a route requires when it states none of its own, any one sufficing; absent,
+    /// none: such a route is open.
+    #[serde(default)]
+    pub required: Option<Vec<String>>,
+}
+
+/// One scheme, as written. `kind` and `in` are read as text, so that one outside the set is
+/// refused with a code (`ESS-HTTP-037`) rather than as a parse error.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchemeSpec {
+    /// `bearer`, `basic`, `api_key` or `mutual_tls`; required.
+    pub kind: String,
+    /// Where an `api_key` travels: `header`, `query` or `cookie`.
+    #[serde(default, rename = "in")]
+    pub location: Option<String>,
+    /// The header, query parameter or cookie an `api_key` travels in.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The realm of a `basic` scheme's challenge.
+    #[serde(default)]
+    pub realm: Option<String>,
+}
+
+impl SchemeSpec {
+    /// The value a refinement compares (`ESS-HTTP-012`).
+    fn compared(&self) -> serde_json::Value {
+        serde_json::json!([self.kind, self.location, self.name, self.realm])
+    }
+}
+
+/// How a caller proves who it is, compiled: the schemes by name, in name order, and the ones a
+/// route that states none requires.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Authentication {
+    /// The schemes by name, in name order.
+    #[serde(deserialize_with = "canonical_schemes")]
+    pub schemes: BTreeMap<String, Scheme>,
+    /// The schemes a route that states none requires, in the order written, any one sufficing.
+    /// Absent when empty: such a route is open.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required: Vec<String>,
+}
+
+/// One compiled scheme.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Scheme {
+    /// RFC 6750: a bearer token in `Authorization`; its challenge is `Bearer`.
+    Bearer,
+    /// RFC 7617: a user and password in `Authorization`; its challenge is `Basic` with the realm.
+    Basic {
+        /// The realm the challenge names.
+        realm: String,
+    },
+    /// A key in a header, a query parameter or a cookie; it has no challenge.
+    ApiKey {
+        /// Where the key travels.
+        #[serde(rename = "in")]
+        location: KeyLocation,
+        /// The header, query parameter or cookie it travels in.
+        name: String,
+    },
+    /// A client certificate presented in the TLS handshake; it has no challenge.
+    MutualTls,
+}
+
+impl Scheme {
+    /// Whether a `401` for a call without this scheme's credential can carry its challenge.
+    pub fn challenges(&self) -> bool {
+        matches!(self, Self::Bearer | Self::Basic { .. })
+    }
+}
+
+/// Where an `api_key` travels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyLocation {
+    /// A request header.
+    Header,
+    /// A query parameter.
+    Query,
+    /// A cookie.
+    Cookie,
+}
+
+fn canonical_schemes<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Scheme>, D::Error> {
+    canonical_map(deserializer, "schemes")
+}
+
 /// An adopter-authored `ess-http/1` document.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2192,6 +2302,9 @@ pub struct HttpSpec {
     /// component, each list in the order written: the first is the default.
     #[serde(default)]
     pub servers: Option<Entries<Vec<ServerSpec>>>,
+    /// How a caller proves who it is; absent, every route is open.
+    #[serde(default)]
+    pub authentication: Option<AuthenticationSpec>,
     /// One route per bound command or view, in document order.
     pub routes: Vec<RouteSpec>,
 }
@@ -2443,6 +2556,10 @@ pub struct Route {
     /// the operation's qualified name is its `operationId`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<String>,
+    /// The schemes the route states for itself, in the order written, over the binding's
+    /// [`Authentication::required`]; `[]` when it is open. Absent when it states none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<Vec<String>>,
     /// The method.
     pub method: Method,
     /// The path template; absent for an open route.
@@ -2790,6 +2907,9 @@ pub struct HttpIr {
         deserialize_with = "canonical_servers"
     )]
     servers: BTreeMap<String, Vec<Server>>,
+    /// How a caller of the routes proves who it is. Absent when not declared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    authentication: Option<Authentication>,
     routes: Vec<Route>,
     /// Ordered by component, then path, then method, then operation. Absent when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2851,6 +2971,21 @@ impl HttpIr {
         &self.servers
     }
 
+    /// How a caller proves who it is, if the binding declares it.
+    pub fn authentication(&self) -> Option<&Authentication> {
+        self.authentication.as_ref()
+    }
+
+    /// The schemes a caller of `route` authenticates with, any one of them sufficing: the route's
+    /// own, else the binding's `required`; empty when the route is open.
+    pub fn required_schemes<'a>(&'a self, route: &'a Route) -> &'a [String] {
+        match (&route.authentication, &self.authentication) {
+            (Some(own), _) => own,
+            (None, Some(authentication)) => &authentication.required,
+            (None, None) => &[],
+        }
+    }
+
     /// Every route, ordered by path (an open route first), then method, then operation.
     pub fn routes(&self) -> &[Route] {
         &self.routes
@@ -2899,7 +3034,7 @@ impl HttpIr {
     /// written out, `single` without `empty` or `empty` without `single` (beside `rows` or
     /// `array`), an `empty` status outside `4xx`, or an `empty` body `none` written out or a
     /// literal under an empty member; a refusal key outside `malformed`, `not_granted`,
-    /// `too_large` and `unfinished`, a refusal status outside its class (`4xx`, `4xx`, `4xx`, `5xx`), or a refusal body
+    /// `too_large`, `unauthenticated` and `unfinished`, a refusal status outside its class (`4xx`, `4xx`, `4xx`, `4xx`, `5xx`), or a refusal body
     /// other than `none` or one literal member with a name, the binding's or a route's own, and a
     /// route's `refusals` out of key order or written empty; `headers`, challenge `params` or redirect `parameters` out of
     /// name order or empty; a header name that is not a token, one the server, the encoding or
@@ -2920,7 +3055,11 @@ impl HttpIr {
     /// `query` of other than one parameter, two on different parameters or one value, a name
     /// that is a path variable, a name or value outside RFC 3986 `unreserved`, a `separator`
     /// outside `,`, `;` and a tab, or a header that is not a literal a binding may declare
-    /// (beyond10x/ess#753). Beyond these, it refuses, naming
+    /// (beyond10x/ess#753); and an `authentication` scheme whose name is not a token, of a kind
+    /// outside the four, with an `api_key` name its location cannot carry or a `basic` realm no
+    /// quoted string carries, `schemes` out of name order or empty, and an
+    /// `authentication.required` or a route's `authentication` naming a scheme not declared or
+    /// one twice (beyond10x/ess#681). Beyond these, it refuses, naming
     /// the key, any IR that would not write back what it was given: a key compiled IR omits,
     /// written as an empty map or list, a `null` or a default.
     ///
@@ -3027,7 +3166,45 @@ impl HttpIr {
                 }
             }
         }
+        self.authentication_invariants()?;
         self.presentation_invariants()
+    }
+
+    /// The invariants of `authentication` and of each route's list (see [`HttpIr::from_json`]):
+    /// scheme names that are tokens, an `api_key` name a header, query or cookie can carry, a
+    /// `basic` realm a quoted string carries, and lists that name declared schemes, each once.
+    fn authentication_invariants(&self) -> Result<(), String> {
+        let declared = self
+            .authentication
+            .as_ref()
+            .map(|authentication| &authentication.schemes);
+        let listed = |list: &[String], at: &str| -> Result<(), String> {
+            for (index, name) in list.iter().enumerate() {
+                if !declared.is_some_and(|schemes| schemes.contains_key(name)) {
+                    return Err(format!(
+                        "`{at}` names `{name}`, which `authentication.schemes` does not declare"
+                    ));
+                }
+                if list[..index].contains(name) {
+                    return Err(format!("`{at}` names `{name}` twice"));
+                }
+            }
+            Ok(())
+        };
+        if let Some(authentication) = &self.authentication {
+            for (name, scheme) in &authentication.schemes {
+                if let Some(reason) = scheme_reason(name, scheme) {
+                    return Err(format!("`authentication.schemes.{name}`: {reason}"));
+                }
+            }
+            listed(&authentication.required, "authentication.required")?;
+        }
+        for (index, route) in self.routes.iter().enumerate() {
+            if let Some(list) = &route.authentication {
+                listed(list, &format!("routes[{index}].authentication"))?;
+            }
+        }
+        Ok(())
     }
 
     /// The invariants of the operation ids and servers of compiled IR (see [`HttpIr::from_json`]).
@@ -3879,7 +4056,7 @@ impl Refusals {
 /// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>` or `routes[i].representations[j].headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header; any source or challenge in a representation's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
-/// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted`, `too_large` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed`, `not_granted` and `too_large`, `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
+/// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted`, `too_large`, `unauthenticated` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed`, `not_granted`, `too_large` and `unauthenticated` (a `401` carries a `WWW-Authenticate` challenge, `ESS-HTTP-027`), `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
 /// | `ESS-HTTP-030` | at `routes[i]`: `body: single` without `empty`, `empty` without `single` (on a command too), or an `empty` status outside `4xx`, unless the route answers `rows` or `array`, where `empty` is refused once, for itself; at `routes[i].empty.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
 /// | `ESS-HTTP-031` | at `routes[i].body`: `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order; naming the view, its entity and the identity field |
 /// | `ESS-HTTP-032` | at `routes[i].operation_id`: an id outside `[A-Za-z_][A-Za-z0-9_.-]*`; one an earlier route already gives, naming both routes; or the qualified name of another command or view of the specification, which is that operation's derived `operationId` |
@@ -3887,6 +4064,7 @@ impl Refusals {
 /// | `ESS-HTTP-034` | at `limits.request_bytes` or `routes[i].limits.request_bytes`: a request size outside 1 to 16777216 bytes; at `routes[i].limits`: a limit on a route that reads no request body (a view, a `get` command or a `request: {encoding: query}` command) |
 /// | `ESS-HTTP-035` | at `routes[i].representations`: `representations` on a command route, on a `single` view or on a paged view, or an empty list; at `routes[i].representations[j].query`: a `query` holding other than exactly one parameter, a parameter other than the first representation's, a value an earlier representation has, a parameter name that is a view parameter's wire name or a path variable or is not RFC 3986 `unreserved` characters, or a value that is empty or not `unreserved` characters; at `routes[i].representations[j].encoding.csv.separator`: a separator other than `","`, `";"` and `"\t"`; at `routes[i].representations[j].encoding`: a view field whose type has no flat spelling (a struct, a union, a `List`, a `Map`, `Json`), naming the field (beyond10x/ess#753) |
 /// | `ESS-HTTP-036` | at `routes[i].request.parts`: `parts` beside an encoding other than `multipart`; at `routes[i].request.parts.<field>`: a key naming no input field, or one whose type is not `Bytes` (a newtype of it, or an `Optional` of either), or a part stating nothing; at `routes[i].request.parts.<field>.filename` or `….media_type`: a source that is not `input.<field>` naming a `String` input field (a newtype of it, or an `Optional` of either), or one the path carries, that is a part, or that another attribute reads; at `routes[i].request.parts.<field>.media_types`: an empty list, an entry that is not an RFC 6838 `type/subtype`, or one entry twice (beyond10x/ess#754) |
+/// | `ESS-HTTP-037` | at `authentication`: `authentication` over a specification that declares no actor; at `authentication.schemes`: no scheme declared; at `authentication.schemes.<name>`: a name that is not an RFC 9110 token, one declared twice, or one no route requires (its own `authentication` or, where it states none, `authentication.required`); at `….<name>.kind`: a kind outside `bearer`, `basic`, `api_key` and `mutual_tls` (`oauth2` and `open_id_connect` named as not yet admitted); at `….<name>.in`, `….name` or `….realm`: a key the kind does not take, one it requires missing (`realm` for `basic`, `in` and `name` for `api_key`), an `in` outside `header`, `query` and `cookie`, a header or cookie name that is not a token, a query name that is not RFC 3986 `unreserved` characters, or a realm no quoted string carries; at `authentication.required` or `routes[i].authentication`: a scheme no `authentication.schemes` declares, or one listed twice; at `routes[i].authentication`: a route requiring only schemes without a challenge (`api_key`, `mutual_tls`) and no `refusals.unauthenticated`, its own or the binding's (beyond10x/ess#681) |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
@@ -3917,7 +4095,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `limits` or `routes[i].limits`: a request limit added, dropped or restated; at `routes[i].representations`: a refined route's representations added, dropped or changed, a default written out or left out counting as that default; at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding`, `routes[i].request.unknown` or `routes[i].request.body`: a refined route's request restated with another value, a default written out or left out counting as that default, and a body added or dropped; at `routes[i].request.parts`: a refined route's `parts` added, dropped or restated with another attribute; at `routes[i].request.query`: a refined route's `query` added, dropped or restated with other fields or another order; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order; at `routes[i].authentication`: the schemes a refined route requires (its own or `authentication.required`) changed, in order, each with its declaration |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -3938,9 +4116,11 @@ pub fn compile_refining(
     let compared = refinement(spec, refined, ir, derived, &mut refusals);
     let (routes, derived_routes) = body(spec, ir, derived, &standard, &mut refusals);
     let servers = presentation(spec, ir, &mut refusals);
+    let authentication = authentication(spec, ir, &mut refusals);
     if let Some(refined) = compared {
         changes(spec, refined, &mut refusals);
         operation_id_changes(spec, refined, &mut refusals);
+        authentication_changes(spec, refined, &mut refusals);
     }
     if refusals.0.is_empty() {
         Ok(HttpIr {
@@ -3950,6 +4130,7 @@ pub fn compile_refining(
             limits,
             refusals: standard,
             servers,
+            authentication,
             routes,
             derived_routes,
         })
@@ -4122,7 +4303,7 @@ fn standard(
                 at,
                 format!(
                     "`{name}` is not a standard refusal; `refusals:` takes `malformed`, \
-                     `not_granted`, `too_large` and `unfinished`"
+                     `not_granted`, `too_large`, `unauthenticated` and `unfinished`"
                 ),
             );
             continue;
@@ -4137,8 +4318,8 @@ fn standard(
                 format!("{at}.status"),
                 format!(
                     "`{}` is not a `{class}xx` status, and `{key}` answers a `{class}xx`: \
-                     `malformed`, `not_granted` and `too_large` refuse the request (`4xx`), \
-                     `unfinished` is the server's (`5xx`)",
+                     `malformed`, `not_granted`, `too_large` and `unauthenticated` refuse the \
+                     request (`4xx`), `unfinished` is the server's (`5xx`)",
                     spec.status
                 ),
             );
@@ -4277,6 +4458,7 @@ fn refinement<'a>(
     limits(refined.spec.limits.as_ref(), "limits", &mut own);
     body(&refined.spec, ir, derived, &standard, &mut own);
     presentation(&refined.spec, ir, &mut own);
+    authentication(&refined.spec, ir, &mut own);
     for diagnostic in own.0 {
         refusals.refuse(
             diagnostic.code,
@@ -4310,6 +4492,372 @@ fn presentation(
 ) -> BTreeMap<String, Vec<Server>> {
     operation_ids(spec, ir, refusals);
     servers(spec.servers.as_ref(), ir, refusals)
+}
+
+/// Holds `authentication` and each route's `authentication` to their rules (`ESS-HTTP-037`),
+/// returning them compiled; `None` when the binding declares none or any of it is refused.
+fn authentication(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) -> Option<Authentication> {
+    let before = refusals.0.len();
+    let written = spec.authentication.as_ref();
+    let (declared, schemes) = declared_schemes(written, ir, refusals);
+    routes_authentication(spec, &declared, &schemes, refusals);
+    let written = written?;
+    (refusals.0.len() == before).then(|| Authentication {
+        schemes,
+        required: written.required.clone().unwrap_or_default(),
+    })
+}
+
+/// Every scheme name written, first occurrences only, and the schemes that compiled, refusing
+/// `authentication` over a model without an actor, an empty `schemes`, a name twice or not a
+/// token, and a scheme [`scheme`] refuses (`ESS-HTTP-037`).
+fn declared_schemes<'a>(
+    written: Option<&'a AuthenticationSpec>,
+    ir: &EssIr,
+    refusals: &mut Refusals,
+) -> (Vec<&'a str>, BTreeMap<String, Scheme>) {
+    let mut declared: Vec<&str> = Vec::new();
+    let mut schemes: BTreeMap<String, Scheme> = BTreeMap::new();
+    if let Some(written) = written {
+        if ir.actors().is_empty() {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                "authentication",
+                "the specification declares no actor, so it tells no caller apart by who it is; \
+                 `authentication` binds a model whose actors `may:` call its operations",
+            );
+        }
+        if written.schemes.0.is_empty() {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                "authentication.schemes",
+                "`schemes` declares no scheme; `authentication` names at least one, as \
+                 `<name>: {kind: bearer}`",
+            );
+        }
+        for (name, scheme) in &written.schemes.0 {
+            let at = format!("authentication.schemes.{name}");
+            if declared.contains(&name.as_str()) {
+                refusals.refuse(
+                    "ESS-HTTP-037",
+                    at,
+                    format!("scheme `{name}` is declared twice; each scheme is declared once"),
+                );
+                continue;
+            }
+            declared.push(name);
+            if !is_token(name) {
+                refusals.refuse(
+                    "ESS-HTTP-037",
+                    at,
+                    format!(
+                        "{name:?} is not a scheme name: a scheme name is an RFC 9110 token, one \
+                         or more letters, digits and ``!#$%&'*+-.^_`|~``"
+                    ),
+                );
+                continue;
+            }
+            if let Some(compiled) = self::scheme(scheme, &at, refusals) {
+                schemes.insert(name.clone(), compiled);
+            }
+        }
+    }
+    (declared, schemes)
+}
+
+/// Holds `authentication.required` and each route's list to the schemes `declared`, each named
+/// once; a route whose schemes have no challenge to its `refusals.unauthenticated`; and every
+/// declared scheme to a route that requires it (`ESS-HTTP-037`).
+fn routes_authentication(
+    spec: &HttpSpec,
+    declared: &[&str],
+    schemes: &BTreeMap<String, Scheme>,
+    refusals: &mut Refusals,
+) {
+    let listed = |list: &[String], at: &str, refusals: &mut Refusals| -> bool {
+        let mut fine = true;
+        for (index, name) in list.iter().enumerate() {
+            if list[..index].contains(name) {
+                refusals.refuse(
+                    "ESS-HTTP-037",
+                    at,
+                    format!("`{at}` names `{name}` twice; each scheme is listed once"),
+                );
+                fine = false;
+            } else if !declared.contains(&name.as_str()) {
+                refusals.refuse(
+                    "ESS-HTTP-037",
+                    at,
+                    format!(
+                        "`{at}` names `{name}`, which `authentication.schemes` does not declare"
+                    ),
+                );
+                fine = false;
+            }
+        }
+        fine
+    };
+    let required: &[String] = spec
+        .authentication
+        .as_ref()
+        .and_then(|written| written.required.as_deref())
+        .unwrap_or(&[]);
+    let required_fine = listed(required, "authentication.required", refusals);
+    let answers_unauthenticated = |written: Option<&Entries<RefusalSpec>>| {
+        written.is_some_and(|entries| {
+            entries
+                .0
+                .iter()
+                .any(|(key, _)| key == RefusalKey::Unauthenticated.as_str())
+        })
+    };
+    let mut used: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for (index, route) in spec.routes.iter().enumerate() {
+        let at = format!("routes[{index}].authentication");
+        let (list, fine) = match &route.authentication {
+            Some(own) => (own.as_slice(), listed(own, &at, refusals)),
+            None => (required, required_fine),
+        };
+        used.extend(list.iter().map(String::as_str));
+        let compiled = list.iter().all(|name| schemes.contains_key(name));
+        if fine
+            && compiled
+            && !list.is_empty()
+            && !list.iter().any(|name| schemes[name].challenges())
+            && !answers_unauthenticated(route.refusals.as_ref())
+            && !answers_unauthenticated(spec.refusals.as_ref())
+        {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                at,
+                format!(
+                    "{} requires {}, and no scheme of them has a challenge a `401` could carry \
+                     (`api_key` and `mutual_tls` have none); state the answer to a call without \
+                     the credential as `refusals.unauthenticated`, the route's own or the \
+                     binding's",
+                    described(route),
+                    list.iter()
+                        .map(|name| format!("`{name}`"))
+                        .collect::<Vec<_>>()
+                        .join(" or ")
+                ),
+            );
+        }
+    }
+    for name in declared {
+        if is_token(name) && !used.contains(name) {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                format!("authentication.schemes.{name}"),
+                format!(
+                    "scheme `{name}` is declared, and no route requires it, neither in its own \
+                     `authentication` nor through `authentication.required`"
+                ),
+            );
+        }
+    }
+}
+
+/// Refuses a `kind` scheme at `at` without the `key` it requires (`ESS-HTTP-037`).
+fn missing(kind: &str, key: &str, at: &str, refusals: &mut Refusals) {
+    refusals.refuse(
+        "ESS-HTTP-037",
+        format!("{at}.{key}"),
+        format!("a `{kind}` scheme requires `{key}`"),
+    );
+}
+
+/// An `api_key` scheme compiled, at `at`, or `None` when its `in` or `name` is missing or `in` is
+/// outside the set (`ESS-HTTP-037`).
+fn api_key(written: &SchemeSpec, at: &str, refusals: &mut Refusals) -> Option<Scheme> {
+    let location = match written.location.as_deref() {
+        None => {
+            missing("api_key", "in", at, refusals);
+            None
+        }
+        Some("header") => Some(KeyLocation::Header),
+        Some("query") => Some(KeyLocation::Query),
+        Some("cookie") => Some(KeyLocation::Cookie),
+        Some(other) => {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                format!("{at}.in"),
+                format!(
+                    "`{other}` is not where an API key travels: `in` is `header`, `query` or \
+                     `cookie`"
+                ),
+            );
+            None
+        }
+    };
+    if written.name.is_none() {
+        missing("api_key", "name", at, refusals);
+    }
+    Some(Scheme::ApiKey {
+        location: location?,
+        name: written.name.clone()?,
+    })
+}
+
+/// One scheme compiled, at `at`, or `None` once refused (`ESS-HTTP-037`): a `kind` outside the
+/// set, a key the kind does not take, or one it requires missing or out of its rule.
+fn scheme(written: &SchemeSpec, at: &str, refusals: &mut Refusals) -> Option<Scheme> {
+    let before = refusals.0.len();
+    let kind = written.kind.as_str();
+    let keys = [
+        ("in", written.location.is_some()),
+        ("name", written.name.is_some()),
+        ("realm", written.realm.is_some()),
+    ];
+    let takes: &[&str] = match kind {
+        "basic" => &["realm"],
+        "api_key" => &["in", "name"],
+        _ => &[],
+    };
+    let compiled = match kind {
+        "bearer" => Some(Scheme::Bearer),
+        "mutual_tls" => Some(Scheme::MutualTls),
+        "basic" => match &written.realm {
+            None => {
+                missing(kind, "realm", at, refusals);
+                None
+            }
+            Some(realm) => Some(Scheme::Basic {
+                realm: realm.clone(),
+            }),
+        },
+        "api_key" => api_key(written, at, refusals),
+        "oauth2" | "open_id_connect" => {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                format!("{at}.kind"),
+                format!(
+                    "`{kind}` is not yet admitted: OAuth 2.0 and OpenID Connect wait for a need \
+                     that names a flow; `kind` is `bearer`, `basic`, `api_key` or `mutual_tls`"
+                ),
+            );
+            None
+        }
+        other => {
+            refusals.refuse(
+                "ESS-HTTP-037",
+                format!("{at}.kind"),
+                format!(
+                    "`{other}` is not a scheme kind: `kind` is `bearer` (RFC 6750), `basic` (RFC \
+                     7617), `api_key` or `mutual_tls`"
+                ),
+            );
+            None
+        }
+    };
+    if compiled.is_some() {
+        for (key, present) in keys {
+            if present && !takes.contains(&key) {
+                refusals.refuse(
+                    "ESS-HTTP-037",
+                    format!("{at}.{key}"),
+                    format!("a `{kind}` scheme takes no `{key}`"),
+                );
+            }
+        }
+    }
+    let compiled = compiled?;
+    let name = at.rsplit_once('.').map_or(at, |(_, name)| name);
+    if let Some(reason) = scheme_reason(name, &compiled) {
+        let key = match compiled {
+            Scheme::Basic { .. } => "realm",
+            _ => "name",
+        };
+        refusals.refuse("ESS-HTTP-037", format!("{at}.{key}"), reason);
+    }
+    (refusals.0.len() == before).then_some(compiled)
+}
+
+/// Why a compiled scheme named `name` breaks its rule: a name that is not a token, a `basic` realm
+/// no quoted string carries, or an `api_key` name its header or cookie (a token) or its query
+/// parameter (RFC 3986 `unreserved` characters) cannot carry.
+fn scheme_reason(name: &str, scheme: &Scheme) -> Option<String> {
+    if !is_token(name) {
+        return Some(format!("{name:?} is not a scheme name, an RFC 9110 token"));
+    }
+    match scheme {
+        Scheme::Basic { realm } if !quotable(realm) => Some(format!(
+            "{realm:?} is not a realm a quoted string carries: horizontal tabs, spaces and \
+             visible US-ASCII only"
+        )),
+        Scheme::ApiKey {
+            location: KeyLocation::Query,
+            name,
+        } if !unreserved(name) => Some(format!(
+            "{name:?} is not a query parameter name an API key travels in: one or more RFC 3986 \
+             `unreserved` characters, letters, digits and `-._~`"
+        )),
+        Scheme::ApiKey {
+            location: KeyLocation::Header | KeyLocation::Cookie,
+            name,
+        } if !is_token(name) => Some(format!(
+            "{name:?} is not a header or cookie name an API key travels in: an RFC 9110 token, \
+             one or more letters, digits and ``!#$%&'*+-.^_`|~``"
+        )),
+        _ => None,
+    }
+}
+
+/// Refuses a refinement that changes what a refined route requires (`ESS-HTTP-012`), at
+/// `routes[i].authentication`: the schemes it requires, its own or through
+/// `authentication.required`, compared in order with the declaration of each.
+fn authentication_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    let effective = |document: &HttpSpec, route: &RouteSpec| -> serde_json::Value {
+        let declared = document.authentication.as_ref();
+        let list: &[String] = route
+            .authentication
+            .as_deref()
+            .or_else(|| declared.and_then(|written| written.required.as_deref()))
+            .unwrap_or(&[]);
+        serde_json::Value::Array(
+            list.iter()
+                .map(|name| {
+                    let scheme = declared
+                        .and_then(|written| written.schemes.0.iter().find(|(key, _)| key == name))
+                        .map(|(_, scheme)| scheme.compared());
+                    serde_json::json!([name, scheme])
+                })
+                .collect(),
+        )
+    };
+    let mut routed: BTreeMap<Operation, usize> = BTreeMap::new();
+    for (index, route) in spec.routes.iter().enumerate() {
+        if let Some(operation) = named(route) {
+            routed.entry(operation).or_insert(index);
+        }
+    }
+    let mut compared = std::collections::BTreeSet::new();
+    for (at, fixed) in refined.routes.iter().enumerate() {
+        let Some(operation) = named(fixed) else {
+            continue;
+        };
+        if !compared.insert(operation.clone()) {
+            continue;
+        }
+        let Some(&index) = routed.get(&operation) else {
+            continue;
+        };
+        let (here, there) = (
+            effective(spec, &spec.routes[index]),
+            effective(refined, fixed),
+        );
+        if here != there {
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].authentication"),
+                format!(
+                    "{operation} requires `{here}` here, and the refined binding requires \
+                     `{there}` at `routes[{at}]`; a refinement restates the authentication of \
+                     every route it restates, each scheme as declared"
+                ),
+            );
+        }
+    }
 }
 
 /// Refuses an `operation_id` outside the grammar, one an earlier route already gives, or one that
@@ -5210,6 +5758,7 @@ fn routes(
                 Some(Route {
                     operation: operation.clone(),
                     operation_id: spec.operation_id.clone(),
+                    authentication: spec.authentication.clone(),
                     method,
                     path: spec.path.clone(),
                     parameters: sources,

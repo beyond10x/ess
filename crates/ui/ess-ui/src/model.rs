@@ -37,16 +37,147 @@ pub const PRIMITIVE_KINDS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Expr(pub String);
 
-impl<'de> Deserialize<'de> for Expr {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match Value::deserialize(deserializer)? {
+impl Expr {
+    fn of(value: Value) -> Result<Self, String> {
+        match value {
             Value::String(text) => Ok(Self(text)),
             Value::Number(number) => Ok(Self(number.to_string())),
             Value::Bool(flag) => Ok(Self(flag.to_string())),
-            other => Err(D::Error::custom(format!(
-                "an expression is a scalar, not {other:?}"
-            ))),
+            other => Err(format!("an expression is a scalar, not {other:?}")),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Expr {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::of(Value::deserialize(deserializer)?).map_err(D::Error::custom)
+    }
+}
+
+/// A `bind` value: one expression, or a list of them sent as one list input
+/// (beyond10x/ess#723). A list is a bind value only; anywhere else an expression is a scalar.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BindValue {
+    /// One expression, sent as its value.
+    One(Expr),
+    /// Expressions sent as one list of their values, in order.
+    List(Vec<Expr>),
+}
+
+impl BindValue {
+    /// Every expression the value holds, in order.
+    pub fn exprs(&self) -> &[Expr] {
+        match self {
+            Self::One(expr) => std::slice::from_ref(expr),
+            Self::List(items) => items,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BindValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match Value::deserialize(deserializer)? {
+            Value::Sequence(items) => items
+                .into_iter()
+                .map(Expr::of)
+                .collect::<Result<_, _>>()
+                .map(Self::List)
+                .map_err(D::Error::custom),
+            other => Expr::of(other).map(Self::One).map_err(D::Error::custom),
+        }
+    }
+}
+
+/// Values the UI sends by name: a read's params, an overlay's or a navigation's params, or an
+/// action's `bind`. Each is written bare, or as `{value, when}` to be sent only while `when` is
+/// truthy and left out (not sent as `null` or `false`) otherwise (beyond10x/ess#723). It reads as
+/// the map of values; [`Sent::when`] names an entry's condition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sent<V> {
+    values: BTreeMap<String, V>,
+    when: BTreeMap<String, Expr>,
+}
+
+impl<V> Default for Sent<V> {
+    fn default() -> Self {
+        Self {
+            values: BTreeMap::new(),
+            when: BTreeMap::new(),
+        }
+    }
+}
+
+impl<V> Sent<V> {
+    /// The condition entry `name` is sent under, when it is written `{value, when}`.
+    pub fn when(&self, name: &str) -> Option<&Expr> {
+        self.when.get(name)
+    }
+
+    /// Every entry's condition, by name.
+    pub fn conditions(&self) -> &BTreeMap<String, Expr> {
+        &self.when
+    }
+}
+
+impl<V> std::ops::Deref for Sent<V> {
+    type Target = BTreeMap<String, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl<'a, V> IntoIterator for &'a Sent<V> {
+    type Item = (&'a String, &'a V);
+    type IntoIter = std::collections::btree_map::Iter<'a, String, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
+impl<V> FromIterator<(String, V)> for Sent<V> {
+    fn from_iter<I: IntoIterator<Item = (String, V)>>(entries: I) -> Self {
+        Self {
+            values: entries.into_iter().collect(),
+            when: BTreeMap::new(),
+        }
+    }
+}
+
+impl<'de, V: serde::de::DeserializeOwned> Deserialize<'de> for Sent<V> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut sent = Self::default();
+        for (name, value) in BTreeMap::<String, Value>::deserialize(deserializer)? {
+            let value = match value {
+                Value::Mapping(mut entry) => {
+                    if let Some(key) = entry
+                        .keys()
+                        .map(|key| key.as_str().unwrap_or_default())
+                        .find(|key| !matches!(*key, "value" | "when"))
+                    {
+                        return Err(D::Error::custom(format!(
+                            "`{name}`: a value written as a mapping takes `value` and `when`, \
+                             not `{key}`"
+                        )));
+                    }
+                    let (Some(value), Some(when)) = (entry.remove("value"), entry.remove("when"))
+                    else {
+                        return Err(D::Error::custom(format!(
+                            "`{name}`: a value written as a mapping takes both `value` and `when`"
+                        )));
+                    };
+                    let when = Expr::of(when)
+                        .map_err(|error| D::Error::custom(format!("`{name}.when`: {error}")))?;
+                    sent.when.insert(name.clone(), when);
+                    value
+                }
+                value => value,
+            };
+            let value = ess_yaml::from_value(value).map_err(D::Error::custom)?;
+            sent.values.insert(name, value);
+        }
+        Ok(sent)
     }
 }
 
@@ -1520,6 +1651,22 @@ pub struct Record {
     pub actions: Vec<Action>,
 }
 
+impl Record {
+    /// The collection of `item` a renderer gives a cursor and rows at `<record>/item/<name>`:
+    /// the first named node of `item` whose body is a collection, with its name. Every renderer
+    /// and `ess ui test` take it from here (beyond10x/ess#722).
+    pub fn item_collection(&self) -> Option<(&str, &Collection)> {
+        self.item
+            .iter()
+            .find_map(|node| match (&node.common.name, &node.body) {
+                (Some(name), Body::Composite(Composite::Collection(collection))) => {
+                    Some((name.as_str(), collection))
+                }
+                _ => None,
+            })
+    }
+}
+
 /// Inputs bound to one ESS command's input.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1862,7 +2009,7 @@ pub struct Overlay {
     /// Overlay title; a confirm shows it as its question.
     pub title: Option<String>,
     /// Values passed by the opener.
-    pub params: BTreeMap<String, Expr>,
+    pub params: Sent<Expr>,
     /// Overlay-local state, degrades and unmapped notes.
     pub common: NodeCommon,
     /// The overlay this one was copied from, kept for traceability.
@@ -1877,7 +2024,7 @@ struct OverlayFrame {
     kind: OverlayKind,
     title: Option<String>,
     #[serde(default)]
-    params: BTreeMap<String, Expr>,
+    params: Sent<Expr>,
     #[serde(default)]
     state: BTreeMap<String, State>,
     visible: Option<Expr>,
@@ -2049,11 +2196,63 @@ pub struct Chart {
     pub reads: Reads,
     /// Chart kind, fixed or chosen by data.
     pub chart: ChartKind,
-    /// X-axis field.
-    pub x: Option<String>,
-    /// Y fields.
+    /// X-axis field: a name, or `{field, label, as, unit}` as a column takes it.
+    #[serde(default, deserialize_with = "chart_axis")]
+    pub x: Option<Box<Field>>,
+    /// Y fields, each a name or `{field, label, as, unit}`.
+    #[serde(default, deserialize_with = "chart_series")]
+    pub series: Vec<Field>,
+    /// The order the rows are drawn in, after the live effects and `reads.filter`: the
+    /// collection's `{by, dir}`, without `allowed` or `mode`. Absent, rows as read
+    /// (beyond10x/ess#723).
     #[serde(default)]
-    pub series: Vec<String>,
+    pub sort: Option<Sort>,
+}
+
+/// A chart axis: a field written as a name or as `{field, label, as, unit}`; any other key of a
+/// column is refused there (beyond10x/ess#723).
+fn axis_field(value: Value) -> Result<Field, String> {
+    // A bare name is `{field: <name>}`; the node name is the field, as a column derives it.
+    let mut value = match value {
+        Value::String(name) => {
+            let mut entry = Mapping::new();
+            entry.insert(Value::from("field"), Value::String(name));
+            Value::Mapping(entry)
+        }
+        other => other,
+    };
+    if let Value::Mapping(entry) = &value {
+        if let Some(key) = entry
+            .keys()
+            .map(|key| key.as_str().unwrap_or_default())
+            .find(|key| !matches!(*key, "field" | "label" | "as" | "unit"))
+        {
+            return Err(format!(
+                "a chart axis takes `field`, `label`, `as` and `unit`, not `{key}`"
+            ));
+        }
+    }
+    if let Value::Mapping(entry) = &mut value {
+        if let Some(field) = entry.get("field").cloned() {
+            entry.insert(Value::from("name"), field);
+        }
+    }
+    ess_yaml::from_value(value).map_err(|error| error.to_string())
+}
+
+fn chart_axis<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Box<Field>>, D::Error> {
+    Option::<Value>::deserialize(deserializer)?
+        .map(|value| axis_field(value).map(Box::new))
+        .transpose()
+        .map_err(D::Error::custom)
+}
+
+fn chart_series<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Field>, D::Error> {
+    Vec::<Value>::deserialize(deserializer)?
+        .into_iter()
+        .map(axis_field)
+        .collect::<Result<_, _>>()
+        .map_err(D::Error::custom)
 }
 
 /// A chart kind.
@@ -2918,7 +3117,7 @@ pub struct Reads {
     pub key: Option<String>,
     /// View params bound to state.
     #[serde(default)]
-    pub params: BTreeMap<String, Expr>,
+    pub params: Sent<Expr>,
     /// Who pages.
     pub paging: Option<Paging>,
     /// The sizes a reader may choose, and on a server read the params that carry its page and
@@ -3018,9 +3217,9 @@ pub struct Action {
     pub name: String,
     /// ESS command to run.
     pub does: Option<String>,
-    /// Command input from row, selection or state.
+    /// Command input from row, selection or state; a list value is sent as one list.
     #[serde(default)]
-    pub bind: BTreeMap<String, Expr>,
+    pub bind: Sent<BindValue>,
     /// Overlay to open.
     pub opens: Option<String>,
     /// Page to go to.
@@ -3039,6 +3238,11 @@ pub struct Action {
     /// Presentation hint.
     #[serde(rename = "as")]
     pub action_as: Option<ActionAs>,
+    /// A name of the icon vocabulary ([`crate::icon_glyph`]), drawn alone with `as: icon` and
+    /// before the label otherwise (beyond10x/ess#723).
+    pub icon: Option<String>,
+    /// Emphasis, as a button's.
+    pub tone: Option<ButtonTone>,
     /// Options for `as: choice`.
     pub choice: Option<Box<Node>>,
     /// Current value for a header toggle or choice.
@@ -3088,7 +3292,7 @@ pub struct Navigate {
     pub to: String,
     /// Its params.
     #[serde(default)]
-    pub params: BTreeMap<String, Expr>,
+    pub params: Sent<Expr>,
 }
 
 /// Download a view.

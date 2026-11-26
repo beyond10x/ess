@@ -38,6 +38,7 @@ pub(crate) fn run(document: &Document, sink: &mut Sink) {
     }
     theme_choice(document, sink);
     tone_map_unused(document, sink);
+    icon_names(document, sink);
     tone_bands(document, sink);
     label_map_unused(document, sink);
 }
@@ -341,6 +342,34 @@ fn tone_map_unused(document: &Document, sink: &mut Sink) {
                 "tone_map_unused",
                 &NodePath::root().child("tone_maps").child(name),
                 format!("no `tone_by` names the tone map `{name}`"),
+            );
+        }
+    }
+}
+
+// ── icon_names ───────────────────────────────────────────────────────────────────────────────
+
+/// Every icon a document names is one of the closed vocabulary (`constructs.icon.icons`): a menu
+/// group's, an icon primitive's, a button's and an action's (beyond10x/ess#723). Another name
+/// still loads and is drawn as its label.
+fn icon_names(document: &Document, sink: &mut Sink) {
+    for located in document.nodes() {
+        let icon = match located.node {
+            NodeRef::NavSection(section) => section.icon.as_deref(),
+            NodeRef::Action(action) => action.icon.as_deref(),
+            node => match body_of(node) {
+                Some(Body::Primitive(Primitive::Icon(icon))) => Some(icon.icon.as_str()),
+                Some(Body::Primitive(Primitive::Button(button))) => button.icon.as_deref(),
+                _ => None,
+            },
+        };
+        if let Some(name) = icon.filter(|name| ess_ui::icon_glyph(name).is_none()) {
+            sink.push(
+                "icon_names",
+                &located.path,
+                format!(
+                    "`{name}` is no icon name of the schema's list, so it is drawn as its label"
+                ),
             );
         }
     }
