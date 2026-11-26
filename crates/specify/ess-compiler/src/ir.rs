@@ -828,7 +828,8 @@ impl ResolvedEffect {
 pub enum ResolvedInstance {
     /// The caller names the instance in this field of the command's input — `moves:`, `updates:`.
     Supplied {
-        /// The input field carrying the identity.
+        /// The input field carrying the identity, or the declared segments of a path to a member
+        /// of a struct input joined by `.` (ess/38); the field's `naming` is the root input's.
         field: ResolvedField,
     },
     /// The new instance's identity is published in this field of this emitted event — `creates:`.
@@ -1124,7 +1125,8 @@ pub struct ResolvedAffect {
 /// lifecycle's `initial` state if not, and comes to hold the entry's `sets:` and [`Self::reads`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedEach {
-    /// The input field holding the list.
+    /// The input field holding the list, or the declared segments of a path to a member of a
+    /// struct input joined by `.` (ess/38).
     pub list: String,
     /// The name each element is read under, as written.
     pub binder: String,
@@ -1333,7 +1335,7 @@ pub enum ResolvedPayloadValue {
     /// beyond10x/ess#558): `{missing: input.<list>}`. Only a model using it carries it, so every
     /// other model keeps its bytes.
     MissingElement {
-        /// The list input read.
+        /// The list input read, or the declared segments of a path joined by `.` (ess/38).
         field: String,
         /// The element's type.
         type_ref: ResolvedTypeRef,
@@ -1844,7 +1846,7 @@ pub enum ResolvedRelatedVia {
     },
     /// A field of the command's input.
     Input {
-        /// The input field.
+        /// The input field, or the declared segments of a path joined by `.` (ess/38).
         field: String,
         /// Its resolved type as declared: the referenced entity's identity, or — for a
         /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only

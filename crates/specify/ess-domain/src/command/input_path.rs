@@ -9,8 +9,13 @@
 //! segment's type.
 //!
 //! One segment is the input field it always was, and is resolved exactly as before.
+//!
+//! From `ess/38` (beyond10x/ess#640) the positions that address a row read a path too: a
+//! `when_related:` guard's `via:`, an `all:` element's `via:` and `{missing: input.<path>}` name
+//! the row through a member of a struct input ([`address`]). Below `ess/38` each is refused
+//! naming the format ([`below_ess_38`]).
 
-use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError};
+use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
 
 use super::CommandSpec;
 use crate::system::FormatVersion;
@@ -31,6 +36,36 @@ pub fn admitted(format: Option<FormatVersion>) -> bool {
 /// `TypeRegistry::format()` do.
 pub fn addresses_members(format: Option<FormatVersion>) -> bool {
     format.is_none_or(|format| format.major() >= FormatVersion::V38.major())
+}
+
+/// The field an addressing position reads: the input `field` names, or, where the registry's
+/// format addresses members ([`addresses_members`]), the member a path names, at
+/// [`InputPath::type_ref`] (a route through an `Optional` reads as `Optional<…>`). `None` where
+/// it resolves to nothing, and for a path below `ess/38`.
+pub fn address(command: &CommandSpec, types: &TypeRegistry, field: &str) -> Option<Field> {
+    if !is_path(field) {
+        return command.input_field(field).cloned();
+    }
+    if !addresses_members(types.format()) {
+        return None;
+    }
+    resolve(command, types, field)
+        .ok()
+        .map(|path| path.as_field())
+}
+
+/// Whether `read`, a dotted read split into segments (a leading `input` segment dropped), reaches
+/// the member `path` names: it is `path` or lies below it.
+pub fn reads_member(read: &[&str], path: &str) -> bool {
+    let read = match read {
+        ["input", rest @ ..] => rest,
+        all => all,
+    };
+    let joined = read.join(".");
+    joined == path
+        || joined
+            .strip_prefix(path)
+            .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// A resolved `input.<path>`: what the last segment holds, and whether an `Optional` before it may
@@ -246,6 +281,68 @@ pub fn below_ess_38(at: &ConstructRef, what: &str) -> ValidationError {
         ),
     )
     .with_hint(FormatVersion::V38.declaration_hint())
+}
+
+/// Checks every `instance:` of an `updates:`, `moves:` or `deletes:` branch written as a path to a
+/// member of a struct input (`instance: target.parcel_id`, `ess/38`, beyond10x/ess#640): below
+/// `ess/38` it is refused naming the format; from it the path resolves through the declared
+/// types and carries the entity's identity type. A route through an `Optional` reads at
+/// `Optional<…>` and is refused as an `Optional` top-level input is.
+/// [`crate::entity`]'s instance check steps aside for a path.
+pub(crate) fn validate_instances(spec: &crate::Specification) -> ValidationErrors {
+    use super::InstanceSurface;
+    let mut errors = ValidationErrors::new();
+    let types = &spec.system().types;
+    let members = addresses_members(Some(spec.system().format));
+    for command in spec.commands().values() {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            if subject.surface() != InstanceSurface::CommandInput || !is_path(&subject.instance) {
+                continue;
+            }
+            let path = subject.instance.as_str();
+            let at = command
+                .site()
+                .key("outcomes")
+                .named(outcome.name.as_str())
+                .key("instance");
+            if !members {
+                errors.push(below_ess_38(&at, &format!("`instance: {path}`")));
+                continue;
+            }
+            let resolved = match resolve(command, types, path) {
+                Ok(resolved) => resolved,
+                Err(unresolved) => {
+                    errors.push(unresolved.refusal(&at, command, path));
+                    continue;
+                }
+            };
+            let Some(entity) = spec.entities().get(&subject.entity) else {
+                continue;
+            };
+            let type_ref = resolved.type_ref();
+            if type_ref != entity.identity.type_ref {
+                errors.push(
+                    ValidationError::at(
+                        at,
+                        ValidationCode::TypeMismatch,
+                        format!(
+                            "outcome `{}` of `{}` names the instance by `{path}`, which is typed \
+                             `{type_ref}`; `{}` is identified by `{}`",
+                            outcome.name, command.name, entity.name, entity.identity.type_ref
+                        ),
+                    )
+                    .with_hint(format!(
+                        "the command input must be typed `{}`",
+                        entity.identity.type_ref
+                    )),
+                );
+            }
+        }
+    }
+    errors
 }
 
 /// The refusal for a path whose route may leave it absent where it would supply `what`: an
