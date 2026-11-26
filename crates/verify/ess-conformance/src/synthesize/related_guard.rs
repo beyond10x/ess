@@ -4582,18 +4582,19 @@ fn arranged_at(
     }
     // A refusal answered first wherever the subject's stored link differs from the input the
     // guards read the row through: that row is the one the link names, so it is arranged through
-    // the link and the input sent naming it.
-    if others.is_empty() {
-        if let Some(link) = linked_through(ir, command, outcome, (field, entity)) {
-            return stored::arranged_through(
-                models,
-                command,
-                outcome,
-                actors,
-                (distinction, goal),
-                (link, entity),
-            );
-        }
+    // the link and the input sent naming it, beside the rows `others` names.
+    if let Some(link) = linked_through(ir, command, outcome, (field, entity)) {
+        let (mut setup, input, lonely) = stored::arranged_through(
+            models,
+            command,
+            outcome,
+            actors,
+            (distinction, goal),
+            (link, entity),
+        )?;
+        place_beside(ir, outcome, &mut setup, others);
+        prepend_beside(&mut setup, others);
+        return Ok((setup, input, lonely));
     }
     let mut setup = own_arrangement(
         ir,
@@ -4617,6 +4618,16 @@ fn arranged_at(
         .chain(others.iter().map(|other| (other.via.field(), other.entity)));
     for (named, of) in read {
         if let Some(first) = subject_link_refuses(ir, command, outcome, named) {
+            // A row beside that the subject's link must name: the subject is pointed at it, and
+            // the input names it ([`place_beside`]).
+            let beside = others.iter().find(|other| other.via.field() == named);
+            if let (Some(other), Some(link)) = (
+                beside,
+                linked_through(ir, command, outcome, (named, of)),
+            ) {
+                stored::point(ir, command, &mut setup, link, &other.row.instance)?;
+                continue;
+            }
             return Err(RefusalCause::GuardUnsatisfiable {
                 predicate: format!(
                     "`{}/{}` refuses first wherever the subject's stored link differs from \
@@ -4906,6 +4917,9 @@ pub(super) fn overlaps(
         .filter(|(via, _)| via.field() != focus)
         // ess/28: a row the branch lists in `all:` is the one arranged to hold, never replaced.
         .filter(|(via, _)| !lists(outcome, via.field()))
+        // A row the subject's link must name, where a refusal answered first compares the two, is
+        // never replaced either: any other row is answered by that refusal.
+        .filter(|(via, _)| subject_link_refuses(ir, command, outcome, via.field()).is_none())
         .enumerate()
     {
         let over = |branch: &&ResolvedOutcome| {

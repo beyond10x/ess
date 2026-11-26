@@ -354,6 +354,33 @@ fn relink(
     Ok(value)
 }
 
+/// The subject `setup` arranged for `command`, its stored `link` pointed at `row`, a row arranged
+/// ahead of it ([`relink`]).
+pub(super) fn point(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    setup: &mut Setup,
+    link: &str,
+    row: &InstanceName,
+) -> Result<(), RefusalCause> {
+    let subject = subject_of(command, setup).ok_or_else(unarranged)?;
+    if runs(&setup.steps, command) {
+        return Err(unpointed(
+            link,
+            "the subject's arrangement already runs the command that reads it",
+        ));
+    }
+    relink(
+        ir,
+        &mut setup.steps,
+        setup.instance.is_some().then_some(&mut setup.settled),
+        &subject,
+        link,
+        &Link::Row(row),
+    )
+    .map(|_| ())
+}
+
 /// [`relink`] where the act creating the subject copies `field` from a stored field of another row
 /// its input names (`{related: {via: input.<x>, field: <far>}}`): that row's own link is pointed
 /// as `link` says, through the act in `steps` that created it, which runs earlier, and the subject
