@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -372,6 +372,8 @@ Under `Fixed` (it moves to `Changed`, naming the rows, if a committed pin row mo
   for an open set of identifiers a leaf must differ in. (A) default, taken: not in this story; left out and deferred to the next source-format decision, as a
   `decision-blocker` for the next source-format decision, naming this story's evidence. (B) in this
   story, with its format step.
+
+- D153 (the coordinator, 2026-11-26): N90B and N95 ship in 0.99.6, N93 in 0.99.7, each a patch release from the previous tag.
 
 ## Reported after 0.99.0
 

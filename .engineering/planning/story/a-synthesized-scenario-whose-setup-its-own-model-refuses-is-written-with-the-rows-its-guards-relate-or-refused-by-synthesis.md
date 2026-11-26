@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 7
+revision: 8
 ---
 ## Summary
 
@@ -111,6 +111,8 @@ Both red tests are on the branch `fix/n88-n89-2026-11-25` (pushed at `a8d35b75de
 
 - None open. The release route of the fixes (after 0.99.3, a release of its own) follows from the
   moved suites.
+
+- D153 (the coordinator, 2026-11-26): N90B and N95 ship in 0.99.6, N93 in 0.99.7, each a patch release from the previous tag.
 
 ## Delivery
 

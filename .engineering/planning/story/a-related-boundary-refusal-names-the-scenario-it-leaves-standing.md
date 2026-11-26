@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -49,6 +49,8 @@ Another site of the same class. `story:a-creating-command-beside-an-exists-false
 ## Decisions
 
 - None open. Taken as a defect, a wording fix on the documented form (the coordinator, 2026-11-26).
+
+- D153 (the coordinator, 2026-11-26): N90B and N95 ship in 0.99.6, N93 in 0.99.7, each a patch release from the previous tag.
 
 ## Delivery
 
