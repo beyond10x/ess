@@ -652,3 +652,115 @@ fn a_link_guard_on_the_input_naming_a_row_beside_passes_its_own_model() {
     let failed = revise_failing_with(&edits);
     assert!(failed.is_empty(), "{failed:#?}");
 }
+
+/// A store and the orders placed at it. `ShipOrder` names the store as input and refuses first
+/// where the order is of another store (`store_id != input.store_id`); its later branches read the
+/// store that input names, which is then always the order's own. A hand-written scenario places
+/// the order at a store, freezes that store and ships the order naming it.
+const SHOP: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.shop
+types:
+  - {name: demo.shop.StoreId, kind: newtype, of: String}
+  - {name: demo.shop.OrderId, kind: newtype, of: String}
+entities:
+  - name: demo.shop.Store
+    identity: {name: store_id, type: demo.shop.StoreId}
+    fields: [{name: title, type: String}]
+    lifecycle: {initial: Open, states: [Open, Frozen], terminal: [Frozen], transitions: [{name: freeze, from: [Open], to: Frozen}]}
+  - name: demo.shop.Order
+    identity: {name: order_id, type: demo.shop.OrderId}
+    fields: [{name: store_id, type: demo.shop.StoreId}]
+    relations: [{name: store, kind: references, target: demo.shop.Store, cardinality: one, via: store_id}]
+    lifecycle: {initial: Placed, states: [Placed, Shipped], terminal: [Shipped], transitions: [{name: ship, from: [Placed], to: Shipped}]}
+actors:
+  - {name: demo.shop.Clerk, may: [demo.shop.OpenStore, demo.shop.FreezeStore, demo.shop.PlaceOrder, demo.shop.ShipOrder]}
+errors:
+  - {name: demo.shop.Missing, summary: No such row.}
+  - {name: demo.shop.Elsewhere, summary: The order is of another store.}
+  - {name: demo.shop.Frozen, summary: The store is frozen.}
+commands:
+  - name: demo.shop.OpenStore
+    input: [{name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: opened, creates: demo.shop.Store, instance: store_id, emits: [demo.shop.Opened], payload: {demo.shop.Opened: {store_id: input.store_id}}}
+  - name: demo.shop.FreezeStore
+    input: [{name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: frozen, moves: demo.shop.Store.freeze, instance: store_id, emits: [demo.shop.Froze], payload: {demo.shop.Froze: {store_id: input.store_id}}}
+  - name: demo.shop.PlaceOrder
+    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}
+      - {name: placed, creates: demo.shop.Order, instance: order_id, sets: {store_id: input.store_id}, emits: [demo.shop.Placed], payload: {demo.shop.Placed: {order_id: input.order_id}}}
+  - name: demo.shop.ShipOrder
+    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: elsewhere, when_subject: {predicate: store_id != input.store_id}, error: demo.shop.Elsewhere}
+      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}
+      - {name: frozen, when_related: {via: input.store_id, predicate: state == Frozen}, error: demo.shop.Frozen}
+      - {name: shipped, moves: demo.shop.Order.ship, instance: order_id, emits: [demo.shop.Shipped], payload: {demo.shop.Shipped: {order_id: input.order_id}}}
+events:
+  - {name: demo.shop.Opened, fields: [{name: store_id, type: demo.shop.StoreId}]}
+  - {name: demo.shop.Froze, fields: [{name: store_id, type: demo.shop.StoreId}]}
+  - {name: demo.shop.Placed, fields: [{name: order_id, type: demo.shop.OrderId}]}
+  - {name: demo.shop.Shipped, fields: [{name: order_id, type: demo.shop.OrderId}]}
+";
+
+/// The scenarios of `ShipOrder` synthesized from `text`, and every scenario of its suite that the
+/// model's own interpreter does not pass, with what it reported.
+fn ship_order(text: &str) -> (BTreeSet<String>, BTreeMap<String, String>) {
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let spec = Specification::assemble([(Source::new("shop.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+    let synthesis = synthesize(&ir);
+    let written = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .filter(|id| id.contains("ShipOrder"))
+        .collect();
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let failed = Runner::for_suite(&synthesis.suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report()
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| {
+            (
+                scenario.scenario.to_string(),
+                format!("{:#?}", scenario.diagnostics().collect::<Vec<_>>()),
+            )
+        })
+        .collect();
+    (written, failed)
+}
+
+/// `written` holds the scenarios of the branches `ShipOrder` takes on the row its order is placed
+/// at, and `failed` is empty.
+fn assert_ships_at_its_own_store(written: &BTreeSet<String>, failed: &BTreeMap<String, String>) {
+    for id in [
+        "demo.shop.ShipOrder/outcome/frozen",
+        "demo.shop.ShipOrder/outcome/shipped",
+        "demo.shop.Order/transition/ship/by/demo.shop.ShipOrder/shipped",
+    ] {
+        assert!(written.contains(id), "{id} is written: {written:#?}");
+    }
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// RED (a downstream report on 0.99.4, N93): the branches below the link refusal read the row the
+/// input names, and that input must name the order's own store. Synthesis arranged that row apart
+/// from the order and, since 0.99.4, refuses each branch with "no candidate of the 0 tried"; the
+/// arrangement that names the order's own store is the one a hand-written scenario uses.
+#[test]
+fn a_branch_reading_the_row_the_input_names_beside_a_link_refusal_is_sent_the_subjects_own_row() {
+    let (written, failed) = ship_order(SHOP);
+    assert_ships_at_its_own_store(&written, &failed);
+}
