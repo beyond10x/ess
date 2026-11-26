@@ -180,6 +180,43 @@ fn with_a_model_a_row_field_the_view_lacks_is_refused() {
     );
 }
 
+/// With `--model`, `loads.<field>` is held to the fields of the view the action loads, as
+/// `section.<name>.row.<field>` is (beyond10x/ess#723, C17).
+#[test]
+fn with_a_model_a_loaded_field_the_view_lacks_is_refused() {
+    let model = model();
+    let text = |field: &str| {
+        page(&format!(
+            "      - {{name: items, component: record, reads: stock.Items, fields: [label], \
+             actions: [{{name: rename, does: stock.RenameItem, loads: stock.Items, \
+             bind: {{text: loads.{field}}}}}]}}"
+        ))
+    };
+    let check = |field: &str| {
+        check_source(
+            &text(field),
+            "test.yaml",
+            &crate_dir(),
+            Some(&model),
+            &Options::default(),
+        )
+    };
+    let report = check("labell");
+    let found = row_field_findings(&report);
+    assert_eq!(found.len(), 1, "{:#?}", report.findings);
+    assert_eq!(found[0].path, "pages/p/sections/items/actions/rename");
+    assert!(
+        found[0].message.contains("`loads.labell`") && found[0].message.contains("stock.Items"),
+        "{found:#?}"
+    );
+    let report = check("label");
+    assert!(
+        row_field_findings(&report).is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
 #[test]
 fn a_row_of_a_choice_section_that_reads_is_refused_in_words_true_of_it() {
     let text = page(

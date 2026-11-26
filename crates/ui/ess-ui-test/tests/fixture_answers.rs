@@ -29,9 +29,13 @@ pages:
 ";
 
 fn run(tests: &str) -> (Vec<ess_ui_test::Outcome>, String) {
+    run_document(DOCUMENT, tests)
+}
+
+fn run_document(document: &str, tests: &str) -> (Vec<ess_ui_test::Outcome>, String) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("ui.yaml");
-    std::fs::write(&path, DOCUMENT).unwrap();
+    std::fs::write(&path, document).unwrap();
     std::fs::write(
         dir.path().join("drafts.yaml"),
         "rows:\n  - {id: d-1, name: One}\n  - {id: d-2, name: Two}\n",
@@ -43,7 +47,7 @@ fn run(tests: &str) -> (Vec<ess_ui_test::Outcome>, String) {
     );
     let file = ess_ui_test::parse_str(&text, Path::new("answers.test.yaml")).unwrap();
     let report = ess_ui_test::execute(&path, std::slice::from_ref(&file)).unwrap();
-    let spec = ess_ui_test::playwright(&[file], &ess_ui::load_str(DOCUMENT).unwrap());
+    let spec = ess_ui_test::playwright(&[file], &ess_ui::load_str(document).unwrap());
     (report.tests, spec)
 }
 
@@ -77,6 +81,40 @@ fn a_list_of_answers_is_chosen_by_the_params_asked() {
       - expect: {{at: pages/orders.detail/sections/other, text: Fallback}}
 "
     ));
+}
+
+/// Rows a test declares answer as written, chosen by `by_params` only: a child list read with
+/// its parent's `id` keeps the rows that carry an `id` of their own. The terminal shows both, and
+/// the Playwright route answers the same rows, narrowing none.
+#[test]
+fn declared_rows_with_their_own_id_answer_a_read_by_the_parents_id() {
+    let document = DOCUMENT.replace(
+        "{name: lines, component: collection, reads: {view: example.line.Page}, columns: [id]}",
+        "{name: lines, component: collection, reads: {view: example.line.Page, params: {id: params.id}}, columns: [id, sku]}",
+    );
+    assert_ne!(document, DOCUMENT, "the lines read takes the parent's id");
+    let (outcomes, spec) = run_document(
+        &document,
+        "  - name: child rows
+    fixtures:
+      views:
+        example.order.Page: {rows: [{id: o-3, customer: Customer 3}]}
+        example.line.Page:
+          - {by_params: {id: o-3}, rows: [{id: l-1, sku: Bolt}, {id: l-2, sku: Nut}]}
+    steps:
+      - open: {page: orders.detail, params: {id: o-3}}
+      - expect: {at: pages/orders.detail/sections/lines, rows: 2}
+      - expect: {at: pages/orders.detail/sections/lines, text: Bolt}
+      - expect: {at: pages/orders.detail/sections/lines, text: Nut}
+",
+    );
+    for outcome in &outcomes {
+        assert_eq!(outcome.status, Status::Passed, "{outcome:?}");
+    }
+    assert!(
+        spec.contains("\"l-2\"") && !spec.contains(".filter((row)"),
+        "the route answers the declared rows and narrows none:\n{spec}"
+    );
 }
 
 #[test]

@@ -61,8 +61,10 @@ use ess_domain::name::{QualifiedName, Version};
 
 mod conformance;
 mod roles;
+mod vendor;
 
 pub use roles::{ContractRole, ResolvedRole, RoleCommand, RoleParty, Stands};
+pub use vendor::{vendor, Vendored};
 
 /// The composition document format [`CompositionSpec::new`] writes: services and references only.
 pub const COMPOSITION_FORMAT: &str = "ess-composition/1";

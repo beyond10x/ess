@@ -78,6 +78,38 @@ pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
     Ok(compile_specification(raw_specification(path)?))
 }
 
+/// [`specification`] without the document at `replaced`, with `added` read in its place when
+/// given, and with the type declarations named in `dropped` taken out of every other document:
+/// how `ess specify vendor` reads a consumer with the copy it writes in it (beyond10x/ess#663).
+pub(crate) fn specification_replacing(
+    path: &Path,
+    replaced: &Path,
+    added: Option<&str>,
+    dropped: &std::collections::BTreeSet<ess_domain::name::QualifiedName>,
+) -> Result<LoadedSpec> {
+    let target = fs::canonicalize(replaced).ok();
+    let mut inputs =
+        crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?;
+    inputs.retain(|input| target.is_none() || fs::canonicalize(&input.origin).ok() != target);
+    if let Some(text) = added {
+        inputs.push(crate::input_discovery::Input {
+            identity: replaced.display().to_string(),
+            origin: replaced.to_path_buf(),
+            text: text.to_owned(),
+        });
+    }
+    let mut raw = parse_specification_inputs(&inputs);
+    let last = raw
+        .parsed
+        .len()
+        .saturating_sub(usize::from(added.is_some()));
+    for (_, file) in raw.parsed.iter_mut().take(last) {
+        file.types
+            .retain(|declared| !dropped.contains(&declared.name));
+    }
+    Ok(compile_specification(raw))
+}
+
 /// Retain the same original acquisition used to compile browser source authority.
 pub(crate) fn browser_specification(
     path: &Path,

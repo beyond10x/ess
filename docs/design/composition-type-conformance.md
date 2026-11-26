@@ -245,6 +245,44 @@ nothing.
 **Departure.** None from an issue; the presence table's `unstated` row and column follow the published schema, where a field with no
 presence is `omitted_when_absent`'s projection.
 
+## Generating the copy
+
+beyond10x/ess#663. The copy a conformance proves was written by hand, field by field and nested
+type by nested type, and again whenever the owner changed. `ess specify vendor` writes it, with the
+entries that prove it:
+
+```console
+ess specify vendor --from owner=owner --service consumer=consumer --component board \
+  --type example.owner.orders.OrderSummary --into example.consumer.board \
+  --out vendored.yaml --conformances conformances.yaml
+```
+
+- `vendored.yaml` is an ordinary source document of the consumer: `domain:` names `--into`, and it
+  declares the named closure of `--type` (the type and every named type it reaches through fields,
+  newtypes, union payloads and attribute types), each renamed to `--into` plus its own last
+  segment, with every field, wire name, display name, summary, presence, invariant, alphabet,
+  prefix, variant attribute, `ordered`, `undeclared_fields` and `shorthand` kept. Its first lines
+  name the owner's system, version and IR digest.
+- `conformances.yaml` is a fragment of a composition document: the `services:` entry of each side
+  and one `conformances:` entry per copied type. The `--from` entry pins the owner's IR digest and
+  names the one owner component whose `owns` holds the domain of every copied type. The `--service`
+  entry pins the consumer's IR digest taken with the copy in it, and names `--component`, by
+  default the consumer component that owns `--into`.
+- The consumer is read without the file at `--out`, which the run replaces. A copied name that the
+  consumer already declares is no collision when the declaration is the copy itself, so a second
+  run and `--check` read a consumer with the copy dropped in; under another shape it is refused by
+  name.
+- `--check` writes nothing and exits 1 naming each copy that differs from what the owner declares
+  now; the same command without it re-pins.
+- Refused by name, exit 1: a `--type` the owner does not declare or whose domain no owner
+  component owns; a closure spread over two owner components; two copies that take one name; a
+  copied type with a clock-reading attachment; an `--into` that is not a qualified name; a
+  `--from` or `--service` not written `key=path`, with `compose`'s messages; one key under both; a
+  `--component` the consumer does not declare, or none where no consumer component owns `--into`.
+
+No source, composition or IR format changes: the copy is a local type like any other, which
+generated code, synthesis and `ess verify diff` read as they read a hand-written one.
+
 ## Compatibility
 
 - `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3, 4, 5, 6]` (`/4`, contract roles, is

@@ -38,7 +38,11 @@ fn document() -> String {
              - {{name: w4, component: caption, args: {{label: '\"Quoted (text)\"'}}}}\n          \
              - {{name: w5, component: caption, args: {{label: 4242}}}}\n          \
              - {{name: w6, component: status_badge, args: {{status: row.open_deals, tones: partner_tier}}}}\n          \
-             - {{name: w7, primitive: text, text: Never shown, visible: \"false\"}}\n"
+             - {{name: w7, primitive: text, text: Never shown, visible: \"false\"}}\n          \
+             - {{name: v1, primitive: text, text: Shown by and, visible: \"channel.metrics.overdue_invoices == channel.metrics.overdue_invoices and 'yes' == 'yes'\"}}\n          \
+             - {{name: v2, primitive: text, text: Shown by or, visible: \"'a' == 'b' or channel.metrics.overdue_invoices != 'x'\"}}\n          \
+             - {{name: v3, primitive: text, text: Shown by in, visible: \"not ('a' in ['b', 'c']) and channel.metrics.overdue_invoices != 'x'\"}}\n          \
+             - {{name: v4, primitive: text, text: Hidden by and, visible: \"channel.metrics.overdue_invoices != 'x' and 'a' == 'b'\"}}\n"
         ),
         1,
     )
@@ -73,5 +77,28 @@ fn literal_text_renders_as_written_and_expressions_still_evaluate() {
     assert!(
         !screen.contains("Never shown"),
         "visible: \"false\" hides:\n{screen}"
+    );
+}
+
+/// The terminal judges `and`, `or`, `in` and parentheses in a `visible` condition with the one
+/// grammar React reads (`ess_ui::filter`), where it split on the first `==` it met
+/// (story:both-renderers-read-one-binding-expression-grammar, beyond10x/ess#723).
+#[test]
+fn a_visible_condition_joins_with_and_or_in_as_react_reads_it() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("ess-ui-tui/visible-grammar");
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).expect("a stale state dir is removed");
+    }
+    let app = App::from_text(&document(), &example_dir(), Options::new(dir))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let screen = app.render_text(200, 120);
+    let hidden: Vec<&str> = ["Shown by and", "Shown by or", "Shown by in"]
+        .into_iter()
+        .filter(|wanted| !screen.contains(wanted))
+        .collect();
+    assert!(hidden.is_empty(), "hidden {hidden:?}:\n{screen}");
+    assert!(
+        !screen.contains("Hidden by and"),
+        "a false `and` hides:\n{screen}"
     );
 }

@@ -139,6 +139,26 @@ to selection state (`write_selection`, `app.rs`); both drop the ids no longer ke
 **Exports.** `export: {params: same_as(<section>)}` copies the section's params, not its filter.
 The download holds rows the section does not show. `filter_export` warns.
 
+## A param left out
+
+A filter the server reads is a param, and an optional one is off by being absent: an API that
+reads a present `only_open=false` as a filter answers differently from one given no param
+(beyond10x/ess#723). A read param, an overlay or navigation param and a `bind` entry may be
+written `{value: <expr>, when: <expr>}`; the entry is sent only while `when` is truthy and left out
+otherwise, never sent as `null` or `false`:
+
+```yaml
+reads: {view: example.order.Orders, params: {q: state.search, only_open: {value: true, when: state.open_only}}}
+```
+
+Both renderers send `q` alone while `state.open_only` is false, and `q` with `only_open=true`
+while it is true; the two are different reads, since a read's key is its sent params. `value` may
+be a list where a bind takes one. `ess ui check` checks both expressions as it checks a bare one,
+refuses any other key of the mapping, and with `--model` refuses `when` on a param the view
+requires (`read_params`) and on a required command input (`field_in_model`). A value a command
+spells differently from the view that offers it is not mapped here: the view publishes the field
+in the command's spelling and the action binds it.
+
 ## Size
 
 A client filter is fine where the view's rows are few by the shape of the domain: one partner's
@@ -198,6 +218,24 @@ unchecked invalid predicate drops the row. The eligible callers of
 `rows_of` (`app.rs`, `view.rs`) read kept rows through one function that takes the `Reads`;
 `passes` (`app.rs`) applies the filter after `only_if`; `lifecycle` (`app.rs`) counts kept
 rows; the dynamic menu (`app.rs`) applies its `filter` as React does.
+
+**One grammar for every expression (beyond10x/ess#723).** The terminal reads a display,
+`visible` or `checked` expression with the same parser: a boolean form of `ess_ui::filter`
+(`not`, a comparison, `in`, `and`, `or`, parentheses) that reads at least one path from a root
+is judged by it, so `state.a == on and state.b == off` means in the terminal what it means in
+React (`App::eval`, `crates/ui/ess-ui-tui/src/app.rs`). Each position keeps its failure rule: a
+row filter fails closed, a `visible` outside the grammar means shown, and a string that reads no
+path stays literal text (`Terms and conditions`). A `bind` value may be a YAML list of
+expressions, sent as one list input of their values (`ess_ui::BindValue`); a list anywhere else
+an expression is expected is refused by path. The `loads.<field>` root reads the first row an
+action's `loads` read answers, in that action's `bind`, `checked` and `visible` only. Each renderer
+reads it through its read cache when it draws the action (React: `useRead` in `ActionControl`;
+the terminal: `App::loaded_row`, whose request is wanted like a shown section's read), so a command
+the action sends reads it again as it reads a section of the view again. Until a row answers the
+field is absent and the action is drawn disabled: React disables the control, the terminal draws
+`·` where its key goes and its key runs nothing. `ess ui check` refuses `loads.` anywhere else
+(`expr_paths`) and with `--model` holds `<field>` to the view's fields (`row_fields`); a read
+filter never admits the root.
 
 ## Format and version
 

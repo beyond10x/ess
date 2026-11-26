@@ -83,6 +83,15 @@ impl Predicate {
             .all(|path| ["row", "params", "state", "shell", "args"].contains(&path[0].as_str()))
     }
 
+    /// The roots an action's own expressions may read in this grammar: those of
+    /// [`Self::allowed_roots`] and `loads`, the first row the action's `loads` read answers. A
+    /// read filter never admits `loads`.
+    pub fn action_roots(&self) -> bool {
+        self.paths().iter().all(|path| {
+            ["row", "params", "state", "shell", "args", "loads"].contains(&path[0].as_str())
+        })
+    }
+
     /// Evaluate a checked predicate against its owner scope, resolving each complete path.
     /// Missing paths resolve to null, as in other UI expressions.
     pub fn evaluate(&self, resolve: &impl Fn(&[String]) -> Value) -> Value {

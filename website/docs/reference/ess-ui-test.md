@@ -147,7 +147,11 @@ declares a default for it.
 
 ### act
 
-Runs an action: a row's action, a header action, a section's action, a bulk action. On an open
+Runs an action: a row's action, a header action, a section's action, a bulk action, an overlay's
+action, a button in a row's `item` (`…/rows/<key>/item/<node>`) or in a section's `children`
+(`…/children/<node>`), an action of a row's `expand` (`…/rows/<key>/expand/actions/<name>`) and
+a collection's own `actions`. The terminal presses the key it offers the action under; an action
+the place does not offer is refused naming the place. On an open
 overlay's own path it runs the overlay's primary action: a confirm confirms, a form submits. On a
 section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
@@ -205,7 +209,7 @@ Checks a node. Every key given must hold.
 
 | Key | Holds when |
 |---|---|
-| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, the header's help its line, a section's child its own place |
+| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, the header's help its line, a section's child its own place, a row's `item` node its run of the row's line |
 | `not_text` | the node does not show the text |
 | `rows` | a count: the collection shows that many rows; a list: it shows the rows with these keys, in this order |
 | `state` | the section is `loading`, `empty`, `stale`, `failed`, `ready` or `not_loaded` |
@@ -402,9 +406,14 @@ Every step goes through what a reader of the terminal has: key presses and the d
 
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
 the page header, its actions and its help, section boxes and their children, the open overlay, and for a
-section's or an overlay's collection a table's column headers, each row line keyed by the row's
-key, each cell, and each row action a row offers. Cards, a list or a tree with an `item` have no
-cell regions.
+section's or an overlay's collection, and for the first named collection in a section record's
+`item` (at `…/sections/<s>/item/<name>`), a table's column headers, each row line keyed by the row's
+key, each cell, and each row action a row offers, the `result` of a section's or an overlay's own form,
+each widget a board places, at `<board>/rows/<widget>`, and each row's `item` node, drawn on the
+row's line, at `…/rows/<key>/item/<name>`, with each node of a widget instance's body at
+`…/item/<name>/body/<node>`. Cards, a list or a tree with an `item`
+have no cell regions. The headless screen is 160 cells wide and grows until no row or column is cut,
+so every column of a wide table has cells of its own, as in the browser's scrolling frame.
 
 A region also carries the node's whole text where the screen cuts it (`Region::text`).
 Rows are counted and found by those keys, so rows that show the same values are still told apart.
@@ -423,7 +432,8 @@ refuses:
 | any step at a column header of a collection that is not a table | the generated app draws no header for it |
 | any step inside the rows of a references list | the generated app does not address its rows |
 | any step at a row action's, or a graph editor's node or edge action's, inline confirm not under a row | the generated app draws it under the row that opened it |
-| any step at a collection that is not a section's or an overlay's own body, or at its rows | the terminal draws it inside its section without addressing it or its rows |
+| any step at a collection that is not a section's or an overlay's own body nor the first named collection in a section record's `item`, or at its rows | the terminal draws it inside its section without addressing it or its rows |
+| `mark`, `move` or `page` at the collection in a section record's `item` or at its rows | the terminal drives those rows with `select` and `act` only |
 | any step at a tab's nested node (`tabs/<t>/form` that is a node) or inside it | the terminal draws it below the tab's fields but moves no focus into it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
@@ -508,10 +518,11 @@ the document, the React project as `data-ui-path`. What it removes:
 - **Backend state and time are declared.** Fixtures replace views per test and the clock is
   virtual, so live updates, staleness and loading are tested without a server or real waiting.
 
-**Limits.** The terminal runner addresses rows of a section's or an overlay's collection, types into
+**Limits.** The terminal runner addresses rows of a section's or an overlay's collection and of the
+first named collection in a section record's `item` (`expect`, `select` and `act` there), types into
 filter bars, collection filters and form fields, chooses in filter-bar choices and form choice
-fields, and shows a record's tabs. Other targets fail, and the failure names the step. A collection nested
-in a record, a tab or a node, and a tab's nested node, are drawn but refused as step targets in both
+fields, and shows a record's tabs. Other targets fail, and the failure names the step. Any other
+collection nested in a record, a tab or a node, and a tab's nested node, are drawn but refused as step targets in both
 renderers. See [One verdict in both renderers](#one-verdict-in-both-renderers). `expect text` at a
 node the terminal does not draw on cells of its own fails, and the failure names the path.
 
