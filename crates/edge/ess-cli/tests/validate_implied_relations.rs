@@ -522,3 +522,196 @@ fn adversary_the_hint_for_an_optional_or_list_field_names_only_references() {
     let hint = report["warnings"][0]["hint"].as_str().unwrap();
     assert!(hint.contains("`owns`"), "{hint}");
 }
+
+/// `CloseShelf` addresses the shelf through `input.shelf_id` (its moving branch's `instance:`),
+/// and its `when_related:` guards read the row that same input names: the command's own subject.
+fn reads_own_subject(format: &str) -> String {
+    format!(
+        "format: {format}
+system: probe
+version: v1
+domain: probe.shop
+types:
+  - {{name: probe.shop.ShelfId, kind: newtype, of: String}}
+entities:
+  - name: probe.shop.Shelf
+    identity: {{name: shelf_id, type: probe.shop.ShelfId}}
+    fields:
+      - {{name: capacity, type: Integer}}
+      - {{name: count, type: Integer}}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {{name: close, from: [Open], to: Closed}}
+errors:
+  - {{name: probe.shop.NoShelf, fields: [{{name: shelf_id, type: probe.shop.ShelfId}}]}}
+  - {{name: probe.shop.OverCapacity}}
+  - {{name: probe.shop.ShelfClosed}}
+commands:
+  - name: probe.shop.CloseShelf
+    input:
+      - {{name: shelf_id, type: probe.shop.ShelfId}}
+      - {{name: count, type: Integer}}
+    outcomes:
+      - name: no-shelf
+        when_related: {{via: input.shelf_id, exists: false}}
+        error: probe.shop.NoShelf
+        payload: {{probe.shop.NoShelf: {{shelf_id: input.shelf_id}}}}
+      - name: over-capacity
+        when_related: {{via: input.shelf_id, predicate: capacity < input.count}}
+        error: probe.shop.OverCapacity
+      - name: closed
+        moves: probe.shop.Shelf.close
+        instance: shelf_id
+        sets: {{count: input.count}}
+        emits: [probe.shop.ShelfDone]
+        payload: {{probe.shop.ShelfDone: {{shelf_id: input.shelf_id}}}}
+      - name: wrong-state
+        wrong_state: true
+        error: probe.shop.ShelfClosed
+  - name: probe.shop.OpenShelf
+    input:
+      - {{name: shelf_id, type: probe.shop.ShelfId}}
+      - {{name: capacity, type: Integer}}
+    outcomes:
+      - name: opened
+        creates: probe.shop.Shelf
+        instance: shelf_id
+        sets: {{capacity: input.capacity, count: 0}}
+        emits: [probe.shop.ShelfOpened]
+        payload: {{probe.shop.ShelfOpened: {{shelf_id: input.shelf_id}}}}
+events:
+  - {{name: probe.shop.ShelfDone, fields: [{{name: shelf_id, type: probe.shop.ShelfId}}]}}
+  - {{name: probe.shop.ShelfOpened, fields: [{{name: shelf_id, type: probe.shop.ShelfId}}]}}
+views:
+  - name: probe.shop.Shelves
+    source: probe.shop.Shelf
+    consistency: read_your_writes
+    fields:
+      - {{name: shelf_id, type: probe.shop.ShelfId}}
+      - {{name: capacity, type: Integer}}
+      - {{name: count, type: Integer}}
+      - {{name: state, type: probe.shop.Shelf.State}}
+"
+    )
+}
+
+/// From `ess/38` a `when_related:` read of the row the command addresses itself is refused
+/// (`ESS-COMMAND-004`), its hint naming `when_subject:` and `unknown_instance:`; at `ess/37` the
+/// same text is a warning and the specification validates.
+#[test]
+fn a_related_read_of_the_commands_own_subject_is_refused_from_ess_38_and_warns_below() {
+    let path = written("own-subject-38", &reads_own_subject("ess/38"));
+    let output = validate_text(&path);
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stderr.contains("error[ESS-COMMAND-004]"), "{stderr}");
+    for named in [
+        "probe.shop.CloseShelf",
+        "input.shelf_id",
+        "when_subject: {predicate:",
+        "unknown_instance: true",
+    ] {
+        assert!(stderr.contains(named), "names {named}: {stderr}");
+    }
+
+    let path = written("own-subject-37", &reads_own_subject("ess/37"));
+    let (output, report) = validate_json(&path);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let codes = warning_codes(&report);
+    assert!(
+        codes.iter().any(|code| code == "ESS-COMMAND-004"),
+        "{report}"
+    );
+    let warning = report["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|warning| warning["code"] == "ESS-COMMAND-004")
+        .unwrap();
+    let hint = warning["hint"].as_str().unwrap();
+    assert!(
+        hint.contains("when_subject: {predicate:") && hint.contains("unknown_instance: true"),
+        "{hint}"
+    );
+}
+
+/// [`reads_own_subject`], where `CloseShelf` also refuses while an item of the shelf at or past
+/// the count is kept: a guard on a row set, beside which a `when_subject` guard is refused
+/// (`ESS-COMMAND-009`).
+fn beside_row_set(model: &str) -> String {
+    let replaced = [
+        (
+            "  - {name: probe.shop.ShelfId, kind: newtype, of: String}\n",
+            "  - {name: probe.shop.ShelfId, kind: newtype, of: String}\n  - {name: probe.shop.ItemId, kind: newtype, of: String}\n",
+        ),
+        (
+            "errors:\n",
+            "  - name: probe.shop.Item\n    identity: {name: item_id, type: probe.shop.ItemId}\n    fields:\n      - {name: shelf_id, type: probe.shop.ShelfId}\n      - {name: seq, type: Integer}\n    relations:\n      - {name: shelf, kind: references, target: probe.shop.Shelf, cardinality: one, via: shelf_id}\n    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept]}\nerrors:\n  - {name: probe.shop.ItemsLeft}\n",
+        ),
+        (
+            "      - name: closed\n",
+            "      - name: items-left\n        when_related:\n          entity: probe.shop.Item\n          where: {all: [shelf_id == input.shelf_id, seq >= input.count]}\n          exists: true\n        error: probe.shop.ItemsLeft\n      - name: closed\n",
+        ),
+    ];
+    let mut model = model.to_owned();
+    for (anchor, with) in replaced {
+        assert!(model.contains(anchor), "the model still has {anchor}");
+        model = model.replacen(anchor, with, 1);
+    }
+    model
+}
+
+/// The form the row-set hint names: `unknown_instance: true` for the missing shelf, and the guard
+/// over the shelf's capacity as a row set selecting the shelf by its key.
+fn row_set_form(model: &str) -> String {
+    let replaced = [
+        (
+            "        when_related: {via: input.shelf_id, exists: false}\n",
+            "        unknown_instance: true\n",
+        ),
+        (
+            "        when_related: {via: input.shelf_id, predicate: capacity < input.count}\n",
+            "        when_related:\n          entity: probe.shop.Shelf\n          where: {all: [shelf_id == input.shelf_id, capacity < input.count]}\n          exists: true\n",
+        ),
+    ];
+    let mut model = model.to_owned();
+    for (anchor, with) in replaced {
+        assert!(model.contains(anchor), "the model still has {anchor}");
+        model = model.replacen(anchor, with, 1);
+    }
+    model
+}
+
+/// Beside a row-set guard the refusal's hint does not send the author into `ESS-COMMAND-009`: it
+/// names the row-set form, and that form validates at `ess/38` with no `ESS-COMMAND-004`.
+#[test]
+fn beside_a_row_set_the_own_subject_hint_names_the_row_set_form_and_that_form_validates() {
+    let model = beside_row_set(&reads_own_subject("ess/38"));
+    let output = validate_text(&written("own-subject-row-set", &model));
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stderr.contains("error[ESS-COMMAND-004]"), "{stderr}");
+    assert!(!stderr.contains("ESS-COMMAND-009"), "{stderr}");
+    for named in [
+        "as a row set selecting it by its key",
+        "entity: probe.shop.Shelf",
+        "shelf_id == input.shelf_id",
+        "unknown_instance: true",
+    ] {
+        assert!(stderr.contains(named), "names {named}: {stderr}");
+    }
+    assert!(!stderr.contains("when_subject: {predicate:"), "{stderr}");
+
+    let (output, report) =
+        validate_json(&written("own-subject-row-set-form", &row_set_form(&model)));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(
+        !warning_codes(&report)
+            .iter()
+            .any(|code| code == "ESS-COMMAND-004"),
+        "{report}"
+    );
+}

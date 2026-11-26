@@ -1131,9 +1131,11 @@ fn bridge_traced(
 /// [`Severity::Warning`]. Nothing here feeds [`compile`], so a specification compiles to the same
 /// bytes whether or not anybody asked for its warnings; `ess specify validate` asks.
 ///
-/// Today one rule: a relation the model implies and does not declare —
+/// Two rules: a relation the model implies and does not declare —
 /// [`ess_domain::entity::implied_relations`] for a stored field, and
-/// [`ess_domain::command::related_guard::implied_relations`] for a `when_related:` row.
+/// [`ess_domain::command::related_guard::implied_relations`] for a `when_related:` row; and below
+/// `ess/38` a `when_related:` read of the row the command addresses itself
+/// ([`ess_domain::command::related_guard::own_subject_reads`]).
 pub fn advise_locating(
     specification: &Specification,
     sources: &SourceMap,
@@ -1141,6 +1143,9 @@ pub fn advise_locating(
 ) -> Diagnostics {
     let mut advisories = ess_domain::entity::implied_relations(specification);
     advisories.extend(ess_domain::command::related_guard::implied_relations(
+        specification,
+    ));
+    advisories.extend(ess_domain::command::related_guard::own_subject_reads(
         specification,
     ));
     let bridged = bridge(&advisories, &Locator::new(sources, files));

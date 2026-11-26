@@ -1241,6 +1241,94 @@ pub fn implied_relations(spec: &Specification) -> ValidationErrors {
     advisories
 }
 
+/// Each `when_related:` row of `command` that reads, through the input addressing the command's own
+/// subject, a row of that subject's entity: the row steps 2 and 3 of the precedence order already
+/// answered (`docs/design/generic-language-features.md`, § G4), one `ESS-COMMAND-004` per branch.
+/// Its `exists: false` branch can never answer, and its predicate reads the subject.
+fn own_subject_refusals(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let Some(subject) = super::subject_fact::common_subject(command) else {
+        return errors;
+    };
+    let own = |via: &RelatedVia| match via {
+        RelatedVia::Input(field) => {
+            *field == subject.instance
+                && matches!(
+                    related_entity(spec, command, field),
+                    related_value::Referenced::Entity(entity) if entity.name == subject.entity
+                )
+        }
+        RelatedVia::Subject(_) => false,
+    };
+    for outcome in &command.outcomes {
+        let OutcomeCondition::Related { via, also, .. } = &outcome.condition else {
+            continue;
+        };
+        if !(own(via) || also.iter().any(|row| own(&row.via))) {
+            continue;
+        }
+        errors.push(
+            ValidationError::at(
+                site(command, outcome),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` of `{}` reads through `input.{}` the `{}` row the command \
+                     addresses itself (`instance: {}`): its existence and held state are answered \
+                     before any related row is read, so an `exists: false` branch over it never \
+                     answers",
+                    outcome.name, command.name, subject.instance, subject.entity, subject.instance
+                ),
+            )
+            .with_hint(own_subject_hint(spec, command, subject)),
+        );
+    }
+    errors
+}
+
+/// The repair of [`own_subject_refusals`]: `when_subject:` and `unknown_instance: true`, or where
+/// the command also guards on a row set, which a `when_subject` guard may not stand beside
+/// (`ESS-COMMAND-009`), each guard over the addressed row written as a row set selecting it by its
+/// key, beside `unknown_instance: true`.
+fn own_subject_hint(
+    spec: &Specification,
+    command: &CommandSpec,
+    subject: &super::Subject,
+) -> String {
+    if super::row_set::uses(command) {
+        format!(
+            "this command also guards on a row set, so write each guard over the addressed row as \
+             a row set selecting it by its key, `when_related: {{entity: {}, where: {{all: [{key} \
+             == input.{}, …]}}, exists: true}}`, and `unknown_instance: true` for its absence",
+            subject.entity,
+            subject.instance,
+            key = spec.entities().get(&subject.entity).map_or_else(
+                || subject.instance.clone(),
+                |entity| entity.identity.name.clone()
+            ),
+        )
+    } else {
+        "write `when_subject: {predicate: …}` for a guard over the addressed row and \
+         `unknown_instance: true` for its absence"
+            .to_owned()
+    }
+}
+
+/// The advisory below `ess/38` of a `when_related:` read of the row the command addresses itself:
+/// the text `ess/38` refuses with, as a warning, so the specification still validates.
+pub fn own_subject_reads(spec: &Specification) -> ValidationErrors {
+    let mut advisories = ValidationErrors::new();
+    let format = spec.system().format.major();
+    if format < crate::system::FormatVersion::V18.major()
+        || format >= crate::system::FormatVersion::V38.major()
+    {
+        return advisories;
+    }
+    for command in spec.commands().values().filter(|command| uses(command)) {
+        advisories.extend(own_subject_refusals(spec, command));
+    }
+    advisories
+}
+
 /// The entity and field carrying a related guard's `via`, and the identity type it holds: the
 /// addressed subject's stored field, or the field a branch fills from the input. `None` where no
 /// field carries it.
@@ -1300,6 +1388,15 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 }
             }
             continue;
+        }
+        // ess/38: a read of the row the command addresses itself is refused; below it the
+        // same text is the advisory of [`own_subject_reads`].
+        if spec.system().format.major() >= crate::system::FormatVersion::V38.major() {
+            let own = own_subject_refusals(spec, command);
+            if !own.is_empty() {
+                errors.extend(own);
+                continue;
+            }
         }
         // `all:` (ess/28): several rows in one branch.
         if spec.system().format.major() < crate::system::FormatVersion::V28.major() {

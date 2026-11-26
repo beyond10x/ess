@@ -26,6 +26,7 @@
 - A generated UI reads a command answered `401` as not signed in (`not_granted` with no actor), whatever its body, in `ess_ui::binding::classify` and the React port, where it read it as no answer from the server (beyond10x/ess#723).
 - The terminal draws a collection's `item` nodes on every row's line, after its cells, as React draws them in every row, where it drew only the cursor row's on a line below the rows; `ess ui test` reads each at `…/rows/<key>/item/<name>` and a node of a widget instance's body at `…/item/<name>/body/<node>`, the paths React draws them at (beyond10x/ess#722).
 - The terminal drives the first named collection in a section record's `item` as it drives a section's own: a cursor, row actions and row regions at `…/sections/<s>/item/<name>/rows/<key>`, the paths React draws them at, so `ess ui test` reads and drives its rows (`expect rows`, `select`, `act`) in both renderers where it refused every step there, and refuses `mark`, `move` and `page` there in both (beyond10x/ess#722).
+- From `ess/38`, `ess specify validate` refuses a `when_related:` read through the input that addresses the command's own subject as `ESS-COMMAND-004`, with the hint to write `when_subject: {predicate: …}` and `unknown_instance: true` (beside a row-set guard: each guard over that row as a row set selecting it by its key): that row's existence and state are answered before any related row, so its `exists: false` branch never answers. At `ess/37` and below the same text is a warning and the specification still validates.
 
 ### Fixed
 
