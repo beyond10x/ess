@@ -467,3 +467,131 @@ fn with_a_generated_shelf_identity_the_rows_still_name_the_addressed_shelf() {
     assert_refuses_nothing(&run);
     assert_rows_name_the_addressed_shelf(&run);
 }
+
+/// A creator guarded both by a related row its input names and by a row set over the rows it
+/// creates itself (weft's catalog, 2026-11-26): `PublishOffering` refuses an engine no row carries
+/// (`via: input.engine_id`) and a name an offering already has (`name-taken`), and otherwise
+/// creates an `Offering` under a generated identity. Synthesis refused `name-taken`, and every
+/// route through `published` was "a branch no input reaches", so no later command could act on an
+/// offering.
+const CATALOG: &str = r"format: ess/37
+system: p
+version: v1
+domain: p.c
+entities:
+  - name: p.c.Engine
+    identity: {name: engine_id, type: Uuid}
+    fields:
+      - {name: name, type: String}
+    lifecycle: {initial: Registered, states: [Registered], terminal: [Registered]}
+  - name: p.c.Offering
+    identity: {name: offering_id, type: Uuid}
+    fields:
+      - {name: name, type: String}
+      - {name: engine_id, type: Uuid}
+    relations:
+      - {name: engine, kind: references, target: p.c.Engine, cardinality: one, via: engine_id}
+    lifecycle:
+      initial: Published
+      states: [Published, Retired]
+      terminal: [Retired]
+      transitions:
+        - {name: retire, from: [Published], to: Retired}
+errors:
+  - name: p.c.NotFound
+  - name: p.c.Taken
+  - name: p.c.StateConflict
+events:
+  - name: p.c.Registered
+    fields: [{name: engine_id, type: Uuid}]
+  - name: p.c.Published
+    fields: [{name: offering_id, type: Uuid}]
+  - name: p.c.Retired
+    fields: [{name: offering_id, type: Uuid}]
+commands:
+  - name: p.c.RegisterEngine
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: registered
+        creates: p.c.Engine
+        instance: engine_id
+        sets: {name: input.name}
+        emits: [p.c.Registered]
+        payload: {p.c.Registered: {engine_id: {generated: true}}}
+  - name: p.c.PublishOffering
+    input:
+      - {name: name, type: String}
+      - {name: engine_id, type: Uuid}
+    outcomes:
+      - name: no-such-engine
+        when_related: {via: input.engine_id, exists: false}
+        error: p.c.NotFound
+      - name: name-taken
+        when_related:
+          entity: p.c.Offering
+          where: name == input.name
+          exists: true
+        error: p.c.Taken
+      - name: published
+        creates: p.c.Offering
+        instance: offering_id
+        sets: {name: input.name, engine_id: input.engine_id}
+        emits: [p.c.Published]
+        payload: {p.c.Published: {offering_id: {generated: true}}}
+  - name: p.c.RetireOffering
+    input: [{name: offering_id, type: Uuid}]
+    outcomes:
+      - {name: no-such, unknown_instance: true, error: p.c.NotFound}
+      - name: retired
+        moves: p.c.Offering.retire
+        instance: offering_id
+        emits: [p.c.Retired]
+        payload: {p.c.Retired: {offering_id: input.offering_id}}
+      - {name: wrong-state, wrong_state: true, error: p.c.StateConflict}
+views:
+  - name: p.c.Offerings
+    source: p.c.Offering
+    consistency: read_your_writes
+    fields:
+      - {name: offering_id, type: Uuid}
+      - {name: state, type: p.c.Offering.State}
+";
+
+#[test]
+fn a_creator_beside_a_named_row_and_its_own_row_set_is_a_route_for_every_later_command() {
+    let run = run(CATALOG);
+    for wanted in [
+        "p.c.PublishOffering/outcome/no-such-engine",
+        "p.c.PublishOffering/outcome/name-taken",
+        "p.c.PublishOffering/outcome/published",
+        "p.c.RetireOffering/outcome/retired",
+        "p.c.Offering/transition/retire/by/p.c.RetireOffering/retired",
+        "p.c.Offering/state/Retired/refuses/p.c.RetireOffering",
+    ] {
+        assert_passes(&run, wanted);
+    }
+    assert_refuses_nothing(&run);
+}
+
+#[test]
+fn the_name_taken_refusal_is_sent_the_name_an_offering_was_published_under() {
+    let run = run(CATALOG);
+    let wanted = "p.c.PublishOffering/outcome/name-taken";
+    assert_passes(&run, wanted);
+    let sent = sends(&run, wanted);
+    let (last, input, outcome) = sent.last().expect("the scenario sends");
+    assert_eq!(
+        (last.as_str(), outcome.as_str()),
+        ("p.c.PublishOffering", "name-taken"),
+        "{sent:#?}"
+    );
+    assert!(
+        sent.iter().any(
+            |(command, earlier, outcome)| command == "p.c.PublishOffering"
+                && outcome == "published"
+                && earlier["name"] == input["name"]
+        ),
+        "an offering of the same name is published first: {sent:#?}"
+    );
+}
