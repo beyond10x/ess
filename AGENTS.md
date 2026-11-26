@@ -326,7 +326,9 @@ package job fails unless `file` says statically linked, `readelf` finds no inter
 library, and the binary prints the tag in a `busybox` container without a network. Consumers pin
 the musl archives on Linux. The musl `ess` allocates through mimalloc (a `target_env = "musl"`
 dependency of `ess-cli`): musl's own allocator made the generated 48-flag model of
-`cargo xtask synth-jobs` synthesize in a median 151.4 s against 128.0 s with mimalloc.
+`cargo xtask synth-jobs` synthesize in a median 151.4 s against 128.0 s with mimalloc. The gnu binary
+stays the default for synthesis-heavy consumers whose glibc is new enough: on the build node the
+same model took a median 81.8 s with gnu `ess` against 149.1 s with musl `ess` and mimalloc.
 
 The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
 there under Rosetta; `lipo -archs` names the architecture that was built. Site rendering remains a documentation-validation gate; ordinary
