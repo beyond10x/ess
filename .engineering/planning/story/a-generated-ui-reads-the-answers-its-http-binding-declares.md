@@ -40,7 +40,7 @@ scope:
   path: crates/ui/ess-ui/tests/answers.rs
 - confidence: cited
   path: crates/ui/ess-ui/tests/vectors/answers.json
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:07Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:08Z", actor: "human:timo", revision: 5}
@@ -216,6 +216,8 @@ Tree `3bd1b6e9d2`, binary ess 0.92.0. Covers #723 item B16.
   renewal.
 - `depends_on: story:an-answer-may-be-wrapped-in-one-named-member` for the wrapped-form bullet
   only. The other bullets need nothing unmerged.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

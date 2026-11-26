@@ -35,7 +35,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:02Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:03Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -135,6 +135,8 @@ that declares `loads`, not by a general "stored value" expression. No new format
 code.
 
 - D110 (2026-11-25, the coordinator): step 39 C17 `loads.<field>`: each renderer reads `loads` through its read cache when it draws the action; the action is disabled and `loads.<field>` absent until the first row answers; the action's command re-reads it.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

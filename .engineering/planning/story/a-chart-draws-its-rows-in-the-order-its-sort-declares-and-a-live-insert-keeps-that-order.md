@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-chart-names-its-axes-and-formats-its-ticks
 - depends_on: story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T00:39:06Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T00:39:08Z", actor: "human:timo", revision: 4}
@@ -201,6 +201,8 @@ existing `expect.rows` (in `g06b-chart-rows`). Open questions, each with the rec
   **Recommended: (a).** (b) changes the meaning of existing documents (`ess-ui/2`) and reorders
   categorical bars.
 - D4 (how a test asserts the order) moved to `g06b-chart-rows`.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Scope
 

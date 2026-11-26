@@ -25,7 +25,7 @@ scope:
   path: website/docs/reference/diagnostics.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:36Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -141,6 +141,8 @@ Asked again by a ninth report, 2026-11-24; open with the owner.
 - S15: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
 
 - A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

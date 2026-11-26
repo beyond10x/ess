@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 2
+revision: 3
 ---
 ## Summary
 
@@ -99,6 +99,8 @@ reference's own rule is made true on the terminal target).
   as written, chosen by `by_params` only; the terminal target skips the same-name narrowing for a
   view the test replaced; a document's own fixtures keep it. Not (b) model-driven narrowing, not
   (c) a new key, not (d) dropping the narrowing everywhere.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Delivery
 

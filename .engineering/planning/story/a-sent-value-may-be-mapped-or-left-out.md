@@ -36,7 +36,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:45Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:46Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -122,6 +122,8 @@ and the suite checks them, so no figure leaves the specification
 (`docs/design/generic-language-features.md` § Policy, policy 1). No new format version;
 `docs/design/ui-read-filter.md` gains the conditional entry before code. Depends on
 `story:both-renderers-read-one-binding-expression-grammar`, which changes the same expression loader.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 
