@@ -542,3 +542,82 @@ fn issue_211_the_interpreted_target_executes_the_complete_sign_in_suite() {
         .iter()
         .all(|run| run.status == Status::Passed));
 }
+
+/// A shelf is closed with a count of items: refused when no shelf has the key, when the count is
+/// over the shelf's capacity, or when an item on the shelf sits at or past the count. The
+/// `exists: false` branch reads the row the command addresses itself, through the same input, and
+/// a row set beside it.
+const SHELF: &str = "format: ess/37
+system: demo
+version: v1
+domain: demo.shop
+types:
+  - {name: demo.shop.ShelfId, kind: newtype, of: String}
+  - {name: demo.shop.ItemId, kind: newtype, of: String}
+entities:
+  - name: demo.shop.Shelf
+    identity: {name: shelf_id, type: demo.shop.ShelfId}
+    fields: [{name: capacity, type: Integer}]
+    lifecycle: {initial: Open, states: [Open, Closed], terminal: [Closed], transitions: [{name: close, from: [Open], to: Closed}]}
+  - name: demo.shop.Item
+    identity: {name: item_id, type: demo.shop.ItemId}
+    fields: [{name: shelf_id, type: demo.shop.ShelfId}, {name: slot, type: Integer}]
+    relations: [{name: shelf, kind: references, target: demo.shop.Shelf, cardinality: one, via: shelf_id}]
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed], transitions: []}
+actors:
+  - {name: demo.shop.Clerk, may: [demo.shop.OpenShelf, demo.shop.PlaceItem, demo.shop.CloseShelf]}
+errors:
+  - {name: demo.shop.NoShelf, summary: No shelf has this key.}
+  - {name: demo.shop.OverCapacity, summary: The count is over the capacity.}
+  - {name: demo.shop.SlotTaken, summary: An item sits at or past the count.}
+  - {name: demo.shop.ShelfClosed, summary: The shelf is closed.}
+commands:
+  - name: demo.shop.OpenShelf
+    input: [{name: shelf_id, type: demo.shop.ShelfId}, {name: capacity, type: Integer}]
+    outcomes:
+      - {name: opened, creates: demo.shop.Shelf, instance: shelf_id, sets: {capacity: input.capacity}, emits: [demo.shop.Opened], payload: {demo.shop.Opened: {shelf_id: input.shelf_id}}}
+  - name: demo.shop.PlaceItem
+    input: [{name: item_id, type: demo.shop.ItemId}, {name: shelf_id, type: demo.shop.ShelfId}, {name: slot, type: Integer}]
+    outcomes:
+      - {name: no-shelf, when_related: {via: input.shelf_id, exists: false}, error: demo.shop.NoShelf}
+      - {name: placed, creates: demo.shop.Item, instance: item_id, sets: {shelf_id: input.shelf_id, slot: input.slot}, emits: [demo.shop.Placed], payload: {demo.shop.Placed: {item_id: input.item_id}}}
+  - name: demo.shop.CloseShelf
+    input: [{name: shelf_id, type: demo.shop.ShelfId}, {name: count, type: Integer}]
+    outcomes:
+      - {name: no-shelf, when_related: {via: input.shelf_id, exists: false}, error: demo.shop.NoShelf}
+      - {name: over-capacity, when_related: {via: input.shelf_id, predicate: capacity < input.count}, error: demo.shop.OverCapacity}
+      - {name: slot-taken, when_related: {entity: demo.shop.Item, where: {all: [shelf_id == input.shelf_id, slot >= input.count]}, exists: true}, error: demo.shop.SlotTaken}
+      - {name: closed, moves: demo.shop.Shelf.close, instance: shelf_id, emits: [demo.shop.Closed], payload: {demo.shop.Closed: {shelf_id: input.shelf_id}}}
+      - {name: wrong-state, wrong_state: true, error: demo.shop.ShelfClosed}
+events:
+  - {name: demo.shop.Opened, fields: [{name: shelf_id, type: demo.shop.ShelfId}]}
+  - {name: demo.shop.Placed, fields: [{name: item_id, type: demo.shop.ItemId}]}
+  - {name: demo.shop.Closed, fields: [{name: shelf_id, type: demo.shop.ShelfId}]}
+";
+
+/// A missing-row branch over the row the command addresses, beside a row set, is never sent that
+/// row: a missing addressed row is answered at its existence or held state (§ G4) before any
+/// `exists: false` reads it, so no arrangement reaches the branch and synthesis refuses it rather
+/// than writing a scenario the model's own interpreter answers otherwise.
+#[test]
+fn a_missing_row_branch_over_the_addressed_row_beside_a_row_set_is_not_sent_that_row() {
+    const NO_SHELF: &str = "demo.shop.CloseShelf/outcome/no-shelf";
+    let model = ir(SHELF);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let target = ess_conformance::interpret::Interpreted::for_model(model);
+    let statuses = statuses(&result, &target, "CloseShelf");
+    assert!(
+        !statuses.contains_key(NO_SHELF),
+        "no scenario sends the addressed row to its own missing-row branch: {:#?}",
+        statuses.get(NO_SHELF)
+    );
+    assert!(
+        result.refusals.iter().any(|refusal| refusal
+            .scenario
+            .as_ref()
+            .is_some_and(|id| id.to_string() == NO_SHELF)),
+        "the branch is refused: {:#?}",
+        refusals_about(&result, "CloseShelf")
+    );
+    assert_eq!(failed(&statuses), Vec::<&String>::new(), "{statuses:#?}");
+}
