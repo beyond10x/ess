@@ -33,6 +33,15 @@
 - `ess ui test` reads and drives the rows of an overlay's collection (`expect rows`, `select`, `mark`, `act` at a row action), reads a form's `result` and a board's placed widget at `<board>/rows/<widget>`, the paths the generated React project draws them at, and grows its headless screen past 160 cells until no row or column is cut, so the last column of a wide table is read (beyond10x/ess#722).
 - The terminal pages a server-paged collection with a `pager` through the states its params bind: it shows the size its size state holds (else the first of `sizes`), `n`, `p` and the `page` step of `ess ui test` write the page state, so the read and an action binding it are sent with that page, and a change to another param of the read returns it to page 1; the fixture adapter answers such a read with the slice the pager's params name. In the `ess-ui-tui` library `ReadRequest` has a new field `pager` of the new type `PagerParams` (beyond10x/ess#722).
 
+## [0.99.6] — 2026-11-26
+
+### Fixed
+
+- `ess verify conform synthesize` keeps an input's `example:` at every leaf no decision tells apart when a scenario's setup updates an existing row with a further witness. This applies to a command that compares the row with its input, such as `rev != input.base_rev`. Such a setup sent the whole further witness, so a leaf another command reads only through `defined(…)` carried the type placeholder (`prefs.note-1`) where the example holds a value. The rule of 0.99.0 covered further creations only, and this setup path has sent the placeholder since 0.37.0. A pinned suite of such a model moves when it is synthesized again.
+- `ess verify conform synthesize` no longer says a branch "has no scenario" when it cannot arrange one row of the branch's related-guard boundary, such as a disjunct held with every other refuted. The suite holds that scenario. The `ESS-SYNTH-003` refusal now reads "has a scenario `<id>` that leaves a row of its related guard unwitnessed" and is marked as standing beside the scenario. It said "has no scenario" since 0.42.0 at least. Code and scenario id are unchanged, and no suite moves.
+
+Neither fix changes a format key.
+
 ## [0.99.5] — 2026-11-25
 
 ### Fixed
