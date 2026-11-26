@@ -2481,7 +2481,7 @@
           "type": "string"
         },
         "in": {
-          "description": "The list, `input.<field>`.",
+          "description": "The list, `input.<field>`, or from `ess/38` `input.<path>` to a `List` member of a struct input.",
           "type": "string"
         },
         "repeated": {
@@ -2988,7 +2988,7 @@
           "type": "boolean"
         },
         "instance": {
-          "description": "Which field carries the identity of the instance this outcome acts on.\n\nRequired beside `creates`, `moves` and `updates`, and meaningless without one. The verb decides which surface the name is read from — see [`Subject::surface`].",
+          "description": "Which field carries the identity of the instance this outcome acts on.\n\nRequired beside `creates`, `moves` and `updates`, and meaningless without one. The verb decides which surface the name is read from — see [`Subject::surface`]. From `ess/38` an `updates:`, `moves:` or `deletes:` may name a member of a struct input, `instance: target.parcel_id`.",
           "type": [
             "string",
             "null"

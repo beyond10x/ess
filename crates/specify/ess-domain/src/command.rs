@@ -3576,7 +3576,12 @@ impl CommandSpec {
             let Some(subject) = &outcome.subject else {
                 continue;
             };
-            if subject.surface() == InstanceSurface::CommandInput && root == subject.instance {
+            let segments: Vec<&str> = path.segments().iter().map(String::as_str).collect();
+            if subject.surface() == InstanceSurface::CommandInput
+                && (root == subject.instance
+                    || (input_path::is_path(&subject.instance)
+                        && input_path::reads_member(&segments, &subject.instance)))
+            {
                 errors.push(
                     ValidationError::at(
                         location.clone().key("when"),
@@ -3663,11 +3668,14 @@ impl CommandSpec {
         }
         if let Some(subject) = &outcome.subject {
             if subject.surface() == InstanceSurface::CommandInput {
-                for read in checked
-                    .reads
-                    .iter()
-                    .filter(|read| read.free && read.path.namespace() == subject.instance)
-                {
+                for read in checked.reads.iter().filter(|read| {
+                    let segments: Vec<&str> =
+                        read.path.segments().iter().map(String::as_str).collect();
+                    read.free
+                        && (read.path.namespace() == subject.instance
+                            || (input_path::is_path(&subject.instance)
+                                && input_path::reads_member(&segments, &subject.instance)))
+                }) {
                     errors.push(ValidationError::at(
                         owner.clone(),
                         ValidationCode::UnobservableFact,
@@ -7607,6 +7615,8 @@ pub struct RawOutcome {
     ///
     /// Required beside `creates`, `moves` and `updates`, and meaningless without one. The verb
     /// decides which surface the name is read from — see [`Subject::surface`].
+    /// From `ess/38` an `updates:`, `moves:` or `deletes:` may name a member of a struct input,
+    /// `instance: target.parcel_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
     /// Every stored row a filter selects, instead of `instance:` (ess/16, beyond10x/ess#167):
