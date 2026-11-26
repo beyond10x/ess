@@ -587,6 +587,7 @@ impl Specification {
         errors.extend(crate::command::subject_state::validate(self, &registry));
         errors.extend(crate::command::subject_fact::validate(self, &registry));
         errors.extend(crate::command::related_guard::validate(self, &registry));
+        errors.extend(crate::command::input_path::validate_instances(self));
         errors.extend(crate::command::row_set::validate(self, &registry));
         errors.extend(crate::expression::lexical::identity_orderings(
             self, &registry,

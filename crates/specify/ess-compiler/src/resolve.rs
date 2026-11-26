@@ -4228,14 +4228,24 @@ impl<'a> Resolver<'a> {
         {
             InstanceSurface::CommandInput => {
                 let input = input?;
-                (
+                // From ess/38 (beyond10x/ess#640) a member of a struct input, named by its path
+                // and read as an `ess/22` path read is.
+                let candidates = if ess_domain::command::input_path::is_path(named) {
+                    self.input_read(command, input, named)
+                        .map(|field| ResolvedInstance::Supplied { field })
+                        .into_iter()
+                        .collect()
+                } else {
                     input
                         .iter()
                         .filter(|field| field.name == named)
                         .map(|field| ResolvedInstance::Supplied {
                             field: field.clone(),
                         })
-                        .collect(),
+                        .collect()
+                };
+                (
+                    candidates,
                     input.iter().map(|field| field.name.clone()).collect(),
                 )
             }

@@ -317,3 +317,37 @@ fn a_member_via_carries_its_path_and_the_members_type_in_the_ir() {
         );
     }
 }
+
+const ADDRESSED: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/struct-input-member-addressed-rows.yaml.in"
+);
+
+#[test]
+fn a_member_instance_and_a_member_each_list_carry_their_paths_in_the_ir() {
+    use ess_compiler::ir::ResolvedInstance;
+    let model = ir(ADDRESSED);
+    let outcome = |command: &str, name: &str| {
+        model.commands()[&command.parse().unwrap()]
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == name)
+            .unwrap_or_else(|| panic!("{command} has {name}"))
+            .clone()
+    };
+    let relabelled = outcome("shop.parcel.Relabel", "relabelled");
+    let Some(ResolvedInstance::Supplied { field }) =
+        relabelled.subject.as_ref().map(|subject| &subject.instance)
+    else {
+        panic!("a supplied instance: {:?}", relabelled.subject)
+    };
+    assert_eq!(field.name, "target.parcel_id");
+    assert_eq!(field.type_ref.written().to_string(), "shop.parcel.ParcelId");
+    let labelled = outcome("shop.parcel.Label", "labelled");
+    let [entry] = labelled.affects.as_slice() else {
+        panic!("one entry: {:?}", labelled.affects)
+    };
+    assert_eq!(
+        entry.each.as_ref().map(|each| each.list.as_str()),
+        Some("batch.lines")
+    );
+}

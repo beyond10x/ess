@@ -1,0 +1,166 @@
+format: ess/38
+system: shop
+version: v1
+domain: shop.parcel
+summary: A request names the parcel it acts on inside a struct, and a labelling names the parcels it labels in a list inside its batch.
+types:
+  - {name: shop.parcel.ParcelId, kind: newtype, of: Uuid}
+  - {name: shop.parcel.CrateId, kind: newtype, of: Uuid}
+  - name: shop.parcel.Target
+    kind: struct
+    fields:
+      - {name: parcel_id, type: shop.parcel.ParcelId}
+      - {name: label, type: String}
+  - name: shop.parcel.Line
+    kind: struct
+    fields:
+      - {name: parcel_id, type: shop.parcel.ParcelId}
+      - {name: label, type: String}
+  - name: shop.parcel.Batch
+    kind: struct
+    fields:
+      - {name: lines, type: "List<shop.parcel.Line>"}
+      - {name: note, type: String}
+entities:
+  - name: shop.parcel.Parcel
+    identity: {name: parcel_id, type: shop.parcel.ParcelId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Held]
+      terminal: [Held]
+      transitions:
+        - {name: hold, from: [Open], to: Held}
+  - name: shop.parcel.Crate
+    identity: {name: crate_id, type: shop.parcel.CrateId}
+    fields:
+      - {name: note, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: shop.parcel.UnknownParcel, summary: No parcel carries this identity., fields: []}
+  - {name: shop.parcel.UnknownCrate, summary: No crate carries this identity., fields: []}
+  - {name: shop.parcel.NotOpen, summary: The parcel is not open., fields: []}
+  - {name: shop.parcel.Taken, summary: A parcel already carries this identity., fields: []}
+events:
+  - name: shop.parcel.ParcelOpened
+    fields: [{name: parcel_id, type: shop.parcel.ParcelId}]
+  - name: shop.parcel.ParcelRelabelled
+    fields: [{name: parcel_id, type: shop.parcel.ParcelId}]
+  - name: shop.parcel.ParcelHeld
+    fields: [{name: parcel_id, type: shop.parcel.ParcelId}]
+  - name: shop.parcel.ParcelDropped
+    fields: [{name: parcel_id, type: shop.parcel.ParcelId}]
+  - name: shop.parcel.CrateOpened
+    fields: [{name: crate_id, type: shop.parcel.CrateId}]
+  - name: shop.parcel.CrateLabelled
+    fields: [{name: crate_id, type: shop.parcel.CrateId}]
+actors:
+  - name: shop.parcel.Clerk
+    may: [shop.parcel.Open, shop.parcel.Relabel, shop.parcel.Hold, shop.parcel.Drop, shop.parcel.Register, shop.parcel.OpenCrate, shop.parcel.Label]
+commands:
+  - name: shop.parcel.Open
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: shop.parcel.Parcel
+        instance: parcel_id
+        emits: [shop.parcel.ParcelOpened]
+        payload: {shop.parcel.ParcelOpened: {parcel_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: shop.parcel.Relabel
+    input:
+      - {name: target, type: shop.parcel.Target}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: shop.parcel.UnknownParcel
+      - name: relabelled
+        updates: shop.parcel.Parcel
+        instance: target.parcel_id
+        emits: [shop.parcel.ParcelRelabelled]
+        payload: {shop.parcel.ParcelRelabelled: {parcel_id: input.target.parcel_id}}
+        sets: {label: input.target.label}
+  - name: shop.parcel.Hold
+    input:
+      - {name: request, type: shop.parcel.Target}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: shop.parcel.UnknownParcel
+      - name: held
+        moves: shop.parcel.Parcel.hold
+        instance: request.parcel_id
+        emits: [shop.parcel.ParcelHeld]
+        payload: {shop.parcel.ParcelHeld: {parcel_id: input.request.parcel_id}}
+      - name: not-open
+        wrong_state: true
+        error: shop.parcel.NotOpen
+  - name: shop.parcel.Drop
+    input:
+      - {name: target, type: shop.parcel.Target}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: shop.parcel.UnknownParcel
+      - name: dropped
+        deletes: shop.parcel.Parcel
+        instance: target.parcel_id
+        emits: [shop.parcel.ParcelDropped]
+        payload: {shop.parcel.ParcelDropped: {parcel_id: input.target.parcel_id}}
+  - name: shop.parcel.Register
+    input:
+      - {name: target, type: shop.parcel.Target}
+    outcomes:
+      - name: taken
+        existing_instance: true
+        error: shop.parcel.Taken
+      - name: registered
+        creates: shop.parcel.Parcel
+        instance: parcel_id
+        emits: [shop.parcel.ParcelOpened]
+        payload: {shop.parcel.ParcelOpened: {parcel_id: input.target.parcel_id}}
+        sets: {label: input.target.label}
+  - name: shop.parcel.OpenCrate
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: shop.parcel.Crate
+        instance: crate_id
+        emits: [shop.parcel.CrateOpened]
+        payload: {shop.parcel.CrateOpened: {crate_id: {generated: true}}}
+        sets: {note: input.note}
+  - name: shop.parcel.Label
+    input:
+      - {name: crate_id, type: shop.parcel.CrateId}
+      - {name: batch, type: shop.parcel.Batch}
+    outcomes:
+      - name: no-crate
+        unknown_instance: true
+        error: shop.parcel.UnknownCrate
+      - name: labelled
+        updates: shop.parcel.Crate
+        instance: crate_id
+        emits: [shop.parcel.CrateLabelled]
+        payload: {shop.parcel.CrateLabelled: {crate_id: input.crate_id}}
+        sets: {note: input.batch.note}
+        affects:
+          - entity: shop.parcel.Parcel
+            each: {in: input.batch.lines, as: line, repeated: last_wins}
+            instance: line.parcel_id
+            sets: {label: line.label}
+views:
+  - name: shop.parcel.Parcels
+    source: shop.parcel.Parcel
+    consistency: read_your_writes
+    fields:
+      - {name: parcel_id, type: shop.parcel.ParcelId}
+      - {name: label, type: String}
+  - name: shop.parcel.Crates
+    source: shop.parcel.Crate
+    consistency: read_your_writes
+    fields:
+      - {name: crate_id, type: shop.parcel.CrateId}
+      - {name: note, type: String}

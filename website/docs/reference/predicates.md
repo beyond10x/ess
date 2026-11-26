@@ -26,7 +26,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 |---|---|---|
 | a command outcome's `when` | the command's input fields; from `ess/16` also `caller.<attribute>`, compared by `==` or `!=` with a field of the same type (see [read the caller's credential](../guides/specify/values-and-views.md#read-the-callers-credential)) | A branch without `when` is the default. |
 | a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>`; from `ess/16` also `caller.<attribute>`, compared by `==` or `!=` with a field of the same type (see [read the caller's credential](../guides/specify/values-and-views.md#read-the-callers-credential)) | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
-| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare; from `ess/30` not over a stored reference the specification keeps present (see [a stored reference](#a-stored-reference)). Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. An `exists: false` over a row the input names answers before every present-row refusal over a different row, so declare it above them (or use `existing_instance:` for an identity the command creates); validation refuses the other order. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
+| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). From `ess/38` `input.<field>` may be `input.<path>` to a member of a struct input, a `List<…>` member included (see [a row named by a member of a struct input](#a-row-named-by-a-member-of-a-struct-input)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare; from `ess/30` not over a stored reference the specification keeps present (see [a stored reference](#a-stored-reference)). Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. An `exists: false` over a row the input names answers before every present-row refusal over a different row, so declare it above them (or use `existing_instance:` for an identity the command creates); validation refuses the other order. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | a command outcome's `when_related: {entity, where, …}` (`ess/22`) | the rows of `entity` that `where` selects: each candidate row's declared fields, identity and held lifecycle state `state` bare, the command's input as `input.<field>`, the addressed subject as it was before the branch as `subject.<field>`, and `now` as the decision's one instant; `forall` reads the same over each selected row | The rows are the store just before the branch is selected; no row the outcome writes is one of them. `exists` is a Boolean, `count` one comparison (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`) with a whole number, `forall` a second predicate, true of no rows. Conjunctive with `when`; never beside `via` or a `when_subject*` guard. See [a guard over the rows a selector selects](#a-guard-over-the-rows-a-selector-selects). |
 | a set effect's `instances: {where}` or `affects:` entry `where` (`ess/16`) | the candidate row's declared fields, the input as `input.<field>`; from `ess/27` its identity, from `ess/30` its held `state` | no `now`, window, `trimmed` or function |
 | an aggregate's `where:` (`ess/22`) | the source row's fields | the rows of the group one measure reads |
@@ -1696,6 +1696,33 @@ list naming two created rows, and every other run of the command an empty list.
 
 A target that checks only the first element, answers "some row exists", or refuses an empty list fails. Generated
 Rust and Go keep the command an obligation, named, and Entity Runtime lowering refuses it.
+
+### A row named by a member of a struct input
+
+From `ess/38` (beyond10x/ess#640) `via:` may name the row through a member of a struct input,
+`input.<path>`, the path `sets:` reads: a member holding one identity, or a `List<…>` member of
+references with its `{missing: input.<path>}`:
+
+```text
+- name: unknown-depot
+  when_related: {via: input.settings.depots, exists: false}
+  error: shop.route.UnknownDepot
+  payload: {shop.route.UnknownDepot: {depot_id: {missing: input.settings.depots}}}
+- name: closed
+  when_related: {via: input.settings.primary, predicate: open == false}
+  error: shop.route.ClosedDepot
+```
+
+- a member the struct does not declare is refused as `undeclared_reference`, naming the struct's
+  members.
+- a member that is no entity's identity, and a path crossing a list, a map or a union, is refused
+  as `type_mismatch`, naming the type.
+- a route through an `Optional` reads as an Optional reference, checked only when present.
+- below `ess/38` each is refused as `unsupported_format_version` naming `ess/38`, and a struct
+  value written `{missing: input.a.b}` keeps its meaning there.
+
+`instance:` on `updates:`, `moves:` and `deletes:`, and `each: {in:}` over a `List` member, take
+the same path.
 
 ## A guard over the rows a selector selects
 

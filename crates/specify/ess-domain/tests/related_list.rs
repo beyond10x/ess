@@ -451,3 +451,350 @@ commands:
         );
     }
 }
+
+/// From `ess/38` (beyond10x/ess#640) `instance:` on `updates:`, `moves:` and `deletes:`, the
+/// markers answering it and `each: {in:}` name a member of a struct input; below it each is
+/// refused naming `ess/38`.
+mod struct_input_member_addressed {
+    use ess_domain::command::OutcomeCondition;
+
+    const ADDRESSED: &str = include_str!(
+        "../../../verify/ess-conformance/tests/fixtures/struct-input-member-addressed-rows.yaml.in"
+    );
+    const MODEL: &str = include_str!(
+        "../../../verify/ess-conformance/tests/fixtures/struct-input-member-related-rows.yaml.in"
+    );
+
+    fn spec(body: &str) -> Result<ess_domain::Specification, String> {
+        let raw = ess_domain::spec::RawSpecFile::parse(body).map_err(|e| e.to_string())?;
+        ess_domain::Specification::assemble([(ess_domain::system::Source::new("shop.yaml"), raw)])
+            .map_err(|e| e.to_string())
+    }
+
+    fn accepted(body: &str) -> ess_domain::Specification {
+        spec(body).unwrap_or_else(|errors| panic!("{errors}"))
+    }
+
+    fn refused(body: &str) -> String {
+        match spec(body) {
+            Ok(_) => panic!("validated"),
+            Err(errors) => errors,
+        }
+    }
+
+    fn with_in(model: &str, from: &str, to: &str) -> String {
+        assert!(model.contains(from), "the model holds `{from}`");
+        model.replacen(from, to, 1)
+    }
+
+    fn with(from: &str, to: &str) -> String {
+        with_in(ADDRESSED, from, to)
+    }
+
+    /// `model` without the commands `names`, by their blocks and in the actor's `may:`.
+    fn without_commands(model: &str, names: &[&str]) -> String {
+        let mut body = model.to_owned();
+        for name in names {
+            let start = body
+                .find(&format!("  - name: {name}\n"))
+                .unwrap_or_else(|| panic!("{name} is declared"));
+            let rest = &body[start + 1..];
+            let end = start
+                + 1
+                + [rest.find("\n  - name: "), rest.find("\nviews:")]
+                    .into_iter()
+                    .flatten()
+                    .min()
+                    .expect("a next block")
+                + 1;
+            body.replace_range(start..end, "");
+            body = body.replacen(&format!(", {name}"), "", 1);
+        }
+        body
+    }
+
+    fn outcome<'a>(
+        spec: &'a ess_domain::Specification,
+        command: &str,
+        name: &str,
+    ) -> &'a ess_domain::command::Outcome {
+        spec.commands()[&command.parse().unwrap()]
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == name)
+            .unwrap_or_else(|| panic!("{command} has {name}"))
+    }
+
+    #[test]
+    fn an_instance_member_addresses_updates_moves_and_deletes() {
+        let spec = accepted(ADDRESSED);
+        for (command, name, path) in [
+            ("shop.parcel.Relabel", "relabelled", "target.parcel_id"),
+            ("shop.parcel.Hold", "held", "request.parcel_id"),
+            ("shop.parcel.Drop", "dropped", "target.parcel_id"),
+        ] {
+            let subject = outcome(&spec, command, name)
+                .subject
+                .as_ref()
+                .unwrap_or_else(|| panic!("{command}/{name} has a subject"));
+            assert_eq!(subject.instance, path, "{command}/{name}");
+            assert_eq!(
+                outcome(&spec, command, "unknown").condition,
+                OutcomeCondition::UnknownInstance,
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_each_list_member_is_walked() {
+        let spec = accepted(ADDRESSED);
+        let labelled = outcome(&spec, "shop.parcel.Label", "labelled");
+        let [entry] = labelled.set_effects.affects.as_slice() else {
+            panic!("one entry: {:?}", labelled.set_effects.affects)
+        };
+        assert_eq!(
+            entry.each.as_ref().map(|each| each.list.as_str()),
+            Some("batch.lines")
+        );
+    }
+
+    #[test]
+    fn an_existing_instance_answers_a_creation_publishing_a_member() {
+        let spec = accepted(ADDRESSED);
+        assert_eq!(
+            outcome(&spec, "shop.parcel.Register", "taken").condition,
+            OutcomeCondition::ExistingInstance
+        );
+        // Without `Hold` nothing takes the `hold` transition, so the copy declares none.
+        let only = without_commands(
+            &with(
+                "      states: [Open, Held]\n      terminal: [Held]\n      transitions:\n        - {name: hold, from: [Open], to: Held}\n",
+                "      states: [Open]\n      terminal: [Open]\n",
+            ),
+            &[
+                "shop.parcel.Relabel",
+                "shop.parcel.Hold",
+                "shop.parcel.Drop",
+                "shop.parcel.Label",
+            ],
+        );
+        for format in ["format: ess/38", "format: ess/37"] {
+            let body = with_in(&only, "format: ess/38", format);
+            let spec = accepted(&body);
+            assert_eq!(
+                outcome(&spec, "shop.parcel.Register", "taken").condition,
+                OutcomeCondition::ExistingInstance,
+                "{format}"
+            );
+        }
+    }
+
+    #[test]
+    fn at_ess_37_every_member_address_is_refused_naming_ess_38() {
+        let errors = refused(&with("format: ess/38", "format: ess/37"));
+        for text in [
+            "`instance: target.parcel_id` names a member of a struct input, which requires \
+             specification format ess/38",
+            "`each: {in: input.batch.lines}` names a member of a struct input, which requires \
+             specification format ess/38",
+            "write `format: ess/38` on the source that declares the system",
+        ] {
+            assert!(errors.contains(text), "{text}\n{errors}");
+        }
+        for command in [
+            "shop.parcel.Relabel",
+            "shop.parcel.Hold",
+            "shop.parcel.Drop",
+            "shop.parcel.Label",
+        ] {
+            assert!(
+                errors.lines().any(|line| {
+                    line.contains(&format!("command.{command}."))
+                        && line.contains("requires specification format ess/38")
+                }),
+                "{command}\n{errors}"
+            );
+        }
+        let related = refused(&with_in(MODEL, "format: ess/38", "format: ess/37"));
+        for command in [
+            "shop.route.Send",
+            "shop.route.Check",
+            "shop.route.Pair",
+            "shop.route.Probe",
+        ] {
+            assert!(
+                related.lines().any(|line| {
+                    line.contains(&format!("command.{command}."))
+                        && line.contains("requires specification format ess/38")
+                }),
+                "{command}\n{related}"
+            );
+        }
+        for text in [&errors, &related] {
+            for not in [
+                "is not an input of",
+                "no command input of it",
+                "no input field of it",
+                "walks a list of the command's input",
+            ] {
+                assert!(!text.contains(not), "{not}\n{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_member_the_struct_does_not_declare_is_refused_at_every_position() {
+        for (body, owner, members) in [
+            (
+                with("instance: target.parcel_id", "instance: target.parcel"),
+                "is not a field of `shop.parcel.Target`",
+                "parcel_id, label",
+            ),
+            (
+                with(
+                    "each: {in: input.batch.lines",
+                    "each: {in: input.batch.line",
+                ),
+                "is not a field of `shop.parcel.Batch`",
+                "lines, note",
+            ),
+            (
+                with_in(
+                    &with_in(
+                        MODEL,
+                        "via: input.settings.primary, exists: false}",
+                        "via: input.settings.primry, exists: false}",
+                    ),
+                    "via: input.settings.primary, predicate: open == false}",
+                    "via: input.settings.primry, predicate: open == false}",
+                ),
+                "is not a field of `shop.route.Settings`",
+                "depots, primary, backup, extra, note",
+            ),
+        ] {
+            let errors = refused(&body);
+            assert!(
+                errors.contains(owner) && errors.contains(members),
+                "{owner}\n{errors}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_member_of_the_wrong_type_or_a_crossed_list_is_a_type_mismatch() {
+        for (body, text) in [
+            (
+                with("instance: target.parcel_id", "instance: target.label"),
+                "names the instance by `target.label`, which is typed `String`",
+            ),
+            (
+                with(
+                    "each: {in: input.batch.lines",
+                    "each: {in: input.batch.note",
+                ),
+                "`each:` reads `input.batch.note`, which is `String`",
+            ),
+            (
+                with("instance: target.parcel_id", "instance: target.parcel_id.x"),
+                "reads past `input.target.parcel_id`, which is `shop.parcel.ParcelId`",
+            ),
+            (
+                with_in(
+                    MODEL,
+                    "via: input.settings.depots,",
+                    "via: input.settings.depots.first,",
+                ),
+                "reads past `input.settings.depots`, which is `List<shop.route.DepotId>`",
+            ),
+        ] {
+            let errors = refused(&body);
+            assert!(errors.contains(text), "{text}\n{errors}");
+        }
+    }
+
+    #[test]
+    fn an_optional_route_reads_as_an_optional_reference() {
+        accepted(MODEL);
+        let errors = refused(&with(
+            "      - {name: request, type: shop.parcel.Target}",
+            "      - {name: request, type: \"Optional<shop.parcel.Target>\"}",
+        ));
+        assert!(
+            errors.contains(
+                "names the instance by `request.parcel_id`, which is typed \
+                 `Optional<shop.parcel.ParcelId>`"
+            ),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn a_guard_reading_the_member_that_names_the_instance_is_refused() {
+        let errors = refused(&with(
+            "      - name: relabelled\n",
+            "      - name: relabelled\n        when: \"target.parcel_id != target.parcel_id\"\n",
+        ));
+        assert!(errors.contains("an identity is opaque"), "{errors}");
+    }
+
+    #[test]
+    fn a_path_crossing_a_union_is_a_type_mismatch_at_instance_and_each() {
+        let union = with_in(
+            &with(
+                "      - {name: note, type: String}\n",
+                "      - {name: note, type: String}\n  - {name: shop.parcel.Kind, kind: union, \
+                 tag: kind, variants: {parcel: shop.parcel.ParcelId, crate: shop.parcel.CrateId}}\n",
+            ),
+            "      - {name: label, type: String}\n",
+            "      - {name: label, type: String}\n      - {name: kind, type: shop.parcel.Kind}\n",
+        );
+        let errors = refused(&with_in(
+            &union,
+            "instance: target.parcel_id",
+            "instance: target.kind.parcel",
+        ));
+        assert!(
+            errors.contains(
+                "reads past `input.target.kind`, which is `shop.parcel.Kind` and has no members"
+            ),
+            "{errors}"
+        );
+        let errors = refused(&with_in(
+            &with_in(
+                &union,
+                "      - {name: note, type: String}\n  - {name: shop.parcel.Kind",
+                "      - {name: note, type: String}\n      - {name: choice, type: \
+                 shop.parcel.Kind}\n  - {name: shop.parcel.Kind",
+            ),
+            "each: {in: input.batch.lines",
+            "each: {in: input.batch.choice.lines",
+        ));
+        assert!(
+            errors.contains("reads past `input.batch.choice`, which is `shop.parcel.Kind`"),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn a_distinct_over_a_member_list_holds_it_distinct() {
+        let unordered = with(", repeated: last_wins}", "}");
+        let errors = refused(&unordered);
+        assert!(
+            errors.contains("`input.batch.lines`")
+                && errors.contains("no `distinct:` holds that member distinct across the list"),
+            "{errors}"
+        );
+        for list in ["batch.lines", "input.batch.lines"] {
+            accepted(&with_in(
+                &unordered,
+                "      - name: no-crate\n",
+                &format!(
+                    "      - name: duplicated\n        when: {{not: {{distinct: {{in: {list}, as: \
+                     d, by: d.parcel_id}}}}}}\n        error: shop.parcel.Taken\n      - name: \
+                     no-crate\n"
+                ),
+            ));
+        }
+    }
+}
