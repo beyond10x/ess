@@ -930,6 +930,22 @@ impl fmt::Display for Refusal {
                     self.subject
                 )
             }
+            // The scenario exists; a row isolating one child of its related guard's predicate no
+            // bounded arrangement reaches is missing from it
+            // (`docs/design/cross-record-and-stored-field-guards.md`, the boundary rows).
+            Some(id)
+                if self.stands
+                    && matches!(&self.cause, RefusalCause::GuardUnsatisfiable { predicate, .. }
+                        if predicate.starts_with(related_guard::RELATED_BOUNDARY)) =>
+            {
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` that leaves a row of its related guard \
+                     unwitnessed",
+                    self.code(),
+                    self.subject
+                )
+            }
             // The scenario exists; a held state its refusal claims has no row in it (ess/23,
             // beyond10x/ess#461).
             Some(id) if self.stands => writeln!(
@@ -5089,7 +5105,7 @@ fn related_boundaries(
             continue;
         }
         if let subject_fact::Further::Past(why) = kind {
-            refusals.push(Refusal::about(
+            refusals.push(Refusal::beside(
                 id,
                 RefusalCause::GuardUnsatisfiable {
                     predicate: format!(
@@ -5137,7 +5153,7 @@ fn related_boundaries(
                     matches!(refusal.cause, RefusalCause::GuardUnsatisfiable { .. })
                         && !subject_fact::is_beyond_reach(&refusal.cause)
                 }) => {}
-            None if *limit => refusals.push(Refusal::about(
+            None if *limit => refusals.push(Refusal::beside(
                 id,
                 RefusalCause::GuardUnsatisfiable {
                     predicate: format!(
@@ -5153,7 +5169,7 @@ fn related_boundaries(
                     cut: 0,
                 },
             )),
-            None => refusals.push(Refusal::about(
+            None => refusals.push(Refusal::beside(
                 id,
                 RefusalCause::GuardUnsatisfiable {
                     predicate: related_guard::describe_goal(refuted, held),
