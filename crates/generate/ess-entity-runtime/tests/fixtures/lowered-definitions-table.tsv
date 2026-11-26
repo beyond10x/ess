@@ -1,4 +1,4 @@
-#	models=494	lines=677
+#	models=496	lines=684
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -95,7 +95,14 @@ crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	A
 crates/specify/ess-composition/tests/fixtures/payload-conformance/demo/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/payload-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/absent-comparison.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	components=0
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	components=1
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Job	definition=e09d0bb38050b9ab5b84bf5a04a39cfe394dd6369d153b63401f6fd7de38496d:2897
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Job	create	submitted
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Job	demo.jobs.Lease	leased, not-pending
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Sweep	definition=9caa95e8f3500e3c8eef7c7b9df2a18eca141d05ca1f38fe8d76b677cb566203:1358
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Sweep	create	swept
 crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml	components=0
 crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/list-input-example.yaml	components=0
