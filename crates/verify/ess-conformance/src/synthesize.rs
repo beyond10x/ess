@@ -18356,9 +18356,14 @@ fn unknown_instance(
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
+    // Where the guards read the row the command addresses, no row can be present beside the
+    // identity sent: the row arranged for them would be named in its place, and answer a branch the
+    // existence of the record does not. The input chosen on it is kept, the row is not arranged.
     let (mut steps, mut source, bound) = match related_row {
-        Some((row, (_, bound))) => (row.steps, row.source, bound),
-        None => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
+        Some((row, (_, bound))) if !related_guard::reads_addressed_row(command, attempt) => {
+            (row.steps, row.source, bound)
+        }
+        _ => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
     };
     let supplied = supply(ir, command, &input, None, None, &bound);
     steps.extend([
