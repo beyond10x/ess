@@ -12,7 +12,7 @@ relations:
 - derived_from: story:navigation-reaches-any-depth-in-guards
 - depends_on: story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:24:57Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-24T03:24:58Z", actor: "human:timo", revision: 6}
@@ -159,3 +159,15 @@ these two units.
 
 A downstream application, 2026-11-24, report item 13 (its G8); github:beyond10x/ess#564
 (downstream finding 10), the parent's source.
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (gap 4 of a report of ten) that a guard cannot reach a
+second row through a first (a child, then its parent), so its callers send both identities and each
+row is read through an input of its own. On `main` at `c0b5f560cb` a `when_related:` `via:` reads
+one row an input names, or one row a stored field of the addressed subject names
+(`website/docs/reference/predicates.md` § "A stored reference", `ess/22`), and a stored-field `via`
+stays the command's only related row (§ "Several related rows"). The chain this story opens covers
+the report, `via: [input.<child>, <parent reference>]`. The report adds one case to the
+acceptance: a command whose input names only the child, with a guard reading the held state of
+that child's parent.

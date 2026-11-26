@@ -23,7 +23,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T20:21:30Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-22T20:21:32Z", actor: "human:timo", revision: 11}
@@ -214,3 +214,14 @@ row's creator when the creator itself reads several rows and one predicate reads
   `story:a-creating-branch-sends-every-row-it-creates-under-its-own-identity` (in this wave) edits
   in `drive`. Recommended: start after that unit merges, beside the row-set follow-up, which edits
   `selects` in the same file.
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (gap 5 of a report of ten) that conformance synthesis
+refuses 55 scenarios because it cannot set up rows whose creating command needs another row first.
+The report gives the count, not a reduction, codes or guard shapes. 0.99.3 and 0.99.4 changed this
+area (the setup of a creating command that reads several related rows is built once per set of
+values; scenarios whose setup the model itself refuses are no longer written, `CHANGELOG.md`
+0.99.3 and 0.99.4), so the count on `main` may differ. The first step is a reduction of the
+reported refusals, synthesized on `main` and sorted by code and cause; a cause this story's outcome
+does not cover gets a story of its own.

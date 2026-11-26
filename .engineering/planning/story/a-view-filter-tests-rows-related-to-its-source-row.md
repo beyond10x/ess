@@ -36,7 +36,7 @@ scope:
   path: docs/design/related-rows-quantifier.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -149,3 +149,14 @@ closed.
 
 github:beyond10x/ess#564
 
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (gap 3 of a report of ten) that a view filter cannot
+read another entity's rows; its case is the newest related row of a kind (a source row is shown
+while the newest row related to it is of a given kind). On `main` at `c0b5f560cb` a view filter
+reads one hop through a reference of its source (`ess/28`) and refuses a quantifier over another
+entity's rows (`docs/design/language-grids.md` Grid R, row view `filter:`; `ESS-VIEW-009`). The
+quantifier this story opens covers the report as `exists` of a related row of that kind together
+with `not exists` of a later related row. The acceptance should hold one case of that shape, or the
+fit review should say why a newest-row test needs `order_by` the way a value reads the head of an
+ordered selection (`docs/design/ordered-related-head.md`).
