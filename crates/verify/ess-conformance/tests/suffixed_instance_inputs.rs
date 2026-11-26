@@ -1690,3 +1690,94 @@ fn an_update_moves_one_member_of_an_exampled_layout_it_writes() {
     );
     assert_note_alone_moves(&moved_layout_members(&text, "saved"));
 }
+
+/// A cart's preferences are saved as an update of an existing row, beside a revision the update
+/// compares with its input. `Checkout` reads the stored carrier by value and the stored note only
+/// for presence, so a setup that saves a carrier is sent the input's further witness.
+const CART: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.shop
+types:
+  - {name: demo.shop.CartId, kind: newtype, of: String}
+  - name: demo.shop.Prefs
+    kind: struct
+    fields:
+      - {name: note, type: \"Optional<String>\"}
+      - {name: carrier, type: \"Optional<String>\"}
+entities:
+  - name: demo.shop.Cart
+    identity: {name: cart_id, type: demo.shop.CartId}
+    fields:
+      - {name: draft_note, type: \"Optional<String>\"}
+      - {name: draft_carrier, type: \"Optional<String>\"}
+      - {name: rev, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - {name: demo.shop.Clerk, may: [demo.shop.OpenCart, demo.shop.SavePrefs, demo.shop.Checkout]}
+errors:
+  - {name: demo.shop.Exists, summary: The cart exists.}
+  - {name: demo.shop.Missing, summary: No such cart.}
+  - {name: demo.shop.BadCarrier, summary: The carrier is unknown.}
+  - {name: demo.shop.Stale, summary: The cart moved on.}
+commands:
+  - name: demo.shop.OpenCart
+    input: [{name: cart_id, type: demo.shop.CartId}]
+    outcomes:
+      - {name: exists, existing_instance: true, error: demo.shop.Exists}
+      - {name: opened, creates: demo.shop.Cart, instance: cart_id, sets: {rev: 0}, emits: [demo.shop.Opened], payload: {demo.shop.Opened: {cart_id: input.cart_id}}}
+  - name: demo.shop.SavePrefs
+    input:
+      - {name: cart_id, type: demo.shop.CartId}
+      - {name: prefs, type: demo.shop.Prefs, example: {note: \"Leave at door\"}}
+      - {name: base_rev, type: Integer}
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: stale, when_subject: {predicate: rev != input.base_rev}, error: demo.shop.Stale}
+      - {name: saved, updates: demo.shop.Cart, instance: cart_id, sets: {draft_note: input.prefs.note, draft_carrier: input.prefs.carrier, rev: {increment: 1}}, emits: [demo.shop.Saved], payload: {demo.shop.Saved: {cart_id: input.cart_id}}}
+  - name: demo.shop.Checkout
+    input: [{name: cart_id, type: demo.shop.CartId}]
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: no-note, when_subject: {predicate: not defined(draft_note)}, error: demo.shop.Missing}
+      - {name: bad-carrier, when_subject: {predicate: {all: [defined(draft_carrier), draft_carrier != \"dhl\"]}}, error: demo.shop.BadCarrier}
+      - {name: done, updates: demo.shop.Cart, instance: cart_id, sets: {}, emits: [demo.shop.Done], payload: {demo.shop.Done: {cart_id: input.cart_id}}}
+events:
+  - {name: demo.shop.Opened, fields: [{name: cart_id, type: demo.shop.CartId}]}
+  - {name: demo.shop.Saved, fields: [{name: cart_id, type: demo.shop.CartId}]}
+  - {name: demo.shop.Done, fields: [{name: cart_id, type: demo.shop.CartId}]}
+";
+
+/// An update arranged on an existing row, for a command that compares the row with its input,
+/// is sent a further witness when no plain one selects the branch. That witness keeps the
+/// example at every leaf no decision tells apart: the note, read only for presence, is the
+/// example's, and the carrier, read by value, is the witness's own.
+#[test]
+fn a_further_witness_of_an_update_setup_keeps_the_example_at_a_leaf_read_only_for_presence() {
+    let result = synthesize(&ir(CART));
+    let sends: Vec<(String, Node)> = sent_expecting(&result, "demo.shop.SavePrefs", "saved")
+        .into_iter()
+        .flat_map(|(id, inputs)| {
+            inputs.into_iter().filter_map(move |input| {
+                let prefs = input.get("prefs")?.as_literal()?.clone();
+                Some((id.clone(), prefs))
+            })
+        })
+        .collect();
+    let carried: Vec<&(String, Node)> = sends
+        .iter()
+        .filter(|(_, prefs)| matches!(prefs, Node::Map(members) if members.contains_key("carrier")))
+        .collect();
+    assert!(!carried.is_empty(), "a setup saves a carrier: {sends:#?}");
+    for (id, prefs) in carried {
+        let Node::Map(members) = prefs else {
+            unreachable!("a mapping")
+        };
+        assert_eq!(
+            members.get("note"),
+            Some(&Node::Text("Leave at door".to_owned())),
+            "{id}: {prefs:?}"
+        );
+    }
+    passes_on_the_interpreter(CART, &result, result.suite.scenarios.len());
+}

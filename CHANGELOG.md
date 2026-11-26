@@ -36,6 +36,32 @@
 - `ess verify conform synthesize` no longer writes three kinds of scenario that `ess verify conform run --target interpreted` fails. From `ess/27`, a missing row the command addresses is answered by that row's existence before any related row is read: such a row is no longer sent missing beside another missing related row, and an `exists: false` branch over it (`when_related: {via: input.<id>}` on the identity the command updates or moves) is refused as never reached, with its own help line, where it was refused `ESS-SYNTH-008` or, beside a row set, written and failed. The one-time disclosure scenarios are held to the row sets their sends read, as every other scenario is; one that a row set answers otherwise is no longer written. No repository model's suite moves.
 - `ess verify conform synthesize` arranges a command whose `when:` guards hold a scope to which Optional references it is sent (`{all: [scope == Account, {formation_id: {defined: true}}]}`) before `when_related: {via: input.<reference>}` guards over the same references. A send an earlier `when:` refusal answers is no longer written into an `exists: false` scenario expecting the missing row, and a branch no arrangement with a row for every reference reaches is sent with every Optional reference left out, which reads no row, as the interpreter reads an absent Optional reference; it was refused `ESS-SYNTH-003`.
 
+## [0.99.7] — 2026-11-26
+
+### Fixed
+
+- `ess verify conform synthesize` writes the scenarios of a command whose `when_subject:` refusal compares the row's stored link with an input, such as `store_id != input.store_id`, beside `when_related:` guards reading the row that input names. It sends the row the subject is linked to, also where the link is copied from another row (`{related: {via: input.cart_id, field: store_id}}`) and where the command reads a second row beside it. 0.99.4 to 0.99.6 refused these branches with "no candidate of the 0 tried", including the accepting one; 0.99.1 to 0.99.3 wrote them with another row, and they failed against their own model. A command reading the row through the stored link (`via: store_id`) beside such a refusal is now sent the linked row in the compared input; it was sent a placeholder, so the refusal answered. A pinned suite of such a model moves when it is synthesized again.
+
+The fix changes no format key.
+
+## [0.99.6] — 2026-11-26
+
+### Fixed
+
+- `ess verify conform synthesize` keeps an input's `example:` at every leaf no decision tells apart when a scenario's setup updates an existing row with a further witness. This applies to a command that compares the row with its input, such as `rev != input.base_rev`. Such a setup sent the whole further witness, so a leaf another command reads only through `defined(…)` carried the type placeholder (`prefs.note-1`) where the example holds a value. The rule of 0.99.0 covered further creations only, and this setup path has sent the placeholder since 0.37.0. A pinned suite of such a model moves when it is synthesized again.
+- `ess verify conform synthesize` no longer says a branch "has no scenario" when it cannot arrange one row of the branch's related-guard boundary, such as a disjunct held with every other refuted. The suite holds that scenario. The `ESS-SYNTH-003` refusal now reads "has a scenario `<id>` that leaves a row of its related guard unwitnessed" and is marked as standing beside the scenario. It said "has no scenario" since 0.42.0 at least. Code and scenario id are unchanged, and no suite moves.
+
+Neither fix changes a format key.
+
+## [0.99.5] — 2026-11-25
+
+### Fixed
+
+- `ess verify conform synthesize` writes the caller-swapped half of an `invariant-wrapped` scenario at a view so that it selects its row by the view's identity field, as the first half does. Where the first half sent an identity as the literal of its own field name and the model has an identity input typed `String`, the swapped half named its witness row by a column `<identity>-<n>`, selected no row, and `ess verify conform run --target interpreted` failed the scenario with no reason printed; every release from 0.63.0 to 0.99.4 carries it. A pinned suite of such a model moves when it is synthesized again: the swapped half's selector names the identity field.
+- `ess verify conform synthesize` tries each input once when it searches a row for the setup of a creating command sent field values of its own, where it tried every candidate that those values made equal again, on every row. On one reported model synthesis took 53 s and takes 18 s with one job, and 57 s and 17 s with eight. Such setups have been slow since 0.99.0, when they first took field values; 0.98.2 took 6 s. No suite's bytes change.
+
+Neither fix changes a format key.
+
 ## [0.99.4] — 2026-11-25
 
 ### Fixed

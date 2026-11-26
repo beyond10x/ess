@@ -3520,6 +3520,20 @@ fn redraw_under(
     }
     match value {
         serde_json::Value::Object(map) => {
+            // A value-invariant observation names its root, its position, the declarations it
+            // reaches and the selector's identity field: names a drawn identity sent as its own
+            // field name (`"item_id"`) must not rewrite (adopter report N91). Only the selector's
+            // `expected` is a value of the run.
+            if map.get("expect").and_then(serde_json::Value::as_str) == Some("value_invariants") {
+                if let Some(expected) = map
+                    .get_mut("witness")
+                    .and_then(|witness| witness.get_mut("selector"))
+                    .and_then(|selector| selector.get_mut("expected"))
+                {
+                    redraw_under(expected, false, keys, drawn);
+                }
+                return;
+            }
             // A literal scenario value is the value it wraps, under the name that holds it.
             let literal = map.get("kind").and_then(serde_json::Value::as_str) == Some("literal");
             for (name, inner) in map.iter_mut() {

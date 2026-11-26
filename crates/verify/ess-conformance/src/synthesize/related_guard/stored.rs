@@ -22,7 +22,7 @@
 //! with the reference left out where that selects its branch ([`step`]), so a row of an entity
 //! whose own rows block each other is driven without arranging a second row first.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedPayloadValue,
@@ -36,7 +36,7 @@ use super::{
     surround, unarranged, with_row, with_row_where, ActorRef, Arrangement, Distinction, Goal,
     RefusalCause, Setup, OWN,
 };
-use crate::scenario::{InstanceName, ScenarioStep, ScenarioValue};
+use crate::scenario::{EssSemanticRef, InstanceName, ScenarioStep, ScenarioValue};
 use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest, ResolvedRelatedVia};
 
 /// The stored field of the addressed subject the command's related guards read, and the entity
@@ -244,7 +244,8 @@ fn creation<'ir>(
 }
 
 /// Points the stored `field` of `instance` as `link` says, by rewriting the input of the act in
-/// `steps` that created it, and what `settled` says the subject holds there with it.
+/// `steps` that created it, and what `settled` says the subject holds there with it; the value
+/// that act is now sent, `None` where it leaves the field out.
 fn relink(
     ir: &EssIr,
     steps: &mut [ScenarioStep],
@@ -252,7 +253,7 @@ fn relink(
     instance: &InstanceName,
     field: &str,
     link: &Link<'_>,
-) -> Result<(), RefusalCause> {
+) -> Result<Option<ScenarioValue>, RefusalCause> {
     let gap = |why: &str| unpointed(field, why);
     let (created, command, creating) = creation(ir, steps, instance, field)?;
     let subject = creating
@@ -260,11 +261,17 @@ fn relink(
         .as_ref()
         .map(|subject| &subject.entity)
         .ok_or_else(|| gap("the act creating the subject names no subject"))?;
-    let input = super::super::related::set_from_input(creating, field)
-        .ok_or_else(|| {
-            gap("the act creating the subject does not write it from its input unchanged")
-        })?
-        .to_owned();
+    let Some(input) = super::super::related::set_from_input(creating, field) else {
+        return relink_copied(
+            ir,
+            steps,
+            settled,
+            (created, command, creating),
+            field,
+            link,
+        );
+    };
+    let input = input.to_owned();
     let declared = command
         .input
         .iter()
@@ -336,7 +343,7 @@ fn relink(
         }
     }
     if let Some(settled) = settled {
-        match value {
+        match value.clone() {
             Some(value) => {
                 settled.insert(
                     field.to_owned(),
@@ -351,7 +358,106 @@ fn relink(
             }
         }
     }
-    Ok(())
+    Ok(value)
+}
+
+/// The subject `setup` arranged for `command`, its stored `link` pointed at `row`, a row arranged
+/// ahead of it ([`relink`]).
+pub(super) fn point(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    setup: &mut Setup,
+    link: &str,
+    row: &InstanceName,
+) -> Result<(), RefusalCause> {
+    let subject = subject_of(command, setup).ok_or_else(unarranged)?;
+    if runs(&setup.steps, command) {
+        return Err(unpointed(
+            link,
+            "the subject's arrangement already runs the command that reads it",
+        ));
+    }
+    relink(
+        ir,
+        &mut setup.steps,
+        setup.instance.is_some().then_some(&mut setup.settled),
+        &subject,
+        link,
+        &Link::Row(row),
+    )
+    .map(|_| ())
+}
+
+/// [`relink`] where the act creating the subject copies `field` from a stored field of another row
+/// its input names (`{related: {via: input.<x>, field: <far>}}`): that row's own link is pointed
+/// as `link` says, through the act in `steps` that created it, which runs earlier, and the subject
+/// holds what it copies.
+fn relink_copied(
+    ir: &EssIr,
+    steps: &mut [ScenarioStep],
+    settled: Option<&mut BTreeMap<String, super::super::Determined>>,
+    (created, command, creating): (usize, &ResolvedCommand, &ResolvedOutcome),
+    field: &str,
+    link: &Link<'_>,
+) -> Result<Option<ScenarioValue>, RefusalCause> {
+    let gap = |why: &str| unpointed(field, why);
+    let unwritten =
+        || gap("the act creating the subject does not write it from its input unchanged");
+    let (via, far, stored) = creating
+        .sets
+        .iter()
+        .find_map(|set| match &set.value {
+            ResolvedPayloadValue::RelatedField {
+                via: ResolvedRelatedVia::Input { field: via, .. },
+                through,
+                field: far,
+                type_ref,
+                ..
+            } if set.target == field && set.conversion.is_none() && through.is_empty() => {
+                Some((via.clone(), far.clone(), type_ref.clone()))
+            }
+            _ => None,
+        })
+        .ok_or_else(unwritten)?;
+    if matches!(link, Link::Row(_)) && relates(ir, command, creating, &via) {
+        return Err(gap(&format!(
+            "`{}` relates the row `input.{via}` names to another of its inputs before storing \
+             what it copies from it",
+            command.name
+        )));
+    }
+    let ScenarioStep::ExecuteCommand { input: sent, .. } = &steps[created] else {
+        return Err(gap("the act creating the subject is not a command"));
+    };
+    let Some(ScenarioValue::Instance { instance: named }) = sent.get(&via) else {
+        return Err(gap(&format!(
+            "the act creating the subject names the row it copies `{field}` from by no arranged \
+             instance"
+        )));
+    };
+    let named = named.clone();
+    let (earlier, ..) = creation(ir, steps, &named, &far)?;
+    if earlier >= created {
+        return Err(unwritten());
+    }
+    let value = relink(ir, &mut steps[..created], None, &named, &far, link)?;
+    if let Some(settled) = settled {
+        match value.clone() {
+            Some(value) => {
+                settled.insert(
+                    field.to_owned(),
+                    super::super::Determined {
+                        value,
+                        type_ref: stored,
+                    },
+                );
+            }
+            None => {
+                settled.remove(field);
+            }
+        }
+    }
+    Ok(value)
 }
 
 /// An input the command is sent with where the addressed row's existence and held state have
@@ -391,8 +497,22 @@ pub(super) fn arranged_at(
     distinction: Distinction,
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let link = field(command).ok_or_else(unarranged)?;
+    arranged_through(models, command, outcome, actors, (distinction, goal), link)
+}
+
+/// [`arranged_at`] through the subject's stored `field` naming an `entity` row: the field the
+/// command's guards read, or the link a refusal answered first compares with the input they read
+/// the row through, so that row is the one the link names ([`super::compared_with_link`]).
+pub(super) fn arranged_through(
+    models: &super::super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal): (Distinction, Option<&Goal>),
+    (field, entity): (&str, &EntityHandle),
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let ir = models.arrangement;
-    let (field, entity) = field(command).ok_or_else(unarranged)?;
     if goal.is_some() && is_absent(outcome) {
         return Err(unarranged());
     }
@@ -428,34 +548,34 @@ pub(super) fn arranged_at(
             field,
             &Link::Fresh(entity),
         );
-        if let Err(fresh) = fresh {
-            // Every writer refuses an identity no row carries before storing it: the subject is
-            // pointed at a row a branch removes once the subject is arranged (beyond10x/ess#509).
-            let (row, removal) = removed(ir, entity, actors, first).ok_or(fresh)?;
-            relink(
-                ir,
-                &mut setup.steps,
-                (setup.instance.is_some() || setup.settled.contains_key(field))
-                    .then_some(&mut setup.settled),
-                &subject,
-                field,
-                &Link::Row(&row.instance),
-            )?;
-            steps.extend(row.steps);
-            setup.source.extend(row.source);
-            after.extend(removal.steps);
-            setup.source.extend(removal.source);
-        }
-        // Rows of the entity exist, each carrying an identity other than the one stored.
-        if !super::super::singleton::is_singleton(ir, entity) {
-            for at in [first - 1, first + 1] {
-                if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
-                    steps.extend(decoy.steps);
-                    setup.source.extend(decoy.source);
-                }
+        let linked = match fresh {
+            Ok(linked) => linked,
+            Err(fresh) => {
+                // Every writer refuses an identity no row carries before storing it: the subject
+                // is pointed at a row a branch removes once the subject is arranged
+                // (beyond10x/ess#509).
+                let (row, removal) = removed(ir, entity, actors, first).ok_or(fresh)?;
+                let linked = relink(
+                    ir,
+                    &mut setup.steps,
+                    (setup.instance.is_some() || setup.settled.contains_key(field))
+                        .then_some(&mut setup.settled),
+                    &subject,
+                    field,
+                    &Link::Row(&row.instance),
+                )?;
+                steps.extend(row.steps);
+                setup.source.extend(row.source);
+                after.extend(removal.steps);
+                setup.source.extend(removal.source);
+                linked
             }
-        }
-        unrefused(ir, command, distinction)?
+        };
+        decoys(ir, (entity, actors, first), (&mut steps, &mut setup.source));
+        let mut input = unrefused(ir, command, distinction)?;
+        let link = (ir, command, outcome, field);
+        compared_named(link, linked.as_ref(), (&mut input, &mut setup))?;
+        input
     } else {
         let (row, first, input) = reachable_row(
             ir,
@@ -472,6 +592,11 @@ pub(super) fn arranged_at(
             field,
             &Link::Row(&row.instance),
         )?;
+        // A refusal answered first wherever the link differs from an input: the send names, in
+        // that input, the row the subject is now linked to.
+        for named in super::compared_with_link(ir, command, outcome, field) {
+            setup.bound.insert(named, row.instance.clone());
+        }
         let named = ordered(ir, &setup, (entity, &subject, field), &row, &mut after)?;
         surround(
             ir,
@@ -495,6 +620,50 @@ pub(super) fn arranged_at(
     setup.steps.append(&mut after);
     setup.source.insert(entity_ref(entity));
     Ok((setup, input, false))
+}
+
+/// Rows of the `entity` beside the block at `first`, each carrying an identity other than the one
+/// the subject stores (none for a singleton).
+fn decoys(
+    ir: &EssIr,
+    (entity, actors, first): (&EntityHandle, &BTreeMap<QualifiedName, ActorRef>, usize),
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) {
+    if super::super::singleton::is_singleton(ir, entity) {
+        return;
+    }
+    for at in [first - 1, first + 1] {
+        if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
+            steps.extend(decoy.steps);
+            source.extend(decoy.source);
+        }
+    }
+}
+
+/// An input a refusal answered first compares with the subject's stored `field` names what the
+/// subject holds there, `linked`: a literal in the input, a row in the send's bindings.
+fn compared_named(
+    (ir, command, outcome, field): (&EssIr, &ResolvedCommand, &ResolvedOutcome, &str),
+    linked: Option<&ScenarioValue>,
+    (input, setup): (&mut BTreeMap<String, Node>, &mut Setup),
+) -> Result<(), RefusalCause> {
+    for named in super::compared_with_link(ir, command, outcome, field) {
+        match linked {
+            Some(ScenarioValue::Literal { value }) => {
+                input.insert(named, value.clone());
+            }
+            Some(ScenarioValue::Instance { instance }) => {
+                setup.bound.insert(named, instance.clone());
+            }
+            _ => {
+                return Err(unpointed(
+                    field,
+                    "the subject holds no row the send can name",
+                ))
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The related row [`arranged_at`] points the subject at, the distinction it was arranged at and
@@ -539,7 +708,7 @@ fn reachable_row(
             field,
             &Link::Row(&row.instance),
         )
-        .map(|()| steps)
+        .map(|_| steps)
     };
     let reaches = |row: &Arrangement| {
         pointed(row).is_ok_and(|steps| order(ir, &steps, (entity, subject, field), row).is_ok())

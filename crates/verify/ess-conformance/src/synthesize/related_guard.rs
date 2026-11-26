@@ -2912,6 +2912,32 @@ thread_local! {
     /// arrangements carrying chosen values were asked for ([`own_overlay_work`]).
     static OWN_OVERLAY_WORK: std::cell::Cell<(u64, u64, u64)> =
         const { std::cell::Cell::new((0, 0, 0)) };
+    /// How many input lists a row search whose input fields the arrangement fixed built for a
+    /// row, and how many inputs of them it tried there ([`fixed_input_work`]).
+    static FIXED_TRIED: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// What `run` returns, how many input lists row searches whose input fields the arrangement fixed
+/// built for a row on this thread while it ran, and how many inputs they tried ([`FIXED_TRIED`]).
+pub(super) fn fixed_input_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
+    let before = FIXED_TRIED.with(std::cell::Cell::get);
+    let out = run();
+    let after = FIXED_TRIED.with(std::cell::Cell::get);
+    (out, (after.0 - before.0, after.1 - before.1))
+}
+
+/// The input lists built and the inputs tried on a row by searches whose input fields the
+/// arrangement fixed, on this thread ([`FIXED_TRIED`]).
+pub(super) fn taken_fixed_tried() -> (u64, u64) {
+    FIXED_TRIED.with(std::cell::Cell::get)
+}
+
+/// Adds `more`, the input lists built and the inputs tried, to [`FIXED_TRIED`] on this thread.
+pub(super) fn add_fixed_tried(more: (u64, u64)) {
+    FIXED_TRIED.with(|work| {
+        let (searched, tried) = work.get();
+        work.set((searched + more.0, tried + more.1));
+    });
 }
 
 /// What `run` returns, how many own-scenario arrangements carrying chosen values were built on
@@ -3847,6 +3873,10 @@ fn unknown_when_absent(predicate: &Predicate, absent: &BTreeSet<FactPath>) -> bo
     }
 }
 
+/// How [`describe_goal`] starts, so a refusal beside the branch's standing scenario is worded as
+/// one about a row of its related guard.
+pub(super) const RELATED_BOUNDARY: &str = "a related row on which ";
+
 /// A boundary no arrangement reached, as a refusal states it.
 pub(super) fn describe_goal(refuted: &[Predicate], held: &[Predicate]) -> String {
     let list = |predicates: &[Predicate]| {
@@ -3857,7 +3887,7 @@ pub(super) fn describe_goal(refuted: &[Predicate], held: &[Predicate]) -> String
             .join(", ")
     };
     format!(
-        "a related row on which {} is false and {} is true",
+        "{RELATED_BOUNDARY}{} is false and {} is true",
         list(refuted),
         if held.is_empty() {
             "nothing else".to_owned()
@@ -4587,6 +4617,94 @@ fn subject_link_refuses<'c>(
         })
 }
 
+/// The inputs a branch of `command` answered before `outcome` compares with the subject's stored
+/// `link`, refusing wherever they differ: `<link> != input.<field>` in a `when_subject:` predicate
+/// without an input guard, alone or as a disjunct. A send reaching `outcome` names, in each of
+/// them, the row the subject's link names.
+pub(super) fn compared_with_link(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    link: &str,
+) -> BTreeSet<String> {
+    link_comparisons(ir, command, outcome)
+        .into_iter()
+        .filter(|(stored, _)| stored == link)
+        .map(|(_, sent)| sent)
+        .collect()
+}
+
+/// The stored field of `outcome`'s addressed subject that names an `entity` row and that a branch
+/// answered before `outcome` compares with `input.<field>`, refusing wherever they differ: the
+/// row `input.<field>` names is then the one that link names, wherever `outcome` answers.
+fn linked_through<'c>(
+    ir: &'c EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+    (field, entity): (&str, &EntityHandle),
+) -> Option<&'c str> {
+    let subject = outcome
+        .subject
+        .as_ref()
+        .or_else(|| acting(command).and_then(|(acts, _)| acts.subject.as_ref()))?;
+    let identity = &ir.entity(entity).identity.type_ref;
+    let comparisons = link_comparisons(ir, command, outcome);
+    ir.entity(&subject.entity)
+        .fields
+        .iter()
+        .find(|held| {
+            held.type_ref == *identity
+                && comparisons.contains(&(held.name.clone(), field.to_owned()))
+        })
+        .map(|held| held.name.as_str())
+}
+
+/// Each stored link and input a branch of `command` answered before `outcome` compares, refusing
+/// wherever they differ ([`compared_with_link`]), as `(link, input)`.
+fn link_comparisons(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> BTreeSet<(String, String)> {
+    fn compared(predicate: &Predicate, found: &mut BTreeSet<(String, String)>) {
+        match predicate {
+            Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(left),
+                op: ess_primitives::predicate::CompareOp::Ne,
+                right: ess_primitives::predicate::Operand::Fact(right),
+                ..
+            } => {
+                for (stored, sent) in [(left, right), (right, left)] {
+                    if stored.segments().len() == 1
+                        && stored.namespace() != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && sent.segments().len() == 2
+                        && sent.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                    {
+                        found.insert((stored.segments()[0].clone(), sent.segments()[1].clone()));
+                    }
+                }
+            }
+            Predicate::Any(children) => {
+                for child in children {
+                    compared(child, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = BTreeSet::new();
+    for first in super::precedence::answers_before(ir.format(), command, outcome) {
+        if let ResolvedCondition::SubjectPredicate {
+            predicate,
+            input: None,
+        } = &first.condition
+        {
+            compared(predicate, &mut found);
+        }
+    }
+    found
+}
+
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
 #[allow(
     clippy::too_many_lines,
@@ -4612,6 +4730,22 @@ fn arranged_at(
     if goal.is_some() && is_absent(outcome) {
         return Err(unarranged());
     }
+    // A refusal answered first wherever the subject's stored link differs from the input the
+    // guards read the row through: that row is the one the link names, so it is arranged through
+    // the link and the input sent naming it, beside the rows `others` names.
+    if let Some(link) = linked_through(ir, command, outcome, (field, entity)) {
+        let (mut setup, input, lonely) = stored::arranged_through(
+            models,
+            command,
+            outcome,
+            actors,
+            (distinction, goal),
+            (link, entity),
+        )?;
+        place_beside(ir, outcome, &mut setup, others);
+        prepend_beside(&mut setup, others);
+        return Ok((setup, input, lonely));
+    }
     let mut setup = own_arrangement(
         ir,
         command,
@@ -4634,6 +4768,15 @@ fn arranged_at(
         .chain(others.iter().map(|other| (other.via.field(), other.entity)));
     for (named, of) in read {
         if let Some(first) = subject_link_refuses(ir, command, outcome, named) {
+            // A row beside that the subject's link must name: the subject is pointed at it, and
+            // the input names it ([`place_beside`]).
+            let beside = others.iter().find(|other| other.via.field() == named);
+            if let (Some(other), Some(link)) =
+                (beside, linked_through(ir, command, outcome, (named, of)))
+            {
+                stored::point(ir, command, &mut setup, link, &other.row.instance)?;
+                continue;
+            }
             return Err(RefusalCause::GuardUnsatisfiable {
                 predicate: format!(
                     "`{}/{}` refuses first wherever the subject's stored link differs from \
@@ -4923,6 +5066,9 @@ pub(super) fn overlaps(
         .filter(|(via, _)| via.field() != focus)
         // ess/28: a row the branch lists in `all:` is the one arranged to hold, never replaced.
         .filter(|(via, _)| !lists(outcome, via.field()))
+        // A row the subject's link must name, where a refusal answered first compares the two, is
+        // never replaced either: any other row is answered by that refusal.
+        .filter(|(via, _)| subject_link_refuses(ir, command, outcome, via.field()).is_none())
         .enumerate()
     {
         let over = |branch: &&ResolvedOutcome| {
@@ -6042,9 +6188,15 @@ fn with_row_where(
         // link input already bound (`pins`) names that owner whatever is chosen here.
         let mut inputs = subject_fact::naming_owners(ir, command, entity, node, inputs, pins);
         // An input field the arrangement decided is sent holding that value, whatever was
-        // searched here (beyond10x/ess#521).
+        // searched here (beyond10x/ess#521). Candidates that differed only there are one input
+        // now, tried once where it first stands: a copy decides as the first did.
         for input in &mut inputs {
             input.extend(fixed.clone());
+        }
+        if !fixed.is_empty() {
+            add_fixed_tried((1, 0));
+            let mut seen = BTreeSet::new();
+            inputs.retain(|input| seen.insert(input.clone()));
         }
         Ok(inputs)
     };
@@ -6081,6 +6233,9 @@ fn with_row_where(
                     ))
         };
         let takes = |input: &BTreeMap<String, Node>| {
+            if !fixed.is_empty() {
+                add_fixed_tried((0, 1));
+            }
             let mut input = input.clone();
             if let Some(via) = own_via {
                 on_row(ir, &mut input, via, node);
