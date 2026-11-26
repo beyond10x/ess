@@ -10279,6 +10279,16 @@ fn supply(
             supply_at(&mut supplied, field, ScenarioValue::instance(owner.clone()));
         }
     }
+    // The subject's `instance:` named through a member of a struct input (ess/38).
+    if let (Some(named), Some(subject)) = (named, instance) {
+        if ess_domain::command::input_path::is_path(named) {
+            supply_at(
+                &mut supplied,
+                named,
+                ScenarioValue::instance(subject.clone()),
+            );
+        }
+    }
     // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
     // run but the one `related_list` arranges, which names no missing row.
     if let Some((listed, empty)) = related_list::empty(command) {
@@ -18415,7 +18425,7 @@ fn unknown_instance(
         .or_else(|| preserves_supplied(attempt))
         .unwrap_or_default();
     let fresh = fresh_identity(ir, command, field, Some(&input))?;
-    input.insert(field.to_owned(), fresh);
+    set_at(&mut input, field, Some(fresh));
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
@@ -18509,7 +18519,7 @@ fn unknown_instance(
             unreachable!("`addressed` returns a supplied instance only");
         };
         let identity = ir.entity(&subject.entity).identity.name.clone();
-        if let Some(sent) = supplied.get(&named.name) {
+        if let Some(sent) = supplied_at(&supplied, &named.name) {
             for view in views {
                 let name = ViewRef::new(view.name.clone());
                 steps.push(ScenarioStep::QueryView {
@@ -19135,7 +19145,7 @@ fn guard_ladder(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Vec<Node>
     }
     let mut ladder: Vec<Node> = Vec::new();
     for input in candidates(ir, command, &guards, Distinction::PLAIN).unwrap_or_default() {
-        if let Some(value) = input.get(field) {
+        if let Some(value) = ess_compiler::ir::read_input(&input, field) {
             if !ladder.contains(value) {
                 ladder.push(value.clone());
             }
@@ -19192,7 +19202,7 @@ pub(super) fn guided_identity(
         if let Some(value) = candidates(ir, command, &[], distinction)
             .ok()
             .and_then(|inputs| inputs.into_iter().next())
-            .and_then(|mut input| input.remove(field))
+            .and_then(|input| ess_compiler::ir::read_input(&input, field).cloned())
         {
             arranged.push(value);
         }

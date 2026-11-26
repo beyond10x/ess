@@ -264,6 +264,18 @@ fn awaited<'m>(
     }
     let identity =
         identity_input(command).map_err(|why| TargetError::unsupported(observation, why))?;
+    // From ess/38 (beyond10x/ess#640) the instance may be a member of a struct input; the
+    // candidates [`choices`] tries are the command's top-level inputs only.
+    if ess_domain::command::input_path::is_path(identity) {
+        return Err(TargetError::unsupported(
+            observation,
+            format!(
+                "outcome addresses its record through `input.{identity}`, a member of a struct \
+                 input, and awaiting a system-issued command addressed through a member is not \
+                 interpreted"
+            ),
+        ));
+    }
     Ok((command, identity))
 }
 
