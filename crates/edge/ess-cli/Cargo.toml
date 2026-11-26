@@ -65,6 +65,11 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 tar = { version = "0.4", default-features = false }
 ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 
+# musl's own allocator is slow under many small allocations; the static Linux release binary
+# allocates through mimalloc instead. Other targets keep the system allocator.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false }
+
 [[bin]]
 # Test-only. The offline qualification requires real, separate driver processes running the same
 # production parser, admission, chart, journal and process code, and a `[[bin]]`-only crate cannot

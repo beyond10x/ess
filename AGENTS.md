@@ -324,7 +324,9 @@ is built on the runner of its gnu twin with `musl-tools` (`musl-gcc` compiles th
 dependency) and links statically, so it runs on a host whose glibc is older than the runner's: the
 package job fails unless `file` says statically linked, `readelf` finds no interpreter and no needed
 library, and the binary prints the tag in a `busybox` container without a network. Consumers pin
-the musl archives on Linux.
+the musl archives on Linux. The musl `ess` allocates through mimalloc (a `target_env = "musl"`
+dependency of `ess-cli`): musl's own allocator made the generated 48-flag model of
+`cargo xtask synth-jobs` synthesize in a median 151.4 s against 128.0 s with mimalloc.
 
 The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
 there under Rosetta; `lipo -archs` names the architecture that was built. Site rendering remains a documentation-validation gate; ordinary

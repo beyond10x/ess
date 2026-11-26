@@ -1740,6 +1740,12 @@ fn hide_infra_flat_spellings(area: clap::Command) -> clap::Command {
     })
 }
 
+/// The static musl binary allocates through mimalloc: musl's own allocator is slow under the many
+/// small allocations of compiling and synthesizing.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> ExitCode {
     // Before any parsing: a pinned release may have a command surface this one does not.
     if let Some(code) = toolchain::delegate() {
