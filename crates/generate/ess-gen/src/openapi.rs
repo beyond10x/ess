@@ -1958,10 +1958,11 @@ enum Answer<'a> {
     /// A `rows` view's rows.
     Rows(&'a ResolvedView),
     /// A `single` view's one row, bare, or under the one member a wrapped body names
-    /// (beyond10x/ess#755).
-    Row(&'a ResolvedView, Option<&'a str>),
-    /// An `array` view's rows, bare: a JSON array, or under the one member a wrapped body names.
-    Array(&'a ResolvedView, Option<&'a str>),
+    /// (beyond10x/ess#755), or its one field's value alone (`single.<field>`).
+    Row(&'a ResolvedView, Option<&'a str>, Option<&'a str>),
+    /// An `array` view's rows, bare: a JSON array, or under the one member a wrapped body names,
+    /// or each row as its one field's value (`array.<field>`).
+    Array(&'a ResolvedView, Option<&'a str>, Option<&'a str>),
     /// A `single` view's answer when it holds no row: no body, or one literal member.
     Empty(&'a ResolvedView, &'a ess_http::RefusalBody),
 }
@@ -2105,16 +2106,26 @@ fn bound_view_responses<'a>(
             by_status
                 .entry(READ.to_owned())
                 .or_default()
-                .push(Answer::Row(view, route.body.member.as_deref()));
+                .push(Answer::Row(
+                    view,
+                    route.body.member.as_deref(),
+                    route.body.field.as_deref(),
+                ));
             by_status
                 .entry(empty.status.to_string())
                 .or_default()
                 .push(Answer::Empty(view, &empty.body));
         }
-        (ess_http::ViewBody::Array, _) => by_status
-            .entry(READ.to_owned())
-            .or_default()
-            .push(Answer::Array(view, route.body.member.as_deref())),
+        (ess_http::ViewBody::Array, _) => {
+            by_status
+                .entry(READ.to_owned())
+                .or_default()
+                .push(Answer::Array(
+                    view,
+                    route.body.member.as_deref(),
+                    route.body.field.as_deref(),
+                ));
+        }
         // Compiling refuses `single` without `empty` (`ESS-HTTP-030`).
         _ => by_status
             .entry(READ.to_owned())
@@ -2331,8 +2342,10 @@ fn rendered(
             Some(json!({"$ref": reference(&view_key(view))})),
             view_description(ir, view),
         ),
-        Answer::Row(view, member) => view_answer(ir, view, *member, true),
-        Answer::Array(view, member) => view_answer(ir, view, *member, false),
+        Answer::Row(view, _, Some(field)) => field_answer(view, field, true),
+        Answer::Array(view, _, Some(field)) => field_answer(view, field, false),
+        Answer::Row(view, member, None) => view_answer(ir, view, *member, true),
+        Answer::Array(view, member, None) => view_answer(ir, view, *member, false),
         Answer::Empty(view, body) => Rendered::standard(
             literal_schema(body),
             format!(
@@ -2347,6 +2360,39 @@ fn rendered(
                 }
             ),
         ),
+    }
+}
+
+/// A view's answer as its one field `field`: the field's value alone (`single.<field>`, `one`) or
+/// a JSON array of each row's value (`array.<field>`). The schema is the row schema's property of
+/// that field, referred to where the row schema declares it, so the two cannot drift.
+fn field_answer(view: &ResolvedView, field: &str, one: bool) -> Rendered {
+    let wire = view
+        .fields
+        .iter()
+        .find(|declared| declared.name == field)
+        .map_or(field, crate::schema::wire_field_name);
+    let pointer = wire.replace('~', "~0").replace('/', "~1");
+    let value =
+        json!({"$ref": format!("{}/properties/{pointer}", reference(&row_schema_key(view)))});
+    if one {
+        Rendered::standard(
+            Some(value),
+            format!(
+                "The value of the field `{field}` of the one row of `{}`, bare, as the \
+                 `ess-http/1` binding declares (`body: single.{field}`).",
+                view.name
+            ),
+        )
+    } else {
+        Rendered::standard(
+            Some(json!({"type": "array", "items": value})),
+            format!(
+                "The value of the field `{field}` of every row of `{}`, as a bare JSON array, as \
+                 the `ess-http/1` binding declares (`body: array.{field}`).",
+                view.name
+            ),
+        )
     }
 }
 

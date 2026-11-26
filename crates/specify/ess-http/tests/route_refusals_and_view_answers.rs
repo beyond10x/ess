@@ -1329,3 +1329,139 @@ fn a_path_variable_may_be_declared_ignored() {
         HttpIr::from_json(&changed).expect_err(to);
     }
 }
+
+// --- a view answering each row as one field's value ---------------------------------------------
+
+/// A view of one field, a view whose second field its route's path can carry, an `Optional` field
+/// and a struct field (`story:a-view-may-answer-each-row-as-one-scalar-value`).
+const TAGS: &str = "format: ess/22
+system: catalog
+version: v1
+domain: catalog.tags
+types:
+  - {name: catalog.tags.TagName, kind: newtype, of: String}
+  - name: catalog.tags.Colour
+    kind: struct
+    fields:
+      - {name: hue, type: Integer}
+entities:
+  - name: catalog.tags.Tag
+    identity: {name: name, type: catalog.tags.TagName}
+    fields:
+      - {name: keys, type: List<String>}
+      - {name: note, type: Optional<String>}
+      - {name: colour, type: catalog.tags.Colour}
+    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept], transitions: []}
+events:
+  - name: catalog.tags.TagTouched
+    fields:
+      - {name: name, type: catalog.tags.TagName}
+commands:
+  - name: catalog.tags.TouchTag
+    input:
+      - {name: name, type: catalog.tags.TagName}
+    outcomes:
+      - name: touched
+        emits: [catalog.tags.TagTouched]
+        payload:
+          catalog.tags.TagTouched: {name: input.name}
+views:
+  - name: catalog.tags.Tags
+    source: catalog.tags.Tag
+    fields:
+      - {name: name, type: catalog.tags.TagName}
+  - name: catalog.tags.KeysOfTag
+    source: catalog.tags.Tag
+    params:
+      - {name: name, type: catalog.tags.TagName}
+    filter: name == param.name
+    fields:
+      - {name: name, type: catalog.tags.TagName}
+      - {name: keys, type: List<String>}
+  - name: catalog.tags.Notes
+    source: catalog.tags.Tag
+    fields:
+      - {name: note, type: Optional<String>}
+  - name: catalog.tags.Colours
+    source: catalog.tags.Tag
+    fields:
+      - {name: colour, type: catalog.tags.Colour}
+components:
+  - component: tags-service
+    reached_by: network
+    owns: {domains: [catalog.tags]}
+    accepts: {commands: [catalog.tags.TouchTag]}
+    publishes: {events: [catalog.tags.TagTouched]}
+";
+
+fn tags_model() -> EssIr {
+    let raw = RawSpecFile::parse(TAGS).expect("well formed");
+    let spec = Specification::assemble([(Source::new("tags.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("validates: {errors}"));
+    let mut sources = SourceMap::new();
+    sources.insert("tags.yaml", TAGS);
+    compile_model(&spec, &sources).unwrap_or_else(|errors| panic!("compiles: {errors}"))
+}
+
+/// `catalog.tags.<view>` on `get <path>` with `keys`.
+fn tag_route(view: &str, path: &str, keys: &str) -> String {
+    format!("routes:\n  - view: catalog.tags.{view}\n    method: get\n    path: {path}\n{keys}")
+}
+
+#[test]
+fn a_view_answers_each_row_as_one_field_value() {
+    let ir = tags_model();
+    // A view of one field answers each row as that field's value.
+    let http = compiled(&ir, &tag_route("Tags", "/tags", "    body: array.name\n"))
+        .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(ir_json(&http)["routes"][0]["body"], "array.name");
+    assert_eq!(http.routes()[0].body.field.as_deref(), Some("name"));
+    round_trips(&http);
+    // Beside the answered field stands one the route's path carries.
+    let http = compiled(
+        &ir,
+        &tag_route(
+            "KeysOfTag",
+            "/tags/{name}",
+            "    parameters: {name: param.name}\n    body: single.keys\n    empty: {status: 404}\n",
+        ),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(ir_json(&http)["routes"][0]["body"], "single.keys");
+    round_trips(&http);
+    // Without the path carrying it, the second field is left out of the answer: refused, by name.
+    let unwired = tag_route(
+        "KeysOfTag",
+        "/tags",
+        "    body: single.keys\n    empty: {status: 404}\n",
+    );
+    let words = worded(compiled(&ir, &unwired));
+    assert_eq!(
+        located(compiled(&ir, &unwired)),
+        [refused("ESS-HTTP-024", "routes[0].body")]
+    );
+    assert!(words[0].contains("`name`"), "{words:?}");
+    // An `Optional` field, a struct field and a field the view does not declare are refused.
+    for (view, body, named) in [
+        ("Notes", "array.note", "Optional"),
+        ("Colours", "array.colour", "struct"),
+        ("Tags", "array.label", "`label`"),
+    ] {
+        let document = tag_route(view, "/tags", &format!("    body: {body}\n"));
+        let words = worded(compiled(&ir, &document));
+        assert_eq!(
+            located(compiled(&ir, &document)),
+            [refused("ESS-HTTP-024", "routes[0].body")],
+            "{body}"
+        );
+        assert!(words[0].contains(named), "{body}: {words:?}");
+    }
+    // A field's value is answered bare only: never under a member.
+    assert_eq!(
+        located(compiled(
+            &ir,
+            &tag_route("Tags", "/tags", "    body: {tags: array.name}\n")
+        )),
+        [refused("ESS-HTTP-024", "routes[0].body")]
+    );
+}

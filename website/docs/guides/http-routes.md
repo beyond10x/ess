@@ -232,6 +232,10 @@ The document follows those keys on the routes that use them:
   literal object `empty: {status: 404, body: {error: {literal: not_found}}}` gives.
 - `body: array` on a view that is not paged answers its rows as a bare JSON array, `[]` when it
   holds none.
+- `body: array.<field>` answers each row as that one field's value, `["vip","sales"]`, and
+  `body: single.<field>` the one row's value. Every other field of the view must be one the
+  route's path carries (the view filters it by a parameter a path variable maps); an `Optional`,
+  struct or union field is refused (`ESS-HTTP-024`).
 - A member around a bare form answers the same value under that one name: `body: {order: single}`
   answers `{"order": {…}}` (with `empty` as for `single`), `body: {items: array}` answers
   `{"items": […]}`, and on a command `body: {data: response}` or `{id: response.order_id}` answers

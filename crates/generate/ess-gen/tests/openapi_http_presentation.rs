@@ -543,3 +543,45 @@ fn an_ignored_path_variable_is_a_required_path_string_marked_ignored() {
     assert_eq!(parameters[1]["name"], "item_id", "{parameters}");
     assert!(parameters[1].get("x-ess-ignored").is_none(), "{parameters}");
 }
+
+#[test]
+fn a_view_answering_one_field_publishes_the_fields_schema_as_its_answer() {
+    let ir = model_of(&[("catalog.yaml", MODEL)]);
+    for (body, keys, expected) in [
+        (
+            "array.title",
+            "",
+            json!({"type": "array", "items": {"$ref": "#/components/schemas/catalog.items.ItemById.Row/properties/title"}}),
+        ),
+        (
+            "single.title",
+            "    empty: {status: 404}\n",
+            json!({"$ref": "#/components/schemas/catalog.items.ItemById.Row/properties/title"}),
+        ),
+    ] {
+        let documents = documents(
+            &ir,
+            binding(
+                &ir,
+                &format!(
+                    "routes:
+  - view: catalog.items.ItemById
+    method: get
+    path: /items/{{item_id}}
+    parameters: {{item_id: param.item_id}}
+    body: {body}
+{keys}"
+                ),
+            ),
+        );
+        let document = as_json(&documents["openapi/items-service.yaml"]);
+        let answer = &document["paths"]["/items/{item_id}"]["get"]["responses"]["200"]["content"]
+            ["application/json"]["schema"];
+        assert_eq!(answer, &expected, "{body}");
+        let row = &document["components"]["schemas"]["catalog.items.ItemById.Row"];
+        assert_eq!(
+            row["properties"]["title"]["type"], "string",
+            "{body}: {row}"
+        );
+    }
+}

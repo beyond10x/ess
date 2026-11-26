@@ -941,3 +941,54 @@ fn every_compiled_answer_form_is_carried_or_refused() {
         "{refusals:#?}"
     );
 }
+
+/// A view a binding answers as one field's value per row (`body: array.<field>`,
+/// `story:a-view-may-answer-each-row-as-one-scalar-value`) holds no row object, which a generated
+/// UI reads: refused naming the view, the form and the binding's file.
+#[test]
+fn a_view_answered_as_one_field_per_row_is_refused_by_name() {
+    let mut sources = shop_with_components(&[]);
+    sources
+        .iter_mut()
+        .find(|(name, _)| name == "domains/stock.yaml")
+        .expect("the stock domain")
+        .1
+        .push_str(
+            "  - name: shop.stock.Labels\n    source: shop.stock.Item\n    consistency: \
+             read_your_writes\n    fields:\n      - name: label\n        type: String\n",
+        );
+    let ir = compile_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"));
+    let declared = format!(
+        "type: ess-http/1\nspecification:\n  system: shop\n  version: v1\n  source_digest: \
+         sha256:{}\nroutes:\n  - {{view: shop.stock.Labels, method: get, path: /labels, body: \
+         array.label}}\n",
+        ir.source_digest()
+    );
+    let spec = ess_gen::ess_http::HttpSpec::from_yaml(&declared).expect("parses");
+    let compiled = ess_gen::ess_http::compile(&spec, &ir, &http::derived(&ir))
+        .unwrap_or_else(|refused| panic!("compiles: {refused}"));
+    let routed = http::Binding::new(compiled).expect("every route has a path");
+    let text = document(
+        "shop",
+        "fat",
+        "{kind: detail_page, title: Shop, sections: [{name: summary, reads: stock.Labels}]}",
+    );
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    let over = ess_ui_check::HttpBinding {
+        path: Path::new("shop-http.yaml"),
+        binding: &routed,
+    };
+    let Err(BindingError::Refused(refusals)) =
+        ess_ui_check::binding_over(&document, &sources, Some(over))
+    else {
+        panic!("a view answered as one field per row is refused");
+    };
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.message.contains("shop.stock.Labels")
+                && refusal.message.contains("`array.label`")
+                && refusal.message.contains("shop-http.yaml")),
+        "{refusals:#?}"
+    );
+}

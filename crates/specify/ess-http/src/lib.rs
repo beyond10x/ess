@@ -846,12 +846,19 @@ pub struct ViewAnswer {
     /// The member that holds the `single` or `array` answer; `None` where it is bare. Never
     /// beside `rows`, which `{rows: array}` is.
     pub member: Option<String>,
+    /// The one field of the view each row is answered as, bare (`array.<field>`,
+    /// `single.<field>`); `None` where each row is answered whole. Never beside `member`.
+    pub field: Option<String>,
 }
 
 impl ViewAnswer {
     /// The bare `form`.
     pub fn bare(form: ViewBody) -> Self {
-        Self { form, member: None }
+        Self {
+            form,
+            member: None,
+            field: None,
+        }
     }
 
     fn is_default(&self) -> bool {
@@ -860,7 +867,10 @@ impl ViewAnswer {
 
     fn spec(&self) -> BodySpec {
         match &self.member {
-            None => BodySpec::Word(self.form.word().to_owned()),
+            None => BodySpec::Word(self.field.as_ref().map_or_else(
+                || self.form.word().to_owned(),
+                |field| format!("{}.{field}", self.form.word()),
+            )),
             Some(member) => BodySpec::Wrapped {
                 member: member.clone(),
                 form: self.form.word().to_owned(),
@@ -893,11 +903,23 @@ impl<'de> serde::Deserialize<'de> for ViewAnswer {
         let refused = || {
             serde::de::Error::custom(format!(
                 "`{written}` is not a view route's body: compiled IR writes `single`, `array`, \
-                 `{{<member>: single}}` or `{{<member>: array}}`"
+                 `single.<field>`, `array.<field>`, `{{<member>: single}}` or `{{<member>: \
+                 array}}`"
             ))
         };
         match &written {
-            BodySpec::Word(word) => form(word).map(Self::bare).ok_or_else(refused),
+            BodySpec::Word(word) => match word.split_once('.') {
+                None => form(word).map(Self::bare).ok_or_else(refused),
+                Some((head, field)) if !field.is_empty() => match form(head) {
+                    Some(form @ (ViewBody::Single | ViewBody::Array)) => Ok(Self {
+                        form,
+                        member: None,
+                        field: Some(field.to_owned()),
+                    }),
+                    _ => Err(refused()),
+                },
+                Some(_) => Err(refused()),
+            },
             BodySpec::Wrapped { member, .. } if member.is_empty() => Err(serde::de::Error::custom(
                 format!("`{written}` names an empty member; a wrapped body has one named member"),
             )),
@@ -908,6 +930,7 @@ impl<'de> serde::Deserialize<'de> for ViewAnswer {
                 Some(form @ (ViewBody::Single | ViewBody::Array)) => Ok(Self {
                     form,
                     member: Some(member.clone()),
+                    field: None,
                 }),
                 Some(ViewBody::Rows) | None => Err(refused()),
             },
@@ -9162,7 +9185,20 @@ fn view_body(
     let body = match &spec.body {
         None => Some(ViewAnswer::default()),
         Some(written) => match written {
-            BodySpec::Word(word) => form(word).map(ViewAnswer::bare),
+            BodySpec::Word(word) => match word.split_once('.') {
+                None => form(word).map(ViewAnswer::bare),
+                // `array.<field>`, `single.<field>`: each row as that field's value, bare.
+                Some((head, field)) => match form(head) {
+                    Some(form @ (ViewBody::Single | ViewBody::Array)) if !field.is_empty() => {
+                        Some(ViewAnswer {
+                            form,
+                            member: None,
+                            field: Some(field.to_owned()),
+                        })
+                    }
+                    _ => None,
+                },
+            },
             // `{rows: array}` is `rows`, ESS's own answer; `rows` is an object already, so it is
             // never wrapped (beyond10x/ess#755).
             BodySpec::Wrapped { member, form: word } if !member.is_empty() => match form(word) {
@@ -9174,6 +9210,7 @@ fn view_body(
                 Some(form @ (ViewBody::Single | ViewBody::Array)) => Some(ViewAnswer {
                     form,
                     member: Some(member.clone()),
+                    field: None,
                 }),
                 _ => None,
             },
@@ -9190,7 +9227,8 @@ fn view_body(
             "ESS-HTTP-024",
             format!("{path}.body"),
             format!(
-                "{operation} answers `rows`, `array`, `single`, `{{<member>: array}}` or \
+                "{operation} answers `rows`, `array`, `single`, each row as one field's value \
+                 (`array.<field>`, `single.<field>`), or `{{<member>: array}}` or \
                  `{{<member>: single}}` under a named member, and `{written}` is not a view's body"
             ),
         );
@@ -9211,6 +9249,13 @@ fn view_body(
                     view.name
                 ),
             );
+        }
+    }
+    if let (Some(field), Some((ir, view))) =
+        (body.as_ref().and_then(|body| body.field.as_deref()), view)
+    {
+        if !field_answer(spec, ir, view, field, &format!("{path}.body"), refusals) {
+            return None;
         }
     }
     body
@@ -9468,6 +9513,113 @@ fn representation_headers(
 /// Whether `filter` holds only of the row whose `identity` equals a view parameter: it is
 /// `<identity> == param.<name>`, compared by value, in either operand order, or an `all` one of
 /// whose members does, `all` nested in `all` included.
+/// Whether a view route may answer each row as the value of `field` (`array.<field>`,
+/// `single.<field>`, BA-D1 A): a field the view declares, neither `Optional` nor a struct or
+/// union, beside which the view declares only fields whose value the route's path carries (BA-D2),
+/// so that the answer leaves out nothing the caller does not already hold. Refuses with
+/// `ESS-HTTP-024`, naming the field, otherwise.
+fn field_answer(
+    spec: &RouteSpec,
+    ir: &EssIr,
+    view: &ResolvedView,
+    field: &str,
+    at: &str,
+    refusals: &mut Refusals,
+) -> bool {
+    let Some(declared) = view.fields.iter().find(|declared| declared.name == field) else {
+        refusals.refuse(
+            "ESS-HTTP-024",
+            at,
+            format!(
+                "view `{}` declares no field `{field}`; each row is answered as the value of one \
+                 field the view declares",
+                view.name
+            ),
+        );
+        return false;
+    };
+    let kind = match &declared.type_ref {
+        ResolvedTypeRef::Optional { .. } => Some("`Optional`"),
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Struct { .. } => Some("a struct"),
+            ResolvedBody::Union { .. } => Some("a union"),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(kind) = kind {
+        refusals.refuse(
+            "ESS-HTTP-024",
+            at,
+            format!(
+                "field `{field}` of view `{}` has type `{}`, {kind}: a row answered as one \
+                 field's value is that value alone, always present, never `Optional` and never \
+                 an object",
+                view.name, declared.type_ref
+            ),
+        );
+        return false;
+    }
+    // The view's fields whose value a path variable of the route carries: a filter member
+    // `<field> == param.<name>` whose parameter the path maps.
+    let mapped: Vec<String> = spec
+        .parameters
+        .0
+        .iter()
+        .filter_map(|(_, source)| match Source::parse(source) {
+            Some(Source::Param(name)) => Some(name),
+            _ => None,
+        })
+        .collect();
+    let carried = |name: &str| {
+        view.filter
+            .as_ref()
+            .is_some_and(|filter| mapped.iter().any(|param| selects_by(filter, name, param)))
+    };
+    let left: Vec<String> = view
+        .fields
+        .iter()
+        .filter(|other| other.name != field && !carried(&other.name))
+        .map(|other| format!("`{}`", other.name))
+        .collect();
+    if !left.is_empty() {
+        refusals.refuse(
+            "ESS-HTTP-024",
+            at,
+            format!(
+                "view `{}` is answered as its field `{field}` alone and would leave out {}: \
+                 beside the answered field a view declares only fields whose value the route's \
+                 path carries (a filter `<field> == param.<name>` whose parameter a path variable \
+                 maps)",
+                view.name,
+                left.join(", ")
+            ),
+        );
+        return false;
+    }
+    true
+}
+
+/// Whether `filter`, or a member of a top-level `all`, is `<field> == param.<param>`.
+fn selects_by(filter: &Predicate, field: &str, param: &str) -> bool {
+    match filter {
+        Predicate::All(members) => members
+            .iter()
+            .any(|member| selects_by(member, field, param)),
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq,
+            right: Operand::Fact(right),
+            kind: CompareKind::Value,
+        } => {
+            let is_field = |path: &FactPath| path.segments() == [field.to_owned()];
+            let is_param = |path: &FactPath| matches!(path.segments(), [namespace, name] if namespace == "param" && name == param);
+            (is_field(left) && is_param(right)) || (is_param(left) && is_field(right))
+        }
+        _ => false,
+    }
+}
+
 fn selects_identity(filter: &Predicate, identity: &str) -> bool {
     match filter {
         Predicate::All(members) => members

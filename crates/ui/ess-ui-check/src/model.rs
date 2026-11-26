@@ -1935,6 +1935,23 @@ fn unbound(
             ));
         }
     }
+    // A view answered as one field's value per row (`array.<field>`, `single.<field>`) holds no
+    // row object, and a generated UI reads its rows as objects.
+    if let Some(field) = route
+        .declared
+        .and_then(|declared| declared.body.field.as_deref())
+    {
+        return Some(format!(
+            "view `{qualified}` is answered in the binding {} as `{}`, each row as its field \
+             `{field}` alone, and a generated UI reads a view's rows as objects; bind the view on \
+             a route that answers its rows",
+            bound.path.display(),
+            route
+                .declared
+                .map(|declared| declared.body.to_string())
+                .unwrap_or_default()
+        ));
+    }
     // Every other declared answer form reaches the route table (`declared_answers`); a redirect
     // is one no generated UI reads, since `fetch` follows it to a page that is no answer.
     if let (Served::Command(handle), Some(declared)) = (route.serves, route.declared) {

@@ -2810,12 +2810,12 @@ fn view(
     if !representations.is_empty() {
         out.push_str(&csv_answer(ir, view));
     }
-    json_answer(out, route);
+    json_answer(out, route, view);
 }
 
 /// Go code answering a bound view route's encoded rows as JSON: `rows`, `array` or `single`, bare
 /// or under the member a wrapped body names, and a `single` view's empty answer.
-fn json_answer(out: &mut String, route: &http::Route<'_>) {
+fn json_answer(out: &mut String, route: &http::Route<'_>, view: &ResolvedView) {
     let body = route
         .declared
         .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
@@ -2823,21 +2823,41 @@ fn json_answer(out: &mut String, route: &http::Route<'_>) {
         .declared
         .filter(|_| body == ess_http::ViewBody::Single)
         .and_then(|declared| declared.empty.as_ref());
+    // The wire name of the one field a row is answered as (`array.<field>`, `single.<field>`),
+    // read from the row its encoder wrote.
+    let field = route
+        .declared
+        .and_then(|declared| declared.body.field.as_deref())
+        .map(|field| {
+            go_string(
+                view.fields
+                    .iter()
+                    .find(|declared| declared.name == field)
+                    .map_or(field, ess_gen::schema::wire_field_name),
+            )
+        });
     // The member a wrapped body names (beyond10x/ess#755): the bare answer goes under it.
     let member = route
         .declared
         .and_then(|declared| declared.body.member.as_deref());
     match (body, empty) {
         (_, Some(empty)) => {
-            let one = member.map_or_else(
-                || "encoded[0]".to_owned(),
-                |member| {
-                    format!(
-                        "jsonObject{{{{name: {}, value: encoded[0]}}}}",
-                        go_string(member)
-                    )
-                },
-            );
+            let one = match &field {
+                Some(wire) => format!(
+                    "func() any {{\n\t\tobject := encoded[0].(*orderedObject)\n\t\tfor index, name \
+                     := range object.names {{\n\t\t\tif name == {wire} {{\n\t\t\t\treturn \
+                     object.values[index]\n\t\t\t}}\n\t\t}}\n\t\treturn nil\n\t}}()"
+                ),
+                None => member.map_or_else(
+                    || "encoded[0]".to_owned(),
+                    |member| {
+                        format!(
+                            "jsonObject{{{{name: {}, value: encoded[0]}}}}",
+                            go_string(member)
+                        )
+                    },
+                ),
+            };
             let none = match &empty.body {
                 RefusalBody::None => format!("response{{status: {}}}", empty.status),
                 RefusalBody::Literal { member, text } => format!(
@@ -2851,6 +2871,18 @@ fn json_answer(out: &mut String, route: &http::Route<'_>) {
                 out,
                 "\tif len(encoded) == 0 {{\n\t\treturn {none}\n\t}}\n\treturn \
                  response{{status: 200, contentType: mediaJSON, body: bare({one})}}\n}}\n"
+            );
+        }
+        // Each row as its one field's value, bare.
+        (ess_http::ViewBody::Array, None) if field.is_some() => {
+            let _ = write!(
+                out,
+                "\tvalues := make([]any, 0, len(encoded))\n\tfor _, row := range encoded {{\n\t\t\
+                 object := row.(*orderedObject)\n\t\tvar value any\n\t\tfor index, name := range \
+                 object.names {{\n\t\t\tif name == {} {{\n\t\t\t\tvalue = \
+                 object.values[index]\n\t\t\t}}\n\t\t}}\n\t\tvalues = append(values, value)\n\t}}\n\t\
+                 return rendered(200, values)\n}}\n",
+                field.as_deref().unwrap_or_default()
             );
         }
         // The rows, bare: the array `rows` would hold.

@@ -2155,6 +2155,19 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             },
         );
     }
+    let (status, answer) = json_answer(route, view);
+    let answer = represented(answer, server, view, representations);
+    let _ = write!(
+        out,
+        "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
+         refused_bound{suffix}(&refused),\n    }}\n}}\n"
+    );
+}
+
+/// The status binding and the answer expression of a bound view route's JSON answer: `rows`,
+/// `array` or `single`, bare, under a member or as one field's value, and a `single` view's empty
+/// answer.
+fn json_answer(route: &http::Route<'_>, view: &ResolvedView) -> (&'static str, String) {
     let body = route
         .declared
         .map_or(ess_http::ViewBody::Rows, |declared| declared.body.form);
@@ -2166,7 +2179,28 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
     let member = route
         .declared
         .and_then(|declared| declared.body.member.as_deref());
-    let (status, answer) = match (body, empty, member) {
+    // The wire name of the one field a row is answered as (`array.<field>`, `single.<field>`).
+    let field = route
+        .declared
+        .and_then(|declared| declared.body.field.as_deref())
+        .map(|field| {
+            view.fields
+                .iter()
+                .find(|declared| declared.name == field)
+                .map_or(field, ess_gen::schema::wire_field_name)
+        });
+    match (body, empty, member) {
+        // The one row's field, bare; the empty answer as declared.
+        (_, Some(empty), None) if field.is_some() => (
+            "_status",
+            format!(
+                "{{\n            let mut answer = {};\n            if answer.status == 200 {{\n                \
+                 answer.body = http::bare(json::parse(&answer.body).ok().as_ref().and_then(|row| \
+                 row.member({:?})));\n            }}\n            answer\n        }}",
+                single_answer(empty),
+                field.unwrap_or_default()
+            ),
+        ),
         (_, Some(empty), None) => ("_status", single_answer(empty)),
         // The one row under its member; the empty answer as declared.
         (_, Some(empty), Some(member)) => (
@@ -2176,6 +2210,19 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
                  answer.body = {};\n            }}\n            answer\n        }}",
                 single_answer(empty),
                 wrapped_json(member, "answer.body")
+            ),
+        ),
+        // Each row of `{"rows": [...]}` as its one field's value, bare.
+        (ess_http::ViewBody::Array, None, None) if field.is_some() => (
+            "status",
+            format!(
+                "{{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
+                 let values: Vec<json::Value> = match read.member(\"rows\") {{\n                \
+                 Some(json::Value::Array(rows)) => rows.iter().map(|row| \
+                 row.member({:?}).cloned().unwrap_or(json::Value::Null)).collect(),\n                \
+                 _ => Vec::new(),\n            }};\n            http::Response::new(status, http::JSON, \
+                 http::bare(Some(&json::Value::Array(values))))\n        }}",
+                field.unwrap_or_default()
             ),
         ),
         // The rows of `{"rows": [...]}`, bare.
@@ -2199,15 +2246,8 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             "status",
             "http::Response::new(status, http::JSON, body)".to_owned(),
         ),
-    };
-    let answer = represented(answer, server, view, representations);
-    let _ = write!(
-        out,
-        "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
-         refused_bound{suffix}(&refused),\n    }}\n}}\n"
-    );
+    }
 }
-
 /// Rust code for the JSON text `inner`, an expression of type `String`, under the one `member` of
 /// an object: a wrapped body (beyond10x/ess#755). Written inline, so a server whose binding wraps
 /// nothing keeps its bytes.
