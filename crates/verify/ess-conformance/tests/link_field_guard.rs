@@ -785,3 +785,46 @@ fn a_branch_reading_the_subjects_stored_link_beside_a_link_refusal_is_sent_that_
     let (written, failed) = ship_order(&shop_through_the_stored_link());
     assert_ships_at_its_own_store(&written, &failed);
 }
+
+/// [`SHOP`] with the order's store copied from a cart the order is placed from: `OpenCart` stores
+/// the store its input names, and `PlaceOrder` copies the cart's store into the order.
+fn shop_with_the_link_copied_from_a_cart() -> String {
+    let edits = [
+        (
+            "  - {name: demo.shop.OrderId, kind: newtype, of: String}\n",
+            "  - {name: demo.shop.OrderId, kind: newtype, of: String}\n  - {name: demo.shop.CartId, kind: newtype, of: String}\n",
+        ),
+        (
+            "  - name: demo.shop.Order\n",
+            "  - name: demo.shop.Cart\n    identity: {name: cart_id, type: demo.shop.CartId}\n    fields: [{name: store_id, type: demo.shop.StoreId}]\n    lifecycle: {initial: Live, states: [Live], terminal: [Live]}\n  - name: demo.shop.Order\n",
+        ),
+        (
+            "may: [demo.shop.OpenStore,",
+            "may: [demo.shop.OpenCart, demo.shop.OpenStore,",
+        ),
+        (
+            "  - name: demo.shop.PlaceOrder\n    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]\n    outcomes:\n      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}\n      - {name: placed, creates: demo.shop.Order, instance: order_id, sets: {store_id: input.store_id},",
+            "  - name: demo.shop.OpenCart\n    input: [{name: cart_id, type: demo.shop.CartId}, {name: store_id, type: demo.shop.StoreId}]\n    outcomes:\n      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}\n      - {name: opened, creates: demo.shop.Cart, instance: cart_id, sets: {store_id: input.store_id}, emits: [demo.shop.CartOpened], payload: {demo.shop.CartOpened: {cart_id: input.cart_id}}}\n  - name: demo.shop.PlaceOrder\n    input: [{name: order_id, type: demo.shop.OrderId}, {name: cart_id, type: demo.shop.CartId}]\n    outcomes:\n      - {name: no-cart, when_related: {via: input.cart_id, exists: false}, error: demo.shop.Missing}\n      - {name: placed, creates: demo.shop.Order, instance: order_id, sets: {store_id: {related: {via: input.cart_id, field: store_id}}},",
+        ),
+        (
+            "  - {name: demo.shop.Placed,",
+            "  - {name: demo.shop.CartOpened, fields: [{name: cart_id, type: demo.shop.CartId}]}\n  - {name: demo.shop.Placed,",
+        ),
+    ];
+    let mut text = SHOP.to_owned();
+    for (from, to) in edits {
+        assert!(text.contains(from), "the model holds {from:?}");
+        text = text.replacen(from, to, 1);
+    }
+    text
+}
+
+/// RED (N93, the reported shape): the order's store is copied from the cart it is placed from, so
+/// pointing the order at a store means opening its cart at that store first. Synthesis rewrites
+/// only an act that stores the link from its own input, and refuses the order's later branches.
+#[test]
+fn a_branch_beside_a_link_refusal_is_sent_the_subjects_own_row_where_the_link_is_copied_from_another_row(
+) {
+    let (written, failed) = ship_order(&shop_with_the_link_copied_from_a_cart());
+    assert_ships_at_its_own_store(&written, &failed);
+}
