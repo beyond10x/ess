@@ -2078,7 +2078,8 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 /// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal
 /// before any branch it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is
 /// answered before either and is not asked here: the command's own identity is the existence
-/// family's to arrange.
+/// family's to arrange. A row-set refusal is not asked here either: the rows its selector selects
+/// are the scenario's to leave, and the row-set walk checks them.
 fn selects<'c>(
     ir: &EssIr,
     command: &'c ResolvedCommand,
@@ -2113,6 +2114,12 @@ fn selects<'c>(
                     | ResolvedCondition::SubjectPredicate { .. }
                     | ResolvedCondition::InputAbsent
             )
+            // A row-set refusal is decided by the rows the scenario's steps leave, not by this
+            // row, and is passed over here: the row-set walk of every finished scenario checks
+            // that those rows pass it over too (`row_set::contradictions`). Counted as selected,
+            // one with no input guard answered every input, so a creator beside it was never
+            // driven (weft's catalog, 2026-11-26).
+            && !is_row_set_refusal(branch)
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
             match test {
@@ -2178,6 +2185,11 @@ fn answering_refusal<'c>(
         .map(|(_, branch)| branch)
         .filter(|branch| super::is_input_guarded_refusal(branch) || is_related_refusal(branch))
         .find(|branch| selected.iter().any(|chosen| chosen.name == branch.name))
+}
+
+/// Whether `outcome` is a refusal guarded by a row set (`when_related: {entity, where, …}`).
+fn is_row_set_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
 }
 
 /// Whether `outcome` is a `when_related:` predicate refusal.
