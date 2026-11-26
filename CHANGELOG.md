@@ -37,6 +37,14 @@
 - `ess ui test` reads and drives the rows of an overlay's collection (`expect rows`, `select`, `mark`, `act` at a row action), reads a form's `result` and a board's placed widget at `<board>/rows/<widget>`, the paths the generated React project draws them at, and grows its headless screen past 160 cells until no row or column is cut, so the last column of a wide table is read (beyond10x/ess#722).
 - The terminal pages a server-paged collection with a `pager` through the states its params bind: it shows the size its size state holds (else the first of `sizes`), `n`, `p` and the `page` step of `ess ui test` write the page state, so the read and an action binding it are sent with that page, and a change to another param of the read returns it to page 1; the fixture adapter answers such a read with the slice the pager's params name. In the `ess-ui-tui` library `ReadRequest` has a new field `pager` of the new type `PagerParams` (beyond10x/ess#722).
 
+## [0.99.7] — 2026-11-26
+
+### Fixed
+
+- `ess verify conform synthesize` writes the scenarios of a command whose `when_subject:` refusal compares the row's stored link with an input, such as `store_id != input.store_id`, beside `when_related:` guards reading the row that input names. It sends the row the subject is linked to, also where the link is copied from another row (`{related: {via: input.cart_id, field: store_id}}`) and where the command reads a second row beside it. 0.99.4 to 0.99.6 refused these branches with "no candidate of the 0 tried", including the accepting one; 0.99.1 to 0.99.3 wrote them with another row, and they failed against their own model. A command reading the row through the stored link (`via: store_id`) beside such a refusal is now sent the linked row in the compared input; it was sent a placeholder, so the refusal answered. A pinned suite of such a model moves when it is synthesized again.
+
+The fix changes no format key.
+
 ## [0.99.6] — 2026-11-26
 
 ### Fixed

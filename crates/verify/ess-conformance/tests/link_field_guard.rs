@@ -652,3 +652,235 @@ fn a_link_guard_on_the_input_naming_a_row_beside_passes_its_own_model() {
     let failed = revise_failing_with(&edits);
     assert!(failed.is_empty(), "{failed:#?}");
 }
+
+/// A store and the orders placed at it. `ShipOrder` names the store as input and refuses first
+/// where the order is of another store (`store_id != input.store_id`); its later branches read the
+/// store that input names, which is then always the order's own. A hand-written scenario places
+/// the order at a store, freezes that store and ships the order naming it.
+const SHOP: &str = "format: ess/33
+system: demo
+version: v1
+domain: demo.shop
+types:
+  - {name: demo.shop.StoreId, kind: newtype, of: String}
+  - {name: demo.shop.OrderId, kind: newtype, of: String}
+entities:
+  - name: demo.shop.Store
+    identity: {name: store_id, type: demo.shop.StoreId}
+    fields: [{name: title, type: String}]
+    lifecycle: {initial: Open, states: [Open, Frozen], terminal: [Frozen], transitions: [{name: freeze, from: [Open], to: Frozen}]}
+  - name: demo.shop.Order
+    identity: {name: order_id, type: demo.shop.OrderId}
+    fields: [{name: store_id, type: demo.shop.StoreId}]
+    relations: [{name: store, kind: references, target: demo.shop.Store, cardinality: one, via: store_id}]
+    lifecycle: {initial: Placed, states: [Placed, Shipped], terminal: [Shipped], transitions: [{name: ship, from: [Placed], to: Shipped}]}
+actors:
+  - {name: demo.shop.Clerk, may: [demo.shop.OpenStore, demo.shop.FreezeStore, demo.shop.PlaceOrder, demo.shop.ShipOrder]}
+errors:
+  - {name: demo.shop.Missing, summary: No such row.}
+  - {name: demo.shop.Elsewhere, summary: The order is of another store.}
+  - {name: demo.shop.Frozen, summary: The store is frozen.}
+commands:
+  - name: demo.shop.OpenStore
+    input: [{name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: opened, creates: demo.shop.Store, instance: store_id, emits: [demo.shop.Opened], payload: {demo.shop.Opened: {store_id: input.store_id}}}
+  - name: demo.shop.FreezeStore
+    input: [{name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: frozen, moves: demo.shop.Store.freeze, instance: store_id, emits: [demo.shop.Froze], payload: {demo.shop.Froze: {store_id: input.store_id}}}
+  - name: demo.shop.PlaceOrder
+    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}
+      - {name: placed, creates: demo.shop.Order, instance: order_id, sets: {store_id: input.store_id}, emits: [demo.shop.Placed], payload: {demo.shop.Placed: {order_id: input.order_id}}}
+  - name: demo.shop.ShipOrder
+    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]
+    outcomes:
+      - {name: missing, unknown_instance: true, error: demo.shop.Missing}
+      - {name: elsewhere, when_subject: {predicate: store_id != input.store_id}, error: demo.shop.Elsewhere}
+      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}
+      - {name: frozen, when_related: {via: input.store_id, predicate: state == Frozen}, error: demo.shop.Frozen}
+      - {name: shipped, moves: demo.shop.Order.ship, instance: order_id, emits: [demo.shop.Shipped], payload: {demo.shop.Shipped: {order_id: input.order_id}}}
+events:
+  - {name: demo.shop.Opened, fields: [{name: store_id, type: demo.shop.StoreId}]}
+  - {name: demo.shop.Froze, fields: [{name: store_id, type: demo.shop.StoreId}]}
+  - {name: demo.shop.Placed, fields: [{name: order_id, type: demo.shop.OrderId}]}
+  - {name: demo.shop.Shipped, fields: [{name: order_id, type: demo.shop.OrderId}]}
+";
+
+/// The scenarios of `ShipOrder` synthesized from `text`, and every scenario of its suite that the
+/// model's own interpreter does not pass, with what it reported.
+fn ship_order(text: &str) -> (BTreeSet<String>, BTreeMap<String, String>) {
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let spec = Specification::assemble([(Source::new("shop.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}\n{text}"));
+    let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+    let synthesis = synthesize(&ir);
+    let written = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .filter(|id| id.contains("ShipOrder"))
+        .collect();
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let failed = Runner::for_suite(&synthesis.suite)
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report()
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| {
+            (
+                scenario.scenario.to_string(),
+                format!("{:#?}", scenario.diagnostics().collect::<Vec<_>>()),
+            )
+        })
+        .collect();
+    (written, failed)
+}
+
+/// `written` holds the scenarios of the branches `ShipOrder` takes on the row its order is placed
+/// at, and `failed` is empty.
+fn assert_ships_at_its_own_store(written: &BTreeSet<String>, failed: &BTreeMap<String, String>) {
+    for id in [
+        "demo.shop.ShipOrder/outcome/frozen",
+        "demo.shop.ShipOrder/outcome/shipped",
+        "demo.shop.Order/transition/ship/by/demo.shop.ShipOrder/shipped",
+    ] {
+        assert!(written.contains(id), "{id} is written: {written:#?}");
+    }
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// RED (a downstream report on 0.99.4, N93): the branches below the link refusal read the row the
+/// input names, and that input must name the order's own store. Synthesis arranged that row apart
+/// from the order and, since 0.99.4, refuses each branch with "no candidate of the 0 tried"; the
+/// arrangement that names the order's own store is the one a hand-written scenario uses.
+#[test]
+fn a_branch_reading_the_row_the_input_names_beside_a_link_refusal_is_sent_the_subjects_own_row() {
+    let (written, failed) = ship_order(SHOP);
+    assert_ships_at_its_own_store(&written, &failed);
+}
+
+/// [`SHOP`] with `ShipOrder` reading the store through the order's stored link instead of its
+/// input: the row is the order's own, so no `exists: false` branch is declared (`ess/30`, every
+/// write of the link checks the row).
+fn shop_through_the_stored_link() -> String {
+    let text = SHOP.replace(
+        "      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}\n      - {name: frozen, when_related: {via: input.store_id,",
+        "      - {name: frozen, when_related: {via: store_id,",
+    );
+    assert_ne!(text, SHOP, "the edit applies");
+    text
+}
+
+/// RED (N93, the stored-link form): the order is placed at the frozen store and the branch reads
+/// it through the stored link, but the input the link refusal compares with it is sent as a
+/// placeholder, so `elsewhere` answers on the model's interpreter.
+#[test]
+fn a_branch_reading_the_subjects_stored_link_beside_a_link_refusal_is_sent_that_row() {
+    let (written, failed) = ship_order(&shop_through_the_stored_link());
+    assert_ships_at_its_own_store(&written, &failed);
+}
+
+/// [`SHOP`] with the order's store copied from a cart the order is placed from: `OpenCart` stores
+/// the store its input names, and `PlaceOrder` copies the cart's store into the order.
+fn shop_with_the_link_copied_from_a_cart() -> String {
+    let edits = [
+        (
+            "  - {name: demo.shop.OrderId, kind: newtype, of: String}\n",
+            "  - {name: demo.shop.OrderId, kind: newtype, of: String}\n  - {name: demo.shop.CartId, kind: newtype, of: String}\n",
+        ),
+        (
+            "  - name: demo.shop.Order\n",
+            "  - name: demo.shop.Cart\n    identity: {name: cart_id, type: demo.shop.CartId}\n    fields: [{name: store_id, type: demo.shop.StoreId}]\n    lifecycle: {initial: Live, states: [Live], terminal: [Live]}\n  - name: demo.shop.Order\n",
+        ),
+        (
+            "may: [demo.shop.OpenStore,",
+            "may: [demo.shop.OpenCart, demo.shop.OpenStore,",
+        ),
+        (
+            "  - name: demo.shop.PlaceOrder\n    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]\n    outcomes:\n      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}\n      - {name: placed, creates: demo.shop.Order, instance: order_id, sets: {store_id: input.store_id},",
+            "  - name: demo.shop.OpenCart\n    input: [{name: cart_id, type: demo.shop.CartId}, {name: store_id, type: demo.shop.StoreId}]\n    outcomes:\n      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}\n      - {name: opened, creates: demo.shop.Cart, instance: cart_id, sets: {store_id: input.store_id}, emits: [demo.shop.CartOpened], payload: {demo.shop.CartOpened: {cart_id: input.cart_id}}}\n  - name: demo.shop.PlaceOrder\n    input: [{name: order_id, type: demo.shop.OrderId}, {name: cart_id, type: demo.shop.CartId}]\n    outcomes:\n      - {name: no-cart, when_related: {via: input.cart_id, exists: false}, error: demo.shop.Missing}\n      - {name: placed, creates: demo.shop.Order, instance: order_id, sets: {store_id: {related: {via: input.cart_id, field: store_id}}},",
+        ),
+        (
+            "  - {name: demo.shop.Placed,",
+            "  - {name: demo.shop.CartOpened, fields: [{name: cart_id, type: demo.shop.CartId}]}\n  - {name: demo.shop.Placed,",
+        ),
+    ];
+    let mut text = SHOP.to_owned();
+    for (from, to) in edits {
+        assert!(text.contains(from), "the model holds {from:?}");
+        text = text.replacen(from, to, 1);
+    }
+    text
+}
+
+/// RED (N93, the reported shape): the order's store is copied from the cart it is placed from, so
+/// pointing the order at a store means opening its cart at that store first. Synthesis rewrites
+/// only an act that stores the link from its own input, and refuses the order's later branches.
+#[test]
+fn a_branch_beside_a_link_refusal_is_sent_the_subjects_own_row_where_the_link_is_copied_from_another_row(
+) {
+    let (written, failed) = ship_order(&shop_with_the_link_copied_from_a_cart());
+    assert_ships_at_its_own_store(&written, &failed);
+}
+
+/// [`shop_with_the_link_copied_from_a_cart`] with `ShipOrder` reading a second row, a coupon its
+/// input names, beside the store: a missing coupon and a void one refuse after the store is read.
+fn shop_with_a_coupon_beside_the_store() -> String {
+    let edits = [
+        (
+            "  - {name: demo.shop.CartId, kind: newtype, of: String}\n",
+            "  - {name: demo.shop.CartId, kind: newtype, of: String}\n  - {name: demo.shop.CouponId, kind: newtype, of: String}\n",
+        ),
+        (
+            "  - name: demo.shop.Cart\n",
+            "  - name: demo.shop.Coupon\n    identity: {name: coupon_id, type: demo.shop.CouponId}\n    fields: [{name: code, type: String}]\n    lifecycle: {initial: Valid, states: [Valid, Void], terminal: [Void], transitions: [{name: void, from: [Valid], to: Void}]}\n  - name: demo.shop.Cart\n",
+        ),
+        (
+            "may: [demo.shop.OpenCart,",
+            "may: [demo.shop.IssueCoupon, demo.shop.VoidCoupon, demo.shop.OpenCart,",
+        ),
+        (
+            "  - name: demo.shop.OpenCart\n",
+            "  - name: demo.shop.IssueCoupon\n    input: [{name: coupon_id, type: demo.shop.CouponId}]\n    outcomes:\n      - {name: issued, creates: demo.shop.Coupon, instance: coupon_id, emits: [demo.shop.Issued], payload: {demo.shop.Issued: {coupon_id: input.coupon_id}}}\n  - name: demo.shop.VoidCoupon\n    input: [{name: coupon_id, type: demo.shop.CouponId}]\n    outcomes:\n      - {name: missing, unknown_instance: true, error: demo.shop.Missing}\n      - {name: voided, moves: demo.shop.Coupon.void, instance: coupon_id, emits: [demo.shop.Voided], payload: {demo.shop.Voided: {coupon_id: input.coupon_id}}}\n  - name: demo.shop.OpenCart\n",
+        ),
+        (
+            "    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]\n    outcomes:\n      - {name: missing, unknown_instance: true, error: demo.shop.Missing}\n",
+            "    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}, {name: coupon_id, type: demo.shop.CouponId}]\n    outcomes:\n",
+        ),
+        (
+            "      - {name: frozen, when_related: {via: input.store_id, predicate: state == Frozen}, error: demo.shop.Frozen}\n",
+            "      - {name: no-coupon, when_related: {via: input.coupon_id, exists: false}, error: demo.shop.Missing}\n      - {name: frozen, when_related: {via: input.store_id, predicate: state == Frozen}, error: demo.shop.Frozen}\n      - {name: coupon-void, when_related: {via: input.coupon_id, predicate: state == Void}, error: demo.shop.Frozen}\n",
+        ),
+        (
+            "  - {name: demo.shop.CartOpened,",
+            "  - {name: demo.shop.Issued, fields: [{name: coupon_id, type: demo.shop.CouponId}]}\n  - {name: demo.shop.Voided, fields: [{name: coupon_id, type: demo.shop.CouponId}]}\n  - {name: demo.shop.CartOpened,",
+        ),
+    ];
+    let mut text = shop_with_the_link_copied_from_a_cart();
+    for (from, to) in edits {
+        assert!(text.contains(from), "the model holds {from:?}");
+        text = text.replacen(from, to, 1);
+    }
+    text
+}
+
+/// RED (N93, the reported shape with a second row): `ShipOrder` reads a coupon beside the store,
+/// so each of its branches arranges one of the two rows beside the other. The store, focus or
+/// beside, must be the order's own; synthesis arranged it apart and, since 0.99.4, refuses.
+#[test]
+fn a_branch_reading_two_rows_beside_a_link_refusal_is_sent_the_subjects_own_row() {
+    let (written, failed) = ship_order(&shop_with_a_coupon_beside_the_store());
+    for id in [
+        "demo.shop.ShipOrder/outcome/no-coupon",
+        "demo.shop.ShipOrder/outcome/coupon-void",
+    ] {
+        assert!(written.contains(id), "{id} is written: {written:#?}");
+    }
+    assert_ships_at_its_own_store(&written, &failed);
+}
