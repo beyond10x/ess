@@ -39,6 +39,7 @@ import {
   lookup,
   matches,
   rowMatches,
+  rowShape,
   newHarness,
   paddedBase64,
   primitive,
@@ -551,6 +552,30 @@ test('a dotted path answers value, absent or blocked', () => {
   assert.deepEqual(lookup(payload, 'nulled.currency'), [null, 'absent', 'nulled']);
 });
 
+test('a view row shape holds every row, and below suite/66 it is refused', () => {
+  const shape = {
+    order_id: { holds: 'primitive', kind: 'string' },
+    placed_at: { holds: 'primitive', kind: 'timestamp' },
+    title: { holds: 'primitive', kind: 'string' },
+  };
+  const row = { order_id: 'o-1', placed_at: '2026-01-01T00:00:00Z', title: 'a' };
+  assert.equal(rowShape([row], shape), '');
+  assert.equal(rowShape([row, { ...row, extra: true }], shape), '');
+  assert.equal(
+    rowShape([row, { order_id: 'o-2', title: 'b' }], shape),
+    'row 1 did not carry `placed_at`',
+  );
+  assert.match(rowShape([{ ...row, placed_at: 7 }], shape), /^row 0 `placed_at` /);
+  assert.equal(rowShape([{ order_id: 'o-2', title: 'b' }], {}), '');
+  const step = {
+    step: 'expect_view',
+    view: 'example.order.Orders',
+    expectation: { expect: 'contains', fields: { title: { kind: 'literal', value: 'a' } } },
+    shape,
+  };
+  assert.throws(() => admitStep(step, 64), /a view row shape requires suite\/66 or \/67/);
+  admitStep(step, 66);
+});
 test('optional excuses absence and never a blocked prefix or a wrong kind', () => {
   assert.equal(holds({ a: 'x' }, { a: { holds: 'primitive', kind: 'string' } }), '');
   assert.equal(holds({}, { a: { holds: 'primitive', kind: 'string', optional: true } }), '');

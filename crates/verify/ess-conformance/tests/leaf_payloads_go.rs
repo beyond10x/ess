@@ -9,6 +9,7 @@
 
 mod support_go;
 mod support_versions;
+mod support_view_row_shape;
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -20,6 +21,7 @@ use ess_conformance::target::*;
 use ess_conformance::ConformanceSuite;
 use ess_domain::{command::OutcomeName, spec::RawSpecFile, system::Source, Specification};
 use ess_primitives::node::Node;
+use support_view_row_shape::{RowFault, RowFaults};
 
 /// The #179 shape, as `tests/leaf_payloads.rs` holds it: four leaves read from the input, one
 /// generated.
@@ -415,5 +417,53 @@ fn go_refuses_a_leaf_path_below_suite_26_and_one_naming_no_leaf_of_its_shape() {
         go.log
     );
     assert!(go.outcomes.is_empty() && !go.success);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+/// beyond10x/ess#680, story:the-go-runtime-checks-a-view-rows-shape: the Go runtime holds every row
+/// of a view read to the step's `shape` (suite/66) with the Rust runner's verdicts.
+#[test]
+fn go_holds_every_view_row_to_its_shape_as_the_reference_runner_does() {
+    let suite = support_view_row_shape::orders_suite_at(66);
+    for fault in [
+        RowFault::None,
+        RowFault::NoPlacedAt,
+        RowFault::PlacedAtSeven,
+    ] {
+        let verdicts = support_go::assert_parity(
+            &format!("row-shape-{fault:?}").to_lowercase(),
+            &suite,
+            RowFaults::new(fault),
+        );
+        assert_eq!(
+            support_go::not_passed(&verdicts).is_empty(),
+            fault == RowFault::None,
+            "{fault:?}: {verdicts:?}"
+        );
+    }
+}
+
+/// A view row shape under a major below `/66` is refused before any target effect.
+#[test]
+fn go_refuses_a_view_row_shape_below_suite_66() {
+    let suite = support_view_row_shape::orders_suite_at(66);
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let directory = support_go::package("row-shape-64", &suite, &[support_go::TRANSCRIPT_TARGET]);
+    let recorder = support_go::Recorder::new(RowFaults::new(RowFault::None));
+    let _ = support_go::rust_outcomes_admitted(&admitted, &recorder);
+    support_go::rewrite_suite(&directory, |document| {
+        document["provenance"]["suite_version"] = "ess-conformance/64".into();
+    });
+    let replayed = support_go::replay(&directory, &recorder, &[]);
+    assert!(
+        replayed
+            .go
+            .log
+            .contains("a view row shape requires suite/66 or /67"),
+        "{}",
+        replayed.go.log
+    );
+    assert!(replayed.go.outcomes.is_empty() && !replayed.go.success);
     std::fs::remove_dir_all(directory).unwrap();
 }

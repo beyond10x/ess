@@ -4928,10 +4928,17 @@ export class ScenarioRun {
         return this.fail(index, reason);
       }
       if (held) {
-        return true;
+        const shaped = rowShape(this.lastView, step.shape ?? {});
+        if (shaped === '') return true;
+        return this.fail(
+          index,
+          `${retry ? 'ESS-CF-EVENTUAL-VIEW' : 'ESS-CF-VIEW'}: \`${step.view}\` ${shaped}`,
+        );
       }
       last = reason;
     }
+    const shaped = rowShape(this.lastView, step.shape ?? {});
+    if (shaped !== '') last += `; ${shaped}`;
     return this.fail(index, `${retry ? 'ESS-CF-EVENTUAL-VIEW' : 'ESS-CF-VIEW'}: ${last}`);
   }
 
@@ -6486,6 +6493,20 @@ export function holds(payload: { [field: string]: Node }, shape: { [path: string
         // nothing here to compare them against.
         break;
     }
+  }
+  return '';
+}
+
+/**
+ * rowShape holds every row a view read returned to the view's declared fields (suite/66,
+ * beyond10x/ess#680) with the event payload's leaf rule, and names the first row and leaf that does
+ * not conform. An empty shape checks nothing.
+ */
+export function rowShape(rows: Row[], shape: { [path: string]: Held }): string {
+  if (Object.keys(shape).length === 0) return '';
+  for (const [index, row] of rows.entries()) {
+    const reason = holds(row, shape);
+    if (reason !== '') return `row ${index} ${reason}`;
   }
   return '';
 }
@@ -8683,11 +8704,15 @@ export function admitStep(value: Node, major: number): void {
       optional = 'params';
       break;
     case 'expect_view':
-      required += ' view expectation';
-      break;
     case 'eventually_view':
       required += ' view expectation';
-      optional = 'params';
+      if (tag === 'eventually_view') optional = 'params';
+      // A view row shape (suite/66 and /67, beyond10x/ess#680), refused below the pair before
+      // any target effect, as ess_conformance::view_row_shape refuses it.
+      if (value.shape !== undefined) {
+        if (major < 66) throw new Error('a view row shape requires suite/66 or /67');
+        optional += ' shape';
+      }
       break;
     case 'hold_now': {
       if (major < 50) {

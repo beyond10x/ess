@@ -3160,15 +3160,40 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 			return r.fail(index, "%s", reason)
 		}
 		if held {
+			if reason := rowShape(r.lastView.Rows, step.Shape); reason != "" {
+				return r.assertionFailure(index, "%s: `%s` %s", viewCode(retry), step.View, reason)
+			}
 			return true
 		}
 		last = reason
 	}
-	code := "ESS-CF-VIEW"
-	if retry {
-		code = "ESS-CF-EVENTUAL-VIEW"
+	if reason := rowShape(r.lastView.Rows, step.Shape); reason != "" {
+		last += "; " + reason
 	}
-	return r.assertionFailure(index, "%s: %s", code, last)
+	return r.assertionFailure(index, "%s: %s", viewCode(retry), last)
+}
+
+// viewCode names the check a view step failed, as the reference runner's CheckCode does.
+func viewCode(retry bool) string {
+	if retry {
+		return "ESS-CF-EVENTUAL-VIEW"
+	}
+	return "ESS-CF-VIEW"
+}
+
+// rowShape holds every row a view read returned to the view's declared fields (suite/66,
+// beyond10x/ess#680), with the event payload's leaf rule, and names the first row and leaf that
+// does not conform. An empty shape checks nothing.
+func rowShape(rows []Row, shape map[string]Held) string {
+	if len(shape) == 0 {
+		return ""
+	}
+	for index, row := range rows {
+		if reason := holds(row, shape); reason != "" {
+			return fmt.Sprintf("row %d %s", index, reason)
+		}
+	}
+	return ""
 }
 
 // decide answers whether the view expectation holds, why not, and whether it could be decided.
@@ -5829,11 +5854,19 @@ func admitStep(value any, major int) error {
 	case "query_view":
 		required += " view"
 		optional = "params"
-	case "expect_view":
+	case "expect_view", "eventually_view":
 		required += " view expectation"
-	case "eventually_view":
-		required += " view expectation"
-		optional = "params"
+		if tag == "eventually_view" {
+			optional = "params"
+		}
+		// A view row shape (suite/66 and /67, beyond10x/ess#680), refused below the pair before
+		// any target effect, as ess_conformance::view_row_shape refuses it.
+		if _, ok := f["shape"]; ok {
+			if major < 66 {
+				return fmt.Errorf("a view row shape requires suite/66 or /67")
+			}
+			optional += " shape"
+		}
 	case "hold_now":
 		if major < 50 {
 			return fmt.Errorf("hold_now steps require suite/50 or /51")

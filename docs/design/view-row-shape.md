@@ -53,7 +53,8 @@ shape keeps its format and its bytes.
 | a row missing a required leaf, or holding another type there | the view step fails |
 | a row holding a key the view does not declare | not refused |
 
-The Rust runner checks it (`runner.rs`, `row_shape`); the Go and TypeScript runtimes and synthesis
-follow in their own stories (`the-go-runtime-checks-a-view-rows-shape`,
-`the-typescript-runtime-checks-a-view-rows-shape`,
-`synthesized-and-authored-view-reads-carry-the-rows-shape`).
+The Rust runner checks it (`runner.rs`, `row_shape`), and so do the generated Go runtime
+(`go/runtime.go`, `rowShape`) and the TypeScript runtime (`ts/runtime.ts`, `rowShape`), with the
+Rust verdicts (`tests/leaf_payloads_go.rs`, `tests/typescript_runtime.rs`, over the fixture in
+`tests/support_view_row_shape`). Synthesis and authoring follow in
+`synthesized-and-authored-view-reads-carry-the-rows-shape`.

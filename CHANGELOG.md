@@ -20,6 +20,8 @@
 - An `ess-http/1` route's wrapped body may carry members beside its form: any number of literal members, `{<name>: {literal: <text>}}`, on a view or a command outcome, and on the `array` of a view that is not paged one `{<name>: count}` member holding the number of rows (`body: {success: {literal: ok}, items: array, total: count}`); OpenAPI requires each member and both generated servers write them, and a second form, a second count, a count beside `single` or on an outcome, or members with no form are refused `ESS-HTTP-024` naming the member (beyond10x/ess#755).
 - Suite pair `ess-conformance/66` (ordinary) and `/67` (coverage) is open with no construct: every reader (Rust, Go, TypeScript) admits it wherever it admits `/64` and `/65`, and nothing writes it yet.
 - A suite's `expect_view` and `eventually_view` steps may carry `shape`, the view's declared fields flattened as an event's payload shape, and the Rust runner fails the step for a row that misses a required field or holds another type there, naming the row and the field; an `Optional` field admits absent and `null`, an undeclared key is not refused, and a suite carrying it is `ess-conformance/66` or `/67`, refused under a lower major (beyond10x/ess#680).
+- The generated Go conformance runtime holds every row of a view read to the step's `shape` as the Rust runner does, failing a row that misses a required field or holds another type there, and refuses `shape` on a view step below `ess-conformance/66` before any target effect (beyond10x/ess#680).
+- The TypeScript conformance runtime holds every row of a view read to the step's `shape` and refuses it below `ess-conformance/66`, as the Rust runner and the Go runtime do (beyond10x/ess#680).
 
 ### Changed
 

@@ -44,8 +44,14 @@
 //! `crates/specify/ess-primitives/tests/vectors/primitive-semantics.json` by walking up from its
 //! own location, so a build written anywhere else fails at the corpus rather than at a predicate.
 
+mod support_go;
+mod support_ts;
+mod support_view_row_shape;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use support_view_row_shape::{RowFault, RowFaults};
 
 /// The repository root.
 fn root() -> PathBuf {
@@ -417,4 +423,44 @@ fn the_typescript_sources_are_formatted_by_the_configuration_beside_them() {
         String::from_utf8_lossy(&checked.stdout),
         String::from_utf8_lossy(&checked.stderr)
     );
+}
+
+/// beyond10x/ess#680, story:the-typescript-runtime-checks-a-view-rows-shape: the TypeScript runtime
+/// holds every row of a view read to the step's `shape` (suite/66) with the Rust runner's verdicts,
+/// replaying the answers the Rust runner recorded.
+#[test]
+fn the_typescript_runtime_holds_every_view_row_to_its_shape_as_the_reference_runner_does() {
+    if tool("tsc", &["--version"]).is_none() || tool("node", &["--version"]).is_none() {
+        println!("skipped: no `tsc` or `node` on PATH, so the row shape was not run in TypeScript");
+        return;
+    }
+    let suite = support_view_row_shape::orders_suite_at(66);
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let package = support_ts::Package::new("row-shape", &suite);
+    for fault in [
+        RowFault::None,
+        RowFault::NoPlacedAt,
+        RowFault::PlacedAtSeven,
+    ] {
+        let recorder = support_go::Recorder::new(RowFaults::new(fault));
+        let rust = support_go::rust_outcomes_admitted(&admitted, &recorder);
+        let replayed = package.replay(&admitted, &recorder.transcript(), false);
+        assert!(
+            replayed.divergences.is_empty(),
+            "{fault:?}: the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+            replayed.divergences.join("\n"),
+            replayed.log
+        );
+        assert_eq!(
+            replayed.outcomes, rust,
+            "{fault:?}: TypeScript (left), Rust (right)\n{}",
+            replayed.log
+        );
+        assert_eq!(
+            rust.values().all(|status| status == "passed"),
+            fault == RowFault::None,
+            "{fault:?}: {rust:?}"
+        );
+    }
 }
