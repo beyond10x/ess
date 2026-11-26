@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 5
+revision: 6
 ---
 ## Summary
 
@@ -129,6 +129,8 @@ success; the release is public at https://github.com/beyond10x/ess/releases/tag/
 archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
 `hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
 written.
+
+0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
 
 ## Left open
 

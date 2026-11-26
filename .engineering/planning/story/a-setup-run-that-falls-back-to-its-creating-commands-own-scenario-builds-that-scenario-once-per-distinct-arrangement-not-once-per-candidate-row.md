@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-setup-run-of-a-creating-branch-with-several-related-rows-uses-the-field-values-another-scenario-chose
 - informed_by: story:the-own-scenario-arrangement-of-a-setup-run-finds-an-equal-arrangement-again-instead-of-building-it-once-per-path
-revision: 8
+revision: 9
 ---
 ## Summary
 
@@ -150,6 +150,8 @@ The second release run for tag 0.99.3 (45610533532) was cancelled on 2026-11-25 
 jobs started, so that 0.99.4, which holds everything 0.99.3 holds, is gated first; the full gate for
 0.99.3 is dispatched again after 0.99.4 is published (the operator session, D144 part 2 = A). The
 tag did not move.
+
+0.99.5 is released (2026-11-25 23:23 CET): tag on `3cdf39f157` (branch `hotfix/0.99.5`, the release the second finding's fix was planned for); the tag's release run 45682187587 took the full gate; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.5. Pull request 837 brings 0.99.5 to `main`; it was open when this was written.
 
 ## Second finding
 

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -415,3 +415,5 @@ success; the release is public at https://github.com/beyond10x/ess/releases/tag/
 archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
 `hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
 written.
+
+0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).

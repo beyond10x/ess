@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-swapped-caller-run-renames-only-the-names-it-binds
 - informed_by: story:a-caller-swap-redraw-keeps-unread-members-and-related-ties
-revision: 2
+revision: 3
 ---
 ## Finding
 
@@ -121,3 +121,5 @@ The text run did not say why either scenario failed: see
 ## Delivery
 
 Carried by the branch `hotfix/0.99.5`, in preparation on 2026-11-25 when this was written.
+
+0.99.5 is released (2026-11-25 23:23 CET): tag on `3cdf39f157` (branch `hotfix/0.99.5`, the release this story's fix was planned for); the tag's release run 45682187587 took the full gate; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.5. Pull request 837 brings 0.99.5 to `main`; it was open when this was written.

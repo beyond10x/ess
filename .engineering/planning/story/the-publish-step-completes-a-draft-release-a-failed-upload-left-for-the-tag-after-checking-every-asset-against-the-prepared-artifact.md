@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:bot-release-publication
-revision: 1
+revision: 2
 ---
 ## Context
 
@@ -66,6 +66,8 @@ fails when any case publishes unverified bytes. The cases:
   - B: it is left (keeps a hand edit; the body can differ from `notes.md`, as the one-line
     difference of 0.99.4's draft did).
   - Recommended: A.
+
+- PB-D1 = A and PB-D2 = A (the coordinator, 2026-11-26).
 
 ## Scope
 

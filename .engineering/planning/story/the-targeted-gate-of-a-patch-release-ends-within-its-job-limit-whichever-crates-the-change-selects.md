@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:tests-that-run-over-60-s-on-main-without-a-branch-of-the-week-run-within-60-s-or-move-to-the-slow-lane
-revision: 5
+revision: 6
 ---
 ## Finding
 
@@ -74,3 +74,5 @@ success; the release is public at https://github.com/beyond10x/ess/releases/tag/
 archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
 `hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
 written.
+
+0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
