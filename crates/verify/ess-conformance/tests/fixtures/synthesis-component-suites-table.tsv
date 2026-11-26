@@ -1,4 +1,4 @@
-#	models=104	lines=126
+#	models=105	lines=127
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	suite=0 6339334f2ae5a43b98ef7b8a2c7af9db330687a9e721a4bfaeedbcdf640b5a54:400	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	suite=5 83258f8aee44f1c66a730f7d9a9245cd6fc1a51718a2f25a53a4e819e7975520:10202	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	suite=5 370232c7ced707b90b7bffff39cf370202474cf971319bcc314bdb945b5abf5c:22834	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
@@ -16,6 +16,7 @@ crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	notes	suite=5 
 crates/specify/ess-compiler/tests/fixtures/absent-input.yaml	notes-service	suite=3 2a9cbbd4fde84f1c1ea0926b2a2281a864ba0f0cda7d274f40f68073bf31c488:7546	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-compiler/tests/fixtures/refusal-with-effect.yaml	order-service	suite=7 8fb4c2c5fd5481d7de4cb63fd508d21c8f88da0b527ca243cd9a83cfda8b2a41:26248	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	work-service	suite=1 7bcaeddf9744ade10f914187fbb9f9558b8716fdc4cf9dfa40dedd8d101faac1:3014	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	suite=10 888a8a0b9e4b2b7a67c9d4bb72a9d6d4e2326431b281eb7f9ef3056dc7a83abf:18782	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	poll-service	suite=5 a6d8c5c7176ee67a6c7e945a95a08ef8181efa4aacdbd8132c052a3b08253622:8968	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-http/tests/fixtures/auth.yaml	auth-service	suite=2 aac6f13f5305afa8bada89e15776ff116ef4bf9143a0671a0a5bd5939c49372c:5409	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-http/tests/fixtures/board.yaml	board-service	suite=3 7d7f5f07d76178a2e4fdbe3331508bf87d4e26335a9c285be51aa6bad7090fe0:7007	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0

@@ -3207,6 +3207,30 @@ pub struct ResolvedComponent {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+    /// The work it starts itself (ess/38), in declaration order: a level step runs its command
+    /// once per row its view answers, a time step runs its command every period.
+    ///
+    /// Skipped when empty, for the reason `settings` is: a model with no step keeps its bytes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<ResolvedComponentStep>,
+}
+
+/// One step of a component (ess/38, `docs/design/component-steps.md`), its names resolved and its
+/// actor settled: the one the step names, else the one system actor of a system-issued command.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedComponentStep {
+    /// What starts it.
+    pub form: ess_domain::component::StepForm,
+    /// The view whose rows start a level step; `None` for a time step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view: Option<ViewHandle>,
+    /// The command it runs.
+    pub command: CommandHandle,
+    /// Who runs it.
+    pub actor: ActorHandle,
+    /// How often it runs: the period of a time step, the polling period of a level step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub every: Option<ess_domain::binding::periodic::Period>,
 }
 
 /// Where a command-line surface puts each command it accepts, with its commands resolved.

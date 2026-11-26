@@ -4095,6 +4095,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     reference_integrity::references(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
         bindings(ir, &actors, &mut suite, &mut refusals, &mut notes);
+        component_steps(ir, &mut refusals);
         // The fresh suite's `Empty` authority, established before the aggregate planner reads it
         // (`docs/design/aggregate-group-selection.md`); the final selection below still runs.
         suite.select_fresh_format();
@@ -22611,6 +22612,28 @@ pub fn binding_triggers_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
         out,
         BINDING_TRIGGERS_TRIED.with(std::cell::Cell::get) - before,
     )
+}
+
+/// A component's steps (ess/38, `docs/design/component-steps.md`): the interpreter runs them
+/// after each command, and no scenario claims them yet, so each step is a refusal by name.
+fn component_steps(ir: &EssIr, refusals: &mut Vec<Refusal>) {
+    for component in ir.components().values() {
+        for step in &component.steps {
+            refusals.push(Refusal {
+                subject: ComponentRef::new(component.name.clone()).into(),
+                scenario: None,
+                stands: false,
+                caused_by: None,
+                cause: RefusalCause::NotSynthesisedYet {
+                    construct: match step.form {
+                        ess_domain::component::StepForm::Level => "a level step of a component",
+                        ess_domain::component::StepForm::Time => "a time step of a component",
+                    },
+                    sections: "docs/design/component-steps.md",
+                },
+            });
+        }
+    }
 }
 
 /// The four claims a binding makes, one scenario each (§16, §17, §18).

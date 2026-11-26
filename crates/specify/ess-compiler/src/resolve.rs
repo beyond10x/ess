@@ -69,14 +69,14 @@ use crate::ir::{
     related_may_be_absent, ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle,
     ErrorHandle, EssIr, EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation,
     ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCommandGroup,
-    ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedCondition,
-    ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
-    ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
-    ResolvedMapping, ResolvedMappingValue, ResolvedMeasureExpr, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedPublishedRead, ResolvedRelatedHop,
-    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation, ResolvedRowSelection,
-    ResolvedRowSetTest, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
-    ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedComponentStep,
+    ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
+    ResolvedError, ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead,
+    ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedMeasureExpr, ResolvedOutcome,
+    ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue, ResolvedPublishedRead,
+    ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation,
+    ResolvedRowSelection, ResolvedRowSetTest, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -4842,6 +4842,46 @@ impl<'a> Resolver<'a> {
         handles
     }
 
+    /// A component's steps (ess/38), their command resolved and their actor settled.
+    ///
+    /// `validate_steps` refused a step whose command, view or actor does not resolve, so a miss
+    /// here is a `Specification` that did not come through `compile_locating`.
+    fn component_steps(
+        &mut self,
+        component: &ComponentSpec,
+        commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        complete: &mut bool,
+    ) -> Vec<ResolvedComponentStep> {
+        let mut steps = Vec::with_capacity(component.steps.len());
+        for step in &component.steps {
+            let command = match self.command_of(&step.command, commands) {
+                Found::Handle(handle) => handle,
+                Found::Unresolved => {
+                    *complete = false;
+                    continue;
+                }
+                Found::Missing => {
+                    *complete = false;
+                    self.off_contract = true;
+                    continue;
+                }
+            };
+            let Some(actor) = ess_domain::component::step_actor(self.spec, step) else {
+                *complete = false;
+                self.off_contract = true;
+                continue;
+            };
+            steps.push(ResolvedComponentStep {
+                form: step.form,
+                view: step.view.clone().map(ViewHandle::new),
+                command,
+                actor: ActorHandle::new(actor.clone()),
+                every: step.every,
+            });
+        }
+        steps
+    }
+
     fn components(
         &mut self,
         commands: &BTreeMap<QualifiedName, ResolvedCommand>,
@@ -4937,6 +4977,7 @@ impl<'a> Resolver<'a> {
                     summary: setting.summary.clone(),
                 });
             }
+            let steps = self.component_steps(&component, commands, &mut complete);
             if complete {
                 resolved.insert(
                     component.name.clone(),
@@ -4950,6 +4991,7 @@ impl<'a> Resolver<'a> {
                         naming: component.naming,
                         settings,
                         refs: component.refs,
+                        steps,
                     },
                 );
             }

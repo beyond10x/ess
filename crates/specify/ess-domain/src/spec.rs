@@ -552,6 +552,8 @@ impl Specification {
         errors.extend(crate::binding::context::validate_specification(self));
         errors.extend(crate::binding::retry::validate_specification(self));
         errors.extend(crate::binding::condition::validate_specification(self));
+        // What a component starts itself: its level and time steps (ess/38).
+        errors.extend(crate::component::validate_steps(self));
         errors.extend(crate::binding::refusal::validate_specification(self));
         errors
     }
