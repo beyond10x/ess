@@ -2443,10 +2443,16 @@ fn inputs_for(
     // holds on every candidate — a text has no neighbour rule 3 could offer. A further witness
     // starts every leaf from another base value, which is the input a comparison with the row
     // needs for its other side. Only where such a comparison exists: every other command keeps the
-    // candidates, and so the suites, it had.
+    // candidates, and so the suites, it had. Each further witness is tried first with the example
+    // back at every leaf no decision tells apart, as a further creation sends it.
     if !grounded.is_empty() {
         if let Ok(further) = candidates(ir, command, &guards, Distinction::further(1)) {
-            inputs.extend(further);
+            for witness in further {
+                inputs.extend(super::exampled_witness(
+                    ir, entity, command, &guards, &witness,
+                ));
+                inputs.push(witness);
+            }
         }
     }
     Ok(inputs)
