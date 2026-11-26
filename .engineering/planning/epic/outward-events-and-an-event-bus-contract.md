@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -53,22 +53,23 @@ include mcp,a2a,etec".
 
 ## Decisions
 
-Open, for the owner; the design page gives the options, costs and the recommended one, and no
-option is taken by default.
+Decided by the owner, 2026-11-26, relayed by the operator session. The design page
+(`docs/design/outward-events-and-event-bus.md`, section "Decided") states each pick as the design.
 
-- F1 where outwardness is declared (A in the specification / B nowhere / C sibling document).
-- F2 where the bus contract lives (A sibling `ess-bus/1` / B in each producer / C a protospec
-  document).
-- F3 how a periodic aggregate is declared (A from an aggregate view / B a time step's event / C
-  aggregated in the bus).
-- F4 the route condition language (A ESS's `where:` extended / B `canon-expr/1` / C A with a
-  tested translation).
-- F5 "start protocol P" as a sink (A own sink kind / B a declared input of an evaluator / C
-  outside the bus).
-- F6 where a bus's transport binding lives (A `ess-transport` / B sibling `ess-bus-binding/1` / C
-  inside the contract).
-- F7 how an ingress binding is cut (A one format per protocol / B one `ess-ingress/1` / C methods
-  of `ess-jsonrpc/1`).
+- F1 = A: `outward:` on a component's `publishes:`, in the specification, at the next `ess/N`.
+  Rejected: B nowhere, C a sibling `ess-outward/1`.
+- F2 = A: a sibling `ess-bus/1` that pins several specifications. Rejected: B in each producer, C
+  an `ess-protospec/1` document per bus.
+- F3 = A: an outward event sampled from an aggregate view every period. Rejected: B a time step's
+  event, C aggregated in the bus.
+- F4 = C: ESS's `where:` fragment extended by numeric comparison and list membership, plus a tested
+  translation into `canon-expr/1`. Rejected: A without the translation, B `canon-expr/1` unchanged.
+- F5 = B: no sink kind of its own; a trigger evaluator is a system with a declared input. Rejected:
+  A a sink kind of its own, C outside the bus.
+- F6 = B: a sibling `ess-bus-binding/1` per bus. Rejected: A in `ess-transport`, C inside the
+  contract.
+- F7 = A: one format per protocol, `ess-mcp/1` and `ess-a2a/1`. Rejected: B one `ess-ingress/1`,
+  C methods of `ess-jsonrpc/1`.
 
 ## Not in this epic
 

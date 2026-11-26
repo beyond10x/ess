@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:a-periodic-aggregate-event-publishes-an-aggregate-view-s-answer-every-period
 kind: story
-status: draft
+status: proposed
 title: A periodic aggregate event publishes an aggregate view's answer every period
-summary: Statistics once per period, checked against a view; F3 open
+summary: Statistics once per period, checked against a view; F3 A decided
 tags:
 - design
 - event-bus
@@ -15,7 +15,9 @@ relations:
 - depends_on: story:a-system-declares-which-of-its-published-events-are-outward
 - informed_by: story:a-component-declares-level-and-time-steps-that-validate-checks-and-the-interpreter-runs
 - informed_by: story:periodic-binding-trigger-contract
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:54Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -60,7 +62,7 @@ The view's window is the time since the previous emission.
 
 ## Decisions
 
-Open, for the owner: F3 (A from an aggregate view, B an ordinary event a time step of
-`story:a-component-declares-level-and-time-steps-that-validate-checks-and-the-interpreter-runs`
-emits, C aggregated by the bus), and F1 for where `outward:` lives. The design page recommends F3
-A; no default is taken.
+F3 = A: an outward event sampled from an aggregate view every period (`every`, `from_view`); F1 = A
+puts `outward:` in the specification. The owner, 2026-11-26, relayed by the operator session.
+Rejected: B, an ordinary event a time step emits (its payload is checked against no view); C,
+aggregated by the bus (per-occurrence traffic the owner excluded).

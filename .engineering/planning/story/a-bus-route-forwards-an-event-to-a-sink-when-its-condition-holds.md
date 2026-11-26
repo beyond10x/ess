@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:a-bus-route-forwards-an-event-to-a-sink-when-its-condition-holds
 kind: story
-status: draft
+status: proposed
 title: A bus route forwards an event to a sink when its condition holds
-summary: 'Content-based router: three-valued condition over an event, a sink; F4, F5 open'
+summary: 'Content-based router: three-valued condition over an event, a sink; F4 C, F5 B decided'
 tags:
 - design
 - event-bus
@@ -13,7 +13,9 @@ relations:
 - serves: vision:O2
 - decomposes: epic:outward-events-and-an-event-bus-contract
 - depends_on: story:an-event-bus-contract-states-publish-subscribe-and-fan-out-channels-over-outward-events
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:54Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -60,8 +62,8 @@ A sink is a channel of the same contract or a declared input of a pinned system.
 
 ## Decisions
 
-Open, for the owner: F4, the condition language (A ESS's `where:` fragment extended by numeric
-comparison and list membership, B `canon-expr/1` unchanged, C A with a tested translation into
-`canon-expr/1`), and F5, "start protocol P" as a sink (A a sink kind of its own, B a declared input
-of a trigger evaluator, C outside the bus). The design page recommends F4 C and F5 B; no default is
-taken.
+F4 = C: the route condition is ESS's binding `where:` fragment extended by numeric comparison and
+list membership, plus a tested translation into `canon-expr/1`. F5 = B: no sink kind of its own for
+"start protocol P"; a trigger evaluator is a system with a declared input, and that input is the
+sink. The owner, 2026-11-26, relayed by the operator session. Rejected: F4 A without the
+translation, F4 B `canon-expr/1` unchanged; F5 A a sink kind of its own, F5 C outside the bus.

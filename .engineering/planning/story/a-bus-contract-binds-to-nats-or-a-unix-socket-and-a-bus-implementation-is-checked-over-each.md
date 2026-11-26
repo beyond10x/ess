@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:a-bus-contract-binds-to-nats-or-a-unix-socket-and-a-bus-implementation-is-checked-over-each
 kind: story
-status: draft
+status: proposed
 title: A bus contract binds to NATS or a unix socket, and a bus implementation is checked over each
-summary: ess-bus-binding/1, a target adapter per transport, traces checked against a machine per pattern; F6 open
+summary: ess-bus-binding/1, a target adapter per transport, traces checked against a machine per pattern; F6 B decided
 tags:
 - design
 - event-bus
@@ -15,7 +15,9 @@ relations:
 - depends_on: story:an-event-bus-contract-states-publish-subscribe-and-fan-out-channels-over-outward-events
 - informed_by: story:a-command-may-be-bound-to-a-broker-subject-as-a-request-with-one-reply
 - informed_by: story:a-broker-binding-carries-an-exchange
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:55Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -59,6 +61,7 @@ against the pattern's reference machine.
 
 ## Decisions
 
-Open, for the owner: F6 (A in `ess-transport` per producer with `unix_socket` as a new protocol
-member, B a sibling `ess-bus-binding/1` per bus contract, C transport keys inside the contract).
-The design page recommends B; no default is taken.
+F6 = B: a sibling `ess-bus-binding/1` per bus contract, reusing `ess-transport`'s subject and stream
+checks. The owner, 2026-11-26, relayed by the operator session. Rejected: A, in `ess-transport` per
+producer with `unix_socket` as a new member (N documents must agree); C, transport keys inside the
+contract (wire words in the semantics).

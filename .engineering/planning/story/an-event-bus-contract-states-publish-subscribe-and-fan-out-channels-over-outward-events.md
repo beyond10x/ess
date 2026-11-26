@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:an-event-bus-contract-states-publish-subscribe-and-fan-out-channels-over-outward-events
 kind: story
-status: draft
+status: proposed
 title: An event-bus contract states publish-subscribe and fan-out channels over outward events
-summary: ess-bus/1 pins specifications and states channels by pattern and delivery word, no wire; F1, F2 open
+summary: ess-bus/1 pins specifications and states channels by pattern and delivery word, no wire; F1, F2 A decided
 tags:
 - design
 - event-bus
@@ -14,7 +14,9 @@ relations:
 - decomposes: epic:outward-events-and-an-event-bus-contract
 - depends_on: story:a-system-declares-which-of-its-published-events-are-outward
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:53Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -58,6 +60,8 @@ contract names no subject, socket or host.
 
 ## Decisions
 
-Open, for the owner: F1 (where outwardness is declared) and F2 (A a sibling `ess-bus/1`, B in each
-producer's specification, C an `ess-protospec/1` document per bus). The design page recommends F1
-A and F2 A; no default is taken.
+F1 = A (see the outward-events story) and F2 = A: the bus contract is a sibling `ess-bus/1` that
+pins several specifications by digest and compiles to `ess-bus-ir/1`, with each pattern's reference
+machine in `ess-protospec/1` for conformance. The owner, 2026-11-26, relayed by the operator
+session. Rejected: B, in each producer's specification (a producer names its consumers); C, one
+`ess-protospec/1` document per bus (no pattern vocabulary).

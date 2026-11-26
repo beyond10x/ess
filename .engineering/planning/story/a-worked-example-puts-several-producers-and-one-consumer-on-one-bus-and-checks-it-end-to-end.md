@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-worked-example-puts-several-producers-and-one-consumer-on-one-bus-and-checks-it-end-to-end
 kind: story
-status: draft
+status: proposed
 title: A worked example puts several producers and one consumer on one bus and checks it end to end
 summary: examples/ with outward events, a bus contract, a route and two bindings; after F1-F7
 tags:
@@ -15,7 +15,9 @@ relations:
 - depends_on: story:a-bus-route-forwards-an-event-to-a-sink-when-its-condition-holds
 - depends_on: story:a-bus-contract-binds-to-nats-or-a-unix-socket-and-a-bus-implementation-is-checked-over-each
 - depends_on: story:a-periodic-aggregate-event-publishes-an-aggregate-view-s-answer-every-period
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:56Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -51,5 +53,6 @@ unix-socket binding.
 
 ## Decisions
 
-Open, for the owner: F1 to F7 of the design page all shape this example; it is written after they
-are answered. No default is taken.
+F1 to F7 are decided: F1 A, F2 A, F3 A, F4 C, F5 B, F6 B, F7 A (the owner, 2026-11-26, relayed by
+the operator session). The example uses `ess-bus/1`, `ess-bus-binding/1` and `ess-mcp/1` as the
+design page states them.

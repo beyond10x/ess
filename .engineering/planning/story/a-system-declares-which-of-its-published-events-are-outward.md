@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:a-system-declares-which-of-its-published-events-are-outward
 kind: story
-status: draft
+status: proposed
 title: A system declares which of its published events are outward
-summary: 'outward: on a component''s publishes, a contract diff reads; F1 open'
+summary: 'outward: on a component''s publishes, a contract diff reads; F1 A decided'
 tags:
 - design
 - event-bus
@@ -13,7 +13,9 @@ relations:
 - serves: vision:O2
 - decomposes: epic:outward-events-and-an-event-bus-contract
 - informed_by: story:a-component-that-publishes-nothing-keeps-the-events-its-commands-emit-unpublished
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:52Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -54,6 +56,6 @@ publishes:
 
 ## Decisions
 
-Open, for the owner: F1 (A in the specification, B nowhere in the model, C a sibling
-`ess-outward/1`). The design page recommends A; no default is taken. Under B this story shrinks to
-the bus contract's own selection and is archived.
+F1 = A: a component's `publishes:` gains `outward:`, in the specification, at the next `ess/N`. The
+owner, 2026-11-26, relayed by the operator session. Rejected: B, nowhere in the model (no contract
+boundary for `diff`); C, a sibling `ess-outward/1` (one more document per system for one list).

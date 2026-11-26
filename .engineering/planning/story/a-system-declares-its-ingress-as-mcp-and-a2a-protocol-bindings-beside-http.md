@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:a-system-declares-its-ingress-as-mcp-and-a2a-protocol-bindings-beside-http
 kind: story
-status: draft
+status: proposed
 title: A system declares its ingress as MCP and A2A protocol bindings beside HTTP
-summary: Semantics, protocol port, binding and transport apart, a port pinned by digest; F7 open
+summary: Semantics, protocol port, binding and transport apart, a port pinned by digest; F7 A decided
 tags:
 - design
 - event-bus
@@ -14,7 +14,9 @@ relations:
 - decomposes: epic:outward-events-and-an-event-bus-contract
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 - informed_by: story:a-command-binds-to-json-rpc-and-grpc-beside-http
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-26T16:09:55Z", actor: "human:operator", revision: 3}
 ---
 ## Need
 
@@ -55,6 +57,7 @@ A:
 
 ## Decisions
 
-Open, for the owner: F7 (A one sibling format per protocol, B one `ess-ingress/1` with a closed
-`protocol:` set, C MCP and A2A as methods of the draft `ess-jsonrpc/1`). The design page recommends
-A; no default is taken.
+F7 = A: one format per protocol, `ess-mcp/1` and `ess-a2a/1`, beside `ess-http/1`. The owner,
+2026-11-26, relayed by the operator session. Rejected: B, one `ess-ingress/1` with a closed
+`protocol:` set; C, MCP and A2A as methods of the draft `ess-jsonrpc/1` (no typed home for tool
+listing or agent card).
