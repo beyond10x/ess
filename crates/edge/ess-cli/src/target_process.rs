@@ -13,7 +13,8 @@
 //!
 //! The child's own process group does not receive the interrupt a terminal sends to `ess`'s, and
 //! `ess` dying of a signal would run no `Drop`. So from the first spawn on, a thread of its own
-//! waits for `SIGINT`, `SIGTERM` and `SIGHUP` ([`watch_signals`]). On one it kills the group of
+//! waits for `SIGINT`, `SIGTERM` and `SIGHUP`, and is the only thread that takes them
+//! ([`watch_signals`]). On the first it kills the group of
 //! the target alive then, reaps it within [`SIGNAL_REAP`], and ends `ess` by that same signal,
 //! writing no report ([`end_on`]). `SIGKILL` cannot be handled; a target whose `ess` was killed
 //! exits when its standard input closes, as the design requires of every target.
@@ -33,6 +34,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use ess_conformance::process::{Exit, Peer, PeerFault, MAX_LINE};
+use nix::sys::signal::{SigSet, Signal as Sig};
 use rustix::process::{Pid, Signal, WaitId, WaitIdOptions};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 
@@ -47,22 +49,49 @@ fn alive() -> MutexGuard<'static, Option<Pid>> {
     ALIVE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// [`ENDING`] as a signal set.
+fn ending() -> SigSet {
+    let mut set = SigSet::empty();
+    for signal in [Sig::SIGINT, Sig::SIGTERM, Sig::SIGHUP] {
+        set.add(signal);
+    }
+    set
+}
+
 /// Starts the thread that ends the target when `ess` is signalled, once per process; before the
 /// first spawn, so no target is ever alive without it.
+///
+/// Only that thread takes an ending signal. A process-directed signal goes to any thread that does
+/// not block it, so with every thread open a SIGINT and a SIGTERM sent right after it can run their
+/// handlers on two threads at once, and whichever records first decides. So the calling thread,
+/// `main`'s, which spawns the target and its pipe threads, blocks [`ENDING`] before the handlers
+/// exist, every thread started from it later inherits the block, and the signal thread alone
+/// unblocks it. Its handlers then run one at a time, in the order the kernel hands the signals
+/// out, and the first decides. A signal sent in between stays pending until the signal thread
+/// unblocks it. `std::process::Command` resets a child's mask.
 fn watch_signals() -> std::io::Result<()> {
     static WATCHING: OnceLock<Result<(), std::io::ErrorKind>> = OnceLock::new();
     let watching = WATCHING.get_or_init(|| {
-        let mut signals =
-            signal_hook::iterator::Signals::new(ENDING).map_err(|error| error.kind())?;
-        std::thread::Builder::new()
-            .name("ess-target-signals".to_owned())
-            .spawn(move || {
-                if let Some(signal) = signals.forever().next() {
-                    end_on(signal);
-                }
-            })
-            .map(drop)
-            .map_err(|error| error.kind())
+        let set = ending();
+        set.thread_block()
+            .map_err(|errno| std::io::Error::from(errno).kind())?;
+        let started = signal_hook::iterator::Signals::new(ENDING).and_then(|mut signals| {
+            std::thread::Builder::new()
+                .name("ess-target-signals".to_owned())
+                .spawn(move || {
+                    // Unblocking a valid set in the calling thread cannot fail.
+                    let _ = set.thread_unblock();
+                    if let Some(signal) = signals.forever().next() {
+                        end_on(signal);
+                    }
+                })
+                .map(drop)
+        });
+        if started.is_err() {
+            // No thread takes them: open the calling thread again rather than swallow them.
+            let _ = set.thread_unblock();
+        }
+        started.map_err(|error| error.kind())
     });
     watching.map_err(std::io::Error::from)
 }

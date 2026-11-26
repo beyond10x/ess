@@ -56,6 +56,7 @@ fluent-uri = "0.4.1"
 # The edge owns descriptor-relative output admission, locking and same-mount publication.
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
 signal-hook = { version = "=0.3.18", default-features = false, features = ["iterator"] }
+nix = { version = "=0.31.4", default-features = false, features = ["signal"] }
 sha2 = "0.11"
 getrandom = "0.3"
 # The recovery profile admits ESS-generated charts only, so the chart payload is decoded through a
