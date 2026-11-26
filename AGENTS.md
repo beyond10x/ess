@@ -159,6 +159,7 @@ lane that failed in CI.
 | a file under `crates/<area>/<crate>/` | that crate |
 | `ess-domain`, `ess-compiler` or `ess-primitives` | also `ess-cli`, whose integration tests pin validation and compile output |
 | synthesis, mutation or interpretation in `ess-conformance` | also `ess-cli`; run `ess-conformance` one `--test` at a time, its full test build is the largest in the workspace |
+| a file under the `src/` of `ess-compiler`, `ess-conformance`, `ess-domain`, `ess-gen`, `ess-http`, `ess-primitives`, `ess-transport` or `ess-yaml`, the crates the synthesis source stamp digests | also rewrite the stamp with its test's write mode (`SYNTHESIS_SOURCES_STAMP_WRITE`, the command its failure prints), then run `cargo test -p ess-conformance --test synthesis_suite_bytes_table` |
 | a `ValidationCode`, a diagnostic, a format version, `CHANGELOG.md`, `website/` or `docs/` | also `task test-xtask` (see the pins paragraph below) |
 | `RawSpecFile` | also `cargo xtask schema`, then `task projection-check` |
 | a workflow, `Taskfile.yml` or a public API | also `task ci-lint` |
