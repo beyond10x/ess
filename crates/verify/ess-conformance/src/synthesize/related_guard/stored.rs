@@ -244,7 +244,8 @@ fn creation<'ir>(
 }
 
 /// Points the stored `field` of `instance` as `link` says, by rewriting the input of the act in
-/// `steps` that created it, and what `settled` says the subject holds there with it.
+/// `steps` that created it, and what `settled` says the subject holds there with it; the value
+/// that act is now sent, `None` where it leaves the field out.
 fn relink(
     ir: &EssIr,
     steps: &mut [ScenarioStep],
@@ -252,7 +253,7 @@ fn relink(
     instance: &InstanceName,
     field: &str,
     link: &Link<'_>,
-) -> Result<(), RefusalCause> {
+) -> Result<Option<ScenarioValue>, RefusalCause> {
     let gap = |why: &str| unpointed(field, why);
     let (created, command, creating) = creation(ir, steps, instance, field)?;
     let subject = creating
@@ -336,7 +337,7 @@ fn relink(
         }
     }
     if let Some(settled) = settled {
-        match value {
+        match value.clone() {
             Some(value) => {
                 settled.insert(
                     field.to_owned(),
@@ -351,7 +352,7 @@ fn relink(
             }
         }
     }
-    Ok(())
+    Ok(value)
 }
 
 /// An input the command is sent with where the addressed row's existence and held state have
@@ -391,8 +392,22 @@ pub(super) fn arranged_at(
     distinction: Distinction,
     goal: Option<&Goal>,
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let link = field(command).ok_or_else(unarranged)?;
+    arranged_through(models, command, outcome, actors, (distinction, goal), link)
+}
+
+/// [`arranged_at`] through the subject's stored `field` naming an `entity` row: the field the
+/// command's guards read, or the link a refusal answered first compares with the input they read
+/// the row through, so that row is the one the link names ([`super::compared_with_link`]).
+pub(super) fn arranged_through(
+    models: &super::super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal): (Distinction, Option<&Goal>),
+    (field, entity): (&str, &EntityHandle),
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
     let ir = models.arrangement;
-    let (field, entity) = field(command).ok_or_else(unarranged)?;
     if goal.is_some() && is_absent(outcome) {
         return Err(unarranged());
     }
@@ -428,24 +443,29 @@ pub(super) fn arranged_at(
             field,
             &Link::Fresh(entity),
         );
-        if let Err(fresh) = fresh {
-            // Every writer refuses an identity no row carries before storing it: the subject is
-            // pointed at a row a branch removes once the subject is arranged (beyond10x/ess#509).
-            let (row, removal) = removed(ir, entity, actors, first).ok_or(fresh)?;
-            relink(
-                ir,
-                &mut setup.steps,
-                (setup.instance.is_some() || setup.settled.contains_key(field))
-                    .then_some(&mut setup.settled),
-                &subject,
-                field,
-                &Link::Row(&row.instance),
-            )?;
-            steps.extend(row.steps);
-            setup.source.extend(row.source);
-            after.extend(removal.steps);
-            setup.source.extend(removal.source);
-        }
+        let linked = match fresh {
+            Ok(linked) => linked,
+            Err(fresh) => {
+                // Every writer refuses an identity no row carries before storing it: the subject
+                // is pointed at a row a branch removes once the subject is arranged
+                // (beyond10x/ess#509).
+                let (row, removal) = removed(ir, entity, actors, first).ok_or(fresh)?;
+                let linked = relink(
+                    ir,
+                    &mut setup.steps,
+                    (setup.instance.is_some() || setup.settled.contains_key(field))
+                        .then_some(&mut setup.settled),
+                    &subject,
+                    field,
+                    &Link::Row(&row.instance),
+                )?;
+                steps.extend(row.steps);
+                setup.source.extend(row.source);
+                after.extend(removal.steps);
+                setup.source.extend(removal.source);
+                linked
+            }
+        };
         // Rows of the entity exist, each carrying an identity other than the one stored.
         if !super::super::singleton::is_singleton(ir, entity) {
             for at in [first - 1, first + 1] {
@@ -455,7 +475,20 @@ pub(super) fn arranged_at(
                 }
             }
         }
-        unrefused(ir, command, distinction)?
+        let mut input = unrefused(ir, command, distinction)?;
+        // An input a refusal answered first compares with the link names what the subject holds.
+        for named in super::compared_with_link(ir, command, outcome, field) {
+            match &linked {
+                Some(ScenarioValue::Literal { value }) => {
+                    input.insert(named, value.clone());
+                }
+                Some(ScenarioValue::Instance { instance }) => {
+                    setup.bound.insert(named, instance.clone());
+                }
+                _ => return Err(unpointed(field, "the subject holds no row the send can name")),
+            }
+        }
+        input
     } else {
         let (row, first, input) = reachable_row(
             ir,
@@ -544,7 +577,7 @@ fn reachable_row(
             field,
             &Link::Row(&row.instance),
         )
-        .map(|()| steps)
+        .map(|_| steps)
     };
     let reaches = |row: &Arrangement| {
         pointed(row).is_ok_and(|steps| order(ir, &steps, (entity, subject, field), row).is_ok())
