@@ -828,3 +828,59 @@ fn a_branch_beside_a_link_refusal_is_sent_the_subjects_own_row_where_the_link_is
     let (written, failed) = ship_order(&shop_with_the_link_copied_from_a_cart());
     assert_ships_at_its_own_store(&written, &failed);
 }
+
+/// [`shop_with_the_link_copied_from_a_cart`] with `ShipOrder` reading a second row, a coupon its
+/// input names, beside the store: a missing coupon and a void one refuse after the store is read.
+fn shop_with_a_coupon_beside_the_store() -> String {
+    let edits = [
+        (
+            "  - {name: demo.shop.CartId, kind: newtype, of: String}\n",
+            "  - {name: demo.shop.CartId, kind: newtype, of: String}\n  - {name: demo.shop.CouponId, kind: newtype, of: String}\n",
+        ),
+        (
+            "  - name: demo.shop.Cart\n",
+            "  - name: demo.shop.Coupon\n    identity: {name: coupon_id, type: demo.shop.CouponId}\n    fields: [{name: code, type: String}]\n    lifecycle: {initial: Valid, states: [Valid, Void], terminal: [Void], transitions: [{name: void, from: [Valid], to: Void}]}\n  - name: demo.shop.Cart\n",
+        ),
+        (
+            "may: [demo.shop.OpenCart,",
+            "may: [demo.shop.IssueCoupon, demo.shop.VoidCoupon, demo.shop.OpenCart,",
+        ),
+        (
+            "  - name: demo.shop.OpenCart\n",
+            "  - name: demo.shop.IssueCoupon\n    input: [{name: coupon_id, type: demo.shop.CouponId}]\n    outcomes:\n      - {name: issued, creates: demo.shop.Coupon, instance: coupon_id, emits: [demo.shop.Issued], payload: {demo.shop.Issued: {coupon_id: input.coupon_id}}}\n  - name: demo.shop.VoidCoupon\n    input: [{name: coupon_id, type: demo.shop.CouponId}]\n    outcomes:\n      - {name: missing, unknown_instance: true, error: demo.shop.Missing}\n      - {name: voided, moves: demo.shop.Coupon.void, instance: coupon_id, emits: [demo.shop.Voided], payload: {demo.shop.Voided: {coupon_id: input.coupon_id}}}\n  - name: demo.shop.OpenCart\n",
+        ),
+        (
+            "    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}]\n    outcomes:\n      - {name: missing, unknown_instance: true, error: demo.shop.Missing}\n",
+            "    input: [{name: order_id, type: demo.shop.OrderId}, {name: store_id, type: demo.shop.StoreId}, {name: coupon_id, type: demo.shop.CouponId}]\n    outcomes:\n",
+        ),
+        (
+            "      - {name: frozen, when_related: {via: input.store_id, predicate: state == Frozen}, error: demo.shop.Frozen}\n",
+            "      - {name: no-coupon, when_related: {via: input.coupon_id, exists: false}, error: demo.shop.Missing}\n      - {name: frozen, when_related: {via: input.store_id, predicate: state == Frozen}, error: demo.shop.Frozen}\n      - {name: coupon-void, when_related: {via: input.coupon_id, predicate: state == Void}, error: demo.shop.Frozen}\n",
+        ),
+        (
+            "  - {name: demo.shop.CartOpened,",
+            "  - {name: demo.shop.Issued, fields: [{name: coupon_id, type: demo.shop.CouponId}]}\n  - {name: demo.shop.Voided, fields: [{name: coupon_id, type: demo.shop.CouponId}]}\n  - {name: demo.shop.CartOpened,",
+        ),
+    ];
+    let mut text = shop_with_the_link_copied_from_a_cart();
+    for (from, to) in edits {
+        assert!(text.contains(from), "the model holds {from:?}");
+        text = text.replacen(from, to, 1);
+    }
+    text
+}
+
+/// RED (N93, the reported shape with a second row): `ShipOrder` reads a coupon beside the store,
+/// so each of its branches arranges one of the two rows beside the other. The store, focus or
+/// beside, must be the order's own; synthesis arranged it apart and, since 0.99.4, refuses.
+#[test]
+fn a_branch_reading_two_rows_beside_a_link_refusal_is_sent_the_subjects_own_row() {
+    let (written, failed) = ship_order(&shop_with_a_coupon_beside_the_store());
+    for id in [
+        "demo.shop.ShipOrder/outcome/no-coupon",
+        "demo.shop.ShipOrder/outcome/coupon-void",
+    ] {
+        assert!(written.contains(id), "{id} is written: {written:#?}");
+    }
+    assert_ships_at_its_own_store(&written, &failed);
+}
