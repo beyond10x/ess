@@ -10,7 +10,7 @@
 
 use std::collections::BTreeSet;
 
-use ess_ui::{Body, Composite, Document, NodePath};
+use ess_ui::{Body, Composite, Document, NodePath, NodeRef};
 use ess_yaml::Value;
 
 use crate::schema::{self, is_unmapped_marker};
@@ -140,6 +140,61 @@ impl Walker<'_> {
             );
         }
         self.section_rows(text, at, sink);
+        self.loaded_rows(text, at, sink);
+    }
+
+    /// `expr_paths`, and with a model `row_fields`: `loads.<field>` reads the first row of the
+    /// `loads` read of the action whose `bind`, `checked` or `visible` it stands in, and its
+    /// `<field>` is a key the rows of that read carry. Anywhere else, and on an action that
+    /// declares no `loads`, it reads nothing.
+    fn loaded_rows(&self, text: &str, at: &NodePath, sink: &mut Sink) {
+        let Some(reading) = crate::expr::read(text) else {
+            return;
+        };
+        let fields: Vec<&str> = reading
+            .paths
+            .iter()
+            .filter_map(|path| path.strip_prefix("loads."))
+            .collect();
+        if fields.is_empty() {
+            return;
+        }
+        let (node, field) = locate(&self.nodes, at);
+        let position = field.split('/').next().unwrap_or_default();
+        let reads = self
+            .document
+            .nodes()
+            .into_iter()
+            .find(|located| located.path == node)
+            .and_then(|located| match located.node {
+                NodeRef::Action(action) => action.loads.as_ref(),
+                _ => None,
+            })
+            .filter(|_| ["bind", "checked", "visible"].contains(&position));
+        let Some(reads) = reads else {
+            self.report(
+                sink,
+                "expr_paths",
+                at,
+                "`loads.<field>` reads the first row of an action's own `loads` read, in that \
+                 action's `bind`, `checked` or `visible`; no such read is in scope here"
+                    .to_owned(),
+            );
+            return;
+        };
+        let Some(model) = self.model else {
+            return;
+        };
+        for field in fields {
+            if let Some(problem) = model.loaded_row_problem(reads, field) {
+                self.report(
+                    sink,
+                    "row_fields",
+                    at,
+                    format!("`loads.{field}`: {problem}"),
+                );
+            }
+        }
     }
 
     /// `section_row`, and with a model `row_fields`: each `section.<name>.row` an expression of a

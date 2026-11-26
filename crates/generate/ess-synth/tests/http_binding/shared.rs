@@ -448,11 +448,15 @@ fn main() {
             method: method.to_owned(),
             path: path.to_owned(),
             query: query.to_owned(),
-            headers: if content_type.is_empty() {
-                Vec::new()
-            } else {
-                vec![("content-type".to_owned(), content_type.to_owned())]
-            },
+            // The content type, or `name: value` headers joined by ` | ` (beyond10x/ess#681).
+            headers: content_type
+                .split(" | ")
+                .filter(|header| !header.is_empty())
+                .map(|header| match header.split_once(": ") {
+                    Some((name, value)) => (name.to_ascii_lowercase(), value.to_owned()),
+                    None => ("content-type".to_owned(), header.to_owned()),
+                })
+                .collect(),
             body: body.as_bytes().to_vec(),
         };
         let caller = (caller == "y").then_some(&clerk);

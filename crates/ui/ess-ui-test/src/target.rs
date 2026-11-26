@@ -149,7 +149,10 @@ fn holds_rows(node: NodeRef<'_>) -> bool {
     matches!(
         body,
         Body::Composite(
-            Composite::Collection(_) | Composite::References(_) | Composite::GraphEditor(_)
+            Composite::Collection(_)
+                | Composite::References(_)
+                | Composite::GraphEditor(_)
+                | Composite::Board(_)
         )
     )
 }

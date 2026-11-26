@@ -11,8 +11,10 @@ use ratatui::Terminal;
 
 use ess_ui_tui::{App, Region};
 
-/// Wide enough that rows are not cut, tall enough that every section is drawn.
+/// Wide enough that most rows are not cut, tall enough that every section is drawn; a screen
+/// grows past `WIDTH`, up to `MAX_WIDTH`, until no row or column is cut ([`Screen::capture`]).
 const WIDTH: u16 = 160;
+const MAX_WIDTH: u16 = 2000;
 const HEIGHT: u16 = 240;
 
 #[derive(Debug, Clone)]
@@ -58,9 +60,51 @@ impl SectionBox {
 }
 
 impl Screen {
-    /// Draws `app`.
+    /// Draws `app`, on a screen wide enough for every row and column the frame cuts at
+    /// [`WIDTH`]: a table wider than the screen is drawn whole, as the browser draws it in a
+    /// scrolling frame, so its last column has cells of its own (beyond10x/ess#722 item 19).
     pub fn capture(app: &App) -> Self {
-        let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).expect("a test terminal");
+        let mut width = WIDTH;
+        let mut last = u16::MAX;
+        loop {
+            let screen = Self::capture_at(app, width);
+            let wanted = screen.cut();
+            // A text the frame shortens whatever its width (a label it draws shorter) stops it.
+            if wanted == 0 || wanted >= last || width >= MAX_WIDTH {
+                return screen;
+            }
+            last = wanted;
+            width = width.saturating_add(wanted).min(MAX_WIDTH);
+        }
+    }
+
+    /// The cells the widest cut row or column lacks: a row's whole text (after its two-cell
+    /// selection mark) or a column's label or cell beyond the cells it was drawn on.
+    fn cut(&self) -> u16 {
+        self.regions
+            .iter()
+            .filter_map(|region| {
+                let text = region.text.as_deref()?;
+                let row = region
+                    .row
+                    .as_ref()
+                    .is_some_and(|key| region.path.ends_with(&format!("/rows/{key}")));
+                let column = region.path.contains("/columns/");
+                if !row && !column {
+                    return None;
+                }
+                let needed = ratatui::text::Line::from(text).width() + if row { 2 } else { 0 };
+                let needed = u16::try_from(needed).unwrap_or(u16::MAX);
+                needed
+                    .checked_sub(region.area.width)
+                    .filter(|lack| *lack > 0)
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn capture_at(app: &App, width: u16) -> Self {
+        let mut terminal = Terminal::new(TestBackend::new(width, HEIGHT)).expect("a test terminal");
         terminal
             .draw(|frame| app.draw(frame))
             .expect("a test terminal draws");
@@ -109,6 +153,15 @@ impl Screen {
     /// Where `path` was drawn, when the terminal placed it on cells of its own.
     pub fn region(&self, path: &str) -> Option<&Region> {
         self.regions.iter().find(|region| region.path == path)
+    }
+
+    /// The key the terminal offers the action drawn at `path` under ([`Region::key`]), when it
+    /// drew one there.
+    pub fn key_at(&self, path: &str) -> Option<char> {
+        self.regions
+            .iter()
+            .filter(|region| region.path == path)
+            .find_map(|region| region.key)
     }
 
     /// Whether any node was placed at a path `wanted` accepts.

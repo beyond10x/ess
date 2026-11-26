@@ -1,9 +1,11 @@
 //! Binding expressions, evaluated against what the terminal holds.
 //!
-//! The grammar the TUI understands is the part of the schema's expression language a fixture run
-//! needs: a dotted path from a root (`row`, `state`, `params`, `shell`, `channel`, `draft`,
-//! `actor`, `section`, `url`), `not <expr>`, `<a> == <b>`, `<a> != <b>`, and scalar literals. A
-//! bare word that is not a root is its own text, as in `row.status == overdue`. A function call
+//! A boolean form of the one grammar `ess_ui::filter` holds (`and`, `or`, `not`, comparisons,
+//! `in`, parentheses) that reads a path is judged by that parser (`App::eval`). Everything else is
+//! read here: a dotted path from a root (`row`, `state`, `params`, `shell`, `channel`, `draft`,
+//! `actor`, `section`, `url`, `args`, `selection`), `not <expr>`, `<a> == <b>`, `<a> != <b>`, and
+//! scalar literals. A bare word that is not a root is its own text, as in
+//! `row.status == overdue`. A function call
 //! (`matches(params)`, `same_as(list)`) is not evaluated here and yields [`None`]; callers decide
 //! what an unknown means in their position.
 //!
@@ -18,7 +20,18 @@ use ess_yaml::Value;
 
 /// The roots a path may start from.
 pub(crate) const ROOTS: &[&str] = &[
-    "row", "state", "params", "shell", "channel", "draft", "actor", "section", "url", "args",
+    "row",
+    "state",
+    "params",
+    "shell",
+    "channel",
+    "draft",
+    "actor",
+    "section",
+    "url",
+    "args",
+    "selection",
+    "loads",
 ];
 
 /// Resolves the first segment of a path; the rest is walked by [`walk`].

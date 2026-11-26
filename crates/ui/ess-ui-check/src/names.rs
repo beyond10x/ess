@@ -125,6 +125,19 @@ fn bind_keys(model: &Model, sink: &mut Sink, path: &NodePath, action: &Action) {
             );
         }
     }
+    let required = model.required_inputs.get(&qualified);
+    for key in action.bind.conditions().keys() {
+        if required.is_some_and(|required| required.contains(key)) {
+            sink.push(
+                "field_in_model",
+                path,
+                format!(
+                    "`bind` key `{key}` is a required input of command `{qualified}`, which this \
+                     action sends only under its `when`: the command cannot run without it"
+                ),
+            );
+        }
+    }
 }
 
 /// The field a column or input names: its first segment, unless it is a marker.

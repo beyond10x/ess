@@ -392,3 +392,52 @@ fn the_reference_states_the_button_and_terminal_emphasis_tables() {
         assert_eq!(terminal[tone], Value::from(modifiers), "{tone}");
     }
 }
+
+/// The icon names are one closed list (beyond10x/ess#723): each name has a meaning and a glyph
+/// of one character of its own, which both renderers draw; a name outside the list has none.
+#[test]
+fn every_icon_name_has_a_meaning_and_a_glyph_of_its_own() {
+    let icons = schema()["constructs"]["icon"]["icons"].clone();
+    let icons = icons.as_mapping().expect("`icon.icons` is a map");
+    for name in [
+        "add",
+        "edit",
+        "delete",
+        "archive",
+        "copy",
+        "download",
+        "upload",
+        "refresh",
+        "search",
+        "filter",
+        "settings",
+        "open",
+        "close",
+        "check",
+        "warning",
+        "info",
+        "arrow_up",
+        "arrow_down",
+        "arrow_left",
+        "arrow_right",
+        "home",
+        "user",
+        "play",
+        "pause",
+    ] {
+        assert!(icons.get(name).is_some(), "`{name}` is no icon name");
+    }
+    let mut glyphs = BTreeSet::new();
+    for (name, entry) in icons {
+        let name = name.as_str().expect("a name");
+        assert!(
+            entry["meaning"].as_str().is_some(),
+            "`{name}` has no meaning"
+        );
+        let glyph = ess_ui::icon_glyph(name).unwrap_or_else(|| panic!("`{name}` has no glyph"));
+        assert_eq!(Some(glyph), entry["glyph"].as_str(), "{name}");
+        assert_eq!(glyph.chars().count(), 1, "{name}: {glyph}");
+        assert!(glyphs.insert(glyph), "`{name}` shares its glyph {glyph}");
+    }
+    assert_eq!(ess_ui::icon_glyph("sparkle"), None);
+}

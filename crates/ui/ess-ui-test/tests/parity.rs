@@ -77,12 +77,13 @@ fn a_step_the_terminal_refuses_is_fixme_in_the_spec_with_the_same_reason() {
                 "act: pages/partners.list/sections/list/rows/pt-003/columns/name",
             ],
         ),
-        // A node inside a row's item has no cells of its own in the terminal.
+        // A row's item node and the body nodes of a widget instance in it have cells of their own in
+        // the terminal (beyond10x/ess#722); a node of a widget nested inside one of those does not.
         (
             "item node",
             &[
                 "open: partners.list",
-                "expect: {at: pages/partners.list/sections/list/rows/pt-003/item/card, text: Cedar Partners}",
+                "expect: {at: pages/partners.list/sections/list/rows/pt-003/item/card/body/tier/body/badge, text: Gold}",
             ],
         ),
         // Past the end of the clock.

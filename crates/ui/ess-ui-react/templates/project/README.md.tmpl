@@ -36,8 +36,11 @@ parameters, and commands are `POST` on the command's path. Generate again when t
   `<meta name="ess-base-url:<component>">` tag in `www/index.html`; empty or absent means the
   page's own origin. The app is served from the server's origin.
 - **Caller.** Call `setAuthorization("<value>")` from `src/runtime/data.ts` before rendering:
-  every request carries it as its `Authorization` header, unchanged. How the server authenticates
-  it is the realization's.
+  every request carries it as its `Authorization` header, unchanged, for example
+  `Bearer <token>`. How the server authenticates it is the realization's. A short-lived token is
+  renewed with `setAuthorization("Bearer <token>", renew)`: a request answered `401` awaits
+  `renew()` once and is sent once more with the value it returns; requests answered `401` at once
+  share one call. A second `401`, or no value, is shown as not signed in.
 - **Refusals.** A command's answer is classified as `ess_ui::binding::classify` classifies it
   (`src/runtime/answer.ts`). A refusal is shown on the form, confirm or action that sent it, with
   the error's display text and fields; the form keeps its draft, a change saved on change is
