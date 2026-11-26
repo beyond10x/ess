@@ -55,9 +55,16 @@ fn every_scenario_passes(text: &str, expected: &[&str]) {
         .filter(|(id, _)| failing.iter().any(|(name, _)| **name == id.to_string()))
         .map(|(id, scenario)| format!("{id}: {:#?}", scenario.steps))
         .collect();
-    assert!(failing.is_empty(), "failing: {failing:#?}\n{}", steps.join("\n"));
+    assert!(
+        failing.is_empty(),
+        "failing: {failing:#?}\n{}",
+        steps.join("\n")
+    );
     for id in expected {
-        assert!(statuses.contains_key(*id), "{id} synthesized: {statuses:#?}");
+        assert!(
+            statuses.contains_key(*id),
+            "{id} synthesized: {statuses:#?}"
+        );
     }
 }
 
@@ -161,10 +168,7 @@ const WRONG: &str = "      - name: wrong-state
 ";
 
 fn model(entities: &str, outcomes: &[&str]) -> String {
-    format!(
-        "{HEAD}{entities}{CREATE}{CLAIM_INPUT}{}",
-        outcomes.concat()
-    )
+    format!("{HEAD}{entities}{CREATE}{CLAIM_INPUT}{}", outcomes.concat())
 }
 
 const NO_SUCH_ITEM: &str = "demo.items.Claim/outcome/no-such-item";
@@ -425,5 +429,8 @@ fn every_format_that_admits_the_shape_passes() {
     }
     eprintln!("admitted: {admitted:?}");
     assert!(admitted.contains(&37), "{admitted:?}");
-    assert!(failing.is_empty(), "admitted {admitted:?}; failing: {failing:#?}");
+    assert!(
+        failing.is_empty(),
+        "admitted {admitted:?}; failing: {failing:#?}"
+    );
 }
