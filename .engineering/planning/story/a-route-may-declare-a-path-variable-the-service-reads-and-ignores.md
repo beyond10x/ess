@@ -22,7 +22,7 @@ scope:
   path: crates/specify/ess-http/src/lib.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
-revision: 3
+revision: 4
 ---
 ## Summary
 
@@ -132,3 +132,9 @@ does.
 - `crates/generate/ess-gen/src/openapi.rs`, `crates/generate/ess-gen/tests/openapi_http_presentation.rs`
 - `crates/generate/ess-synth/src/rust/http.rs`, `src/go/http.rs`, `tests/http_binding/go.rs`
 - `docs/design/http-presentation-binding.md`, `website/docs/reference/diagnostics.md`, `CHANGELOG.md`
+
+## Delivery
+
+Branch `issues/open-2026-11-26-d` at `fa096b6ab4`, merged into the open-issues wave; not released when written. HB-D3 = B is built: a mapping word `ignored` for a path variable no view parameter reads, recorded in the IR and OpenAPI and named by `validate`; red test `a_path_variable_may_be_declared_ignored`; the new refusal code is `ESS-HTTP-039`, because `ESS-HTTP-038` belongs to the open pull request 833. The generated Rust and Go servers accept any value for the segment (test `ignored_segments`). The gate ran every step with exit 0 and no committed pin moved.
+
+Left: acceptance item 5 (conformance sends one fixed value for the ignored segment) is not built, because no HTTP conformance target exists (`docs/design/http-presentation-binding.md`, Stage 3: "No HTTP conformance target exists yet"); the any-value answer is held by the two generated servers' test `ignored_segments` only.

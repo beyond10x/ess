@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:enforced-reference-needs-no-missing-target-branch
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -60,9 +60,15 @@ From `ess/38` on, the derived proof of § G2 covers a link that a writer copies 
 
 - D152 = A (the coordinator, 2026-11-26): from `ess/38` on, the derived proof covers a link copied from a related row's field that is itself a proved reference; `ESS-COMMAND-004` stays; no new key. Options were B (drop 005 behind an equality guard) and C (document the stored-link form).
 
+- D154 = A (the operator session on the owner's delegation, 2026-11-26): from `ess/38` a `when_related` read of the command's own subject is refused under ESS-COMMAND-004 with a hint naming `when_subject` + `unknown_instance: true` and the required state, or beside a row-set guard the row-set form; a warning at `ess/37` and below.
+
+  The case behind it (a downstream report of 2026-11-26, a different finding from D152): a `when_related` whose `via` is the input that addresses the command's own subject validates, and synthesis then writes one scenario and refuses six (`ESS-SYNTH-008`, `ESS-SYNTH-004`), while the idiom `unknown_instance: true` with a `when_subject` predicate synthesizes six scenarios with no refusal and passes six of six on the interpreter. D152 does not settle it.
+
 ## Delivery
 
 Step 8 of the branch `issues/open-2026-11-26`, in progress when this was written.
+
+D154 (a `when_related` read of the command's own subject, refused under ESS-COMMAND-004 from `ess/38`): branch `issues/open-2026-11-26-c` at `6dcc7a8873`, merged into the open-issues wave; not released when written.
 
 ## Scope
 

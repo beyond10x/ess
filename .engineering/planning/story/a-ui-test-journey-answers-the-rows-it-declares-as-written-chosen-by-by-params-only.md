@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
-revision: 3
+revision: 4
 ---
 ## Summary
 
@@ -105,6 +105,8 @@ reference's own rule is made true on the terminal target).
 ## Delivery
 
 Built as option (a) of JF-D1 in commit `ba4ba249ad` on the branch `issues/part-2-2026-11-24` (D120), merged with `main` 0.99.2 as `f93dcf8514`; pull request 830 is open. Rows a test declares (`fixtures.views`) answer as written, chosen by `by_params` only, on the terminal target as on the Playwright routes; a document's own fixtures keep the same-name narrowing. Test: ess-ui-test `fixture_answers` `declared_rows_with_their_own_id_answer_a_read_by_the_parents_id`, red before (0 rows where 2 are declared), green after.
+
+Built in `ba4ba249ad`, on `main` through pull request 830; not released when written; a second downstream report (2026-11-26) of the same defect on 0.99.2.
 
 ## Not built
 

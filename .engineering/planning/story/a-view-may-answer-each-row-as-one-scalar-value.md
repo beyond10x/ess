@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:28:01Z", actor: "human:timo", revision: 3, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:28:02Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-accept-16"}
@@ -105,6 +105,8 @@ the released format `ess-http/1` in options A and B, to the model format in opti
 anything else refused (fails closed); taken by the coordinator on 2026-11-25; a release that
 carries this key names this pick in its pull-request line.
 
+BA-D2 = yes (D156, the coordinator, 2026-11-26): beside the answered field only a field whose value the route's path carries may stand; every other second field stays refused.
+
 ## Fit review
 
 1. **Need.** A list view whose row has one field must answer a bare JSON array of that field's
@@ -165,3 +167,9 @@ It does not change BA-D1.
 BA-D2 (open, the coordinator's): may a view field whose value the route's path already carries
 stand beside the answered field? Recommended: yes, and only then; every other second field stays
 refused.
+
+## Delivery
+
+Branch `issues/open-2026-11-26-d` at `fa096b6ab4`, merged into the open-issues wave; not released when written. BA-D1 = A is built: `body: array.<field>` and `single.<field>` on a view route, with the new `ViewAnswer` field; red test `a_view_answers_each_row_as_one_field_value`. The generated Rust and Go servers answer the bare values byte for byte (test `field_answers`). The gate ran every step with exit 0 and no committed pin moved.
+
+Left: the interpreted target and synthesis do not compare bare values. Neither reads an `ess-http` binding (BA-D1 A: the interpreter and synthesis read the model, not the binding), and no HTTP conformance target exists (`docs/design/http-presentation-binding.md`, Stage 3), so no comparison exists to change; the generated servers' test `field_answers` holds the bare answers.
