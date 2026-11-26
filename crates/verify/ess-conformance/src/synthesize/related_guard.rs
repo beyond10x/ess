@@ -4621,10 +4621,9 @@ fn arranged_at(
             // A row beside that the subject's link must name: the subject is pointed at it, and
             // the input names it ([`place_beside`]).
             let beside = others.iter().find(|other| other.via.field() == named);
-            if let (Some(other), Some(link)) = (
-                beside,
-                linked_through(ir, command, outcome, (named, of)),
-            ) {
+            if let (Some(other), Some(link)) =
+                (beside, linked_through(ir, command, outcome, (named, of)))
+            {
                 stored::point(ir, command, &mut setup, link, &other.row.instance)?;
                 continue;
             }

@@ -22,7 +22,7 @@
 //! with the reference left out where that selects its branch ([`step`]), so a row of an entity
 //! whose own rows block each other is driven without arranging a second row first.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedPayloadValue,
@@ -36,7 +36,7 @@ use super::{
     surround, unarranged, with_row, with_row_where, ActorRef, Arrangement, Distinction, Goal,
     RefusalCause, Setup, OWN,
 };
-use crate::scenario::{InstanceName, ScenarioStep, ScenarioValue};
+use crate::scenario::{EssSemanticRef, InstanceName, ScenarioStep, ScenarioValue};
 use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest, ResolvedRelatedVia};
 
 /// The stored field of the addressed subject the command's related guards read, and the entity
@@ -262,7 +262,14 @@ fn relink(
         .map(|subject| &subject.entity)
         .ok_or_else(|| gap("the act creating the subject names no subject"))?;
     let Some(input) = super::super::related::set_from_input(creating, field) else {
-        return relink_copied(ir, steps, settled, (created, command, creating), field, link);
+        return relink_copied(
+            ir,
+            steps,
+            settled,
+            (created, command, creating),
+            field,
+            link,
+        );
     };
     let input = input.to_owned();
     let declared = command
@@ -564,28 +571,10 @@ pub(super) fn arranged_through(
                 linked
             }
         };
-        // Rows of the entity exist, each carrying an identity other than the one stored.
-        if !super::super::singleton::is_singleton(ir, entity) {
-            for at in [first - 1, first + 1] {
-                if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
-                    steps.extend(decoy.steps);
-                    setup.source.extend(decoy.source);
-                }
-            }
-        }
+        decoys(ir, (entity, actors, first), (&mut steps, &mut setup.source));
         let mut input = unrefused(ir, command, distinction)?;
-        // An input a refusal answered first compares with the link names what the subject holds.
-        for named in super::compared_with_link(ir, command, outcome, field) {
-            match &linked {
-                Some(ScenarioValue::Literal { value }) => {
-                    input.insert(named, value.clone());
-                }
-                Some(ScenarioValue::Instance { instance }) => {
-                    setup.bound.insert(named, instance.clone());
-                }
-                _ => return Err(unpointed(field, "the subject holds no row the send can name")),
-            }
-        }
+        let link = (ir, command, outcome, field);
+        compared_named(link, linked.as_ref(), (&mut input, &mut setup))?;
         input
     } else {
         let (row, first, input) = reachable_row(
@@ -631,6 +620,50 @@ pub(super) fn arranged_through(
     setup.steps.append(&mut after);
     setup.source.insert(entity_ref(entity));
     Ok((setup, input, false))
+}
+
+/// Rows of the `entity` beside the block at `first`, each carrying an identity other than the one
+/// the subject stores (none for a singleton).
+fn decoys(
+    ir: &EssIr,
+    (entity, actors, first): (&EntityHandle, &BTreeMap<QualifiedName, ActorRef>, usize),
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) {
+    if super::super::singleton::is_singleton(ir, entity) {
+        return;
+    }
+    for at in [first - 1, first + 1] {
+        if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
+            steps.extend(decoy.steps);
+            source.extend(decoy.source);
+        }
+    }
+}
+
+/// An input a refusal answered first compares with the subject's stored `field` names what the
+/// subject holds there, `linked`: a literal in the input, a row in the send's bindings.
+fn compared_named(
+    (ir, command, outcome, field): (&EssIr, &ResolvedCommand, &ResolvedOutcome, &str),
+    linked: Option<&ScenarioValue>,
+    (input, setup): (&mut BTreeMap<String, Node>, &mut Setup),
+) -> Result<(), RefusalCause> {
+    for named in super::compared_with_link(ir, command, outcome, field) {
+        match linked {
+            Some(ScenarioValue::Literal { value }) => {
+                input.insert(named, value.clone());
+            }
+            Some(ScenarioValue::Instance { instance }) => {
+                setup.bound.insert(named, instance.clone());
+            }
+            _ => {
+                return Err(unpointed(
+                    field,
+                    "the subject holds no row the send can name",
+                ))
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The related row [`arranged_at`] points the subject at, the distinction it was arranged at and

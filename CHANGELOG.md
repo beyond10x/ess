@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform synthesize` writes the scenarios of a command whose `when_subject:` refusal compares the row's stored link with an input, such as `store_id != input.store_id`, beside `when_related:` guards reading the row that input names. It sends the row the subject is linked to, also where the link is copied from another row (`{related: {via: input.cart_id, field: store_id}}`) and where the command reads a second row beside it. 0.99.4 refused these branches with "no candidate of the 0 tried", including the accepting one; releases before it wrote them with another row, and they failed against their own model. A command reading the row through the stored link (`via: store_id`) beside such a refusal is now sent the linked row in the compared input; it was sent a placeholder, so the refusal answered. A pinned suite of such a model moves when it is synthesized again.
+
 ## [0.99.5] — 2026-11-25
 
 ### Fixed
