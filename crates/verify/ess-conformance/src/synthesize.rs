@@ -1631,6 +1631,10 @@ impl RefusalCause {
                  the specification that produced it"
             }
             Self::NoWitness(gap) if gap.type_ref == SUBJECT_GAP => SUBJECT_REPAIR,
+            Self::NoWitness(gap) if gap.reason == related_guard::ABSENT_ADDRESSED => {
+                "answer an identity no row carries with `unknown_instance:` on this command, or \
+                 cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -3763,6 +3767,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // (story:view-asserts-field-set-from-optional-input).
     synthesis.notes.extend(converted_fields_unasserted(ir));
     disclosure::augment(ir, &mut synthesis);
+    // The disclosure scenarios carry the runs of other scenarios, arranged again, so their row-set
+    // sends are decided again too (weft's accounts, 2026-11-26).
+    row_set::contradictions(ir, &mut synthesis.suite, &mut synthesis.refusals);
     // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
     // what the run does not exercise.
     synthesis.notes.extend(
@@ -5774,6 +5781,15 @@ fn run_as(
             tried,
             cut: 0,
         });
+    }
+    // Under the one rule a missing row the command addresses is answered by its existence, before
+    // any related row is read: an `exists: false` branch over that row is never reached.
+    if let Some(field) = related_guard::absent_addressed(ir, command, outcome) {
+        return Err(RefusalCause::NoWitness(WitnessGap {
+            path: format!("{}/{}", command.name, outcome.name),
+            type_ref: format!("when_related: {{via: input.{field}, exists: false}}"),
+            reason: related_guard::ABSENT_ADDRESSED,
+        }));
     }
     let routed = subject_fact::routes(command, outcome);
     // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,

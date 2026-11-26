@@ -1022,6 +1022,46 @@ fn rows(command: &ResolvedCommand) -> Vec<(&ResolvedRelatedVia, &EntityHandle)> 
     rows
 }
 
+/// Why an `exists: false` branch over the row its command addresses has no scenario
+/// ([`absent_addressed`]).
+pub(super) const ABSENT_ADDRESSED: &str =
+    "reads the row the command addresses, and under the one rule (ess/27) an identity no row \
+     carries is answered by that row's existence first (`unknown_instance:`, else the declared \
+     not-found refusal, else no declared outcome), so the branch is never reached";
+
+/// The input field of `outcome`, where it is an `exists: false` branch over the row a branch of
+/// `command` addresses, under the one rule (`ess/27`): the addressed row's existence answers a
+/// missing identity first, so no request reaches it (weft's formations, 2026-11-26).
+pub(super) fn absent_addressed<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> Option<&'c str> {
+    let ResolvedCondition::Related {
+        via,
+        test: ResolvedRelatedTest::Absent,
+        ..
+    } = &outcome.condition
+    else {
+        return None;
+    };
+    (ir.format().major() >= ess_domain::command::precedence::ONE_RULE.major()
+        && addresses_through(command, via.field()))
+    .then(|| via.field())
+}
+
+/// Whether a branch of `command` addresses an existing record whose identity the input `field`
+/// carries: a subject it does not create, named by that field.
+fn addresses_through(command: &ResolvedCommand, field: &str) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        outcome.subject.as_ref().is_some_and(|subject| {
+            subject.effect != ResolvedEffect::Creates
+                && matches!(&subject.instance, ResolvedInstance::Supplied { field: named }
+                    if named.name == field)
+        })
+    })
+}
+
 /// Whether the command's guards read more than one related row (ess/22, beyond10x/ess#283). Its
 /// scenarios are then arranged around one row at a time ([`projection`]), with every other row
 /// arranged beside it so that its guards select nothing ([`beside`]).
@@ -2078,8 +2118,8 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 /// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal
 /// before any branch it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is
 /// answered before either and is not asked here: the command's own identity is the existence
-/// family's to arrange. A row-set refusal is not asked here either: the rows its selector selects
-/// are the scenario's to leave, and the row-set walk checks them.
+/// family's to arrange. A row-set refusal is read over no selected rows: the rows its selector
+/// selects are the scenario's to leave, and the row-set walk checks them.
 fn selects<'c>(
     ir: &EssIr,
     command: &'c ResolvedCommand,
@@ -2115,11 +2155,13 @@ fn selects<'c>(
                     | ResolvedCondition::InputAbsent
             )
             // A row-set refusal is decided by the rows the scenario's steps leave, not by this
-            // row, and is passed over here: the row-set walk of every finished scenario checks
-            // that those rows pass it over too (`row_set::contradictions`). Counted as selected,
-            // one with no input guard answered every input, so a creator beside it was never
-            // driven (weft's catalog, 2026-11-26).
-            && !is_row_set_refusal(branch)
+            // row. The run arranges rows of its own, which its selector selects none of, so a
+            // refusal its test refutes over no rows (`exists: true`, a name already taken) is
+            // passed over here; one that holds over no rows (`exists: false`) still answers.
+            // Counted as selected, a uniqueness refusal answered every input, so a creator beside
+            // it was never driven (weft's catalog, 2026-11-26). The row-set walk of every finished
+            // scenario checks the rows its steps leave (`row_set::contradictions`).
+            && !refuted_over_no_rows(branch)
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
             match test {
@@ -2187,9 +2229,18 @@ fn answering_refusal<'c>(
         .find(|branch| selected.iter().any(|chosen| chosen.name == branch.name))
 }
 
-/// Whether `outcome` is a refusal guarded by a row set (`when_related: {entity, where, …}`).
-fn is_row_set_refusal(outcome: &ResolvedOutcome) -> bool {
-    outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
+/// Whether `outcome` is a refusal guarded by a row set (`when_related: {entity, where, …}`) whose
+/// test is false where the selector selects no row: `exists: true`, or a count no empty set meets.
+fn refuted_over_no_rows(outcome: &ResolvedOutcome) -> bool {
+    let ResolvedCondition::RelatedSet { test, .. } = &outcome.condition else {
+        return false;
+    };
+    outcome.error.is_some()
+        && match test {
+            ess_compiler::ir::ResolvedRowSetTest::Exists(exists) => *exists,
+            ess_compiler::ir::ResolvedRowSetTest::Count { op, bound } => !op.holds(0, *bound),
+            ess_compiler::ir::ResolvedRowSetTest::Forall(_) => false,
+        }
 }
 
 /// Whether `outcome` is a `when_related:` predicate refusal.
@@ -4801,7 +4852,13 @@ pub(super) fn overlaps(
             .filter(over)
             .find(|branch| is_absent(branch))
             .is_some_and(|branch| declared(branch) > declared(outcome));
-        if missing && later_absent {
+        // Under the one rule (`ess/27`) the row a sibling addresses is read for its existence
+        // first, and an identity no row carries is answered there (`unknown_instance:`, else the
+        // declared not-found refusal, else no declared outcome), so it is never sent missing beside
+        // another missing row (weft's formations, 2026-11-26).
+        let addressed = ir.format().major() >= ess_domain::command::precedence::ONE_RULE.major()
+            && addresses_through(command, via.field());
+        if missing && later_absent && !addressed {
             let mut sent = input.clone();
             sent.insert(
                 via.field().to_owned(),

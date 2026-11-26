@@ -12,12 +12,16 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/a_row_set_branch_arranges_rows_past_the_creators_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest
-revision: 5
+revision: 7
 ---
 ## Problem
 
@@ -51,9 +55,36 @@ finds no input for the creating branch, and `created_owned_made` reports it as u
 
 ## Fix
 
-A row-set branch is not this row's to decide: `selects` passes it over. The rows the scenario's
-steps leave decide it, and `row_set::contradictions` (the walk of every finished scenario) still
-removes any scenario whose row-set send those rows do not decide.
+A row-set refusal is not this row's to decide. `selects` reads it over no selected rows, which is
+what a run that arranges rows of its own leaves: a refusal its test refutes there (`exists: true`,
+a count no empty set meets) is passed over, one that holds there (`exists: false`) still answers.
+`row_set::contradictions` (the walk of every finished scenario) checks the rows the steps leave.
+
+The first version passed every row-set refusal over. On weft's accounts subset it synthesized
+scenarios its own interpreter failed (integrator, 2026-11-26), from two causes:
+
+- `exists: false` refusals (`CommitRevision/empty`) were passed over too, so a run arranging a
+  revision for a filtered view sent `committed` on a formation with no component. The one-time
+  disclosure scenarios carrying that run are built after the row-set walk and failed.
+- Scenarios the fix unblocked (`AddToBorder/no-such-formation` and nine more in formations) met an
+  older defect: `related_guard::overlaps` sent every later missing row beside an `exists: false`
+  refusal, the addressed subject's row included. Under the one rule (`ess/27`) the addressed row's
+  existence is read first, and a command with no `unknown_instance:` answers an identity no row
+  carries with no declared outcome. The addressed row is now never sent missing there. On main
+  the same scenario fails wherever the component can be arranged (the model without `name-taken`).
+
+A second pass on the same subset left two more causes:
+
+- An `exists: false` branch over the row the command addresses (`RemoveFromBorder/no-such-component`,
+  `via: input.component_id` on an `updates:` of that component) is never reached under the one
+  rule, for the same reason. Beside a row set it was arranged by the row-set family with the
+  component present and failed. It is now refused before any family arranges it
+  (`related_guard::absent_addressed`), as `AddToBorder/no-such-component` already was (then
+  ESS-SYNTH-008, now ESS-SYNTH-001 with its own cause and help).
+- The one-time disclosure scenarios (`disclosure::augment`) are built after the row-set walk, so
+  a run they carry that a row set answers otherwise was never checked
+  (`RevokeTenantOwner/wrong-state`, a row set over the addressed binding by its identity). The
+  walk now runs again after them. This one fails on main as well.
 
 ## Acceptance
 
@@ -66,6 +97,15 @@ on the inline model `CATALOG` (the reproduction):
   `Offering/state/Retired/refuses/RetireOffering` are synthesized and pass the interpreted target.
 - `the_name_taken_refusal_is_sent_the_name_an_offering_was_published_under`: the `name-taken`
   scenario publishes an offering under the name its last send repeats.
+- On `FORMATIONS`: `every_scenario_through_the_fixed_creator_passes_its_own_interpreter` (every
+  synthesized scenario passes, `AddToBorder/outcome/no-such-formation` included) and
+  `no_send_names_a_component_no_row_carries`.
+- On `REVISIONS`: `a_row_set_refusal_that_holds_over_no_rows_still_answers_an_arranging_run`: no
+  refusal, and every scenario, the one-time disclosure ones included, passes.
+- On `FORMATIONS`: `an_absent_branch_over_the_addressed_row_is_refused_as_never_reached`, for
+  `AddToBorder/no-such-component` and `RemoveFromBorder/no-such-component`.
+- On `BINDINGS`: `a_disclosure_scenario_is_held_to_the_row_sets_its_sends_read`: every scenario
+  passes the interpreted target.
 
 ## Result
 
