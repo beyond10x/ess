@@ -1022,6 +1022,46 @@ fn rows(command: &ResolvedCommand) -> Vec<(&ResolvedRelatedVia, &EntityHandle)> 
     rows
 }
 
+/// Why an `exists: false` branch over the row its command addresses has no scenario
+/// ([`absent_addressed`]).
+pub(super) const ABSENT_ADDRESSED: &str =
+    "reads the row the command addresses, and under the one rule (ess/27) an identity no row \
+     carries is answered by that row's existence first (`unknown_instance:`, else the declared \
+     not-found refusal, else no declared outcome), so the branch is never reached";
+
+/// The input field of `outcome`, where it is an `exists: false` branch over the row a branch of
+/// `command` addresses, under the one rule (`ess/27`): the addressed row's existence answers a
+/// missing identity first, so no request reaches it (weft's formations, 2026-11-26).
+pub(super) fn absent_addressed<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> Option<&'c str> {
+    let ResolvedCondition::Related {
+        via,
+        test: ResolvedRelatedTest::Absent,
+        ..
+    } = &outcome.condition
+    else {
+        return None;
+    };
+    (ir.format().major() >= ess_domain::command::precedence::ONE_RULE.major()
+        && addresses_through(command, via.field()))
+    .then(|| via.field())
+}
+
+/// Whether a branch of `command` addresses an existing record whose identity the input `field`
+/// carries: a subject it does not create, named by that field.
+fn addresses_through(command: &ResolvedCommand, field: &str) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        outcome.subject.as_ref().is_some_and(|subject| {
+            subject.effect != ResolvedEffect::Creates
+                && matches!(&subject.instance, ResolvedInstance::Supplied { field: named }
+                    if named.name == field)
+        })
+    })
+}
+
 /// Whether the command's guards read more than one related row (ess/22, beyond10x/ess#283). Its
 /// scenarios are then arranged around one row at a time ([`projection`]), with every other row
 /// arranged beside it so that its guards select nothing ([`beside`]).
@@ -2078,7 +2118,8 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 /// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal
 /// before any branch it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is
 /// answered before either and is not asked here: the command's own identity is the existence
-/// family's to arrange.
+/// family's to arrange. A row-set refusal is read over no selected rows: the rows its selector
+/// selects are the scenario's to leave, and the row-set walk checks them.
 fn selects<'c>(
     ir: &EssIr,
     command: &'c ResolvedCommand,
@@ -2113,6 +2154,14 @@ fn selects<'c>(
                     | ResolvedCondition::SubjectPredicate { .. }
                     | ResolvedCondition::InputAbsent
             )
+            // A row-set refusal is decided by the rows the scenario's steps leave, not by this
+            // row. The run arranges rows of its own, which its selector selects none of, so a
+            // refusal its test refutes over no rows (`exists: true`, a name already taken) is
+            // passed over here; one that holds over no rows (`exists: false`) still answers.
+            // Counted as selected, a uniqueness refusal answered every input, so a creator beside
+            // it was never driven (weft's catalog, 2026-11-26). The row-set walk of every finished
+            // scenario checks the rows its steps leave (`row_set::contradictions`).
+            && !refuted_over_no_rows(branch)
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
             match test {
@@ -2178,6 +2227,20 @@ fn answering_refusal<'c>(
         .map(|(_, branch)| branch)
         .filter(|branch| super::is_input_guarded_refusal(branch) || is_related_refusal(branch))
         .find(|branch| selected.iter().any(|chosen| chosen.name == branch.name))
+}
+
+/// Whether `outcome` is a refusal guarded by a row set (`when_related: {entity, where, …}`) whose
+/// test is false where the selector selects no row: `exists: true`, or a count no empty set meets.
+fn refuted_over_no_rows(outcome: &ResolvedOutcome) -> bool {
+    let ResolvedCondition::RelatedSet { test, .. } = &outcome.condition else {
+        return false;
+    };
+    outcome.error.is_some()
+        && match test {
+            ess_compiler::ir::ResolvedRowSetTest::Exists(exists) => *exists,
+            ess_compiler::ir::ResolvedRowSetTest::Count { op, bound } => !op.holds(0, *bound),
+            ess_compiler::ir::ResolvedRowSetTest::Forall(_) => false,
+        }
 }
 
 /// Whether `outcome` is a `when_related:` predicate refusal.
@@ -3917,16 +3980,80 @@ fn arranged_choosing(
     // `bound` beside `other-board: board_id != input.board_id` needs the node filed under the board
     // the input names. Where the focus row finds nothing, that owned row is arranged as the focus,
     // under the owner row arranged beside it (beyond10x/ess#801).
-    around(via).or_else(|cause| {
-        match goal
-            .is_none()
-            .then(|| owned_beside(ir, command, via))
-            .flatten()
-        {
-            Some(owned) => around(owned).map_err(|_| cause),
-            None => Err(cause),
+    around(via)
+        .or_else(|cause| {
+            match goal
+                .is_none()
+                .then(|| owned_beside(ir, command, via))
+                .flatten()
+            {
+                Some(owned) => around(owned).map_err(|_| cause),
+                None => Err(cause),
+            }
+        })
+        .or_else(|cause| {
+            if goal.is_some() || chosen.is_some() {
+                return Err(cause);
+            }
+            optional_left_out(models, command, outcome, actors, distinction).map_err(|_| cause)
+        })
+}
+
+/// The Optional input references of `command`'s related guards, where `outcome` reads none of
+/// them: the ones a run may leave out, so that no row is read there.
+fn optional_references<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<&'c str> {
+    let left: Vec<&str> = rows(command)
+        .into_iter()
+        .filter(|(via, _)| {
+            matches!(via, ResolvedRelatedVia::Input { .. }) && via.type_ref().is_optional()
+        })
+        .map(|(via, _)| via.field())
+        .collect();
+    let reads = |field: &str| match &outcome.condition {
+        ResolvedCondition::Related { via, also, .. } => {
+            via.field() == field || also.iter().any(|row| row.via.field() == field)
         }
-    })
+        _ => false,
+    };
+    if left.iter().any(|field| reads(field)) {
+        return Vec::new();
+    }
+    left
+}
+
+/// `command` with every Optional input reference [`optional_references`] names left out
+/// ([`leaving_out`]); `None` where it names none.
+pub(super) fn without_optional_references(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Option<ResolvedCommand> {
+    let left = optional_references(command, outcome);
+    (!left.is_empty()).then(|| leaving_out(command, &left))
+}
+
+/// [`arranged_choosing`] where no arrangement with a row for every reference stood: the run sent
+/// with every Optional input reference left out, which reads no row there and selects no
+/// `when_related` branch over it, as the interpreter reads an absent Optional reference
+/// (`interpret::execute::related_absent`, beyond10x/ess#304). The `when:` guards over those
+/// references stay, so the input sent meets them with the references absent: weft's
+/// `CreateSecret/created` in the `Account` scope, which a scope with a formation never reaches
+/// because a formation of the account the input names is a second row no search arranges.
+fn optional_left_out(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    let reduced = without_optional_references(command, outcome).ok_or_else(unarranged)?;
+    if rows(&reduced).is_empty() {
+        return Err(unarranged());
+    }
+    let own = kept(&reduced, outcome)?;
+    arranged_choosing(models, &reduced, own, actors, distinction, None, None)
 }
 
 /// Of `command`'s rows other than the one `via` names, the first whose entity the entity of that
@@ -4333,33 +4460,52 @@ pub(super) fn prepare_absent_in(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
-    let ir = models.arrangement;
     if stored::field(command).is_some() {
         return stored::absent_at(models, command, outcome, actors, distinction);
     }
     // Several rows (beyond10x/ess#283): the first Optional reference whose absence selects the
     // branch is left out, every other row arranged beside it.
     if several(command) {
-        let via = absent_row(ir, command, outcome).ok_or_else(unarranged)?;
-        let projected = projection(command, via.field());
-        let own = kept(&projected, outcome)?;
-        let others = beside(
-            ir,
-            (command, outcome),
-            via.field(),
-            actors,
-            distinction,
-            (BESIDE, false),
-        )?;
-        let (setup, input) = absent_at(models, &projected, own, actors, distinction, &others)?;
-        for other in &others {
-            if !passes(ir, (command, outcome), other, &input)? {
-                return Err(unarranged());
-            }
-        }
-        return Ok((setup, input));
+        // Where no run leaves that one reference out with every other row beside it, a run with
+        // every Optional reference left out ([`optional_left_out`]): `when:` guards holding a
+        // scope to its references leave out several at once (weft's `CreateSecret`, 2026-11-26).
+        return absent_beside(models, command, outcome, actors, distinction).or_else(|cause| {
+            optional_left_out(models, command, outcome, actors, distinction)
+                .map(|(setup, input, _)| (setup, input))
+                .map_err(|_| cause)
+        });
     }
     absent_at(models, command, outcome, actors, distinction, &[])
+}
+
+/// [`prepare_absent_in`] on a command reading several rows: the first Optional reference whose
+/// absence selects the branch left out, every other row arranged beside it.
+fn absent_beside(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let ir = models.arrangement;
+    let via = absent_row(ir, command, outcome).ok_or_else(unarranged)?;
+    let projected = projection(command, via.field());
+    let own = kept(&projected, outcome)?;
+    let others = beside(
+        ir,
+        (command, outcome),
+        via.field(),
+        actors,
+        distinction,
+        (BESIDE, false),
+    )?;
+    let (setup, input) = absent_at(models, &projected, own, actors, distinction, &others)?;
+    for other in &others {
+        if !passes(ir, (command, outcome), other, &input)? {
+            return Err(unarranged());
+        }
+    }
+    Ok((setup, input))
 }
 
 /// The tail of [`prepare_absent_in`], with the rows `others` names arranged beside the reference
@@ -4935,7 +5081,13 @@ pub(super) fn overlaps(
             .filter(over)
             .find(|branch| is_absent(branch))
             .is_some_and(|branch| declared(branch) > declared(outcome));
-        if missing && later_absent {
+        // Under the one rule (`ess/27`) the row a sibling addresses is read for its existence
+        // first, and an identity no row carries is answered there (`unknown_instance:`, else the
+        // declared not-found refusal, else no declared outcome), so it is never sent missing beside
+        // another missing row (weft's formations, 2026-11-26).
+        let addressed = ir.format().major() >= ess_domain::command::precedence::ONE_RULE.major()
+            && addresses_through(command, via.field());
+        if missing && later_absent && !addressed {
             let mut sent = input.clone();
             sent.insert(
                 via.field().to_owned(),
@@ -4979,6 +5131,7 @@ pub(super) fn overlaps(
             (input, &setup.bound),
         ));
     }
+    let sends = unclaimed_sends(ir, command, outcome, sends)?;
     if sends.is_empty() {
         return Ok(());
     }
@@ -4996,6 +5149,60 @@ pub(super) fn overlaps(
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
     setup.steps.append(&mut steps);
     Ok(())
+}
+
+/// Of `sends`, those no input-guarded refusal the plan reads before `outcome` claims ([`overlaps`]):
+/// a claimed send is answered by that refusal, never by `outcome`. weft's `CreateSecret` sent
+/// `no-such-environment` with `formation_id` left out and `scope: Environment`, which
+/// `environment-scope-without-formation` answers (2026-11-26).
+#[allow(
+    clippy::type_complexity,
+    reason = "the input and the bound names of each send, as `overlaps` builds them"
+)]
+fn unclaimed_sends(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    sends: Vec<(
+        BTreeMap<String, Node>,
+        BTreeMap<String, crate::scenario::InstanceName>,
+    )>,
+) -> Result<
+    Vec<(
+        BTreeMap<String, Node>,
+        BTreeMap<String, crate::scenario::InstanceName>,
+    )>,
+    RefusalCause,
+> {
+    let mut unclaimed = Vec::with_capacity(sends.len());
+    for send in sends {
+        if !claimed_first(ir, command, outcome, &send.0)? {
+            unclaimed.push(send);
+        }
+    }
+    Ok(unclaimed)
+}
+
+/// Whether an input-guarded refusal the precedence plan reads before `outcome` holds on `input`,
+/// so that refusal answers the send and `outcome` never does.
+fn claimed_first(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> Result<bool, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    for branch in super::precedence::answers_before(ir.format(), command, outcome) {
+        if !super::is_input_guarded_refusal(branch) {
+            continue;
+        }
+        if let Some(guard) = input_guard(branch) {
+            if decides(&facts, &[guard], true)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// The send of the `exists: false` branch `outcome` over the row `focus` names with every Optional
