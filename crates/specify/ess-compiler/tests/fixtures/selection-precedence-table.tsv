@@ -1,4 +1,4 @@
-#	models=412	commands=863
+#	models=413	commands=865
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	ir=c87449d062a2da60a227a5a4fe21bf6e78c1108f81fca3463834272ed4c44788:14663
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker.ops.Record	default: recorded
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
@@ -946,6 +946,9 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	demo.ru
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	demo.run.RevokeCapability	default: revoked
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	demo.run.StartRun	related_row: no-such-switch, no-such-capability | present_related: switch-paused, capability-revoked | default: started
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	demo.run.StopRun	held_state: wrong-state | default: stopped
+crates/verify/ess-conformance/tests/fixtures/related-guard-on-the-addressed-row.yaml	ir=3b8fa18842845b4f4c7f7885d0a95a0cdaaa3a107a6db1c70d39b29b12ea6c60:11189
+crates/verify/ess-conformance/tests/fixtures/related-guard-on-the-addressed-row.yaml	demo.items.Claim	existence: no-such-item | held_state: wrong-state | present_related: no-such-item-row, owner-mismatch | default: claimed
+crates/verify/ess-conformance/tests/fixtures/related-guard-on-the-addressed-row.yaml	demo.items.Create	default: created
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	ir=ad19424ea5327eca65738eac71b2a8ac2b24d55566e521570bb7c75b2dceab40:16818
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	demo.release.AcceptCandidate	default: accepted
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	demo.release.DraftRelease	default: drafted
