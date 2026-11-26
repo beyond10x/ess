@@ -11,7 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ess_ui::binding::{Answer, Binding};
 use ess_ui::{
     Action, ActionAs, ActionConfirm, Body, Columns, Composite, Document, Effect, Field, FilterBar,
-    Form, GuardThen, Live, NavPages, NodePath, Overlay, Page, PagedAway, Reads, Section, TabFields,
+    Form, GuardThen, Live, NavPages, Node, NodePath, Overlay, Page, PagedAway, Reads, Section,
+    TabFields,
 };
 use ess_yaml::{Mapping, Value};
 
@@ -56,7 +57,8 @@ impl Options {
 /// section, the open overlay, and for a collection that is a section's or an overlay's body: its
 /// column headers (a table's only), each drawn row line, each cell of a row (not for cards, a
 /// list or a tree with an `item`, whose cells the generated React project does not render) and
-/// each row action a row offers. A node not listed was not drawn on its own cells (or not drawn
+/// each row action a row offers; a form's `result` and a board's placed widgets
+/// (`<board>/rows/<widget>`). A node not listed was not drawn on its own cells (or not drawn
 /// at all).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Region {
@@ -71,6 +73,18 @@ pub struct Region {
     /// The node's whole text where the screen may cut it or does not show it: a row's cells, a
     /// cell's value, a column's label, an action's label. `None`: the text is what `area` shows.
     pub text: Option<String>,
+    /// The key that runs the action drawn here, where the terminal offers it under one: a test
+    /// presses it to act on the action at `path` (beyond10x/ess#722).
+    pub key: Option<char>,
+}
+
+/// Where an action a view offers is drawn, below the node of that view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum At {
+    /// Below the cursor row: `rows/<key>/<suffix>`.
+    Row(String),
+    /// Below the view itself: `<suffix>`.
+    View(String),
 }
 
 /// A node's place inside a list of lines, before the list is placed on the screen.
@@ -85,6 +99,8 @@ pub(crate) struct Mark {
     pub width: Option<usize>,
     /// [`Region::text`].
     pub text: Option<String>,
+    /// [`Region::key`].
+    pub key: Option<char>,
 }
 
 /// The lifecycle state a section is in.
@@ -411,6 +427,19 @@ pub(crate) struct Ctx<'a> {
     pub section: Option<&'a str>,
     pub overlay: bool,
     pub draft: Option<&'a str>,
+    /// The `loads` read of the action whose own expressions are evaluated: `loads.<field>`
+    /// reads its first row.
+    pub loads: Option<&'a Reads>,
+}
+
+impl<'a> Ctx<'a> {
+    /// This scope as `action`'s own `bind`, `checked` and `visible` see it: with its `loads`.
+    pub(crate) fn of_action(&self, action: &'a Action) -> Self {
+        Ctx {
+            loads: action.loads.as_ref(),
+            ..*self
+        }
+    }
 }
 
 /// Which view keys act on.
@@ -484,6 +513,12 @@ pub struct App {
     /// The sections whose `selection` is being resolved: a section that reads its own selection,
     /// directly or through another, sees none.
     pub(crate) resolving: std::cell::RefCell<Vec<String>>,
+    /// The reads of actions' `loads` the screen asked for while it drew them, by request key:
+    /// each is wanted like a shown section's read, so a command reads it again.
+    pub(crate) loads_requests: std::cell::RefCell<BTreeMap<String, ReadRequest>>,
+    /// The selected rows of the collection whose bulk action runs, which `selection.<field>`
+    /// reads (beyond10x/ess#722); `None` outside a bulk action.
+    pub(crate) bulk_selection: Option<Value>,
     /// What the last frame drew where.
     pub(crate) regions: std::cell::RefCell<Vec<Region>>,
 }
@@ -591,6 +626,8 @@ impl App {
             exports: Vec::new(),
             marks: std::cell::RefCell::default(),
             resolving: std::cell::RefCell::default(),
+            loads_requests: std::cell::RefCell::default(),
+            bulk_selection: None,
             regions: std::cell::RefCell::default(),
         };
         app.go(&home, BTreeMap::new(), true);
@@ -1032,6 +1069,7 @@ impl App {
                         view: dynamic.from_view.clone(),
                         fixture: None,
                         params: BTreeMap::new(),
+                        pager: None,
                     };
                     if let Some(ReadState::Ready(result)) = self.read_state(&request) {
                         for row in &result.rows {
@@ -1090,7 +1128,30 @@ impl App {
     // ── evaluation ──────────────────────────────────────────────────────────────────────────
 
     pub(crate) fn eval(&self, text: &str, ctx: &Ctx<'_>) -> Option<Value> {
+        // `and`, `or`, `not`, comparisons, `in` and parentheses mean what they mean in React: a
+        // boolean form of the one grammar `ess_ui::filter` holds, reading at least one path from
+        // a root, is judged by it (beyond10x/ess#723). Anything else, literal text included, is
+        // read as before.
+        if let Some(predicate) = ess_ui::filter::parse(text).filter(|predicate| {
+            let paths = predicate.paths();
+            predicate.boolean()
+                && !paths.is_empty()
+                && paths
+                    .iter()
+                    .all(|path| expr::ROOTS.contains(&path[0].as_str()))
+        }) {
+            return Some(predicate.evaluate(&|path| self.expr_path(ctx, path)));
+        }
         expr::eval(text, &Scope { app: self, ctx })
+    }
+
+    /// The value of a whole path, resolved as [`expr::eval`] resolves one.
+    fn expr_path(&self, ctx: &Ctx<'_>, path: &[String]) -> Value {
+        let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
+        match (Scope { app: self, ctx }).resolve(&path[0], &segments) {
+            Resolved::Whole(value) => value,
+            Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
+        }
     }
 
     /// The value of a filter-grammar path, resolved as `keeps` resolves it.
@@ -1119,6 +1180,13 @@ impl App {
             }
             None => self.visible(Some(condition), ctx),
         }
+    }
+
+    /// Whether the entry `name` of `sent` is sent in `ctx`: a bare one always, one written
+    /// `{value, when}` only while `when` is truthy (beyond10x/ess#723).
+    pub(crate) fn sends<V>(&self, sent: &ess_ui::Sent<V>, name: &str, ctx: &Ctx<'_>) -> bool {
+        sent.when(name)
+            .is_none_or(|when| self.eval(&when.0, ctx).is_some_and(|value| truthy(&value)))
     }
 
     /// A `visible` condition: absent or outside the fixture grammar means shown.
@@ -1184,6 +1252,48 @@ impl App {
             _ => return,
         };
         self.store.set(&path, value, self.adapter.as_mut());
+        self.reset_server_pages(target);
+    }
+
+    /// Returns each server-paged collection of the page whose read sends the state `written`
+    /// names in a param other than its pager's own to page 1, the page state included, as a
+    /// client pager returns to its first page (beyond10x/ess#722 item 23).
+    fn reset_server_pages(&mut self, written: &str) {
+        let state: Vec<&str> = written.split('.').take(2).collect();
+        let ["state" | "shell", _] = state.as_slice() else {
+            return;
+        };
+        let state = state.join(".");
+        let mut resets = Vec::new();
+        for section in &self.page_def().sections {
+            let Body::Composite(Composite::Collection(collection)) = &section.body else {
+                continue;
+            };
+            let Some(reads) = &collection.reads else {
+                continue;
+            };
+            let Some((page, pager)) =
+                server_pager(reads).and_then(|pager| Some((pager.page.as_ref()?, pager)))
+            else {
+                continue;
+            };
+            let Some(bound) = reads.params.get(page) else {
+                continue;
+            };
+            let other = reads.params.iter().any(|(name, expr)| {
+                name != page && pager.size.as_ref() != Some(name) && mentions(&expr.0, &state)
+            });
+            if other && !mentions(&bound.0, &state) {
+                resets.push((section.name.clone(), bound.0.clone()));
+            }
+        }
+        for (section, bound) in resets {
+            let ctx = Ctx {
+                section: Some(&section),
+                ..Ctx::default()
+            };
+            self.set_bound(&bound, Value::Number(1.into()), &ctx);
+        }
     }
 
     pub(crate) fn channel_status(&self, channel: &str) -> String {
@@ -1207,9 +1317,20 @@ impl App {
     pub(crate) fn request(&self, reads: &Reads, ctx: &Ctx<'_>) -> ReadRequest {
         let mut params = BTreeMap::new();
         for (name, value) in &reads.params {
+            if !self.sends(&reads.params, name, ctx) {
+                continue;
+            }
             if let Some(value) = self.eval(&value.0, ctx) {
                 if !value.is_null() {
                     params.insert(name.clone(), value);
+                }
+            }
+        }
+        // A server pager whose size state holds nothing is sent the first of its sizes.
+        if let Some(pager) = server_pager(reads) {
+            if let (Some(size), Some(first)) = (&pager.size, pager.sizes.first()) {
+                if reads.params.contains_key(size) && !params.contains_key(size) {
+                    params.insert(size.clone(), Value::Number((*first).into()));
                 }
             }
         }
@@ -1221,6 +1342,10 @@ impl App {
                 .unwrap_or_default(),
             fixture: reads.fixture.clone(),
             params,
+            pager: server_pager(reads).map(|pager| crate::data::PagerParams {
+                page: pager.page.clone().unwrap_or_default(),
+                size: pager.size.clone(),
+            }),
         }
     }
 
@@ -1278,6 +1403,34 @@ impl App {
             Some(held) => held.into_iter().next(),
             None => self.rows(&section.name).into_iter().next(),
         }
+    }
+
+    /// The first row an action's `loads` read answers in `ctx`: of its answer, or, while it runs
+    /// again after a command, of the answer it held; `None` until a row answers. Asking for it
+    /// makes the read wanted: the next pump starts it ([`App::needed_reads`]).
+    pub(crate) fn loaded_row(&self, reads: &Reads, ctx: &Ctx<'_>) -> Option<Value> {
+        let ctx = Ctx {
+            loads: None,
+            ..*ctx
+        };
+        let request = self.request(reads, &ctx);
+        self.loads_requests
+            .borrow_mut()
+            .entry(request.key())
+            .or_insert(request);
+        if let Some(result) = self.read_rows(reads, &ctx) {
+            return result.rows.first().cloned();
+        }
+        self.held_rows(reads, &ctx)?.into_iter().next()
+    }
+
+    /// Whether `action` reads `loads.<field>` from a row that has not answered yet: it is drawn
+    /// disabled, and its key runs nothing.
+    pub(crate) fn waits_for_row(&self, action: &Action, ctx: &Ctx<'_>) -> bool {
+        action
+            .loads
+            .as_ref()
+            .is_some_and(|reads| self.loaded_row(reads, ctx).is_none())
     }
 
     /// The rows `reads` answered before it started again for the same request, with its filter
@@ -1550,6 +1703,9 @@ impl App {
 
     fn needed_reads(&self) -> Wanted {
         let mut out = Wanted::default();
+        // The rows actions drawn on screen load for `loads.<field>` (beyond10x/ess#723, C17).
+        out.reads
+            .extend(self.loads_requests.borrow().values().cloned());
         let page = self.page_def();
         if let Some(shell) = self.doc.shells.get(&page.shell) {
             if let Some(preload) = &shell.preload {
@@ -1565,6 +1721,7 @@ impl App {
                             view: view.view.clone(),
                             fixture: None,
                             params,
+                            pager: None,
                         });
                     }
                 }
@@ -1577,6 +1734,7 @@ impl App {
                         view: dynamic.from_view.clone(),
                         fixture: None,
                         params: BTreeMap::new(),
+                        pager: None,
                     });
                 }
             }
@@ -1774,6 +1932,7 @@ impl App {
                                 view: view.clone(),
                                 fixture: None,
                                 params: self.overlay_params(),
+                                pager: None,
                             });
                         }
                     }
@@ -1800,6 +1959,7 @@ impl App {
                                 view: view.clone(),
                                 fixture: None,
                                 params: BTreeMap::new(),
+                                pager: None,
                             });
                         }
                     }
@@ -1815,6 +1975,7 @@ impl App {
             view: label_from.view.clone(),
             fixture: None,
             params: BTreeMap::new(),
+            pager: None,
         }
     }
 
@@ -1985,8 +2146,50 @@ impl App {
             ui,
             collection,
             &self.arranged_rows(ui, collection, &result.rows),
+            ctx,
         );
         (rows.into_iter().cloned().collect(), pages)
+    }
+
+    /// The page a server pager's read was sent for, from 0, and how many pages its total makes
+    /// at the size it was sent with; `None` for a collection without a server pager.
+    pub(crate) fn server_page(
+        &self,
+        collection: &ess_ui::Collection,
+        ctx: &Ctx<'_>,
+    ) -> Option<(usize, usize)> {
+        let reads = collection.reads.as_ref()?;
+        let pager = server_pager(reads)?;
+        let request = self.request(reads, ctx);
+        let number = |name: Option<&String>| {
+            name.and_then(|name| request.params.get(name))
+                .and_then(|value| display(value).parse::<usize>().ok())
+        };
+        let size = number(pager.size.as_ref())
+            .unwrap_or(self.options.page_size)
+            .max(1);
+        let page = number(pager.page.as_ref()).unwrap_or(1).max(1);
+        let total = self
+            .rows_of(&request)
+            .and_then(|result| result.total)
+            .map_or(0, |total| usize::try_from(total).unwrap_or(usize::MAX));
+        Some((page - 1, total.div_ceil(size).max(1)))
+    }
+
+    /// Moves a server pager to page `to` (from 1): writes the state its page param binds, so the
+    /// read is sent for that page (beyond10x/ess#722 item 24).
+    fn turn_server_page(&mut self, collection: &ess_ui::Collection, ctx: &Ctx<'_>, to: usize) {
+        let Some(reads) = &collection.reads else {
+            return;
+        };
+        let Some(bound) = server_pager(reads)
+            .and_then(|pager| pager.page.as_ref())
+            .and_then(|page| reads.params.get(page))
+        else {
+            return;
+        };
+        let to = i64::try_from(to).unwrap_or(i64::MAX);
+        self.set_bound(&bound.0.clone(), Value::Number(to.into()), ctx);
     }
 
     /// Rows per page of `collection`: with a client pager the size chosen among its sizes, else
@@ -2002,13 +2205,18 @@ impl App {
         size.unwrap_or(self.options.page_size).max(1)
     }
 
-    /// The page of `arranged` (from `arranged_rows`) shown, and how many pages there are.
+    /// The page of `arranged` (from `arranged_rows`) shown, and how many pages there are. A
+    /// server pager's read answers one page: all of it is shown, of the pages its total makes.
     pub(crate) fn page_of<'r>(
         &self,
         ui: &str,
         collection: &ess_ui::Collection,
         arranged: &[&'r Value],
+        ctx: &Ctx<'_>,
     ) -> (Vec<&'r Value>, usize) {
+        if let Some((_, pages)) = self.server_page(collection, ctx) {
+            return (arranged.to_vec(), pages);
+        }
         let size = self.page_size(ui, collection);
         let pages = arranged.len().div_ceil(size).max(1);
         let page = self.ui(ui).page.min(pages - 1);
@@ -2048,7 +2256,12 @@ impl App {
             return Some(row);
         }
         let held = self.held_rows(collection.reads.as_ref()?, ctx)?;
-        let (rows, _) = self.page_of(ui, collection, &self.arranged_rows(ui, collection, &held));
+        let (rows, _) = self.page_of(
+            ui,
+            collection,
+            &self.arranged_rows(ui, collection, &held),
+            ctx,
+        );
         let cursor = self.ui(ui).cursor.min(rows.len().saturating_sub(1));
         rows.get(cursor).map(|row| (*row).clone())
     }
@@ -2065,10 +2278,11 @@ impl App {
     /// function form, `draft.*`), is evaluated as a display expression, as before, and
     /// `ess ui check` warns on it (`checked_unreadable`).
     pub(crate) fn toggle_on(&self, action: &Action, ctx: &Ctx<'_>) -> Option<bool> {
+        let ctx = &ctx.of_action(action);
         (action.action_as == Some(ActionAs::Toggle)).then(|| {
             ess_ui::toggle_state(action).is_some_and(|state| {
                 let text = &state.expr.0;
-                match ess_ui::filter::parse(text).filter(ess_ui::filter::Predicate::allowed_roots) {
+                match ess_ui::filter::parse(text).filter(ess_ui::filter::Predicate::action_roots) {
                     Some(predicate) => ess_ui::filter::truthy(&predicate.evaluate(&|path| {
                         let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
                         match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
@@ -2095,10 +2309,31 @@ impl App {
         ctx: &Ctx<'_>,
         view_keys: &str,
     ) -> Vec<(char, Action)> {
+        let offers: Vec<(At, Action)> = actions
+            .iter()
+            .map(|action| (At::View(String::new()), action.clone()))
+            .collect();
+        self.keyed_offers(&offers, ctx, view_keys)
+            .into_iter()
+            .map(|(key, _, action)| (key, action))
+            .collect()
+    }
+
+    /// The actions a view offers ([`crate::view::collection_offers`],
+    /// [`crate::view::record_offers`]) with their keys, as [`App::action_keys_besides`] keys
+    /// them: one key space for all of them, so a row's, its item's, its expand's and the view's
+    /// own actions never share a key.
+    pub(crate) fn keyed_offers(
+        &self,
+        offers: &[(At, Action)],
+        ctx: &Ctx<'_>,
+        view_keys: &str,
+    ) -> Vec<(char, At, Action)> {
         let mut taken = view_keys.to_owned();
         let mut keyed = Vec::new();
-        for action in actions {
-            if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), ctx) {
+        for (at, action) in offers {
+            let own = ctx.of_action(action);
+            if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), &own) {
                 continue;
             }
             let key = action
@@ -2109,10 +2344,24 @@ impl App {
                 .find(|key| !RESERVED.contains(*key) && !taken.contains(*key));
             if let Some(key) = key {
                 taken.push(key);
-                keyed.push((key, action.clone()));
+                keyed.push((key, at.clone(), action.clone()));
             }
         }
         keyed
+    }
+
+    /// The child nodes of the section `section`, whose button actions its own view offers under
+    /// its keys; none outside a section.
+    pub(crate) fn own_children(&self, section: Option<&str>) -> Vec<Node> {
+        section
+            .and_then(|name| {
+                self.page_def()
+                    .sections
+                    .iter()
+                    .find(|section| section.name == name)
+            })
+            .map(|section| section.children.clone())
+            .unwrap_or_default()
     }
 
     // ── live ────────────────────────────────────────────────────────────────────────────────
@@ -2766,6 +3015,8 @@ impl App {
         self.demanded.clear();
         self.batches.clear();
         self.deferred.clear();
+        // The next page's actions ask for the rows they load as they are drawn.
+        self.loads_requests.borrow_mut().clear();
         // A view cache in memory is lost on unmount: the next page reads again.
         if crate::placement::class_default(&self.doc, &ess_ui::StateClass::ViewCache)
             .is_none_or(|store| store == ess_ui::Store::Memory)
@@ -3026,15 +3277,15 @@ impl App {
         let overlay = target == Target::Overlay;
         match composite {
             Composite::Collection(collection) => {
-                self.collection_key(&ui, &collection, section.as_deref(), overlay, key);
+                self.collection_key(&ui, &collection, section.as_deref(), overlay, None, key);
             }
             Composite::GraphEditor(editor) => {
                 let collection = graph_collection(&editor);
-                self.collection_key(&ui, &collection, section.as_deref(), overlay, key);
+                self.collection_key(&ui, &collection, section.as_deref(), overlay, None, key);
             }
             Composite::References(references) => {
                 let collection = references_collection(&references);
-                self.collection_key(&ui, &collection, section.as_deref(), overlay, key);
+                self.collection_key(&ui, &collection, section.as_deref(), overlay, None, key);
             }
             Composite::Form(form) => self.form_key(target, &ui, &form, &draft, key),
             Composite::FilterBar(bar) => self.bar_key(&ui, &bar, section.as_deref(), key),
@@ -3102,11 +3353,16 @@ impl App {
         collection: &ess_ui::Collection,
         section: Option<&str>,
         overlay: bool,
+        record: Option<(&Value, &str)>,
         key: KeyEvent,
     ) {
+        // The collection of a record's `item` reads in the record's row, and its row actions
+        // leave the record's own keys to it ([`item_ui`]).
+        let (outer, taken) = record.map_or((None, ""), |(row, taken)| (Some(row), taken));
         let ctx = Ctx {
             section,
             overlay,
+            row: outer,
             ..Ctx::default()
         };
         let (rows, pages) = self.page_rows(ui, collection, &ctx);
@@ -3116,6 +3372,13 @@ impl App {
             ..ctx
         };
         let actions = self.action_keys(&collection.row_actions, &row_ctx);
+        let children = if overlay || record.is_some() {
+            Vec::new()
+        } else {
+            self.own_children(section)
+        };
+        let offers = crate::view::collection_offers(collection, self.ui(ui).expanded, &children);
+        let keyed = self.keyed_offers(&offers, &row_ctx, taken);
         let path = section.map(|section| self.section_path(section));
         let moves = path
             .as_ref()
@@ -3129,6 +3392,19 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 let state = self.ui_mut(ui);
                 state.cursor = state.cursor.saturating_sub(1);
+            }
+            // A server pager moves through the state its page param binds.
+            KeyCode::Char(turn @ ('n' | 'p')) if self.server_page(collection, &ctx).is_some() => {
+                let (page, _) = self.server_page(collection, &ctx).unwrap_or((0, 1));
+                let to = if turn == 'n' {
+                    (page + 1).min(pages.saturating_sub(1))
+                } else {
+                    page.saturating_sub(1)
+                };
+                if to != page {
+                    self.turn_server_page(collection, &ctx, to + 1);
+                    self.ui_mut(ui).cursor = 0;
+                }
             }
             KeyCode::Char('n') => {
                 let state = self.ui_mut(ui);
@@ -3235,7 +3511,31 @@ impl App {
                     .into_iter()
                     .find(|(key, _)| *key == letter)
                 {
+                    // `selection.<field>` reads the selected rows, as React's bulk bar hands
+                    // them over (beyond10x/ess#722).
+                    let selected = &self.ui(ui).selected;
+                    let rows = collection
+                        .reads
+                        .as_ref()
+                        .and_then(|reads| self.read_rows(reads, &ctx))
+                        .map(|result| {
+                            result
+                                .rows
+                                .iter()
+                                .filter(|row| {
+                                    selected.contains(&self.selection_key(
+                                        row,
+                                        collection.reads.as_ref(),
+                                        ctx.section,
+                                    ))
+                                })
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    self.bulk_selection = Some(Value::Sequence(rows));
                     self.run_action_at(ui, &action, None);
+                    self.bulk_selection = None;
                 }
             }
             KeyCode::Char(direction @ ('J' | 'K')) if moves => {
@@ -3260,7 +3560,11 @@ impl App {
                 }
             }
             KeyCode::Char(letter) => {
-                if let Some((_, action)) = actions.into_iter().find(|(key, _)| *key == letter) {
+                if let Some((_, at, action)) = keyed.into_iter().find(|(key, _, _)| *key == letter)
+                {
+                    // A row's, its item's and its expand's actions see the row; the
+                    // collection's own and its section's child buttons do not.
+                    let row = if matches!(at, At::Row(_)) { row } else { None };
                     self.run_action_at(ui, &action, row);
                 }
             }
@@ -3281,30 +3585,64 @@ impl App {
     ) {
         let tabs = record.tabs.len().max(1);
         let tab = self.ui(ui).tab.min(tabs - 1);
-        match key.code {
-            KeyCode::Char(']') => self.ui_mut(ui).tab = (tab + 1) % tabs,
-            KeyCode::Char('[') => self.ui_mut(ui).tab = (tab + tabs - 1) % tabs,
-            KeyCode::Char(letter) => {
-                let ctx = Ctx {
-                    section,
-                    overlay,
-                    ..Ctx::default()
-                };
-                let row = self.record_row(record, &ctx);
-                let row_ctx = Ctx {
-                    row: row.as_ref(),
-                    ..ctx
-                };
-                let actions = crate::view::record_actions(record, tab);
-                if let Some((_, action)) = self
-                    .action_keys(&actions, &row_ctx)
-                    .into_iter()
-                    .find(|(key, _)| *key == letter)
-                {
-                    self.run_action_at(ui, &action, row);
-                }
+        if matches!(key.code, KeyCode::Char(']')) {
+            self.ui_mut(ui).tab = (tab + 1) % tabs;
+            return;
+        }
+        if matches!(key.code, KeyCode::Char('[')) {
+            self.ui_mut(ui).tab = (tab + tabs - 1) % tabs;
+            return;
+        }
+        let ctx = Ctx {
+            section,
+            overlay,
+            ..Ctx::default()
+        };
+        let row = self.record_row(record, &ctx);
+        let row_ctx = Ctx {
+            row: row.as_ref(),
+            ..ctx
+        };
+        let children = if overlay {
+            Vec::new()
+        } else {
+            self.own_children(section)
+        };
+        let offers = crate::view::record_offers(record, tab, &children);
+        let keyed = self.keyed_offers(&offers, &row_ctx, "");
+        if let KeyCode::Char(letter) = key.code {
+            if let Some((_, _, action)) = keyed.iter().find(|(key, _, _)| *key == letter) {
+                let action = action.clone();
+                self.run_action_at(ui, &action, row);
+                return;
             }
-            _ => {}
+        }
+        // Every other key moves through the collection of a section's record's `item`, as it
+        // does through a section's own collection (beyond10x/ess#722).
+        let shown = record.item.iter().any(|node| {
+            record
+                .item_collection()
+                .is_some_and(|(name, _)| node.common.name.as_deref() == Some(name))
+                && self.visible(
+                    node.common.visible.as_ref().map(|expr| expr.0.as_str()),
+                    &row_ctx,
+                )
+        });
+        if let Some((name, collection)) = record
+            .item_collection()
+            .filter(|_| shown && !overlay && section.is_some())
+        {
+            let taken: String = keyed.iter().map(|(key, _, _)| *key).collect();
+            let row = row.unwrap_or(Value::Null);
+            let collection = collection.clone();
+            self.collection_key(
+                &item_ui(ui, name),
+                &collection,
+                section,
+                overlay,
+                Some((&row, &taken)),
+                key,
+            );
         }
     }
 
@@ -4109,24 +4447,30 @@ impl App {
 
     /// Runs an action. Its command's refusal, if it sent one that was not done, is returned for
     /// the caller to show where the user acted.
+    #[allow(clippy::too_many_lines)] // navigate, overlay, command, export, copy and state, in order
     pub(crate) fn run_action(
         &mut self,
         action: &Action,
         row: Option<Value>,
         confirmed: bool,
     ) -> Option<Refused> {
-        // An action of the open overlay reads that overlay's params beside the page's.
-        let in_overlay = self.in_open_overlay(action);
+        // An action of the open overlay reads that overlay's params beside the page's, and the
+        // row its `loads` read answers (beyond10x/ess#723).
+        let ctx = Ctx {
+            row: row.as_ref(),
+            overlay: self.in_open_overlay(action),
+            ..Ctx::default()
+        }
+        .of_action(action);
+        // Drawn disabled until the row it loads answers, it runs nothing (beyond10x/ess#723).
+        if self.waits_for_row(action, &ctx) {
+            return None;
+        }
         if !confirmed {
             match &action.confirm {
                 Some(ActionConfirm::Opens(name)) => {
                     let name = name.clone();
-                    let opener = Ctx {
-                        row: row.as_ref(),
-                        overlay: in_overlay,
-                        ..Ctx::default()
-                    };
-                    self.show_overlay(&name, &opener, None, Some((action.clone(), row.clone())));
+                    self.show_overlay(&name, &ctx, None, Some((action.clone(), row.clone())));
                     return None;
                 }
                 Some(ActionConfirm::Inline(inline)) => {
@@ -4158,15 +4502,11 @@ impl App {
                 None => {}
             }
         }
-        let ctx = Ctx {
-            row: row.as_ref(),
-            overlay: in_overlay,
-            ..Ctx::default()
-        };
         if let Some(navigate) = &action.navigate {
             let params = navigate
                 .params
                 .iter()
+                .filter(|(name, _)| self.sends(&navigate.params, name, &ctx))
                 .filter_map(|(name, value)| {
                     self.eval(&value.0, &ctx).map(|value| (name.clone(), value))
                 })
@@ -4182,8 +4522,19 @@ impl App {
             let input = action
                 .bind
                 .iter()
+                .filter(|(name, _)| self.sends(&action.bind, name, &ctx))
                 .filter_map(|(name, value)| {
-                    self.eval(&value.0, &ctx).map(|value| (name.clone(), value))
+                    let value = match value {
+                        ess_ui::BindValue::One(value) => self.eval(&value.0, &ctx)?,
+                        // A list sends one list input; an item outside the grammar is null.
+                        ess_ui::BindValue::List(items) => Value::Sequence(
+                            items
+                                .iter()
+                                .map(|item| self.eval(&item.0, &ctx).unwrap_or(Value::Null))
+                                .collect(),
+                        ),
+                    };
+                    Some((name.clone(), value))
                 })
                 .collect();
             // Nothing else the action does follows a command that was not done.
@@ -4347,6 +4698,7 @@ impl App {
                 overlay
                     .params
                     .iter()
+                    .filter(|(key, _)| self.sends(&overlay.params, key, ctx))
                     .filter_map(|(key, value)| {
                         self.eval(&value.0, ctx).map(|value| (key.clone(), value))
                     })
@@ -4607,6 +4959,21 @@ impl Resolve for Scope<'_> {
         let adapter = app.adapter.as_ref();
         match root {
             "row" => Resolved::Root(self.ctx.row.cloned().unwrap_or(Value::Null)),
+            // The first row the action's `loads` read answers, inside that action's own
+            // expressions; absent until a row answers (beyond10x/ess#723, C17).
+            "loads" => Resolved::Root(
+                self.ctx
+                    .loads
+                    .and_then(|reads| app.loaded_row(reads, self.ctx))
+                    .unwrap_or(Value::Null),
+            ),
+            // The selected rows, inside a bulk action; a field projects over them as the browser
+            // reads it (`selection.id` is the list of ids).
+            "selection" => Resolved::Whole(
+                app.bulk_selection
+                    .as_ref()
+                    .map_or(Value::Null, |rows| ess_ui::filter::path(rows, segments)),
+            ),
             "params" => {
                 let mut params = app.params.clone();
                 if self.ctx.overlay {
@@ -4848,7 +5215,7 @@ fn location_value(value: &Value) -> String {
     }
 }
 
-fn compare(left: &Value, right: &Value) -> std::cmp::Ordering {
+pub(crate) fn compare(left: &Value, right: &Value) -> std::cmp::Ordering {
     // A number, or an amount record (`{amount, currency}`), sorts by its number.
     let number = |value: &Value| {
         value
@@ -4878,6 +5245,7 @@ pub(crate) fn actor_row(
         view: view.view.clone(),
         fixture: None,
         params: BTreeMap::new(),
+        pager: None,
     };
     adapter
         .read(&request)
@@ -4923,6 +5291,26 @@ pub(crate) fn client_sizes(collection: &ess_ui::Collection) -> Option<Vec<usize>
             .filter_map(|size| usize::try_from(*size).ok().filter(|size| *size >= 1))
             .collect(),
     )
+}
+
+/// Whether the expression `expr` reads `state` (`state.<name>`), whole or a field of it.
+fn mentions(expr: &str, state: &str) -> bool {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    expr.match_indices(state).any(|(at, _)| {
+        let before = expr[..at].chars().next_back();
+        let after = expr[at + state.len()..].chars().next();
+        !before.is_some_and(|c| word(c) || c == '.') && !after.is_some_and(word)
+    })
+}
+
+/// The pager of a server-paged read that names its page param (`paging: server` with a `pager`):
+/// the terminal pages it through the states its params bind (beyond10x/ess#722).
+pub(crate) fn server_pager(reads: &ess_ui::Reads) -> Option<&ess_ui::Pager> {
+    reads
+        .pager
+        .as_ref()
+        .filter(|pager| pager.page.is_some())
+        .filter(|_| matches!(reads.paging, Some(ess_ui::Paging::Server)))
 }
 
 /// Whether a collection's read is paged, by the server or by the renderer: its footer shows the
@@ -5165,6 +5553,12 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         help: None,
         host: None,
     }
+}
+
+/// The view state of the collection of a record's `item` named `name`, in the record's view `ui`:
+/// its cursor, page and selection are its own.
+pub(crate) fn item_ui(ui: &str, name: &str) -> String {
+    format!("{ui}/item/{name}")
 }
 
 /// A graph editor degraded to a collection of its nodes: label, kind, and its actions.

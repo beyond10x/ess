@@ -32,12 +32,28 @@ export function classify(status: number, body: string): Answer {
   try {
     parsed = JSON.parse(body);
   } catch {
+//+bound
+    // A call without a credential its route accepts, whatever the body (beyond10x/ess#723).
+    if (status === 401) {
+      return { answer: "not_granted", actor: null };
+    }
+//-bound
     return { answer: "transport" };
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+//+bound
+    if (status === 401) {
+      return { answer: "not_granted", actor: null };
+    }
+//-bound
     return { answer: "transport" };
   }
   const members = parsed as Record<string, unknown>;
+//+bound
+  if (status === 401 && !has(members, "outcome")) {
+    return { answer: "not_granted", actor: null };
+  }
+//-bound
   const success = status >= 200 && status < 300;
   if (has(members, "outcome")) {
     if (typeof members.outcome !== "string") {

@@ -10,12 +10,14 @@
 //! their own (`ess_ui_tui::Region`):
 //!
 //! - a collection that is a section's or an overlay's body draws its rows, their row actions, a
-//!   table's column headers, and a row's cells, except in cards, a list or a tree with an `item`,
+//!   table's column headers, a row's `item` nodes and the body nodes of a widget instance among
+//!   them, and a row's cells, except in cards, a list or a tree with an `item`,
 //!   where React renders the item instead of the cells;
 //! - a references list's rows are not addressed by React, so a path into them is refused;
 //! - `text` reads a node that has cells of its own: the page, a section, an overlay, the page
-//!   header and its actions, a section's child, a field slot of a section's or an overlay's own
-//!   form, and the collection parts above; and never an icon action or an action drawn as a
+//!   header and its actions, a section's child, a field slot and the `result` of a section's or
+//!   an overlay's own form, a board's placed widget (`<board>/rows/<widget>`), and the
+//!   collection parts above; and never an icon action or an action drawn as a
 //!   choice, which show no label in the browser;
 //! - `act` on a form (a section's or an overlay's own) that saves on change is refused: the
 //!   generated form draws no submit then ([`submit`]); an overlay opened from a row is not
@@ -148,12 +150,54 @@ pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String>
     }
 }
 
+/// The section whose record's `item` holds the collection at `path`, when it is the one
+/// [`ess_ui::Record::item_collection`] names: the terminal gives it a cursor and rows at
+/// `<record>/item/<name>/rows/<key>`, as React draws them, so a step there is driven in both
+/// renderers (beyond10x/ess#722).
+pub(crate) fn record_item_collection(document: &Document, path: &str) -> Option<String> {
+    let segments: Vec<&str> = path.split('/').collect();
+    let ["pages", page, "sections", section, "item", name] = segments.as_slice() else {
+        return None;
+    };
+    let body = &document
+        .pages
+        .get(*page)?
+        .sections
+        .iter()
+        .find(|candidate| candidate.name == *section)?
+        .body;
+    let Body::Composite(Composite::Record(record)) = body else {
+        return None;
+    };
+    (record.item_collection()?.0 == *name).then(|| (*section).to_owned())
+}
+
+/// Why `mark`, `move` or `page` at `target` is refused because it names the collection of a
+/// section's record's `item` ([`record_item_collection`]) or one of its rows, if it does: the
+/// terminal moves its cursor through those rows and runs their actions, but selects, reorders
+/// and pages only a section's or an overlay's own collection.
+pub(crate) fn item_rows(document: &Document, target: &Target) -> Option<String> {
+    let container = target
+        .row
+        .as_ref()
+        .map_or(&target.node, |row| &row.container);
+    record_item_collection(document, container).map(|_| {
+        format!(
+            "{}: the terminal drives the rows of a record's `item` collection with `select` \
+             and `act` only; it marks, moves and pages a section's or an overlay's own \
+             collection",
+            target.written
+        )
+    })
+}
+
 /// Why any step at `target` is refused because the terminal draws the node but cannot drive or
 /// address it, if it is. Both renderers read this, so the spec marks the same steps `test.fixme`:
 ///
 /// - a collection that is not a section's or an overlay's own body (nested in a record's
 ///   `item`, a tab, a section's `children`, a form's `parts`), and its rows: the terminal draws
-///   them inside their section, without a cursor or row regions of their own;
+///   them inside their section, without a cursor or row regions of their own. The collection of
+///   a section's record's `item` ([`record_item_collection`]) is driven and not refused;
 /// - a tab's nested node (`tabs/<t>/form` when it is a node) and what is inside it: the terminal
 ///   draws it below the tab's fields but moves no focus into it. A tab's `form` that is an action
 ///   is driven by its key, like the record's own actions.
@@ -163,7 +207,9 @@ pub(crate) fn undriven(document: &Document, target: &Target) -> Option<String> {
         .row
         .as_ref()
         .map_or(&target.node, |row| &row.container);
-    if let Some((Held::Collection(_), false)) = body_at(document, container) {
+    if let Some((Held::Collection(_), false)) = body_at(document, container)
+        .filter(|_| record_item_collection(document, container).is_none())
+    {
         return Some(format!(
             "{path}: the terminal draws a collection nested inside a record, a tab or a node \
              without addressing it or its rows; address a section's or an overlay's own \
@@ -337,6 +383,18 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
             // A row's expanded detail is drawn on lines of its own below the rows.
             [] | ["expand"] => None,
             _ if is_column(&rest) => None,
+            // A row's `item` node is drawn on the row's line, and so is each node of a widget
+            // instance's body (beyond10x/ess#722).
+            ["item", name] if collection.item.iter().any(|node| named(node, name)) => None,
+            ["item", name, "body", part] => collection
+                .item
+                .iter()
+                .find(|node| named(node, name))
+                .and_then(|node| match &node.body {
+                    Body::Widget(widget) => widget.body.iter().find(|inner| named(inner, part)),
+                    _ => None,
+                })
+                .map_or_else(|| Some(own_cells()), |_| None),
             ["row_actions", name] => collection
                 .row_actions
                 .iter()
@@ -352,6 +410,7 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
     // field's line, recorded at the field's path.
     if own_form_field(document, target).is_some_and(|field| field.host.is_some())
         || own_record_slot(document, target)
+        || own_form_result(document, target)
     {
         return None;
     }
@@ -439,6 +498,31 @@ fn own_record_slot(document: &Document, target: &Target) -> bool {
                     })
                 )
         })
+}
+
+/// Whether `target` is the `result` of a section's or an overlay's own form, which the terminal
+/// records on lines of its own at its path.
+fn own_form_result(document: &Document, target: &Target) -> bool {
+    if target.row.is_some() {
+        return false;
+    }
+    let Some(form) = target.node.strip_suffix("/result") else {
+        return false;
+    };
+    document.nodes().into_iter().any(|located| {
+        located.path.to_string() == form
+            && match located.node {
+                NodeRef::Section(ess_ui::Section {
+                    body: Body::Composite(Composite::Form(form)),
+                    ..
+                })
+                | NodeRef::Overlay(ess_ui::Overlay {
+                    body: Body::Composite(Composite::Form(form)),
+                    ..
+                }) => form.result.is_some(),
+                _ => false,
+            }
+    })
 }
 
 /// The field at `target` of a section's or an overlay's own form, directly or in one of its
@@ -552,4 +636,9 @@ fn style_name(collection: &Collection) -> &'static str {
         Some(ess_ui::CollectionStyle::Tree) => "tree",
         _ => "table",
     }
+}
+
+/// Whether `node` is named `name`.
+fn named(node: &ess_ui::Node, name: &str) -> bool {
+    node.common.name.as_deref() == Some(name)
 }

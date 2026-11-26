@@ -3,20 +3,20 @@ import { useUiPath } from "../core";
 import { Link } from "../router";
 import { hrefFor } from "../../routes";
 import { formatValue, safeUrl, useScope } from "../core";
-import { evaluate } from "../expr";
+import { evaluate, sent, type Sent } from "../expr";
 
 /** A link to a page of this app, or to an external address. */
 export function LinkView(props: {
   "data-ui-path": string;
   text: string;
-  to?: { page: string; params?: Record<string, string> };
+  to?: { page: string; params?: Record<string, Sent<string>> };
   href?: string;
 }): ReactNode {
   const scope = useScope();
   const text = formatValue(evaluate(props.text, scope.values));
   if (props.to) {
     const params: Record<string, unknown> = {};
-    for (const [name, expr] of Object.entries(props.to.params ?? {})) {
+    for (const [name, expr] of sent(props.to.params, scope.values)) {
       params[name] = evaluate(expr, scope.values);
     }
     return (

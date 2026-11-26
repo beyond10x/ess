@@ -2118,6 +2118,65 @@ fn a_read_binding_an_undeclared_view_param_is_an_error() {
     trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
 }
 
+/// A param written `{value, when}` is sent only while `when` holds (beyond10x/ess#723): both
+/// expressions are checked as a bare one is, any other key is refused by path, and a parameter
+/// the view requires may not be left out.
+#[test]
+fn a_conditional_read_param_is_checked_and_never_leaves_out_a_required_one() {
+    let report = param_report(
+        "{view: stock.Labelled, params: {wanted: params.q, hint: {value: params.q, when: params.q}}}",
+    );
+    for check in ["read_params", "expr_paths", "document_loads"] {
+        assert!(tripped(&report, check).is_empty(), "{:#?}", report.findings);
+    }
+    let report =
+        param_report("{view: stock.Labelled, params: {wanted: {value: params.q, when: params.q}}}");
+    let finding = trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
+    assert!(finding.message.contains("`wanted`"), "{finding:?}");
+    assert!(finding.message.contains("`when`"), "{finding:?}");
+    let report = param_report(
+        "{view: stock.Labelled, params: {wanted: params.q, hint: {value: params.q, when: params.nope}}}",
+    );
+    assert!(
+        tripped(&report, "expr_paths")
+            .iter()
+            .any(|finding| finding.message.contains("nope")),
+        "{:#?}",
+        report.findings
+    );
+    let report = param_report(
+        "{view: stock.Labelled, params: {wanted: params.q, hint: {value: params.q, when: params.q, unless: params.q}}}",
+    );
+    assert!(
+        tripped(&report, "document_loads")
+            .iter()
+            .any(
+                |finding| finding.path.starts_with("pages/p/sections/labelled")
+                    && finding.message.contains("unless")
+            ),
+        "{:#?}",
+        report.findings
+    );
+}
+
+/// A `bind` entry written `{value, when}` may not leave out a command input that is required.
+#[test]
+fn a_conditional_bind_never_leaves_out_a_required_input() {
+    let report = model_report(
+        "{p: {kind: detail_page, title: P, sections: [\
+          {name: summary, component: collection, reads: stock.Items, columns: [label], \
+           row_actions: [{name: add, does: stock.AddItem, bind: {label: {value: row.label, when: row.label}}}]}]}}",
+        QUIET,
+    );
+    let finding = trips_in(
+        &report,
+        "field_in_model",
+        "pages/p/sections/summary/row_actions/add",
+    );
+    assert!(finding.message.contains("`label`"), "{finding:?}");
+    assert!(finding.message.contains("`when`"), "{finding:?}");
+}
+
 #[test]
 fn an_unbound_required_view_param_is_an_error() {
     let report = param_report("{view: stock.Labelled, params: {hint: params.q}}");
@@ -2934,4 +2993,111 @@ fn a_bare_body_route_is_served_to_a_generated_ui() {
     let json = serde_json::to_string(&binding).expect("serialises");
     assert!(json.contains("\"body\":\"priorities\""), "{json}");
     assert!(!json.contains("body_alias"), "{json}");
+}
+
+/// Icon names are one closed list (beyond10x/ess#723): a name outside it is warned `icon_names`
+/// at its node and the document still loads, on a menu group, an icon primitive and an action;
+/// an action takes `icon` and `tone`, and an unknown tone is refused by path.
+#[test]
+fn icon_names() {
+    let text = doc(&[
+        (
+            "navigation",
+            "{home: p, sections: [{name: all, icon: sparkle, pages: [p]}, {name: more, icon: home, pages: [p]}]}",
+        ),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [\
+              {name: card, component: record, reads: t.ById, children: [\
+                {name: mark, primitive: icon, icon: rocket, label: Mark}, \
+                {name: done, primitive: icon, icon: check, label: Done}]}, \
+              {name: list, component: collection, reads: t.ById, columns: [id], row_actions: [\
+                {name: archive, does: t.Archive, as: icon, icon: archive, tone: danger}, \
+                {name: launch, does: t.Launch, icon: rocket, tone: primary}]}]}}",
+        ),
+    ]);
+    let report = report(&text);
+    assert!(
+        tripped(&report, "document_loads").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    let mut warned: Vec<&str> = tripped(&report, "icon_names")
+        .iter()
+        .map(|finding| finding.path.as_str())
+        .collect();
+    warned.sort_unstable();
+    assert_eq!(
+        warned,
+        [
+            "navigation/sections/all",
+            "pages/p/sections/card/children/mark",
+            "pages/p/sections/list/row_actions/launch",
+        ],
+        "{:#?}",
+        report.findings
+    );
+    let finding = trips_in(
+        &report,
+        "icon_names",
+        "pages/p/sections/list/row_actions/launch",
+    );
+    assert_eq!(finding.severity, Severity::Warning);
+    assert!(finding.message.contains("`rocket`"), "{finding:?}");
+    let loud = text.replace("tone: danger", "tone: loud");
+    let report = report_with(&loud, None, &Options::default());
+    assert!(
+        tripped(&report, "document_loads")
+            .iter()
+            .any(
+                |finding| finding.path == "pages/p/sections/list/row_actions/archive"
+                    && finding.message.contains("ButtonTone")
+            ),
+        "{:#?}",
+        report.findings
+    );
+}
+
+/// A chart's `x` and `series` take a field as a column does, `{field, label, as, unit}`, or a
+/// bare name (beyond10x/ess#723); any other key there is refused by path.
+#[test]
+fn a_chart_axis_takes_field_label_as_and_unit() {
+    let chart = |x: &str| {
+        doc(&[(
+            "pages",
+            &format!(
+                "{{p: {{kind: detail_page, title: P, sections: [{{name: c, component: chart, \
+                 chart: bar, reads: t.ById, x: {x}, series: [{{field: count, label: Orders}}, id]}}]}}}}"
+            ),
+        )])
+    };
+    let found = report(&chart("{field: at, label: Day, as: date}"));
+    assert!(
+        tripped(&found, "document_loads").is_empty(),
+        "{:#?}",
+        found.findings
+    );
+    let found = report(&chart("{field: at, tone: info}"));
+    assert!(
+        tripped(&found, "document_loads")
+            .iter()
+            .any(|finding| finding.path.starts_with("pages/p/sections/c")
+                && finding.message.contains("`tone`")),
+        "{:#?}",
+        found.findings
+    );
+}
+
+/// A chart's `sort.by` names a row field of its view, as a collection's `group_by` does
+/// (beyond10x/ess#723).
+#[test]
+fn a_chart_sort_names_a_row_field() {
+    let report = shelf_report(
+        "{name: trend, component: chart, chart: line, reads: stock.Items, x: label, \
+          series: [label], sort: {by: aisle}}, \
+         {name: fine, component: chart, chart: bar, reads: stock.Items, x: label, \
+          series: [label], sort: {by: label, dir: desc}}",
+    );
+    trips_in(&report, "row_fields", "pages/p/sections/trend/sort/by");
+    assert_eq!(tripped(&report, "row_fields").len(), 1, "{report:#?}");
 }

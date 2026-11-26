@@ -625,7 +625,7 @@ fn the_fourth_refusal_is_too_large_and_takes_any_4xx() {
         assert!(
             messages
                 .iter()
-                .any(|message| message.contains("`too_large` and `unfinished`")),
+                .any(|message| message.contains("`too_large`, `unauthenticated` and `unfinished`")),
             "{messages:?}"
         );
     }
@@ -935,4 +935,331 @@ fn compiled_ir_with_a_wrapped_view_answer_out_of_rules_is_refused() {
         let error = HttpIr::from_json(&text).expect_err(broken).to_string();
         assert!(error.contains(named), "{broken}: {error}");
     }
+}
+
+// --- authentication (beyond10x/ess#681) ---------------------------------------------------------
+
+/// The fixture with one actor granted both commands: `authentication` binds a model that says who
+/// may call.
+fn guarded_model() -> EssIr {
+    let text = MODEL.to_owned()
+        + "actors:\n  - name: catalog.orders.Clerk\n    may: [catalog.orders.NoteOrder, catalog.orders.PlaceOrder]\n";
+    let raw = RawSpecFile::parse(&text).expect("well formed");
+    let spec = Specification::assemble([(Source::new("orders.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("validates: {errors}"));
+    let mut sources = SourceMap::new();
+    sources.insert("orders.yaml", &text);
+    compile_model(&spec, &sources).unwrap_or_else(|errors| panic!("compiles: {errors}"))
+}
+
+const SCHEMES: &str = "authentication:
+  schemes:
+    bearer_auth: {kind: bearer}
+    key_auth: {kind: api_key, in: header, name: X-Api-Key}
+  required: [bearer_auth]
+";
+
+#[test]
+fn a_binding_declares_how_a_caller_authenticates() {
+    let ir = guarded_model();
+    let document =
+        SCHEMES.to_owned() + &two_commands("    authentication: [bearer_auth, key_auth]\n");
+    let http = compiled(&ir, &document).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    let json = ir_json(&http);
+    assert_eq!(
+        json["authentication"],
+        json!({
+            "schemes": {
+                "bearer_auth": {"kind": "bearer"},
+                "key_auth": {"kind": "api_key", "in": "header", "name": "X-Api-Key"},
+            },
+            "required": ["bearer_auth"],
+        }),
+        "{json:#}"
+    );
+    assert_eq!(
+        json["routes"][0]["authentication"],
+        json!(["bearer_auth", "key_auth"])
+    );
+    assert_eq!(json["routes"][1].get("authentication"), None, "{json:#}");
+    let text = http.to_canonical_json();
+    let at = |key: &str| text.find(key).unwrap_or_else(|| panic!("{key} in {text}"));
+    assert!(at("\"authentication\"") < at("\"routes\""), "{text}");
+    assert!(at("\"routes\"") < text.rfind("\"authentication\"").expect("route key"));
+    round_trips(&http);
+    let place = http
+        .route(&Operation::Command("catalog.orders.PlaceOrder".into()))
+        .expect("routed");
+    let note = http
+        .route(&Operation::Command(NOTE.into()))
+        .expect("routed");
+    assert_eq!(http.required_schemes(place), ["bearer_auth", "key_auth"]);
+    assert_eq!(http.required_schemes(note), ["bearer_auth"]);
+
+    // Every kind, and an open route.
+    let kinds = "authentication:
+  schemes:
+    basic_auth: {kind: basic, realm: orders}
+    cookie_key: {kind: api_key, in: cookie, name: session}
+    query_key: {kind: api_key, in: query, name: key}
+    tls: {kind: mutual_tls}
+  required: [basic_auth, cookie_key, query_key, tls]
+";
+    let http = compiled(
+        &ir,
+        &(kinds.to_owned() + &two_commands("    authentication: []\n")),
+    )
+    .unwrap_or_else(|errors| panic!("compiles: {errors}"));
+    assert_eq!(ir_json(&http)["routes"][0]["authentication"], json!([]));
+    let place = http
+        .route(&Operation::Command("catalog.orders.PlaceOrder".into()))
+        .expect("routed");
+    assert!(http.required_schemes(place).is_empty());
+    round_trips(&http);
+}
+
+#[test]
+fn an_authentication_out_of_rules_is_refused() {
+    let ir = guarded_model();
+    let one = |scheme: &str, routes: &str| {
+        format!("authentication:\n  schemes:\n    {scheme}\n  required: [a]\n{routes}")
+    };
+    for (document, expected) in [
+        (
+            one("a: {kind: oauth2}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.kind")],
+        ),
+        (
+            one("a: {kind: open_id_connect}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.kind")],
+        ),
+        (
+            one("a: {kind: digest}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.kind")],
+        ),
+        (
+            "authentication:\n  schemes:\n    'bad name': {kind: bearer}\n  required: ['bad name']\n"
+                .to_owned()
+                + &two_commands(""),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.bad name")],
+        ),
+        (
+            one(
+                "a: {kind: bearer}",
+                &two_commands("    authentication: [a, nobody]\n"),
+            ),
+            vec![refused("ESS-HTTP-037", "routes[0].authentication")],
+        ),
+        (
+            one("a: {kind: bearer}", &two_commands("    authentication: [a, a]\n")),
+            vec![refused("ESS-HTTP-037", "routes[0].authentication")],
+        ),
+        (
+            "authentication:\n  schemes:\n    a: {kind: bearer}\n  required: [nobody]\n".to_owned()
+                + &two_commands("    authentication: [a]\n"),
+            vec![refused("ESS-HTTP-037", "authentication.required")],
+        ),
+        (
+            SCHEMES.to_owned() + &two_commands(""),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.key_auth")],
+        ),
+        (
+            "authentication:\n  schemes:\n    a: {kind: bearer}\n    a: {kind: basic, realm: r}\n  required: [a]\n"
+                .to_owned()
+                + &two_commands(""),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a")],
+        ),
+        (
+            "authentication:\n  schemes: {}\n".to_owned() + &two_commands(""),
+            vec![refused("ESS-HTTP-037", "authentication.schemes")],
+        ),
+        (
+            one("a: {kind: api_key, in: header}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.name")],
+        ),
+        (
+            one("a: {kind: api_key, in: body, name: key}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.in")],
+        ),
+        (
+            one("a: {kind: api_key, in: header, name: 'X Key'}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.name")],
+        ),
+        (
+            one("a: {kind: bearer, name: token}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.name")],
+        ),
+        (
+            one("a: {kind: basic}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.realm")],
+        ),
+        (
+            one("a: {kind: basic, realm: \"a\\nb\"}", &two_commands("")),
+            vec![refused("ESS-HTTP-037", "authentication.schemes.a.realm")],
+        ),
+    ] {
+        assert_eq!(located_of(&ir, &document), expected, "{document}");
+    }
+    let messages = worded(compiled(&ir, &one("a: {kind: oauth2}", &two_commands(""))));
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("not yet admitted")),
+        "{messages:?}"
+    );
+
+    // A model that declares no actor has nobody to authenticate.
+    assert_eq!(
+        located_of(
+            &model(),
+            &(SCHEMES.to_owned() + &two_commands("    authentication: [bearer_auth, key_auth]\n"))
+        ),
+        [refused("ESS-HTTP-037", "authentication")]
+    );
+}
+
+#[test]
+fn a_route_whose_schemes_have_no_challenge_states_its_unauthenticated_answer() {
+    let ir = guarded_model();
+    let one = |scheme: &str, routes: &str| {
+        format!("authentication:\n  schemes:\n    {scheme}\n  required: [a]\n{routes}")
+    };
+    for (document, expected) in [
+        (
+            one(
+                "a: {kind: api_key, in: header, name: X-Api-Key}",
+                &two_commands(""),
+            ),
+            vec![
+                refused("ESS-HTTP-037", "routes[0].authentication"),
+                refused("ESS-HTTP-037", "routes[1].authentication"),
+            ],
+        ),
+        (
+            one(
+                "a: {kind: mutual_tls}",
+                &two_commands("    refusals:\n      unauthenticated: {status: 403, body: none}\n"),
+            ),
+            vec![refused("ESS-HTTP-037", "routes[1].authentication")],
+        ),
+    ] {
+        assert_eq!(located_of(&ir, &document), expected, "{document}");
+    }
+
+    // Stated at the binding, the answer covers every route; a bearer beside an API key carries
+    // the challenge.
+    for document in [
+        "refusals:\n  unauthenticated: {status: 401, body: none, headers: {WWW-Authenticate: {challenge: {scheme: ApiKey}}}}\n"
+            .to_owned()
+            + &one("a: {kind: api_key, in: header, name: X-Api-Key}", &two_commands("")),
+        "authentication:\n  schemes:\n    a: {kind: api_key, in: header, name: X-Api-Key}\n    b: {kind: bearer}\n  required: [a, b]\n"
+            .to_owned()
+            + &two_commands(""),
+    ] {
+        compiled(&ir, &document).unwrap_or_else(|errors| panic!("compiles: {errors}\n{document}"));
+    }
+}
+
+#[test]
+fn the_unauthenticated_refusal_takes_a_4xx_and_its_401_a_challenge() {
+    let ir = model();
+    for refusal in [
+        "{status: 401, body: {error: {literal: unauthenticated}}, headers: {WWW-Authenticate: {challenge: {scheme: Bearer}}}}",
+        "{status: 403, body: none}",
+    ] {
+        for document in [
+            format!("refusals:\n  unauthenticated: {refusal}\n{}", two_commands("")),
+            two_commands(&format!("    refusals:\n      unauthenticated: {refusal}\n")),
+        ] {
+            let http =
+                compiled(&ir, &document).unwrap_or_else(|errors| panic!("compiles: {errors}"));
+            assert!(
+                ir_json(&http).to_string().contains("unauthenticated"),
+                "{document}"
+            );
+            round_trips(&http);
+        }
+    }
+    let bare = format!(
+        "refusals:\n  unauthenticated: {{status: 401, body: none}}\n{}",
+        two_commands("")
+    );
+    assert_eq!(
+        located_of(&ir, &bare),
+        [refused("ESS-HTTP-027", "refusals.unauthenticated.headers")]
+    );
+    let server = format!(
+        "refusals:\n  unauthenticated: {{status: 500, body: none}}\n{}",
+        two_commands("")
+    );
+    assert_eq!(
+        located_of(&ir, &server),
+        [refused("ESS-HTTP-029", "refusals.unauthenticated.status")]
+    );
+}
+
+#[test]
+fn a_refinement_restates_a_routes_authentication() {
+    let ir = guarded_model();
+    let base = SCHEMES.to_owned() + &two_commands("    authentication: [bearer_auth, key_auth]\n");
+    let refined = Refined::from_yaml((header(&ir) + &base).as_bytes()).expect("parses");
+    let refining = |document: &str| {
+        let text = header(&ir) + &format!("refines: {}\n", refined.digest()) + document;
+        let spec = HttpSpec::from_yaml(&text).expect("parses");
+        compile_refining(&spec, Some(&refined), &ir, &derived(&ir))
+    };
+    assert_eq!(located(refining(&base)), []);
+    for (changed, path) in [
+        (
+            SCHEMES.to_owned()
+                + &two_commands("    authentication: [bearer_auth]\n")
+                + "    authentication: [key_auth]\n",
+            "routes[0].authentication",
+        ),
+        (
+            SCHEMES.replace("required: [bearer_auth]", "required: [key_auth]")
+                + &two_commands("    authentication: [bearer_auth, key_auth]\n"),
+            "routes[1].authentication",
+        ),
+        (
+            SCHEMES.replace("X-Api-Key", "X-Key")
+                + &two_commands("    authentication: [bearer_auth, key_auth]\n"),
+            "routes[0].authentication",
+        ),
+        (two_commands(""), "routes[0].authentication"),
+    ] {
+        let located = located(refining(&changed));
+        assert!(
+            located.contains(&refused("ESS-HTTP-012", path)),
+            "{changed}: {located:?}"
+        );
+    }
+}
+
+#[test]
+fn compiled_ir_with_authentication_out_of_rules_is_refused() {
+    let ir = guarded_model();
+    let text = compiled(
+        &ir,
+        &(SCHEMES.to_owned() + &two_commands("    authentication: [bearer_auth, key_auth]\n")),
+    )
+    .expect("compiles")
+    .to_canonical_json();
+    let route = "\"authentication\": [\n        \"bearer_auth\",\n        \"key_auth\"\n      ]";
+    assert!(text.contains(route), "{text}");
+    for (broken, named) in [
+        ("\"authentication\": [\"nobody\"]", "nobody"),
+        (
+            "\"authentication\": [\"key_auth\", \"key_auth\"]",
+            "key_auth",
+        ),
+    ] {
+        let changed = text.replace(route, broken);
+        assert_ne!(changed, text);
+        let error = HttpIr::from_json(&changed).expect_err(broken).to_string();
+        assert!(error.contains(named), "{broken}: {error}");
+    }
+    let changed = text.replace("\"kind\": \"bearer\"", "\"kind\": \"oauth2\"");
+    assert_ne!(changed, text);
+    HttpIr::from_json(&changed).expect_err("an unknown kind");
 }
