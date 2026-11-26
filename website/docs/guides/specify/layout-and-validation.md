@@ -172,10 +172,10 @@ same model, which on a large one is far longer than validating; text mode does n
 
 | Key | What it lists | `ess verify conform synthesize` prints it as |
 |---|---|---|
-| `unscenarioed` | each construct synthesis gives no scenario: `code` (such as `ESS-SYNTH-011`), `subject`, `scenario`, and `caused_by` on a derived scenario refused for the cause of the scenario it names | `refused:`, one block per cause |
+| `unscenarioed` | each construct synthesis gives no scenario: `code` (such as `ESS-SYNTH-011`), `subject`, `scenario`, and `caused_by` on a derived scenario refused for the cause of the scenario it names; `covered_by`, the ids of the listed authored scenarios whose `covers:` names the scenario | `refused:`, one block per cause |
 | `outside` | with `--component <name>`, each scenario of that component's own operations its suite does not hold: `scenario`, `needs` | `outside:` |
 | `unanswered` | each question the specification does not answer, so no scenario is owed for it | `note:` |
-| `counts` | one count per list; `unscenarioed` equals the `refusal(s)` figure | the summary line |
+| `counts` | one count per list; `unscenarioed` equals the `refusal(s)` figure, covered refusals included; with scenarios listed in `ess-inputs.yaml`, `covered_by_authored` counts the covered ones, the `covered by authored` figure of `--suite-format 5` | the summary line |
 
 With `--component <name>`, only that component's operations are synthesized (the commands it
 accepts or whose domain it owns, the views it owns, the events it publishes), so `unscenarioed` and

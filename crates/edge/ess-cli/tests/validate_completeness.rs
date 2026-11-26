@@ -392,6 +392,78 @@ timeline:
     outcome: pinged
 ";
 
+/// An authored scenario adding an item, which covers the one refusal of [`one_refusal`].
+const COVERING_AUTHORED: &str = "type: ess-scenario/7
+covers:
+  - two.items.Item/invariant/after/two.items.AddItem/added
+domain: two.items
+scenario: an-item-is-added
+summary: An item of quantity one is added.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: two.items.AddItem
+    input: {quantity: 1}
+    outcome: added
+";
+
+/// `validate --format json` reads the listed scenarios' `covers:` as `synthesize --scenarios`
+/// does: the covered refusal stays under `unscenarioed`, which still equals synthesize's
+/// `refusal(s)` figure, and names its covering scenario in `covered_by`; `counts` adds
+/// `covered_by_authored`, synthesize's `covered by authored` figure.
+#[test]
+fn an_authored_scenario_covering_a_refusal_is_reported_beside_it() {
+    let root = one_refusal("covered-by-authored");
+    fs::create_dir_all(root.join("scenarios")).unwrap();
+    fs::write(root.join("scenarios/covers.yaml"), COVERING_AUTHORED).unwrap();
+    fs::write(
+        root.join("ess-inputs.yaml"),
+        "format: ess-inputs/1\nspecification: [system.yaml, components.yaml, domains/items.yaml, \
+         domains/ping.yaml]\nscenarios: [scenarios/covers.yaml]\n",
+    )
+    .unwrap();
+    let printed = synthesized(
+        &root,
+        &["--scenarios", root.to_str().unwrap(), "--suite-format", "5"],
+    );
+    assert!(
+        printed
+            .lines()
+            .last()
+            .unwrap()
+            .ends_with(", 1 refusal occurrence(s), 1 covered by authored"),
+        "{printed}"
+    );
+
+    let (output, report) = validated(&root, &[]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(report["valid"], true, "{report}");
+    let completeness = &report["completeness"];
+    assert_eq!(completeness["counts"]["unscenarioed"], 1, "{report}");
+    assert_eq!(completeness["counts"]["covered_by_authored"], 1, "{report}");
+    let unscenarioed = completeness["unscenarioed"].as_array().unwrap();
+    assert_eq!(unscenarioed.len(), 1, "{report}");
+    assert_eq!(
+        unscenarioed[0]["covered_by"],
+        Value::Array(vec![Value::from("two.items/authored/an-item-is-added")]),
+        "{report}"
+    );
+
+    // Without a listed scenario neither key is written.
+    let (_, report) = validated(&one_refusal("covered-by-none"), &[]);
+    assert!(
+        report["completeness"]["counts"]
+            .get("covered_by_authored")
+            .is_none(),
+        "{report}"
+    );
+    assert!(
+        report["completeness"]["unscenarioed"][0]
+            .get("covered_by")
+            .is_none(),
+        "{report}"
+    );
+}
+
 /// `synthesize --component` keeps an authored scenario only where the component realises what it
 /// drives, as it does a generated one; another component's is listed outside
 /// (beyond10x/ess#513).

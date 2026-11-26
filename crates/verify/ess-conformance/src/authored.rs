@@ -2782,6 +2782,32 @@ pub fn compile(ir: &EssIr, sources: &[Source]) -> Authoring {
     authoring
 }
 
+/// The generated refusals the authored `sources` cover (`covers:`, `ess-scenario/7`): for each
+/// generated scenario id a compiled document names, the ids of the authored scenarios naming it,
+/// sorted. A document [`compile`] refuses covers nothing. `ess specify validate` reports these
+/// beside the refusals it lists; [`crate::coverage_build`] marks them in a coverage suite.
+pub fn covered(ir: &EssIr, sources: &[Source]) -> BTreeMap<ScenarioId, Vec<ScenarioId>> {
+    let mut covered: BTreeMap<ScenarioId, Vec<ScenarioId>> = BTreeMap::new();
+    if crate::admission::model(ir).is_err() {
+        return covered;
+    }
+    let mut ordered: Vec<&Source> = sources.iter().collect();
+    ordered.sort_by(|left, right| left.origin.cmp(&right.origin));
+    let mut seen: BTreeMap<ScenarioId, String> = BTreeMap::new();
+    for source in ordered {
+        if let Ok((id, _, covers)) = compile_covering(ir, source, &seen) {
+            seen.insert(id.clone(), source.origin.clone());
+            for target in covers {
+                covered.entry(target).or_default().push(id.clone());
+            }
+        }
+    }
+    for ids in covered.values_mut() {
+        ids.sort();
+    }
+    covered
+}
+
 /// The newtypes of a compiled model that may key a map, for reading type spellings against it.
 ///
 /// The same declarations the specification was read with: each newtype with what it wraps,

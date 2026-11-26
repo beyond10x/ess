@@ -2841,12 +2841,22 @@ fn validate(path: &Path, format: Format, component: Option<&str>) -> Result<Exit
         Some(inputs) => {
             let sources: Vec<_> = inputs.into_iter().map(authored_source).collect();
             let refusals = ess_conformance::authored::compile(&ir, &sources).refusals;
-            Some((sources.len(), refusals))
+            let covered = ess_conformance::authored::covered(&ir, &sources);
+            Some((sources.len(), refusals, covered))
         }
+    };
+    // The refusals a listed scenario's `covers:` names, as `synthesize --scenarios` marks them:
+    // each stays listed, and says which scenarios cover it.
+    let completeness = match (completeness, &authored) {
+        (Some(mut completeness), Some((_, _, covered))) => {
+            completeness.cover(covered);
+            Some(completeness)
+        }
+        (completeness, _) => completeness,
     };
     let refusals = authored
         .as_ref()
-        .map_or(&[][..], |(_, refusals)| refusals.as_slice());
+        .map_or(&[][..], |(_, refusals, _)| refusals.as_slice());
     let scenario_refusals: Vec<ScenarioRefusal> = refusals
         .iter()
         .map(|refusal| ScenarioRefusal {
@@ -2862,7 +2872,7 @@ fn validate(path: &Path, format: Format, component: Option<&str>) -> Result<Exit
         system: ir.system().to_string(),
         version: ir.version().to_string(),
         files_read,
-        scenarios: authored.as_ref().map(|(count, _)| *count),
+        scenarios: authored.as_ref().map(|(count, _, _)| *count),
         domains: ir.domains().len(),
         commands: ir.commands().len(),
         events: ir.events().len(),
@@ -5925,6 +5935,10 @@ struct Unscenarioed {
     /// The ordinary scenario refused for the same cause, where this one is derived from it.
     #[serde(skip_serializing_if = "Option::is_none")]
     caused_by: Option<String>,
+    /// The listed authored scenarios whose `covers:` names this one, sorted. The entry stays a
+    /// refusal: `unscenarioed` still equals the figure `conform synthesize` prints.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    covered_by: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -5947,6 +5961,10 @@ struct CompletenessCounts {
     unanswered: usize,
     #[serde(skip_serializing_if = "is_zero")]
     unsynthesizable: usize,
+    /// How many `unscenarioed` entries a listed authored scenario covers, the `covered by authored`
+    /// figure of `conform synthesize --suite-format 5`; written only when scenarios are listed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    covered_by_authored: Option<usize>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // Serde's skip_serializing_if passes a reference.
@@ -5979,6 +5997,7 @@ impl Completeness {
                     outside: 0,
                     unanswered: 0,
                     unsynthesizable: unsynthesizable.len(),
+                    covered_by_authored: None,
                 },
                 unscenarioed: Vec::new(),
                 outside: Vec::new(),
@@ -5998,6 +6017,7 @@ impl Completeness {
                 subject: refusal.subject.to_string(),
                 scenario: refusal.scenario.as_ref().map(ToString::to_string),
                 caused_by: refusal.caused_by.as_ref().map(ToString::to_string),
+                covered_by: Vec::new(),
             })
             .collect();
         let outside: Vec<OutsideScenario> = synthesis
@@ -6015,6 +6035,7 @@ impl Completeness {
                 outside: outside.len(),
                 unanswered: unanswered.len(),
                 unsynthesizable: 0,
+                covered_by_authored: None,
             },
             unscenarioed,
             outside,
@@ -6047,6 +6068,37 @@ impl Completeness {
                 .map(|declared| declared.as_str().to_owned())
                 .collect(),
         })
+    }
+
+    /// Names on each listed refusal the authored scenarios whose `covers:` names it (`covered`,
+    /// by the refused generated scenario's id) and counts the covered ones.
+    fn cover(
+        &mut self,
+        covered: &std::collections::BTreeMap<
+            ess_conformance::ScenarioId,
+            Vec<ess_conformance::ScenarioId>,
+        >,
+    ) {
+        let covered: std::collections::BTreeMap<String, Vec<String>> = covered
+            .iter()
+            .map(|(refused, by)| {
+                (
+                    refused.to_string(),
+                    by.iter().map(ToString::to_string).collect(),
+                )
+            })
+            .collect();
+        for entry in &mut self.unscenarioed {
+            if let Some(by) = entry.scenario.as_ref().and_then(|id| covered.get(id)) {
+                entry.covered_by.clone_from(by);
+            }
+        }
+        self.counts.covered_by_authored = Some(
+            self.unscenarioed
+                .iter()
+                .filter(|entry| !entry.covered_by.is_empty())
+                .count(),
+        );
     }
 
     /// `true` when synthesis owes nothing and admits the model.
