@@ -472,6 +472,11 @@ pub(super) fn arranged_at(
             field,
             &Link::Row(&row.instance),
         )?;
+        // A refusal answered first wherever the link differs from an input: the send names, in
+        // that input, the row the subject is now linked to.
+        for named in super::compared_with_link(ir, command, outcome, field) {
+            setup.bound.insert(named, row.instance.clone());
+        }
         let named = ordered(ir, &setup, (entity, &subject, field), &row, &mut after)?;
         surround(
             ir,

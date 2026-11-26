@@ -4467,6 +4467,56 @@ fn subject_link_refuses<'c>(
         })
 }
 
+/// The inputs a branch of `command` answered before `outcome` compares with the subject's stored
+/// `link`, refusing wherever they differ: `<link> != input.<field>` in a `when_subject:` predicate
+/// without an input guard, alone or as a disjunct. A send reaching `outcome` names, in each of
+/// them, the row the subject's link names.
+pub(super) fn compared_with_link(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    link: &str,
+) -> BTreeSet<String> {
+    fn compared(predicate: &Predicate, link: &str, found: &mut BTreeSet<String>) {
+        match predicate {
+            Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(left),
+                op: ess_primitives::predicate::CompareOp::Ne,
+                right: ess_primitives::predicate::Operand::Fact(right),
+                ..
+            } => {
+                for (stored, sent) in [(left, right), (right, left)] {
+                    if stored.segments().len() == 1
+                        && stored.namespace() != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && stored.segments()[0] == link
+                        && sent.segments().len() == 2
+                        && sent.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                    {
+                        found.insert(sent.segments()[1].clone());
+                    }
+                }
+            }
+            Predicate::Any(children) => {
+                for child in children {
+                    compared(child, link, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = BTreeSet::new();
+    for first in super::precedence::answers_before(ir.format(), command, outcome) {
+        if let ResolvedCondition::SubjectPredicate {
+            predicate,
+            input: None,
+        } = &first.condition
+        {
+            compared(predicate, link, &mut found);
+        }
+    }
+    found
+}
+
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
 #[allow(
     clippy::too_many_lines,
