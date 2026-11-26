@@ -764,3 +764,24 @@ fn a_branch_reading_the_row_the_input_names_beside_a_link_refusal_is_sent_the_su
     let (written, failed) = ship_order(SHOP);
     assert_ships_at_its_own_store(&written, &failed);
 }
+
+/// [`SHOP`] with `ShipOrder` reading the store through the order's stored link instead of its
+/// input: the row is the order's own, so no `exists: false` branch is declared (`ess/30`, every
+/// write of the link checks the row).
+fn shop_through_the_stored_link() -> String {
+    let text = SHOP.replace(
+        "      - {name: no-store, when_related: {via: input.store_id, exists: false}, error: demo.shop.Missing}\n      - {name: frozen, when_related: {via: input.store_id,",
+        "      - {name: frozen, when_related: {via: store_id,",
+    );
+    assert_ne!(text, SHOP, "the edit applies");
+    text
+}
+
+/// RED (N93, the stored-link form): the order is placed at the frozen store and the branch reads
+/// it through the stored link, but the input the link refusal compares with it is sent as a
+/// placeholder, so `elsewhere` answers on the model's interpreter.
+#[test]
+fn a_branch_reading_the_subjects_stored_link_beside_a_link_refusal_is_sent_that_row() {
+    let (written, failed) = ship_order(&shop_through_the_stored_link());
+    assert_ships_at_its_own_store(&written, &failed);
+}
