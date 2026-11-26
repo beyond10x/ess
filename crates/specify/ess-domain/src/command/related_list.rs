@@ -18,7 +18,7 @@ use super::{CommandSpec, OutcomeCondition, PayloadSource, RelatedVia};
 use crate::name::QualifiedName;
 use crate::spec::Specification;
 use crate::system::FormatVersion;
-use crate::types::{Field, TypeRef};
+use crate::types::{Field, TypeRef, TypeRegistry};
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
 
 /// The key of the value source: `{missing: input.<list>}`.
@@ -33,21 +33,22 @@ pub fn element(declared: &TypeRef) -> Option<&TypeRef> {
     }
 }
 
-/// Whether `via` is an input the command declares as a `List<…>`.
-pub fn is_list(command: &CommandSpec, via: &RelatedVia) -> bool {
+/// Whether `via` is an input the command declares as a `List<…>`, or from `ess/38` a member of a
+/// struct input declared as one ([`super::input_path::address`]).
+pub fn is_list(types: &TypeRegistry, command: &CommandSpec, via: &RelatedVia) -> bool {
     match via {
-        RelatedVia::Input(field) => command
-            .input_field(field)
+        RelatedVia::Input(field) => super::input_path::address(command, types, field)
             .is_some_and(|read| element(&read.type_ref).is_some()),
         RelatedVia::Subject(_) => false,
     }
 }
 
 /// Whether the command guards on the rows a list names.
-pub fn uses(command: &CommandSpec) -> bool {
+pub fn uses(types: &TypeRegistry, command: &CommandSpec) -> bool {
     command.outcomes.iter().any(|outcome| {
         matches!(&outcome.condition, OutcomeCondition::Related { via, also, .. }
-            if is_list(command, via) || also.iter().any(|row| is_list(command, &row.via)))
+            if is_list(types, command, via)
+                || also.iter().any(|row| is_list(types, command, &row.via)))
     })
 }
 
@@ -56,13 +57,14 @@ pub fn uses(command: &CommandSpec) -> bool {
 /// this cut admits.
 pub(super) fn gates(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    if !uses(command) {
+    let types = &spec.system().types;
+    if !uses(types, command) {
         return errors;
     }
     let below = spec.system().format.major() < FormatVersion::V28.major();
     let lists: Vec<&RelatedVia> = super::related_guard::read_vias(command)
         .into_iter()
-        .filter(|via| is_list(command, via))
+        .filter(|via| is_list(types, command, via))
         .collect();
     let others = super::related_guard::read_vias(command).len() - lists.len();
     for outcome in &command.outcomes {
@@ -75,12 +77,11 @@ pub(super) fn gates(spec: &Specification, command: &CommandSpec) -> ValidationEr
         let at = site(command, outcome);
         let listed = std::iter::once(via)
             .chain(also.iter().map(|row| &row.via))
-            .find(|via| is_list(command, via));
+            .find(|via| is_list(types, command, via));
         let Some(list) = listed else {
             continue;
         };
-        let read = command
-            .input_field(list.field())
+        let read = super::input_path::address(command, types, list.field())
             .map(|read| read.type_ref.to_string())
             .unwrap_or_default();
         if below {
@@ -172,14 +173,15 @@ pub(super) struct RawMissingSource {
 }
 
 impl RawMissingSource {
-    /// The mapping `{missing: input.<field>}`, and nothing else.
+    /// The mapping `{missing: input.<field>}`, or `{missing: input.<path>}` (read as this source
+    /// from `ess/38` only, [`read_paths_below_ess_38`]), and nothing else.
     pub(super) fn recognise(entries: &[(String, super::RawPayloadSource)]) -> Option<Self> {
         match entries {
             [(key, super::RawPayloadSource::Text(read))]
                 if key == MISSING
                     && read
                         .strip_prefix(PayloadSource::INPUT_PREFIX)
-                        .is_some_and(crate::binding::is_field_name) =>
+                        .is_some_and(|path| path.split('.').all(crate::binding::is_field_name)) =>
             {
                 Some(Self {
                     missing: read.clone(),
@@ -207,12 +209,14 @@ impl RawMissingSource {
     }
 }
 
-/// Reads `{missing: input.<list>}` back as the nested mapping it was below `ess/28`.
+/// Reads `{missing: input.<list>}` back as the nested mapping it was below `ess/28`, and from
+/// `ess/28` to `ess/37` `{missing: input.<path>}` ([`read_paths_below_ess_38`]).
 pub fn read_below_ess_28(
     format: FormatVersion,
     commands: &mut BTreeMap<QualifiedName, CommandSpec>,
 ) {
     if format.major() >= FormatVersion::V28.major() {
+        read_paths_below_ess_38(format, commands);
         return;
     }
     for outcome in commands
@@ -234,6 +238,56 @@ pub fn read_below_ess_28(
         {
             nested_missing(source);
         }
+    }
+}
+
+/// Reads `{missing: input.<path>}` back as the nested mapping it was below `ess/38`
+/// (beyond10x/ess#640): a struct value whose member `missing` reads an `ess/22` input path. A
+/// one-segment read keeps the reading its format gives it.
+pub fn read_paths_below_ess_38(
+    format: FormatVersion,
+    commands: &mut BTreeMap<QualifiedName, CommandSpec>,
+) {
+    if super::input_path::addresses_members(Some(format)) {
+        return;
+    }
+    for outcome in commands
+        .values_mut()
+        .flat_map(|command| command.outcomes.iter_mut())
+    {
+        let affects = outcome
+            .set_effects
+            .affects
+            .iter_mut()
+            .flat_map(|affect| affect.sets.values_mut());
+        for source in outcome
+            .payload
+            .values_mut()
+            .flat_map(|fields| fields.values_mut())
+            .chain(outcome.error_payload.values_mut())
+            .chain(outcome.sets.values_mut())
+            .chain(affects)
+        {
+            nested_missing_path(source);
+        }
+    }
+}
+
+fn nested_missing_path(source: &mut PayloadSource) {
+    match source {
+        PayloadSource::MissingElement { field } if super::input_path::is_path(field) => {
+            nested_missing(source);
+        }
+        PayloadSource::Struct { fields } => {
+            for leaf in fields {
+                nested_missing_path(&mut leaf.source);
+            }
+        }
+        PayloadSource::InputOrGenerated {
+            otherwise: Some(otherwise),
+            ..
+        } => nested_missing_path(otherwise),
+        _ => {}
     }
 }
 
@@ -265,7 +319,12 @@ fn nested_missing(source: &mut PayloadSource) {
 /// The check of `{missing: input.<field>}` filling `target`: admitted as a whole payload field of a
 /// branch guarded by `when_related: {via: input.<field>, exists: false}` over a `List<…>` input,
 /// at the element's type; refused by name anywhere else.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the registry reads a list named by a path (ess/38) beside the branch's own context"
+)]
 pub(super) fn check(
+    types: &TypeRegistry,
     command: &CommandSpec,
     outcome: &super::Outcome,
     at: &ConstructRef,
@@ -292,8 +351,9 @@ pub(super) fn check(
         test: super::related_guard::RelatedTest::Absent,
         ..
     } if read == field);
-    let Some(element) = command
-        .input_field(field)
+    let read = super::input_path::address(command, types, field);
+    let Some(element) = read
+        .as_ref()
         .and_then(|read| element(&read.type_ref))
         .filter(|_| guards)
     else {

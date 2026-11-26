@@ -400,7 +400,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         major: 38,
         release: None,
         added: &[
-            "Opened for addressing a row through a member of a struct input (beyond10x/ess#640), with no construct yet: a specification declaring it reads and compiles exactly as at the format before it, and each construct the format gains is refused as `unsupported_format_version` naming `ess/38` below it.",
+            "A `when_related:` guard may name the row it reads through a member of a struct input, `via: input.settings.primary` with `exists: false` or `predicate:`, as an `all:` element, and a `List<…>` member of references, `via: input.settings.depots, exists: false`, with its `{missing: input.settings.depots}`, the `input.<path>` `sets:` reads: a member the struct does not declare is refused as `undeclared_reference` naming its members, a member that is no entity identity or a path crossing a list, a map or a union as `type_mismatch` naming the type, and a route through an `Optional` reads as an Optional reference, checked only when present. Below `ess/38` each is refused as `unsupported_format_version` naming `ess/38`, and a struct value written `{missing: input.a.b}` keeps its reading as that struct value; a model without a path there keeps its IR bytes (beyond10x/ess#640).",
         ],
         stricter: &[],
     },

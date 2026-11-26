@@ -119,7 +119,12 @@ fn read_by_a_guard(condition: &OutcomeCondition, field: &str) -> bool {
     {
         return true;
     }
-    let via_reads = |via: &RelatedVia| matches!(via, RelatedVia::Input(read) if read == field);
+    // From ess/38 a `via` may read a member of a struct input (beyond10x/ess#640); a fixture over
+    // that input would choose the row too.
+    let via_reads = |via: &RelatedVia| {
+        matches!(via, RelatedVia::Input(read)
+            if read == field || read.starts_with(&format!("{field}.")))
+    };
     match condition {
         OutcomeCondition::Related {
             via, test, also, ..

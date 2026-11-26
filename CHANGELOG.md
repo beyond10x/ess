@@ -18,6 +18,7 @@
 - The generated React runtime's `setAuthorization(value, renew?)` takes an optional `renew`: a read or a command answered `401` awaits it once, shared by every request answered `401` meanwhile, and is sent once more with the value it returns. A second `401` or no value stays the answer (beyond10x/ess#723).
 - `ess specify vendor --from <key=path> --service <key=path> --type <name> --into <domain> --out <file> --conformances <file>` writes a consumer's copy of another specification's type, with every type it reaches, as a source file of the consumer's, and the composition `services:` and `conformances:` entries that prove it against the pinned owner; `--check` exits 1 naming each copy the owner has changed since (beyond10x/ess#663).
 - Suite pair `ess-conformance/66` (ordinary) and `/67` (coverage) is open with no construct: every reader (Rust, Go, TypeScript) admits it wherever it admits `/64` and `/65`, and nothing writes it yet.
+- Format `ess/38`: a `when_related:` guard may name the row it reads through a member of a struct input, `via: input.settings.primary` with `exists: false` or `predicate:` and as an `all:` element, and a `List<…>` member of references, `via: input.settings.depots, exists: false`, with `{missing: input.settings.depots}` in its payload. Below `ess/38` each is refused as `unsupported_format_version` naming `ess/38`, and a struct value written `{missing: input.a.b}` keeps its meaning; a model without such a path keeps its IR bytes (beyond10x/ess#640).
 
 ### Changed
 
