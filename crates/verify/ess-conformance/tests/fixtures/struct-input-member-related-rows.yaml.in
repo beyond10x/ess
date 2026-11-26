@@ -1,0 +1,135 @@
+format: ess/38
+system: shop
+version: v1
+domain: shop.route
+summary: A shipment names its depots inside its settings; a depot no row carries is refused and named, and a closed depot refuses a check.
+types:
+  - {name: shop.route.DepotId, kind: newtype, of: Uuid}
+  - {name: shop.route.ShipmentId, kind: newtype, of: Uuid}
+  - name: shop.route.Extra
+    kind: struct
+    fields:
+      - {name: spare, type: shop.route.DepotId}
+  - name: shop.route.Settings
+    kind: struct
+    fields:
+      - {name: depots, type: "List<shop.route.DepotId>"}
+      - {name: primary, type: shop.route.DepotId}
+      - {name: backup, type: shop.route.DepotId}
+      - {name: extra, type: "Optional<shop.route.Extra>"}
+      - {name: note, type: String}
+entities:
+  - name: shop.route.Depot
+    identity: {name: depot_id, type: shop.route.DepotId}
+    fields:
+      - {name: open, type: Boolean}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+  - name: shop.route.Shipment
+    identity: {name: shipment_id, type: shop.route.ShipmentId}
+    fields:
+      - {name: depots, type: "List<shop.route.DepotId>"}
+    relations:
+      - {name: depots, kind: references, target: shop.route.Depot, cardinality: many, via: depots}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - name: shop.route.UnknownDepot
+    summary: A depot the settings name does not exist.
+    fields:
+      - {name: depot_id, type: shop.route.DepotId}
+  - {name: shop.route.ClosedDepot, summary: A depot the settings name is closed., fields: []}
+events:
+  - name: shop.route.DepotAdded
+    fields: [{name: depot_id, type: shop.route.DepotId}]
+  - name: shop.route.ShipmentSent
+    fields: [{name: shipment_id, type: shop.route.ShipmentId}]
+  - name: shop.route.DepotChecked
+    fields: [{name: depot_id, type: shop.route.DepotId}]
+actors:
+  - name: shop.route.Clerk
+    may: [shop.route.AddDepot, shop.route.Send, shop.route.Check, shop.route.Pair, shop.route.Probe]
+commands:
+  - name: shop.route.AddDepot
+    input:
+      - {name: open, type: Boolean}
+    outcomes:
+      - name: added
+        creates: shop.route.Depot
+        instance: depot_id
+        emits: [shop.route.DepotAdded]
+        payload: {shop.route.DepotAdded: {depot_id: {generated: true}}}
+        sets: {open: input.open}
+  - name: shop.route.Send
+    input:
+      - {name: settings, type: shop.route.Settings}
+    outcomes:
+      - name: unknown-depot
+        when_related: {via: input.settings.depots, exists: false}
+        error: shop.route.UnknownDepot
+        payload: {shop.route.UnknownDepot: {depot_id: {missing: input.settings.depots}}}
+      - name: sent
+        creates: shop.route.Shipment
+        instance: shipment_id
+        emits: [shop.route.ShipmentSent]
+        payload: {shop.route.ShipmentSent: {shipment_id: {generated: true}}}
+        sets: {depots: input.settings.depots}
+  - name: shop.route.Check
+    input:
+      - {name: settings, type: shop.route.Settings}
+    outcomes:
+      - name: no-depot
+        when_related: {via: input.settings.primary, exists: false}
+        error: shop.route.UnknownDepot
+        payload: {shop.route.UnknownDepot: {depot_id: input.settings.primary}}
+      - name: closed
+        when_related: {via: input.settings.primary, predicate: open == false}
+        error: shop.route.ClosedDepot
+      - name: checked
+        emits: [shop.route.DepotChecked]
+        payload: {shop.route.DepotChecked: {depot_id: input.settings.primary}}
+  - name: shop.route.Pair
+    input:
+      - {name: settings, type: shop.route.Settings}
+    outcomes:
+      - name: no-primary
+        when_related: {via: input.settings.primary, exists: false}
+        error: shop.route.UnknownDepot
+        payload: {shop.route.UnknownDepot: {depot_id: input.settings.primary}}
+      - name: no-backup
+        when_related: {via: input.settings.backup, exists: false}
+        error: shop.route.UnknownDepot
+        payload: {shop.route.UnknownDepot: {depot_id: input.settings.backup}}
+      - name: both-closed
+        when_related:
+          all:
+            - {via: input.settings.primary, predicate: open == false}
+            - {via: input.settings.backup, predicate: open == false}
+        error: shop.route.ClosedDepot
+      - name: paired
+        emits: [shop.route.DepotChecked]
+        payload: {shop.route.DepotChecked: {depot_id: input.settings.primary}}
+  - name: shop.route.Probe
+    input:
+      - {name: settings, type: shop.route.Settings}
+    outcomes:
+      - name: no-spare
+        when_related: {via: input.settings.extra.spare, exists: false}
+        error: shop.route.ClosedDepot
+      - name: spare-closed
+        when_related: {via: input.settings.extra.spare, predicate: open == false}
+        error: shop.route.ClosedDepot
+      - name: probed
+        emits: [shop.route.DepotChecked]
+        payload: {shop.route.DepotChecked: {depot_id: input.settings.primary}}
+views:
+  - name: shop.route.Depots
+    source: shop.route.Depot
+    consistency: read_your_writes
+    fields:
+      - {name: depot_id, type: shop.route.DepotId}
+      - {name: open, type: Boolean}
+  - name: shop.route.Shipments
+    source: shop.route.Shipment
+    consistency: read_your_writes
+    fields:
+      - {name: shipment_id, type: shop.route.ShipmentId}
+      - {name: depots, type: "List<shop.route.DepotId>"}

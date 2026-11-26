@@ -3520,7 +3520,7 @@
           ]
         },
         "via": {
-          "description": "The input field that carries the other entity's identity, written `input.<field>`. Never beside `entity`.",
+          "description": "The input field that carries the other entity's identity, written `input.<field>`, or from `ess/38` `input.<path>` to a member of a struct input. Never beside `entity`.",
           "type": [
             "string",
             "null"

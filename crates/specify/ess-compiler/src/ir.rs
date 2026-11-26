@@ -1333,7 +1333,7 @@ pub enum ResolvedPayloadValue {
     /// beyond10x/ess#558): `{missing: input.<list>}`. Only a model using it carries it, so every
     /// other model keeps its bytes.
     MissingElement {
-        /// The list input read.
+        /// The list input read, or the declared segments of a path joined by `.` (ess/38).
         field: String,
         /// The element's type.
         type_ref: ResolvedTypeRef,
@@ -1844,7 +1844,7 @@ pub enum ResolvedRelatedVia {
     },
     /// A field of the command's input.
     Input {
-        /// The input field.
+        /// The input field, or the declared segments of a path joined by `.` (ess/38).
         field: String,
         /// Its resolved type as declared: the referenced entity's identity, or — for a
         /// `when_related` guard from ess/22 (beyond10x/ess#304) — `Optional<…>` of it, checked only

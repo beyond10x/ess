@@ -105,8 +105,8 @@ pub struct RelatedAlso {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawRelatedGuard {
-    /// The input field that carries the other entity's identity, written `input.<field>`. Never
-    /// beside `entity`.
+    /// The input field that carries the other entity's identity, written `input.<field>`, or from
+    /// `ess/38` `input.<path>` to a member of a struct input. Never beside `entity`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via: Option<String>,
     /// The entity whose rows a selector selects (ess/22). Written with `where`, never beside
@@ -656,7 +656,7 @@ pub fn related_entity<'a>(
     command: &CommandSpec,
     via: &str,
 ) -> related_value::Referenced<'a> {
-    let Some(read) = command.input_field(via) else {
+    let Some(read) = super::input_path::address(command, &spec.system().types, via) else {
         return related_value::Referenced::NoEntity;
     };
     let carrier = command.outcomes.iter().find_map(|outcome| {
@@ -692,9 +692,10 @@ fn identity_type(declared: &TypeRef) -> &TypeRef {
 /// beyond10x/ess#304).
 fn via_is_optional(spec: &Specification, command: &CommandSpec, via: &RelatedVia) -> bool {
     match via {
-        RelatedVia::Input(field) => command
-            .input_field(field)
-            .is_some_and(|read| read.type_ref.is_optional()),
+        RelatedVia::Input(field) => {
+            super::input_path::address(command, &spec.system().types, field)
+                .is_some_and(|read| read.type_ref.is_optional())
+        }
         RelatedVia::Subject(field) => addressed_subject(spec, command).is_some_and(|subject| {
             subject
                 .fields
@@ -1032,7 +1033,10 @@ pub(super) fn missing_row_message(command: &CommandSpec) -> String {
 /// (beyond10x/ess#304 adversary pass 1); the stored-field form's gate, at the same place for the
 /// same reason; then an input `via` beside a stored-field one, which reads two rows.
 fn gates(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
-    let mut errors = ValidationErrors::new();
+    let mut errors = path_below_ess_38(spec, command);
+    if !errors.is_empty() {
+        return errors;
+    }
     if let Some(refusal) = optional_below_ess_22(spec, command) {
         errors.push(refusal);
         return errors;
@@ -1201,7 +1205,7 @@ pub fn implied_relations(spec: &Specification) -> ValidationErrors {
                 continue;
             }
             let Some(target) =
-                related_value::implied_entity(spec, via_type, (carrier, field.as_str()))
+                related_value::implied_entity(spec, &via_type, (carrier, field.as_str()))
             else {
                 continue;
             };
@@ -1248,10 +1252,10 @@ fn carried<'a>(
     spec: &'a Specification,
     command: &'a CommandSpec,
     via: &RelatedVia,
-) -> Option<(&'a EntitySpec, String, &'a TypeRef)> {
+) -> Option<(&'a EntitySpec, String, TypeRef)> {
     match via {
         RelatedVia::Input(field) => {
-            let read = command.input_field(field)?;
+            let read = super::input_path::address(command, &spec.system().types, field)?;
             let (holder, holder_field) = command.outcomes.iter().find_map(|outcome| {
                 let subject = outcome
                     .subject
@@ -1259,12 +1263,16 @@ fn carried<'a>(
                     .and_then(|subject| spec.entities().get(&subject.entity));
                 related_value::input_carrier(outcome, subject, field)
             })?;
-            Some((holder, holder_field, identity_type(&read.type_ref)))
+            Some((holder, holder_field, identity_type(&read.type_ref).clone()))
         }
         RelatedVia::Subject(field) => {
             let subject = addressed_subject(spec, command)?;
             let stored = subject.fields.iter().find(|held| held.name == *field)?;
-            Some((subject, field.clone(), identity_type(&stored.type_ref)))
+            Some((
+                subject,
+                field.clone(),
+                identity_type(&stored.type_ref).clone(),
+            ))
         }
     }
 }
@@ -1396,6 +1404,34 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             }
         }
         errors.extend(checked);
+    }
+    errors
+}
+
+/// The refusals of a row named through a member of a struct input below ess/38
+/// (beyond10x/ess#640), one per branch whose `via` or `all:` element is `input.<path>`: the format
+/// that admits it is named, before any refusal that would call the path no input.
+fn path_below_ess_38(spec: &Specification, command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if super::input_path::addresses_members(Some(spec.system().format)) {
+        return errors;
+    }
+    for outcome in &command.outcomes {
+        let OutcomeCondition::Related { via, also, .. } = &outcome.condition else {
+            continue;
+        };
+        let path = std::iter::once(via)
+            .chain(also.iter().map(|row| &row.via))
+            .find_map(|via| match via {
+                RelatedVia::Input(field) if super::input_path::is_path(field) => Some(field),
+                _ => None,
+            });
+        if let Some(path) = path {
+            errors.push(super::input_path::below_ess_38(
+                &site(command, outcome),
+                &format!("`via: input.{path}`"),
+            ));
+        }
     }
     errors
 }
@@ -1669,7 +1705,21 @@ fn entity_or_refusal<'a>(
             if read == via || also.iter().any(|row| row.via == *via))
     })?;
     let at = site(command, outcome);
-    let Some(read) = command.input_field(via) else {
+    // From ess/38 (beyond10x/ess#640) `via` may name a member of a struct input; the gate refused a
+    // path below it before this is read.
+    let addressed = if super::input_path::is_path(via) {
+        match super::input_path::resolve(command, &spec.system().types, via) {
+            Ok(path) => Some(path.as_field()),
+            Err(super::input_path::Unresolved::Root(_)) => None,
+            Err(unresolved) => {
+                errors.push(unresolved.refusal(&at, command, via));
+                return None;
+            }
+        }
+    } else {
+        command.input_field(via).cloned()
+    };
+    let Some(read) = addressed else {
         errors.push(
             ValidationError::at(
                 at,
