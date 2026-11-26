@@ -107,10 +107,18 @@ pub(super) fn send_as_first(ir: &EssIr, scenario: &mut ConformanceScenario) {
 /// model can choose for it: the caller is no value there. The ordinary suite reaches it under an
 /// assignment ([`synthesize`]), and so does a cell, sending every command as `first`, and then
 /// arranging as `first` and acting as `second`, the refusal for a caller who is not the row's.
+///
+/// The two models keep what their searches find for as long as the readings live, and each use
+/// holds that memory ([`super::held`]): every cell asks them again. Held by none, a model with one
+/// caller-reading command searched and arranged every row again for every cell, where the same
+/// model without the read answered from the memory of the model itself.
 pub(super) struct Readings {
     callers: Callers,
-    first: EssIr,
-    second: EssIr,
+    first: std::sync::Arc<EssIr>,
+    second: std::sync::Arc<EssIr>,
+    /// The memory of `first` and `second` between two of their uses. Not `Send`: it pops the stack
+    /// of the thread that opened it.
+    _kept: readings::Kept,
 }
 
 impl Readings {
@@ -127,12 +135,14 @@ impl Readings {
                 written(ir, command, &callers.for_command(ir, who, &command.name))
             })
         };
-        let first = read_as(Who::First);
-        let second = read_as(Who::Second);
+        let first = std::sync::Arc::new(read_as(Who::First));
+        let second = std::sync::Arc::new(read_as(Who::Second));
+        let kept = readings::Kept::open(&[&first, &second]);
         Some(Self {
             callers,
             first,
             second,
+            _kept: kept,
         })
     }
 
@@ -3997,6 +4007,7 @@ views:
     /// branch of every command is a follow-up cell. Each `Close<i>` has a branch no row reaches;
     /// the first `k` also refuse a caller who is not the item's owner, reading the caller.
     fn chain(n: usize, k: usize) -> String {
+        use std::fmt::Write as _;
         let mut text = String::from(
             "format: ess/21\nsystem: demo\nversion: v1\nsummary: A generated chain.\n\
              domain: demo.chain\ntypes:\n  - {name: demo.chain.AccountId, kind: newtype, of: Uuid}\n",
@@ -4004,12 +4015,14 @@ views:
         let (mut entities, mut commands, mut events, mut granted) =
             (String::new(), String::new(), String::new(), Vec::new());
         for i in 0..n {
-            text.push_str(&format!(
-                "  - {{name: demo.chain.Item{i}Id, kind: newtype, of: Uuid}}\n"
-            ));
-            entities.push_str(&format!(
+            let _ = writeln!(
+                text,
+                "  - {{name: demo.chain.Item{i}Id, kind: newtype, of: Uuid}}"
+            );
+            let _ = write!(
+                entities,
                 "  - name: demo.chain.Item{i}\n    identity: {{name: item_id, type: demo.chain.Item{i}Id}}\n    fields:\n      - {{name: owner, type: demo.chain.AccountId}}\n      - {{name: note, type: Optional<String>}}\n    lifecycle:\n      initial: Open\n      states: [Open, Closed]\n      terminal: [Closed]\n      transitions:\n        - {{name: close, from: [Open], to: Closed}}\n"
-            ));
+            );
             let (parent, orphan) = if i == 0 {
                 (String::new(), String::new())
             } else {
@@ -4023,21 +4036,24 @@ views:
             } else {
                 ""
             };
-            commands.push_str(&format!(
+            let _ = write!(
+                commands,
                 "  - name: demo.chain.Create{i}\n    input:\n      - {{name: owner, type: demo.chain.AccountId}}\n{parent}    outcomes:\n{orphan}      - name: created\n        creates: demo.chain.Item{i}\n        instance: item_id\n        sets: {{owner: input.owner}}\n        emits: [demo.chain.Item{i}Created]\n        payload:\n          demo.chain.Item{i}Created: {{item_id: {{generated: true}}, owner: input.owner}}\n  - name: demo.chain.Close{i}\n    input:\n      - {{name: item_id, type: demo.chain.Item{i}Id}}\n    outcomes:\n      - name: noted\n        when_subject: {{predicate: defined(note)}}\n        error: demo.chain.Refused\n{owner}      - name: closed\n        moves: demo.chain.Item{i}.close\n        instance: item_id\n        emits: [demo.chain.Item{i}Closed]\n        payload:\n          demo.chain.Item{i}Closed: {{item_id: input.item_id}}\n"
-            ));
-            events.push_str(&format!(
+            );
+            let _ = write!(
+                events,
                 "  - name: demo.chain.Item{i}Created\n    fields:\n      - {{name: item_id, type: demo.chain.Item{i}Id}}\n      - {{name: owner, type: demo.chain.AccountId}}\n  - name: demo.chain.Item{i}Closed\n    fields:\n      - {{name: item_id, type: demo.chain.Item{i}Id}}\n"
-            ));
+            );
             granted.push(format!("demo.chain.Create{i}"));
             granted.push(format!("demo.chain.Close{i}"));
         }
         text.push_str("entities:\n");
         text.push_str(&entities);
-        text.push_str(&format!(
+        let _ = write!(
+            text,
             "actors:\n  - name: demo.chain.User\n    attributes:\n      - {{name: account_id, type: demo.chain.AccountId}}\n    may: [demo.chain.Issue, {}]\n  - name: demo.chain.Viewer\n    may: [demo.chain.Issue]\n",
             granted.join(", ")
-        ));
+        );
         text.push_str(
             "commands:\n  - name: demo.chain.Issue\n    response: [{name: secret, type: String}]\n    outcomes: [{name: issued, returns: true, one_time_response: [secret]}]\n",
         );

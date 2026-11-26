@@ -3949,16 +3949,43 @@ fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
     synthesize_invocations(&caller::InvocationModels::plain(ir), focus)
 }
 
+/// What a synthesis of one model remembers about it, held until dropped ([`held`]). The fields drop
+/// in the reverse of the order [`held`] takes them in.
+#[must_use = "the memories are held until this is dropped"]
+pub(super) struct Held<'ir> {
+    _prepared: prepare_memo::Remembered,
+    _created: created_memo::Remembered,
+    _kept: model_memo::Keeping<'ir>,
+    _orderings: crate::now_offset::Remembered,
+    _remembered: made::Remembered,
+    _memoised: crate::witness_memo::Memoised<'ir>,
+}
+
+/// Holds every memory a synthesis keeps about `ir` (its witness answers, the rows it made, its
+/// orderings, the model's derived facts, its creations and its prepared rows) until the guard
+/// drops. A caller assignment's model is another model: its answers are held apart and dropped
+/// with it, or parked where a [`caller`] keeping holds that model.
+pub(super) fn held(ir: &EssIr) -> Held<'_> {
+    let memoised = crate::witness_memo::memoise(ir);
+    let remembered = made::remember(ir);
+    let orderings = crate::now_offset::remember(ir);
+    let kept = model_memo::keep(ir);
+    let created = created_memo::remember(ir);
+    let prepared = prepare_memo::remember(ir);
+    Held {
+        _prepared: prepared,
+        _created: created,
+        _kept: kept,
+        _orderings: orderings,
+        _remembered: remembered,
+        _memoised: memoised,
+    }
+}
+
 #[allow(clippy::too_many_lines)] // Keep the ordered scenario-family dispatch together.
 fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_>) -> Synthesis {
     let ir = models.arrangement;
-    // A caller assignment's model is another model: its answers are held apart and dropped with it.
-    let _memoised = crate::witness_memo::memoise(ir);
-    let _remembered = made::remember(ir);
-    let _orderings = crate::now_offset::remember(ir);
-    let _kept = model_memo::keep(ir);
-    let _created = created_memo::remember(ir);
-    let _prepared = prepare_memo::remember(ir);
+    let _held = held(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
