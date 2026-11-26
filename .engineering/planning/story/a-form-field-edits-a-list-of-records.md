@@ -31,7 +31,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-08T15:49:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-08T15:49:58Z", actor: "human:timo", revision: 4}
@@ -155,3 +155,25 @@ element's fields as columns of a table under the row, in a row's `item` or `expa
 Proposed acceptance line: a column or record field `as: list` with `fields:` standing in a row's
 `expand` draws the list as a table, one element per line and one field per column, in both
 renderers.
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (received 2026-11-26) that a list of records is drawn by the two renderers in two different ways, and that a path through a list means two things.
+
+Facts, read on `main` at `c0b5f560cb`:
+
+- `ess ui check --model` accepts a dotted field path through a list, `{field: lines.title}` over a view row whose `lines` is a list of records, with 0 errors (reported; not rerun here).
+- React reads the member of every entry: `getPath` maps a segment over an array, so `lines.title` is the list of the titles (`crates/ui/ess-ui-react/templates/runtime/json.ts.tmpl:31-43`). The cell then goes through `formatValue`, which joins a list with `, ` and writes an object as JSON (`crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl:822-831`).
+- The terminal prints nothing: `walk` asks a sequence for a member by name, finds none and returns an absent value (`crates/ui/ess-ui-tui/src/expr.rs:215-224`, `field_path` 229-237).
+- The reference defines `field` as a name (`website/docs/reference/ess-ui.md:1511`) and says nothing of a path that crosses a list.
+
+So one document gives a column of titles in the browser and an empty column in the terminal, and the checker accepts both.
+
+The need, stated apart from any spelling: one rendering of a list of records shared by both renderers (a row per record, a member per column, a tone per member), or a path through a list that both renderers resolve alike. A second adopter: an order list whose rows hold their lines, or an inventory whose shelves hold their bins, each shown as a small table under the row.
+
+This story is the one that covers the rendering half of the need: a column or record field `as: list` with `fields:` draws each entry as a nested record in both renderers, and the reported case above asks for the entries as a table (one element per line, one field per column) in a row's `expand`. What it does not cover is the path: a dotted path through a list is not `as: list` with `fields:`, so the divergence above stays whatever this story builds. The question is open as decision LR-D1; the other two stories of the report (`story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer`, `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer`) hold the facts and say they do not cover it.
+
+- **LR-D1, a dotted path through a list.** A: `ess ui check` refuses a field path that crosses a list-typed field, naming the `as: list` with `fields:` form of this story as the way to show the members (recommended: fails closed, keeps `field` a name as the reference defines it, and leaves one rendering of a list of records, not two). Cost: a document that works in React today is refused; the terminal never drew it. B: both renderers resolve the path alike as the list of the members' values (React's reading; the terminal adopts it) and the cell draws that list by the rule for a list. Cost: a second way to show members, a path that reads many values where the reference says a name, and the terminal's `walk` and every consumer of `field_path` change. C: change nothing. Cost: one document, two drawings, and a checker that accepts both.
+- Recommended A. Open with the owner; no format change in any option (the key set of `ess-ui/1` does not move).
+
+Acceptance line added by this report: a document whose field path crosses a list gives the same result in both renderers, or is refused by `ess ui check` at the field's node path, under the pick of LR-D1; the acceptance of the story above holds either way.
