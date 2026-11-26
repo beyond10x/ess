@@ -53,7 +53,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -396,6 +396,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 38,
+        release: None,
+        added: &[
+            "Opened for addressing a row through a member of a struct input (beyond10x/ess#640), with no construct yet: a specification declaring it reads and compiles exactly as at the format before it, and each construct the format gains is refused as `unsupported_format_version` naming `ess/38` below it.",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -548,6 +556,11 @@ impl FormatVersion {
     /// declaring `ordered: true` included (`story:aggregate-measures-over-expressions`,
     /// beyond10x/ess#561, #566).
     pub const V36: Self = Self(36);
+    /// Addressing through a member of a struct input: `via:`, `all:` elements, `instance:`,
+    /// `each: {in:}` and `{missing:}` read the `input.<path>` `sets:` reads
+    /// (`story:via-and-instance-may-name-a-member-of-a-struct-input`, beyond10x/ess#640); `ess/37`,
+    /// released in 0.93.0 with no construct, keeps its meaning.
+    pub const V38: Self = Self(38);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

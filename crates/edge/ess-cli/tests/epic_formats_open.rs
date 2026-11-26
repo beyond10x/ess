@@ -1,6 +1,7 @@
 //! The three formats the zero-open-issues epic fills are open and empty: source `ess/37`, the suite
 //! pair `ess-conformance/64` (ordinary) and `/65` (coverage), and `ess-diff/24`. Opening them adds
-//! no construct, so a document at the new number reads exactly as at the one before it.
+//! no construct, so a document at the new number reads exactly as at the one before it. Source
+//! `ess/38`, opened for the member-address feature, reads exactly as `ess/37`.
 
 use ess_cli::TemporaryDirectory;
 use ess_diff::{DeltaFormat, EssDelta, RawEssDelta};
@@ -55,7 +56,7 @@ fn ess_37_is_listed_as_added_in_0_93_0_and_reads_as_ess_36() {
         .find(|row| row["format"] == "ess/37")
         .unwrap_or_else(|| panic!("ess/37 is not listed: {rows}"));
     assert_eq!(row["release"], json!("0.93.0"), "{row}");
-    assert_eq!(row["newest"], json!(true), "{row}");
+    assert_eq!(row["newest"], json!(false), "{row}");
 
     let directory = TemporaryDirectory::create("ess-epic-formats-source").unwrap();
     let older = ledger_at(&directory, "older", "ess/36");
@@ -76,6 +77,44 @@ fn ess_37_is_listed_as_added_in_0_93_0_and_reads_as_ess_36() {
     let newer = String::from_utf8(compile(&newer)).unwrap();
     assert_eq!(
         older.replace("ess/36", "ess/37"),
+        newer,
+        "IR bytes differ apart from the format field"
+    );
+}
+
+#[test]
+fn ess_38_is_listed_unreleased_as_the_newest_and_reads_as_ess_37() {
+    let listed = good(&["specify", "formats", "--format", "json"]);
+    let rows: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["format"] == "ess/38")
+        .unwrap_or_else(|| panic!("ess/38 is not listed: {rows}"));
+    assert_eq!(row["release"], Value::Null, "{row}");
+    assert_eq!(row["newest"], json!(true), "{row}");
+
+    let directory = TemporaryDirectory::create("ess-epic-formats-source-38").unwrap();
+    let older = ledger_at(&directory, "older", "ess/37");
+    let newer = ledger_at(&directory, "newer", "ess/38");
+    good(&["specify", "validate", "--path", older.to_str().unwrap()]);
+    good(&["specify", "validate", "--path", newer.to_str().unwrap()]);
+    let compile = |path: &Path| {
+        good(&[
+            "specify",
+            "compile",
+            "--path",
+            path.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .stdout
+    };
+    let older = String::from_utf8(compile(&older)).unwrap();
+    let newer = String::from_utf8(compile(&newer)).unwrap();
+    assert_eq!(
+        older.replace("ess/37", "ess/38"),
         newer,
         "IR bytes differ apart from the format field"
     );

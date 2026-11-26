@@ -26,6 +26,13 @@ pub fn admitted(format: Option<FormatVersion>) -> bool {
     format.is_some_and(|format| format.major() >= FormatVersion::V22.major())
 }
 
+/// `true` when a specification in `format` may address a row through a member of a struct
+/// input: from `ess/38`. A registry without a format (`None`) admits it, as the gates that read
+/// `TypeRegistry::format()` do.
+pub fn addresses_members(format: Option<FormatVersion>) -> bool {
+    format.is_none_or(|format| format.major() >= FormatVersion::V38.major())
+}
+
 /// A resolved `input.<path>`: what the last segment holds, and whether an `Optional` before it may
 /// leave it absent.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,6 +233,19 @@ pub fn below_ess_22(at: &ConstructRef, what: &str) -> ValidationError {
         format!("{what} requires specification format ess/22"),
     )
     .with_hint(FormatVersion::V22.declaration_hint())
+}
+
+/// The refusal below `ess/38` for `what`, an addressing position written with a member of a
+/// struct input (`` `via: input.settings.primary` ``).
+pub fn below_ess_38(at: &ConstructRef, what: &str) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::UnsupportedFormatVersion,
+        format!(
+            "{what} names a member of a struct input, which requires specification format ess/38"
+        ),
+    )
+    .with_hint(FormatVersion::V38.declaration_hint())
 }
 
 /// The refusal for a path whose route may leave it absent where it would supply `what`: an
