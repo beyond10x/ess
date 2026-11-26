@@ -274,3 +274,72 @@ fn a_sigint_and_a_sigterm_during_the_handshake_die_of_the_signal_and_kill_the_ta
     assert!(!report.exists(), "a signalled run writes no report");
     assert_eq!(gone(&pids), Vec::<i32>::new(), "the target is gone");
 }
+
+/// The names of `ess`'s threads that do not block `SIGHUP`, `SIGINT` and `SIGTERM` (bits 0, 1 and
+/// 14 of `SigBlk` in `/proc/<pid>/task/<tid>/status`), sorted.
+fn threads_that_take_an_ending_signal(pid: u32) -> Vec<String> {
+    const ENDING: u64 = 1 << 0 | 1 << 1 | 1 << 14;
+    let mut names = Vec::new();
+    for task in fs::read_dir(format!("/proc/{pid}/task")).unwrap().flatten() {
+        let Ok(status) = fs::read_to_string(task.path().join("status")) else {
+            continue;
+        };
+        let blocked = status
+            .lines()
+            .find_map(|line| line.strip_prefix("SigBlk:"))
+            .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
+            .unwrap_or(0);
+        if blocked & ENDING != ENDING {
+            let name = fs::read_to_string(task.path().join("comm")).unwrap_or_default();
+            names.push(name.trim().to_owned());
+        }
+    }
+    names.sort();
+    names
+}
+
+// Claim under test: the first of two signals decides, however the kernel spreads them over `ess`'s
+// threads. A process-directed signal goes to any thread that does not block it, so with every
+// thread open a SIGINT and a SIGTERM sent right after it run their handlers on two threads at once,
+// and the one that records first decides: the SIGTERM did, when the SIGINT's thread was preempted
+// between taking the signal and recording it (3 CI runs of this file, 1 in 100 local runs under
+// load). That window cannot be hit from outside on demand, so this case holds what closes it:
+// during the handshake only the signal thread takes an ending signal, and it takes them one at a
+// time, in the order the kernel hands them out. Bounded at 30 s for the target to start and 10 s
+// for the exit.
+#[test]
+fn only_the_signal_thread_takes_an_ending_signal_so_the_first_of_two_decides() {
+    let dir = tempfile::tempdir().unwrap();
+    let (report, pids) = (dir.path().join("report.json"), dir.path().join("pids"));
+    let mut run = Run::start(
+        &report,
+        &pids,
+        &[
+            "/bin/sh",
+            "-c",
+            r#"echo $$ >> "$0"; exec sleep 1000"#,
+            pids.to_str().unwrap(),
+        ],
+    );
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while pids_in(&pids).is_empty() {
+        assert!(Instant::now() < deadline, "the target never started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        threads_that_take_an_ending_signal(run.ess.id()),
+        ["ess-target-sign"],
+        "the signal thread (its name cut to 15 bytes) is the only one open to an ending signal"
+    );
+    run.signal(Signal::INT);
+    run.signal(Signal::TERM);
+    let status = run
+        .exit_within(Duration::from_secs(10))
+        .expect("ess exits on SIGINT");
+    assert_eq!(
+        std::os::unix::process::ExitStatusExt::signal(&status),
+        Some(2),
+        "{status:?}"
+    );
+    assert_eq!(gone(&pids), Vec::<i32>::new(), "the target is gone");
+}
