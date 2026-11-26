@@ -1038,3 +1038,240 @@ views:
 fn a_disclosure_scenario_is_held_to_the_row_sets_its_sends_read() {
     assert_every_scenario_passes(&run(BINDINGS));
 }
+
+/// Scopes held by `when:` guards over Optional references, before `via:` guards over the same
+/// references and a row set (weft's `CreateSecret`, 2026-11-26): `scope` says which of
+/// `formation_id` and `environment_id` are sent, six `when:` refusals hold the scope to them, then
+/// each reference's row must exist and nest, then `name-taken` refuses a name in use.
+///
+/// - `no-such-environment` was also sent with `formation_id` left out and `scope: Environment`,
+///   which `environment-scope-without-formation` answers first, so the scenario failed.
+/// - `created` had no scenario: a row was sought for every reference, also for the ones the
+///   `Account` scope leaves out, where an absent Optional reference reads no row and selects no
+///   `when_related` branch (the interpreter's `related_absent` and `held_row`).
+const SECRETS: &str = r"format: ess/37
+system: p
+version: v1
+domain: p.s
+types:
+  - {name: p.s.Scope, kind: enum, variants: [Account, Formation, Environment]}
+entities:
+  - name: p.s.Account
+    identity: {name: account_id, type: Uuid}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: p.s.Formation
+    identity: {name: formation_id, type: Uuid}
+    fields:
+      - {name: account_id, type: Uuid}
+    relations:
+      - {name: account, kind: references, target: p.s.Account, cardinality: one, via: account_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: p.s.Environment
+    identity: {name: environment_id, type: Uuid}
+    fields:
+      - {name: formation_id, type: Uuid}
+    relations:
+      - {name: formation, kind: references, target: p.s.Formation, cardinality: one, via: formation_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: p.s.Secret
+    identity: {name: secret_id, type: Uuid}
+    fields:
+      - {name: account_id, type: Uuid}
+      - {name: scope, type: p.s.Scope}
+      - {name: formation_id, type: Optional<Uuid>}
+      - {name: environment_id, type: Optional<Uuid>}
+      - {name: name, type: String}
+    relations:
+      - {name: account, kind: references, target: p.s.Account, cardinality: one, via: account_id}
+      - {name: formation, kind: references, target: p.s.Formation, cardinality: one, via: formation_id}
+      - {name: environment, kind: references, target: p.s.Environment, cardinality: one, via: environment_id}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+errors:
+  - {name: p.s.ScopeMismatch, summary: The scope and the references disagree., fields: []}
+  - {name: p.s.ScopeNotFound, summary: No such scope., fields: []}
+  - {name: p.s.NameTaken, summary: The name is taken., fields: []}
+events:
+  - name: p.s.AccountOpened
+    fields: [{name: account_id, type: Uuid}]
+  - name: p.s.FormationOpened
+    fields: [{name: formation_id, type: Uuid}]
+  - name: p.s.EnvironmentOpened
+    fields: [{name: environment_id, type: Uuid}]
+  - name: p.s.SecretCreated
+    fields: [{name: secret_id, type: Uuid}]
+actors:
+  - name: p.s.Operator
+    may: [p.s.OpenAccount, p.s.OpenFormation, p.s.OpenEnvironment, p.s.CreateSecret]
+commands:
+  - name: p.s.OpenAccount
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: p.s.Account
+        instance: account_id
+        sets: {title: input.title}
+        emits: [p.s.AccountOpened]
+        payload: {p.s.AccountOpened: {account_id: {generated: true}}}
+  - name: p.s.OpenFormation
+    input:
+      - {name: account_id, type: Uuid}
+    outcomes:
+      - name: no-such-account
+        when_related: {via: input.account_id, exists: false}
+        error: p.s.ScopeNotFound
+      - name: opened
+        creates: p.s.Formation
+        instance: formation_id
+        sets: {account_id: input.account_id}
+        emits: [p.s.FormationOpened]
+        payload: {p.s.FormationOpened: {formation_id: {generated: true}}}
+  - name: p.s.OpenEnvironment
+    input:
+      - {name: formation_id, type: Uuid}
+    outcomes:
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.s.ScopeNotFound
+      - name: opened
+        creates: p.s.Environment
+        instance: environment_id
+        sets: {formation_id: input.formation_id}
+        emits: [p.s.EnvironmentOpened]
+        payload: {p.s.EnvironmentOpened: {environment_id: {generated: true}}}
+  - name: p.s.CreateSecret
+    input:
+      - {name: account_id, type: Uuid}
+      - {name: scope, type: p.s.Scope}
+      - {name: formation_id, type: Optional<Uuid>}
+      - {name: environment_id, type: Optional<Uuid>}
+      - {name: name, type: String}
+    outcomes:
+      - name: account-scope-with-formation
+        when: {all: [scope == Account, {formation_id: {defined: true}}]}
+        error: p.s.ScopeMismatch
+      - name: account-scope-with-environment
+        when: {all: [scope == Account, {environment_id: {defined: true}}]}
+        error: p.s.ScopeMismatch
+      - name: formation-scope-without-formation
+        when: {all: [scope == Formation, {formation_id: {defined: false}}]}
+        error: p.s.ScopeMismatch
+      - name: formation-scope-with-environment
+        when: {all: [scope == Formation, {environment_id: {defined: true}}]}
+        error: p.s.ScopeMismatch
+      - name: environment-scope-without-formation
+        when: {all: [scope == Environment, {formation_id: {defined: false}}]}
+        error: p.s.ScopeMismatch
+      - name: environment-scope-without-environment
+        when: {all: [scope == Environment, {environment_id: {defined: false}}]}
+        error: p.s.ScopeMismatch
+      - name: no-such-account
+        when_related: {via: input.account_id, exists: false}
+        error: p.s.ScopeNotFound
+      - name: no-such-formation
+        when_related: {via: input.formation_id, exists: false}
+        error: p.s.ScopeNotFound
+      - name: no-such-environment
+        when_related: {via: input.environment_id, exists: false}
+        error: p.s.ScopeNotFound
+      - name: formation-of-other-account
+        when_related: {via: input.formation_id, predicate: account_id != input.account_id}
+        error: p.s.ScopeNotFound
+      - name: environment-of-other-formation
+        when_related: {via: input.environment_id, predicate: formation_id != input.formation_id}
+        error: p.s.ScopeNotFound
+      - name: name-taken
+        when_related:
+          entity: p.s.Secret
+          where:
+            all:
+              - account_id == input.account_id
+              - scope == input.scope
+              - formation_id == input.formation_id
+              - environment_id == input.environment_id
+              - name == input.name
+          exists: true
+        error: p.s.NameTaken
+      - name: created
+        creates: p.s.Secret
+        instance: secret_id
+        sets:
+          account_id: input.account_id
+          scope: input.scope
+          formation_id: input.formation_id
+          environment_id: input.environment_id
+          name: input.name
+        emits: [p.s.SecretCreated]
+        payload: {p.s.SecretCreated: {secret_id: {generated: true}}}
+views:
+  - name: p.s.Secrets
+    source: p.s.Secret
+    consistency: read_your_writes
+    fields:
+      - {name: secret_id, type: Uuid}
+      - {name: name, type: String}
+";
+
+/// The row set of [`SECRETS`], as it writes it.
+const NAME_TAKEN: &str = "      - name: name-taken
+        when_related:
+          entity: p.s.Secret
+          where:
+            all:
+              - account_id == input.account_id
+              - scope == input.scope
+              - formation_id == input.formation_id
+              - environment_id == input.environment_id
+              - name == input.name
+          exists: true
+        error: p.s.NameTaken
+";
+
+const NO_SUCH_ENVIRONMENT: &str = "p.s.CreateSecret/outcome/no-such-environment";
+const SECRET_CREATED: &str = "p.s.CreateSecret/outcome/created";
+
+#[test]
+fn no_missing_row_send_is_one_an_earlier_scope_guard_answers() {
+    let run = run(SECRETS);
+    assert_passes(&run, NO_SUCH_ENVIRONMENT);
+    for (command, input, outcome) in sends(&run, NO_SUCH_ENVIRONMENT) {
+        if command == "p.s.CreateSecret" {
+            assert_eq!(outcome, "no-such-environment", "{input:#}");
+            assert!(
+                input.get("formation_id").is_some(),
+                "an Environment-scoped send names its formation: {input:#}"
+            );
+        }
+    }
+    assert_every_scenario_passes(&run);
+}
+
+/// The send of [`SECRET_CREATED`] in `run` leaves out both Optional references.
+fn assert_created_leaves_the_scopes_out(run: &Run) {
+    assert_passes(run, SECRET_CREATED);
+    let sent = sends(run, SECRET_CREATED);
+    let (command, input, outcome) = sent.last().expect("the scenario sends");
+    assert_eq!(
+        (command.as_str(), outcome.as_str()),
+        ("p.s.CreateSecret", "created"),
+        "{sent:#?}"
+    );
+    for field in ["formation_id", "environment_id"] {
+        assert!(input.get(field).is_none(), "{field} is left out: {input:#}");
+    }
+}
+
+#[test]
+fn the_creating_branch_leaves_out_the_references_its_scope_leaves_absent() {
+    let run = run(SECRETS);
+    assert_created_leaves_the_scopes_out(&run);
+}
+
+#[test]
+fn without_the_row_set_the_creating_branch_leaves_them_out_too() {
+    let run = run(&without(SECRETS, NAME_TAKEN));
+    assert_created_leaves_the_scopes_out(&run);
+    assert_every_scenario_passes(&run);
+}
