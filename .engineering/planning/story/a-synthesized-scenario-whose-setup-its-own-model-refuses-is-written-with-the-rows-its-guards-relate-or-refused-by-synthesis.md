@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 8
+revision: 9
 ---
 ## Summary
 
@@ -133,6 +133,8 @@ archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 br
 written.
 
 0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
+
+N93: in 0.99.7, prepared on branch `hotfix/0.99.7` at `e4232da4eb`; not tagged when written.
 
 ## Left open
 

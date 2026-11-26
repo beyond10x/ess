@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-creating-command-beside-an-exists-false-related-row-refusal-puts-its-second-row-under-the-subject-s-existing
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -55,6 +55,8 @@ Another site of the same class. `story:a-creating-command-beside-an-exists-false
 ## Delivery
 
 Branch `fix/n95-a-related-boundary-refusal-names-the-scenario-it-leaves-standing`, from tag 0.99.5, pushed. Red test `f61078c793`, fix `fd657ef3ec`. The gate ran every step with exit 0 (stamp, `task fmt-check`, clippy, `related_guard`, `related_guard_pass1_fixes`, `related_guard_pass2_fixes`, `adversary_related_guard_pass1`, `interpreted_related_guards`, the bytes table with its slow lanes, `cli_read`, `adversary_related_values_all_bytes`, `external_beside_held_guard`, `tutorial_page`); no committed byte row moved; the longest test was 51.3 s. Planned for 0.99.6.
+
+N95: 0.99.6 tagged 2026-11-26 05:32 CET on `2c6fceb874` (tag object `d041a3f0b2`), release run 45755826965; release pending when written.
 
 ## Scope
 

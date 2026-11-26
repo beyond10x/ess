@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -422,6 +422,8 @@ written.
 
 Second finding: branch `fix/n90b-a-further-instance-in-an-update-setup-keeps-the-example`, from tag 0.99.5, pushed. Red test `5cd1402f01`
 (`suffixed_instance_inputs::a_further_witness_of_an_update_setup_keeps_the_example_at_a_leaf_read_only_for_presence`), fix `3d3402acb5`. The red test is green; `suffixed_instance_inputs` 19 tests. The gate ran every step with exit 0 (stamp, `task fmt-check`, clippy, `suffixed_instance_inputs`, `subject_fact_complete_refusal`, `stored_map_entries`, `adversary_464_pass1`, the bytes table with its slow lanes, `cli_read`, `adversary_related_values_all_bytes`, `external_beside_held_guard`, `tutorial_page`); no committed byte row moved; the longest test was 48.8 s. A pinned suite of a model with this shape moves when it is synthesized again. Planned for 0.99.6.
+
+N90B: 0.99.6 tagged 2026-11-26 05:32 CET on `2c6fceb874` (tag object `d041a3f0b2`), release run 45755826965; release pending when written.
 
 ## Second finding
 
