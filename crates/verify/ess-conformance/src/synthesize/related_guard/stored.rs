@@ -261,11 +261,10 @@ fn relink(
         .as_ref()
         .map(|subject| &subject.entity)
         .ok_or_else(|| gap("the act creating the subject names no subject"))?;
-    let input = super::super::related::set_from_input(creating, field)
-        .ok_or_else(|| {
-            gap("the act creating the subject does not write it from its input unchanged")
-        })?
-        .to_owned();
+    let Some(input) = super::super::related::set_from_input(creating, field) else {
+        return relink_copied(ir, steps, settled, (created, command, creating), field, link);
+    };
+    let input = input.to_owned();
     let declared = command
         .input
         .iter()
@@ -336,6 +335,78 @@ fn relink(
             sent.remove(&input);
         }
     }
+    if let Some(settled) = settled {
+        match value.clone() {
+            Some(value) => {
+                settled.insert(
+                    field.to_owned(),
+                    super::super::Determined {
+                        value,
+                        type_ref: stored,
+                    },
+                );
+            }
+            None => {
+                settled.remove(field);
+            }
+        }
+    }
+    Ok(value)
+}
+
+/// [`relink`] where the act creating the subject copies `field` from a stored field of another row
+/// its input names (`{related: {via: input.<x>, field: <far>}}`): that row's own link is pointed
+/// as `link` says, through the act in `steps` that created it, which runs earlier, and the subject
+/// holds what it copies.
+fn relink_copied(
+    ir: &EssIr,
+    steps: &mut [ScenarioStep],
+    settled: Option<&mut BTreeMap<String, super::super::Determined>>,
+    (created, command, creating): (usize, &ResolvedCommand, &ResolvedOutcome),
+    field: &str,
+    link: &Link<'_>,
+) -> Result<Option<ScenarioValue>, RefusalCause> {
+    let gap = |why: &str| unpointed(field, why);
+    let unwritten =
+        || gap("the act creating the subject does not write it from its input unchanged");
+    let (via, far, stored) = creating
+        .sets
+        .iter()
+        .find_map(|set| match &set.value {
+            ResolvedPayloadValue::RelatedField {
+                via: ResolvedRelatedVia::Input { field: via, .. },
+                through,
+                field: far,
+                type_ref,
+                ..
+            } if set.target == field && set.conversion.is_none() && through.is_empty() => {
+                Some((via.clone(), far.clone(), type_ref.clone()))
+            }
+            _ => None,
+        })
+        .ok_or_else(unwritten)?;
+    if matches!(link, Link::Row(_)) && relates(ir, command, creating, &via) {
+        return Err(gap(&format!(
+            "`{}` relates the row `input.{via}` names to another of its inputs before storing \
+             what it copies from it",
+            command.name
+        )));
+    }
+    let ScenarioStep::ExecuteCommand { input: sent, .. } = &steps[created] else {
+        return Err(gap("the act creating the subject is not a command"));
+    };
+    let Some(ScenarioValue::Instance { instance: named }) = sent.get(&via) else {
+        return Err(gap(&format!(
+            "the act creating the subject names the row it copies `{field}` from by no arranged \
+             instance"
+        )));
+    };
+    let named = named.clone();
+    let (earlier, ..) = creation(ir, steps, &named, &far)?;
+    if earlier >= created {
+        return Err(unwritten());
+    }
+    let value = relink(ir, &mut steps[..created], None, &named, &far, link)?;
     if let Some(settled) = settled {
         match value.clone() {
             Some(value) => {
