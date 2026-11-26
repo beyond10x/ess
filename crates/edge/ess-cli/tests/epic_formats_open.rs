@@ -177,6 +177,24 @@ fn the_suite_pair_64_and_65_is_read_where_62_and_63_are() {
     }
 }
 
+/// The pair `/66` and `/67`, opened for the open issues' suite vocabulary, is read where `/64`
+/// and `/65` are, and no synthesis writes it.
+#[test]
+fn the_suite_pair_66_and_67_is_read_where_64_and_65_are() {
+    let directory = TemporaryDirectory::create("ess-epic-formats-suite-66").unwrap();
+    let (ordinary, ordinary_66) = rewritten(&directory, "ordinary", &[], 66);
+    let (coverage, coverage_67) = rewritten(&directory, "coverage", &["--suite-format", "5"], 67);
+    assert_eq!(verdict(&ordinary), verdict(&ordinary_66));
+    assert_eq!(verdict(&coverage), verdict(&coverage_67));
+    for path in [&ordinary, &coverage] {
+        let text = fs::read_to_string(path).unwrap();
+        assert!(
+            !text.contains("\"ess-conformance/66\"") && !text.contains("\"ess-conformance/67\""),
+            "{path:?}"
+        );
+    }
+}
+
 #[test]
 fn ess_diff_24_is_read_and_written_where_23_is_and_no_change_kind_is_written_at_it() {
     let format = DeltaFormat::parse("ess-diff/24").unwrap();

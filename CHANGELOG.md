@@ -18,6 +18,7 @@
 - The generated React runtime's `setAuthorization(value, renew?)` takes an optional `renew`: a read or a command answered `401` awaits it once, shared by every request answered `401` meanwhile, and is sent once more with the value it returns. A second `401` or no value stays the answer (beyond10x/ess#723).
 - `ess specify vendor --from <key=path> --service <key=path> --type <name> --into <domain> --out <file> --conformances <file>` writes a consumer's copy of another specification's type, with every type it reaches, as a source file of the consumer's, and the composition `services:` and `conformances:` entries that prove it against the pinned owner; `--check` exits 1 naming each copy the owner has changed since (beyond10x/ess#663).
 - An `ess-http/1` route's wrapped body may carry members beside its form: any number of literal members, `{<name>: {literal: <text>}}`, on a view or a command outcome, and on the `array` of a view that is not paged one `{<name>: count}` member holding the number of rows (`body: {success: {literal: ok}, items: array, total: count}`); OpenAPI requires each member and both generated servers write them, and a second form, a second count, a count beside `single` or on an outcome, or members with no form are refused `ESS-HTTP-024` naming the member (beyond10x/ess#755).
+- Suite pair `ess-conformance/66` (ordinary) and `/67` (coverage) is open with no construct: every reader (Rust, Go, TypeScript) admits it wherever it admits `/64` and `/65`, and nothing writes it yet.
 
 ### Changed
 
