@@ -23,7 +23,7 @@ scope:
   path: crates/verify/ess-diff/tests/domain_entry.rs
 - confidence: cited
   path: crates/verify/ess-diff/tests/narrowed_acceptance.rs
-revision: 8
+revision: 9
 ---
 ## Outcome
 
@@ -188,3 +188,83 @@ an entity that has stored fields and a lifecycle.
   pair per kind added there.
 - No existing test file changes beyond the pins `task test-xtask` names; two revisions without an entity field change
   diff as before.
+
+## A refusal added beside outcomes that read rows (downstream report, 2026-11-27)
+
+## A refusal added beside outcomes that read rows (downstream report, 2026-11-27)
+
+A downstream hardening pass put `ess verify diff --fail-on breaking-or-unknown` in a gate and read its history. This
+section is the same gap as part 2 above, seen from the command that gains the refusal and not from the guard the new
+refusal uses.
+
+### Need
+
+On 0.99.2, and on `main` at 0.99.8 (`CHANGELOG.md` 0.99.3 to 0.99.8 and `[Unreleased]` name no change to a diff rating
+of a refusal), a plain `when:` refusal added to a command is rated `unknown` as soon as any outcome of the command is
+not a plain `when:` or `otherwise` branch: a `when_related:`, a `when_subject:`, a `wrong_state:` or an
+`unknown_instance:` outcome of the earlier revision, or one declared before the new refusal in the later revision.
+`refuses_more` (`crates/verify/ess-diff/src/compatibility.rs`, the `_ => return false` arms in both loops) gives up on
+the first such outcome, because a stored-state guard decides whether an input was accepted and the check reads inputs
+only. The report: of the 292 changes of 8 merges that were not compatible, 254 were `unknown`, 83 of them an added
+refusal and 29 a changed outcome set; nearly every command of that specification has a row guard or a wrong-state
+outcome, so every change to the specification needed an acknowledgement and the gate no longer told a narrowing from a
+harmless addition.
+
+Minimal pair, run on 0.99.2 (the model of `.engineering/repro/diff-unknown-verdicts/before.yaml` with a required
+`String` input `note` on `Cancel`; the later revision adds `{name: blank-note, when: note == "", error: WrongState}`
+before `cancelled`):
+
+- with the command's `wrong-state` outcome (`wrong_state: true`): `command/Cancel/outcome-added/blank-note`, `unknown for
+  callers, readers`;
+- with that outcome deleted from both revisions: the same change, `breaking for callers; unknown for readers`.
+
+So the verdict depends on an outcome the new refusal does not touch.
+
+### Fit review
+
+1. **Need.** A caller-facing gate that rates an added refusal over inputs, on commands that also read rows, without an
+   acknowledgement for each. The consumer is "a downstream control plane".
+2. **Class.** Gap: the rating is decided only where every outcome of the command is a plain input guard.
+3. **Already expressible?** `ess-diff-acknowledgements/1` records a reviewed change, which is the cost the report names.
+   `--dimension` narrows the gate and decides nothing.
+4. **Fit.** Reuses `Narrowing::RefusalAdded` and `satisfiable_by_declared_values`. The new part is what the check does
+   with an outcome it cannot read.
+5. **Second adopter.** Any specification whose commands mix input refusals with row guards, which is every model that
+   has a lifecycle.
+6. **Cost.** New decided rows; the delta's classification of an existing change kind moves, so D2 asks whether that
+   needs a new `ess-diff` version. `task test-xtask` pins move.
+7. **Alternatives.** (a) Change nothing: every change to the specification is acknowledged by hand, and a reviewer
+   cannot tell the one narrowing from the rest. (b) Decide what the inputs settle (chosen, D1). (c) Rate every added
+   refusal `breaking`: it fails closed and calls a refusal of an input no caller sent narrowing.
+8. **Generic, not per finding.** One rule over "an outcome the check cannot read" covers the added refusal, the changed
+   outcome set and the changed condition on every such command; it is not a rule per guard kind.
+
+### Decisions
+
+- **D1. How does the check treat an outcome whose guard reads a row or the stored state?** (a) As an outcome that
+  does not refuse in some stored state: the check looks for an input the earlier revision's plain refusals let through
+  and a plain accepting outcome takes, and claims `refusal-added` for the later revision's refusal of it, meaning "in
+  a state where the earlier revision accepted the input, the later one refuses it". The state itself is not searched
+  for or proven reachable. (b) Keep `unknown`, and name in the verdict which outcome made it so, so a reviewer knows what to read.
+  (c) Rate such a change `breaking` whenever the new guard is satisfiable at all. **Recommended: (a).** It keeps
+  `breaking` sound for the inputs it names and shrinks `unknown` to the cases that need the state; (b) can ship first
+  as a diagnostic and does not conflict; (c) over-reports.
+- **D2. Does the classification of an existing change kind move the delta format?** The header of
+  `compatibility.rs` says a reader of an earlier version derives the written classification and refuses a mismatch.
+  Recommended: the story answers it before the first row lands, and moves to a new `ess-diff/<n>` if an earlier
+  reader would refuse the new verdict.
+- **D3. Is the changed outcome set (`outcome-sets-changed`, 29 of the 254) in this story?** Recommended: no; it is a
+  different change kind and a decision of its own on the same surface. Name it as a follow-up if the first rows land.
+
+### Acceptance
+
+Tests in `crates/verify/ess-diff/tests/narrowed_acceptance.rs`, each red on the current tree.
+
+- The minimal pair above, with the `wrong_state` outcome kept, reports `command/<name>/outcome-added/blank-note` as
+  `refusal-added`, breaking for callers, and `--fail-on breaking` exits 4; the same pair without that outcome keeps its
+  verdict.
+- The same with a `when_related:` outcome and with a `when_subject:` outcome in the earlier revision.
+- An added refusal over inputs the earlier revision already refused by any outcome stays unclassified, as part 2
+  says.
+- A refusal whose guard holds only for stored state stays `unknown`.
+- Part 2's own tests and the `after-error-added.yaml` control keep their verdicts.
