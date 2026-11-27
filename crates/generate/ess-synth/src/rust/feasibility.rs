@@ -933,7 +933,14 @@ fn bindings(inventory: &mut Inventory, ir: &EssIr, plan: &SynthesisPlan) {
                         &crate::plan::DeterminedInput::Copy { field },
                         &mapping.target_type,
                     ) > 0;
-                if mapping.conversion.is_none() && type_ref != &mapping.target_type && !proved {
+                // A plain value copied into an Optional of its own type is passed as `Some(..)`:
+                // `system::wraps_once`. The wrap changes presence, not representation.
+                let wrapped = super::system::wraps_once(type_ref, &mapping.target_type);
+                if mapping.conversion.is_none()
+                    && type_ref != &mapping.target_type
+                    && !proved
+                    && !wrapped
+                {
                     inventory.cause(Code::BindingAssignment, vec![binding.name.to_string(), format!("{}.{}", binding.cause.event().expect("generated event capability"), field), format!("{}.{}", binding.command, mapping.target)], format!("binding `{}` emits a plain clone of `{type_ref}` for `{}` of type `{}`; this assignment needs an explicit target representation", binding.name, mapping.target, mapping.target_type));
                 }
             }
