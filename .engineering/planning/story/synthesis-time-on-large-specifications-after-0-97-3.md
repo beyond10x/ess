@@ -49,7 +49,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/stored_rows_decided_once_work.rs
-revision: 22
+revision: 23
 ---
 ## Outcome
 
@@ -182,3 +182,53 @@ placement is `story:work-bound-tests-live-in-one-binary-and-behind-one-counter-m
 - Threads in synthesis: reported, not built.
 - Changing any synthesized byte, suite format or refusal beyond the two breaking changes of 0.97.3.
 - A coarser key for any memory. A key must contain everything the computation reads.
+
+## A slowdown from 0.99.8 on an adopter's specification, 2026-11-27
+
+An adopter reported that `ess verify conform synthesize` on one specification became much slower with 0.99.8. It is a
+defect of the released tool, not of the specification: the extra scenarios are wanted, the cost per scenario is not.
+Measured by running the released binaries one after another on one copy of the specification (the same input, pinned
+to the oldest release for the older binaries), and by building the commits between 0.99.7 and 0.99.8:
+
+| release or commit | wall time | scenarios | steps | peak memory |
+|---|---|---|---|---|
+| 0.99.2 to 0.99.7 | 18 s to 27 s | 320 | 2,736 | 1.1 GB to 1.6 GB |
+| 0.99.8 | 158 s to 245 s | 565 | 21,683 | 17.2 GB |
+| `77f1f6f9ba`, parent of the first slow commit (load on the host 41) | 39.3 s | 320 | 2,736 | 1.09 GB |
+| `10c8356d23`, the first slow commit (pull request 835) | 244.5 s | 559 | 21,683 | 17.2 GB |
+
+The first slow commit is `10c8356d23`. The 262 scenarios it adds carry 17,629 steps (average 67, longest 281 steps; the
+scenarios before it average 8.6), so the cost per scenario went from about 57 ms to about 377 ms and memory grew by
+sixteen times. The new scenarios are wanted; the way they are decided is what costs.
+
+A profile of that commit (sampled with last-branch records) shows where the time goes:
+
+- About 21 % in `core::fmt::write`, building Debug-string memo keys (`subject_fact::reached_key`, the keys of
+  `created_memo`, `held_key`: actor maps, arrangements and step vectors are printed to make a key).
+- 11.7 % inclusive (6.2 % self) in `EssIr::drivers`, which rebuilds the map from entity to its driving commands on
+  every call.
+- About 9 % in clones of step lists and arrangements.
+- 49 % of the samples are in the C library (`memcpy`, `malloc`, `free`).
+
+Reading, inferred from the profile and not yet tried: a key built by printing a long step list costs time and memory in
+proportion to the length of the list, so a scenario of 281 steps asks it often; the map of drivers is a function of the
+model alone and wants building once; a step list wants sharing, not cloning, where a search extends it.
+
+### Acceptance
+
+- On a generic model with invented names whose scenarios carry long step lists, a work-bound test in an existing
+  `*_work.rs` target of `ess-conformance` counts key bytes printed, builds of the driver map and step-list clones, and
+  the counts exceed the bound on 0.99.8 and meet it on the fix. No test runs over 60 s. A key still holds everything the
+  computation reads (the rule under Out of scope).
+- The suite written for the reported specification by the fix is byte-identical to the one 0.99.8 writes (565
+  scenarios), compared with `cmp`; the byte pins of `AGENTS.md` pass.
+- Synthesis of the reported specification, measured to the end the same way (user CPU, peak memory, suite hash), costs
+  at most twice 0.99.7's cost per scenario (57 ms, so 565 scenarios in about 65 s) and stays under 4 GB. The figures
+  are proposed; the fix's own measurement may move them with its reason.
+- The same measurement is run before and after on `examples/billing` and on the largest reported specification of the
+  story above; no figure rises.
+
+## Status
+
+The hotfix is in progress on the branch `hotfix/0.99.9`; nothing is delivered. A release that carries the fix names
+this story in its pull-request line.
