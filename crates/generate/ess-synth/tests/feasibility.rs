@@ -5,7 +5,9 @@ use ess_compiler::resolve::compile_locating;
 use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_synth::{synthesize, synthesize_for, Synthesis, SynthesisPlan, Target};
+use ess_synth::{
+    synthesize, synthesize_for, synthesize_laid_out, OutputLayout, Synthesis, SynthesisPlan, Target,
+};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1088,10 +1090,13 @@ fn binding(source: &str, target: &str, mapped: bool) -> EssIr {
     core(&body, &wiring)
 }
 
+/// A required value into one Optional of its own type is wrapped
+/// (story:rust-binding-wraps-a-plain-copy-into-an-optional-member,
+/// `tests/binding_optional_wrap_go.rs`); into more than one it is still no plain clone.
 #[test]
-fn required_to_optional_binding_assignment_is_not_a_plain_clone() {
+fn required_to_nested_optional_binding_assignment_is_not_a_plain_clone() {
     refusal(
-        &binding("String", "Optional<String>", true),
+        &binding("String", "Optional<Optional<String>>", true),
         "binding-assignment",
         "optional-binding",
     );
@@ -2014,4 +2019,825 @@ fn carriage_returns_in_authored_prose_are_safe_rust_doc_comments() {
 #[test]
 fn crlf_in_authored_prose_is_safe_rust_doc_comments() {
     check_multiline_prose("\\r\\n");
+}
+
+// Adversary pass 1 on story:rust-binding-wraps-a-plain-copy-into-an-optional-member: the wrap is
+// asserted by the generated workspace compiling, not only by the text it contains.
+
+/// Every plain source kind the compiler admits into `Optional` of itself, copied by one binding
+/// (`handled`), an already Optional source copied into the same Optional (`topic`), and a
+/// conditioned binding (`filed`) that wraps a copy beside a member its condition proves present.
+const ADV_E3_MODEL: &str = r"format: ess/33
+system: demo
+version: v1
+domain: demo.core
+types:
+  - {name: demo.core.AuthorId, kind: newtype, of: String}
+  - name: demo.core.Doc
+    kind: struct
+    fields:
+      - {name: title, type: String}
+  - name: demo.core.Kind
+    kind: enum
+    variants: [note, ship]
+  - name: demo.core.Link
+    kind: union
+    tag: kind
+    variants:
+      home: demo.core.Doc
+      label: String
+  - name: demo.core.Node
+    kind: struct
+    fields:
+      - {name: name, type: String}
+      - {name: next, type: Optional<demo.core.Node>}
+events:
+  - name: demo.core.Fired
+    fields:
+FIELDS      - {name: topic, type: Optional<String>}
+  - name: demo.core.Handled
+    fields:
+      - {name: message_id, type: String}
+commands:
+  - name: demo.core.Fire
+    input:
+FIELDS      - {name: topic, type: Optional<String>}
+    outcomes:
+      - name: fired
+        emits: [demo.core.Fired]
+        payload:
+          demo.core.Fired: {message_id: input.message_id, PAYLOAD topic: input.topic}
+  - name: demo.core.Handle
+    input:
+      - {name: message_id, type: String}
+OPTIONALS      - {name: topic, type: Optional<String>}
+    outcomes:
+      - name: done
+        emits: [demo.core.Handled]
+        payload:
+          demo.core.Handled: {message_id: input.message_id}
+  - name: demo.core.File
+    input:
+      - {name: message_id, type: String}
+      - {name: topic, type: String}
+      - {name: text, type: Optional<String>}
+    outcomes:
+      - name: filed
+        emits: [demo.core.Handled]
+        payload:
+          demo.core.Handled: {message_id: input.message_id}
+components:
+  - component: worker
+    owns: {domains: [demo.core]}
+    accepts: {commands: [demo.core.Fire, demo.core.Handle, demo.core.File]}
+    publishes: {events: [demo.core.Fired, demo.core.Handled]}
+    reached_by: network
+bindings:
+  - id: handled
+    when: {event: demo.core.Fired}
+    invoke: {command: demo.core.Handle}
+    mapping:
+      message_id: event.message_id
+MAPPING      topic: event.topic
+    delivery: at_least_once
+    on_failure: retry
+  - id: filed
+    when:
+      event: demo.core.Fired
+      where: [defined(event.topic)]
+    invoke: {command: demo.core.File}
+    mapping:
+      message_id: event.message_id
+      topic: event.topic
+      text: event.text
+    delivery: at_least_once
+    on_failure: retry
+";
+
+/// The wrapped rows of [`ADV_E3_MODEL`]: each member's name and its plain type.
+const ADV_E3_ROWS: [(&str, &str); 11] = [
+    ("text", "String"),
+    ("count", "Integer"),
+    ("flag", "Boolean"),
+    ("author", "demo.core.AuthorId"),
+    ("doc", "demo.core.Doc"),
+    ("kind", "demo.core.Kind"),
+    ("link", "demo.core.Link"),
+    ("node", "demo.core.Node"),
+    ("tags", "List<String>"),
+    ("counts", "\"Map<String, Integer>\""),
+    ("message_ids", "List<demo.core.AuthorId>"),
+];
+
+fn adv_e3_ir() -> EssIr {
+    let (mut fields, mut payload, mut optionals, mut mapping) =
+        (String::new(), String::new(), String::new(), String::new());
+    let _ = writeln!(fields, "      - {{name: message_id, type: String}}");
+    for (name, ty) in ADV_E3_ROWS {
+        let _ = writeln!(fields, "      - {{name: {name}, type: {ty}}}");
+        let _ = write!(payload, "{name}: input.{name}, ");
+        let optional = format!("\"Optional<{}>\"", ty.trim_matches('"'));
+        let _ = writeln!(optionals, "      - {{name: {name}, type: {optional}}}");
+        let _ = writeln!(mapping, "      {name}: event.{name}");
+    }
+    let text = ADV_E3_MODEL
+        .replace("FIELDS", &fields)
+        .replace("PAYLOAD", &payload)
+        .replace("OPTIONALS", &optionals)
+        .replace("MAPPING", &mapping);
+    fixture(&[("demo.yaml", &text)])
+}
+
+fn adv_e3_rust(ir: &EssIr) -> Synthesis {
+    use ess_synth::{CapabilityKind, SynthesisDisposition};
+    let synthesis = synthesize(ir).unwrap_or_else(|failure| {
+        panic!(
+            "every plain copy into an Optional of itself is emitted: {}",
+            failure.to_canonical_json()
+        )
+    });
+    for binding in ["handled", "filed"] {
+        assert_eq!(
+            synthesis
+                .plan
+                .disposition_of(CapabilityKind::BindingTransformation, binding),
+            Some(&SynthesisDisposition::Generated),
+            "the transformation of `{binding}` is generated"
+        );
+    }
+    let code = synthesis
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for (name, _) in ADV_E3_ROWS {
+        assert!(
+            code.contains(&format!("        {name}: Some(event.{name}.clone()),\n")),
+            "`{name}` is wrapped once:\n{code}"
+        );
+    }
+    assert!(
+        code.contains("        topic: event.topic.clone(),\n"),
+        "an Optional copied into the same Optional is not wrapped:\n{code}"
+    );
+    synthesis
+}
+
+#[test]
+fn adv_e3_every_plain_copy_wrapped_into_an_optional_input_compiles() {
+    let ir = adv_e3_ir();
+    let synthesis = adv_e3_rust(&ir);
+    let directory = scratch("adv-e3-wrap-rust");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn adv_e3_every_plain_copy_wrapped_into_an_optional_input_compiles_for_the_web() {
+    let ir = adv_e3_ir();
+    let synthesis = adv_e3_rust(&ir);
+    let web = synthesize_for(&ir, Target::Web).unwrap_or_else(|failure| {
+        panic!(
+            "the Web target links the same wrap: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let directory = scratch("adv-e3-wrap-web");
+    let rust = directory.join("generated/rust/demo");
+    let browser = directory.join("generated/web/demo");
+    write_emission(&rust, &synthesis);
+    write_emission(&browser, &web);
+    check_generated_for(&browser, Some("wasm32-unknown-unknown"));
+}
+
+/// A selecting binding (`selection_inputs`, `first`) that also copies a required event member
+/// into an Optional input: the wrap sits inside the selecting transformation's `Ok(..)`. Its
+/// predicate compares text only; an enum predicate is the control case below.
+#[test]
+fn adv_e3_a_selecting_binding_wraps_a_plain_copy_and_compiles() {
+    let text = "format: ess/3
+system: selection
+version: v1
+domain: selection.core
+types:
+  - name: selection.core.Leg
+    kind: struct
+    fields:
+      - {name: id, type: String}
+events:
+  - name: selection.core.Arrived
+    fields:
+      - {name: data, type: List<Optional<selection.core.Leg>>}
+      - {name: note, type: String}
+  - name: selection.core.Seen
+    fields:
+      - {name: agent_id, type: Optional<String>}
+commands:
+  - name: selection.core.Receive
+    input:
+      - {name: agent_id, type: Optional<String>}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: received
+        emits: [selection.core.Seen]
+        payload:
+          selection.core.Seen: {agent_id: input.agent_id}
+bindings:
+  - id: choose
+    when:
+      event: selection.core.Arrived
+    invoke:
+      command: selection.core.Receive
+    selection_inputs:
+      - name: legs
+        from: event.data
+        as: List<Optional<selection.core.Leg>>
+    selections:
+      - name: first_identified
+        first:
+          in: legs
+          where: 'item.id != \"\"'
+    mapping:
+      agent_id: {selection: first_identified, path: [id]}
+      note: event.note
+    delivery: at_most_once
+    on_failure: drop
+";
+    let ir = fixture(&[("selection.yaml", text)]);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| {
+        panic!(
+            "a selecting binding's plain copy into an Optional is emitted: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let code = synthesis
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains("        note: Some(event.note.clone()),\n"),
+        "`note` is wrapped inside the selecting transformation:\n{code}"
+    );
+    let directory = scratch("adv-e3-wrap-selection");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+/// Control, outside the wrap: the committed selection fixture, unchanged, whose `where` compares
+/// an Optional enum member of the selected item (`item.domain == Internal`). The Rust target
+/// reports it generated, so its workspace has to compile.
+#[test]
+fn adv_e3_control_a_selection_over_an_enum_member_compiles() {
+    let ir = fixture(&[(
+        "selection.yaml",
+        include_str!("fixtures/binding-selection.yaml"),
+    )]);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| {
+        panic!(
+            "the selection fixture is emitted: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let code = synthesis
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !code.contains("EnumVariant {"),
+        "an enum arm of the selection predicate spells the variant as text, not a Debug print of \
+         the domain value:\n{code}"
+    );
+    let directory = scratch("adv-e3-control-selection-enum");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+/// A member read through an accessor (`event.doc.title`) into an Optional input, and a plain
+/// copy beside it: the accessor's own lift and the copy's wrap in one transformation.
+#[test]
+fn adv_e3_an_accessor_and_a_wrapped_copy_into_optional_inputs_compile() {
+    let ir = fixture(&[(
+        "demo.yaml",
+        "format: ess/33
+system: demo
+version: v1
+domain: demo.core
+types:
+  - name: demo.core.Doc
+    kind: struct
+    fields:
+      - {name: title, type: String}
+      - {name: note, type: Optional<String>}
+events:
+  - name: demo.core.Fired
+    fields:
+      - {name: message_id, type: String}
+      - {name: doc, type: demo.core.Doc}
+  - name: demo.core.Handled
+    fields:
+      - {name: message_id, type: String}
+commands:
+  - name: demo.core.Fire
+    input:
+      - {name: message_id, type: String}
+      - {name: doc, type: demo.core.Doc}
+    outcomes:
+      - name: fired
+        emits: [demo.core.Fired]
+        payload:
+          demo.core.Fired: {message_id: input.message_id, doc: input.doc}
+  - name: demo.core.Handle
+    input:
+      - {name: message_id, type: String}
+      - {name: title, type: Optional<String>}
+      - {name: note, type: Optional<String>}
+      - {name: doc, type: Optional<demo.core.Doc>}
+    outcomes:
+      - name: done
+        emits: [demo.core.Handled]
+        payload:
+          demo.core.Handled: {message_id: input.message_id}
+components:
+  - component: worker
+    owns: {domains: [demo.core]}
+    accepts: {commands: [demo.core.Fire, demo.core.Handle]}
+    publishes: {events: [demo.core.Fired, demo.core.Handled]}
+    reached_by: network
+bindings:
+  - id: handled
+    when: {event: demo.core.Fired}
+    invoke: {command: demo.core.Handle}
+    mapping:
+      message_id: event.message_id
+      title: event.doc.title
+      note: event.doc.note
+      doc: event.doc
+    delivery: at_least_once
+    on_failure: retry
+",
+    )]);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| {
+        panic!(
+            "an accessor and a plain copy into Optional inputs are emitted: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let code = synthesis
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains("        doc: Some(event.doc.clone()),\n"),
+        "`doc` is wrapped:\n{code}"
+    );
+    let directory = scratch("adv-e3-wrap-accessor");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+// Adversary pass 2 on the same story: the correction of `src/rust/selection.rs`, where an enum
+// arm of a selection predicate writes the variant's wire spelling, run rather than read.
+
+/// The committed selection fixture with `Internal` given `variant` as its declaration. Its
+/// predicate compares the variant's name (`item.domain == Internal`), the spelling the compiler
+/// checks a predicate literal against, and the spelling a binding condition (`condition.rs`,
+/// `matches!`) and a guard (`behaviour.rs`, `Kind::Enum` names) compare.
+fn adv2_e3_selection_model(variant: &str) -> String {
+    include_str!("fixtures/binding-selection.yaml")
+        .replacen("format: ess/3\n", "format: ess/33\n", 1)
+        .replacen(
+            "variants: [Internal, External]",
+            &format!("variants: [{variant}, External]"),
+            1,
+        )
+}
+
+/// Runs the generated `choose` on two legs: a first leg with an id and no domain, then an
+/// `Internal` leg. `first_agent` selects the `Internal` leg, so both answers carry its id; a
+/// predicate that never matches `Internal` falls back to `first_identified`, the first leg.
+fn adv2_e3_choose_selects_the_internal_leg(variant: &str, label: &str) {
+    let ir = fixture(&[("selection.yaml", &adv2_e3_selection_model(variant))]);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| {
+        panic!(
+            "the selection fixture is emitted: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let directory = scratch(label);
+    write_emission(&directory, &synthesis);
+    let tests = directory.join("crates/selection-system/tests");
+    std::fs::create_dir_all(&tests).expect("create the harness directory");
+    std::fs::write(
+        tests.join("choose.rs"),
+        r#"use selection_types::core;
+
+#[test]
+fn the_internal_leg_is_the_agent() {
+    let leg = |id: &str, domain| {
+        Some(core::Leg { id: id.to_owned(), domain, source: None, from: String::new() })
+    };
+    let event = core::Arrived {
+        data: vec![leg("fallback", None), leg("internal-leg", Some(core::Domain::Internal))],
+    };
+    let chosen = selection_system::choose(&event).expect("every leg is valid");
+    assert_eq!(chosen.agent_id.as_deref(), Some("internal-leg"), "first_agent selects the Internal leg");
+    assert_eq!(chosen.external_id.as_deref(), Some("internal-leg"), "external falls back to agent");
+}
+"#,
+    )
+    .expect("write the harness");
+    let output = Command::new(std::env::var_os("CARGO").expect("Cargo executable"))
+        .current_dir(&directory)
+        .args([
+            "test",
+            "--offline",
+            "--workspace",
+            "--test",
+            "choose",
+            "--target-dir",
+            "target",
+        ])
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env("CARGO_INCREMENTAL", "0")
+        .output()
+        .expect("the generated harness runs");
+    assert!(
+        output.status.success(),
+        "the generated selection does not select the Internal leg for `{variant}` ({}):\n{}\n{}",
+        directory.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Control: bare variants, whose wire spelling is the name.
+#[test]
+fn adv2_e3_a_selection_over_a_bare_enum_variant_selects_it() {
+    adv2_e3_choose_selects_the_internal_leg("Internal", "adv2-e3-selection-bare");
+}
+
+/// The variant declares its own wire spelling. The predicate literal is the name `Internal`, the
+/// generated arm now yields the wire spelling `internal`, so the comparison never holds.
+#[test]
+fn adv2_e3_a_selection_over_a_wire_named_enum_variant_selects_it() {
+    adv2_e3_choose_selects_the_internal_leg(
+        "{name: Internal, wire: internal}",
+        "adv2-e3-selection-wire",
+    );
+}
+
+/// The Go selection the correction names as its model, on the same wire-named variant: its arm
+/// for `Internal` answers `"internal"` and `selectionCompare` compares that with the literal
+/// `"Internal"`, so the Go leg is never selected either. The arm has to answer the spelling the
+/// predicate compares.
+#[test]
+fn adv2_e3_the_go_selection_over_a_wire_named_variant_answers_the_compared_spelling() {
+    let ir = fixture(&[(
+        "selection.yaml",
+        &adv2_e3_selection_model("{name: Internal, wire: internal}"),
+    )]);
+    let go = synthesize_for(&ir, Target::Go).unwrap_or_else(|failure| {
+        panic!(
+            "the selection fixture is emitted for Go: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let code = go
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains("selectionCompare(read0, present0, \"Internal\", true)"),
+        "the predicate compares the variant's name:\n{code}"
+    );
+    assert!(
+        code.contains("case core.DomainInternal: return \"Internal\", true, true"),
+        "the arm answers the spelling the predicate compares, not the wire spelling:\n{code}"
+    );
+}
+
+/// Inline, not a file under `tests/fixtures/`: every model file there is in the synthesis
+/// sources digest.
+const ADV2_E3_SHAPES: &str = r#"format: ess/33
+system: shapes
+version: v1
+domain: shapes.core
+types:
+  - name: shapes.core.Domain
+    kind: enum
+    variants: [{name: Internal, wire: "in\"ter\\nal"}, External]
+  - {name: shapes.core.Zone, kind: newtype, of: shapes.core.Domain}
+  - name: shapes.core.Inner
+    kind: struct
+    fields:
+      - {name: kind, type: shapes.core.Domain}
+  - name: shapes.core.Leg
+    kind: struct
+    fields:
+      - {name: id, type: String}
+      - {name: inner, type: shapes.core.Inner}
+      - {name: zone, type: shapes.core.Zone}
+      - {name: maybe, type: Optional<shapes.core.Inner>}
+events:
+  - name: shapes.core.Arrived
+    fields:
+      - {name: legs, type: List<shapes.core.Leg>}
+  - name: shapes.core.Seen
+    fields:
+      - {name: agent_id, type: Optional<String>}
+commands:
+  - name: shapes.core.Receive
+    input:
+      - {name: agent_id, type: Optional<String>}
+      - {name: kind, type: Optional<shapes.core.Domain>}
+    outcomes:
+      - name: received
+        emits: [shapes.core.Seen]
+        payload:
+          shapes.core.Seen: {agent_id: input.agent_id}
+bindings:
+  - id: choose
+    when: {event: shapes.core.Arrived}
+    invoke: {command: shapes.core.Receive}
+    selection_inputs:
+      - {name: legs, from: event.legs, as: List<shapes.core.Leg>}
+    selections:
+      - name: nested
+        first:
+          in: legs
+          where:
+            any:
+              - item.inner.kind == Internal
+              - item.zone != External
+              - all: [defined(item.maybe.kind), item.maybe.kind == Internal]
+      - name: other
+        first: {in: legs, excluding: [nested], where: item.inner.kind != Internal}
+    mapping:
+      agent_id: {selection: nested, path: [id]}
+      kind: {selection: other, path: [inner, kind]}
+    delivery: at_most_once
+    on_failure: drop
+"#;
+
+/// Enum members reached through a nested struct, a newtype over the enum and an Optional struct,
+/// compared with `==` and `!=`, beside a wire spelling that needs escaping in a Rust string, and a
+/// mapping that copies a selected enum member into an Optional input.
+#[test]
+fn adv2_e3_selection_over_nested_newtype_and_escaped_enum_members_compiles() {
+    let ir = fixture(&[("shapes.yaml", ADV2_E3_SHAPES)]);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| {
+        panic!(
+            "the selection shapes are emitted: {}",
+            failure.to_canonical_json()
+        )
+    });
+    let directory = scratch("adv2-e3-selection-shapes");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+/// A vault issuing a one-time secret on a request, through a binding whose failure policy is
+/// selected per refusal; `{on_failure}` is that policy and `{extra}` any further binding.
+const ESCALATION_MODEL: &str = r"format: ess/22
+system: credentials
+version: v1
+domain: credentials.api
+types:
+  - {name: credentials.api.HolderId, kind: newtype, of: String}
+errors:
+  - {name: credentials.api.Unavailable, fields: []}
+  - {name: credentials.api.Denied, fields: []}
+events:
+  - name: credentials.api.Requested
+    fields: [{name: holder, type: credentials.api.HolderId}]
+  - name: credentials.api.IssueEscalated
+    fields: [{name: holder, type: credentials.api.HolderId}]
+  - name: credentials.api.Noted
+    fields: [{name: holder, type: credentials.api.HolderId}]
+commands:
+  - name: credentials.api.Request
+    input: [{name: holder, type: credentials.api.HolderId}]
+    outcomes:
+      - name: requested
+        emits: [credentials.api.Requested]
+        payload:
+          credentials.api.Requested: {holder: input.holder}
+  - name: credentials.api.Note
+    input: [{name: holder, type: credentials.api.HolderId}]
+    outcomes:
+      - name: noted
+        emits: [credentials.api.Noted]
+        payload:
+          credentials.api.Noted: {holder: input.holder}
+  - name: credentials.api.Issue
+    input: [{name: holder, type: credentials.api.HolderId}]
+    response: [{name: secret, type: String}]
+    outcomes:
+      - {name: unavailable, external: the vault answers a server error, error: credentials.api.Unavailable}
+      - {name: denied, external: the vault refuses the holder, error: credentials.api.Denied}
+      - {name: issued, returns: true, one_time_response: [secret]}
+components:
+  - component: vault-service
+    owns:
+      domains: [credentials.api]
+    accepts:
+      commands: [credentials.api.Request, credentials.api.Note, credentials.api.Issue]
+    publishes:
+      events: [credentials.api.Requested, credentials.api.IssueEscalated, credentials.api.Noted]
+    reached_by: network
+bindings:
+  - id: issue-on-request
+    when:
+      event: credentials.api.Requested
+    invoke:
+      command: credentials.api.Issue
+    mapping:
+      holder: event.holder
+    delivery: at_least_once
+    on_failure:
+{on_failure}
+{extra}";
+
+/// Every refusal of `Issue` is dropped or retried, so the declared escalation answers none.
+const NOTHING_ESCALATES: &str = "      drop: [denied]\n      retry: {outcomes: [unavailable], attempts: 3}\n      escalate:\n        emits: credentials.api.IssueEscalated\n        except: [denied, unavailable]";
+
+/// `denied` escalates, `unavailable` is retried.
+const DENIED_ESCALATES: &str = "      retry: {outcomes: [unavailable], attempts: 3}\n      escalate:\n        emits: credentials.api.IssueEscalated\n        except: [unavailable]";
+
+/// A universal escalation on `Note`, a command that cannot refuse.
+const ESCALATES_WHAT_CANNOT_REFUSE: &str = "  - id: note-on-request\n    when:\n      event: credentials.api.Requested\n    invoke:\n      command: credentials.api.Note\n    mapping:\n      holder: event.holder\n    delivery: at_least_once\n    on_failure:\n      escalate:\n        emits: credentials.api.IssueEscalated\n";
+
+fn escalation_model(on_failure: &str, extra: &str) -> EssIr {
+    fixture(&[(
+        "vault.yaml",
+        &ESCALATION_MODEL
+            .replace("{on_failure}", on_failure)
+            .replace("{extra}", extra),
+    )])
+}
+
+/// The generated `System` keeps an `obligations` field only where the pump reads it: an
+/// escalation no refusal selects, or one on a command that cannot refuse, is never called, so it
+/// leaves no field `-D warnings` refuses as never read. Read from the source, compiling nothing.
+#[test]
+fn the_system_keeps_its_obligations_only_where_the_pump_calls_one() {
+    for (case, on_failure, extra, called) in [
+        ("nothing escalates", NOTHING_ESCALATES, "", false),
+        ("denied escalates", DENIED_ESCALATES, "", true),
+        (
+            "escalates what cannot refuse",
+            NOTHING_ESCALATES,
+            ESCALATES_WHAT_CANNOT_REFUSE,
+            false,
+        ),
+    ] {
+        let ir = escalation_model(on_failure, extra);
+        for layout in [OutputLayout::Workspace, OutputLayout::Crate] {
+            let synthesis = synthesize_laid_out(&ir, Target::Rust, layout)
+                .unwrap_or_else(|failure| panic!("{case}: {failure}"));
+            let system = synthesis
+                .artifacts
+                .values()
+                .find(|artifact| artifact.contents.contains("pub struct System<"))
+                .unwrap_or_else(|| panic!("{case}: no generated System"));
+            let field = system
+                .contents
+                .contains("\n    obligations: Obligations,\n");
+            let read = system.contents.contains("self.obligations.");
+            assert_eq!(
+                field, read,
+                "{case} ({layout:?}): field {field}, read {read}"
+            );
+            assert_eq!(read, called, "{case} ({layout:?})");
+        }
+    }
+}
+
+/// The same vault, with no refusal selecting its escalation, type-checks under `-D warnings`.
+#[test]
+fn a_system_whose_escalation_no_refusal_selects_compiles_without_warnings() {
+    let ir = escalation_model(NOTHING_ESCALATES, "");
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+    let directory = scratch("escalation-nothing-selects");
+    write_emission(&directory, &synthesis);
+    check_generated_denying(&directory, None, true);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+// Adversary pass 2 on E1: every type that spells `System` must agree on its `Obligations`
+// parameter, in every layout and target that spells it.
+
+/// The vault without its one-time key, which the web target still refuses, and with a universal
+/// `drop` on `Issue`, as the web target refuses a policy selected per refusal.
+fn adv2_plain_escalation_model(extra: &str) -> EssIr {
+    fixture(&[(
+        "vault.yaml",
+        &ESCALATION_MODEL
+            .replace(", one_time_response: [secret]", "")
+            .replace("    on_failure:\n{on_failure}", "    on_failure: drop")
+            .replace("{extra}", extra),
+    )])
+}
+
+/// The Rust workspace and the web bridge beside it, type-checked for wasm.
+fn adv2_check_web(ir: &EssIr, name: &str) {
+    let directory = scratch(name);
+    let rust = directory.join("generated/rust/credentials");
+    let web = directory.join("generated/web/credentials");
+    write_emission(
+        &rust,
+        &synthesize(ir).unwrap_or_else(|failure| panic!("{}", details(&failure))),
+    );
+    write_emission(
+        &web,
+        &synthesize_for(ir, Target::Web).unwrap_or_else(|failure| panic!("{}", details(&failure))),
+    );
+    check_generated_for(&web, Some("wasm32-unknown-unknown"));
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// The Rust output in `layout`, type-checked under `-D warnings`.
+fn adv2_check_rust(ir: &EssIr, layout: OutputLayout, name: &str) {
+    let synthesis = synthesize_laid_out(ir, Target::Rust, layout)
+        .unwrap_or_else(|failure| panic!("{name}: {failure}"));
+    let directory = scratch(name);
+    write_emission(&directory, &synthesis);
+    check_generated_denying(&directory, None, true);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A universal `escalate` on a command that cannot refuse: the pump never calls it, so `System`
+/// has no `Obligations` parameter, and the web bridge's `Bound` impl must not name one.
+#[test]
+fn adv2_e1_web_bridge_over_an_escalation_on_a_command_that_cannot_refuse_compiles() {
+    let ir = adv2_plain_escalation_model(ESCALATES_WHAT_CANNOT_REFUSE);
+    adv2_check_web(&ir, "adv2-web-cannot-refuse");
+}
+
+/// The one-time vault whose `denied` escalates, as one crate, under `-D warnings`.
+#[test]
+fn adv2_e1_one_time_vault_whose_refusal_escalates_compiles_as_one_crate() {
+    let ir = escalation_model(DENIED_ESCALATES, "");
+    adv2_check_rust(&ir, OutputLayout::Crate, "adv2-crate-denied-escalates");
+}
+
+/// The one-time vault whose `denied` escalates, as a workspace, under `-D warnings`.
+#[test]
+fn adv2_e1_one_time_vault_whose_refusal_escalates_compiles_as_a_workspace() {
+    let ir = escalation_model(DENIED_ESCALATES, "");
+    adv2_check_rust(
+        &ir,
+        OutputLayout::Workspace,
+        "adv2-workspace-denied-escalates",
+    );
+}
+
+/// The one-time vault with no escalation the pump calls, as one crate, under `-D warnings`.
+#[test]
+fn adv2_e1_one_time_vault_whose_escalation_no_refusal_selects_compiles_as_one_crate() {
+    let ir = escalation_model(NOTHING_ESCALATES, "");
+    adv2_check_rust(&ir, OutputLayout::Crate, "adv2-crate-nothing-selects");
+}
+
+/// Two bindings, only one of whose escalations the pump calls, as a workspace and as one crate.
+#[test]
+fn adv2_e1_one_time_vault_with_one_called_and_one_uncalled_escalation_compiles() {
+    let ir = escalation_model(DENIED_ESCALATES, ESCALATES_WHAT_CANNOT_REFUSE);
+    adv2_check_rust(&ir, OutputLayout::Workspace, "adv2-workspace-mixed");
+    adv2_check_rust(&ir, OutputLayout::Crate, "adv2-crate-mixed");
+}
+
+/// The escalation the pump never calls still owes its trait and stub, as the plan says.
+#[test]
+fn adv2_e1_an_uncalled_escalation_keeps_its_trait_and_stub() {
+    let ir = escalation_model(NOTHING_ESCALATES, ESCALATES_WHAT_CANNOT_REFUSE);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+    let system = synthesis
+        .artifacts
+        .values()
+        .find(|artifact| artifact.contents.contains("pub struct System<"))
+        .expect("a generated System");
+    for owed in ["IssueOnRequestEscalation", "NoteOnRequestEscalation"] {
+        assert!(
+            system.contents.contains(&format!("pub trait {owed}")),
+            "{owed}: trait missing"
+        );
+        assert!(
+            system
+                .contents
+                .contains(&format!("impl {owed} for Unimplemented")),
+            "{owed}: stub missing"
+        );
+    }
+    assert!(!system.contents.contains("self.obligations."));
 }

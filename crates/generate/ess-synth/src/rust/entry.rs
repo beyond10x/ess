@@ -39,7 +39,7 @@ pub(super) fn binary(
             };
             arguments.push(format!("{package}::{port}::new({behavior})"));
         }
-        if super::system::has_obligations(ir, plan) {
+        if super::system::takes_obligations(ir, plan) {
             arguments.push(format!("{system}::obligations::Unimplemented"));
         }
         let _ = writeln!(out, "let mut system = {system}::System::new({});\nlet mode = options.callers;\neprintln!(\"{{}}\", if mode == \"actor-header\" {{ r#\"{{\"format\":\"ess/1\",\"callers\":\"actor-header\",\"demonstration\":true}}\"# }} else {{ r#\"{{\"format\":\"ess/1\",\"callers\":\"none\"}}\"# }});", arguments.join(", "));
