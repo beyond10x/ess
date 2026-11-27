@@ -9,7 +9,7 @@ refs:
   reference: beyond10x/ess#202
 relations:
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 3}
@@ -139,3 +139,25 @@ Each runs in a test that synthesizes a small model once and not per case, under 
   `unwitnessed`.
 - An update that writes the value a row already stores is sent a different value where the type has one.
 - A suite of a model with no such pair is byte-identical to the previous release; a moved pin names its cause.
+
+## A reproduction in 55 lines, 2026-11-27
+
+One of the shapes above is reproduced on ess 0.99.2 in a specification of 55 lines
+(`.engineering/repro/sets-retarget-mutants-get-a-separating-witness/`). One command has an `Integer` input `a`, an
+`Integer` input `b` and a `String` identity input; its creating outcome sets stored field `a` from `input.a` and `b`
+from `input.b`; a view reads both fields.
+
+- **Trigger.** A first outcome that refuses with an `exists` row refusal on the command's own entity
+  (`when_related` with `exists: true`, matched on the identity). With it, synthesis gives every sibling `Integer` of the
+  command one value in each scenario (1 and 1, 2 and 2, 3 and 3, 4 and 4).
+- **Red.** `ess verify conform mutate --path . --target interpreted --class sets-retarget` from the repro directory
+  answers 2 mutants, 2 unwitnessed (`ESS-MUTATE-004`, the mutant's suite equals the baseline), exit 3.
+- **Without the trigger.** With the `exists` outcome removed the same command is sent 1 and 2, and both mutants are
+  killed. This is the plain shape the section above found already separated.
+- **Not needed for it.** `Integer` constraints, `Boolean` inputs, a second command, lifecycle transitions, a newtype
+  identity. A model of one command, one entity and one view is enough.
+
+This narrows the readings above: none of the type, the guard-only read or the invariant is needed, and the one thing
+the reproduction adds is the refusal on the command's own entity. The cause is still not found. The first step of the
+story is a test on this model, red on 0.99.2 (checked there) and green when the two `Integer` inputs differ in every
+scenario the command is sent, with both mutants killed; a check on `main` at 0.99.8 is still to be run.

@@ -1,0 +1,1 @@
+Run from this directory with ess 0.99.2: `ess verify conform mutate --path . --target interpreted --class sets-retarget` answers 2 mutants, 2 unwitnessed (ESS-MUTATE-004), exit 3; removing the `exists` outcome gives 1 and 2 on the stored values and both mutants killed.
