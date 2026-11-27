@@ -31,7 +31,7 @@ scope:
   path: docs/design/composition-type-conformance.md
 - confidence: inferred
   path: docs/design/system-issued-commands.md
-revision: 3
+revision: 5
 ---
 ## Outcome
 
@@ -152,25 +152,41 @@ binding only).
 
 - **accept, redesigned**: the need is real and a gap; the requester's "include with its own prefix"
   is one of two shapes, decided by CS-D1.
-- CS-D1, open, an architecture decision (put to the owner through the operator session). How a run
-  holds two systems:
-  - A: a system includes a second system's domains, each keeping its own prefix, through a new key of
-    `system.yaml` (a source format version). The binding stays in the including system's source.
-    Costs: the source format gains a pin of another system, which `docs/design/composition-contract-roles.md`
-    ("Where it lives") refused for roles because the source format has no construct that pins another
-    specification; the compiler's `check_namespace` and the IR gain a system dimension for domains.
-  - B (recommended): a composition document above both systems (`ess-composition/N`) holds the
-    cross-system binding: `services` already pins each system by version and digest, `conformances`
-    and `roles` already relate them, and each system's own source stays valid alone, unchanged, with
-    its own prefix and `naming.wire`. Costs: a composition format version, and the composition gains
-    an executable construct, which `docs/design/composition-contract-roles.md` kept out of the
-    source format on purpose; the run takes a composition, not a `system.yaml`.
-  - C: change nothing; the rename path stays and the two refusals stay. The consumer keeps a
-    stand-in step outside the specification, which moves a checked figure out of it.
-  B wins: it adds no pin to the source format, reuses the construct that already relates two pinned
-  systems, and leaves both systems byte-identical. A would also settle where
-  `story:cross-system-relation-target`'s link lives; under B that story's composition option is the
-  same document.
+- CS-D1, **decided 2026-11-27 17:10 CET** by the owner (relayed by the operator session), an
+  architecture decision. How a run holds two systems: a composition document above both systems.
+  The compiler merges the two systems' declarations into one IR in which they do not collide; a
+  runtime reads that composition document's directory the way it reads a `system.yaml` today; a
+  cross-system binding arrives in the IR as an ordinary binding; and the `system: true` actor of
+  CS-D3 arrives through the IR's actor grants. Each system's own source stays valid alone, unchanged,
+  with its own prefix and `naming.wire`. Costs, as drafted: a composition format version, and the
+  composition gains an executable construct, which `docs/design/composition-contract-roles.md` kept
+  out of the source format on purpose; the run takes a composition, not a `system.yaml`.
+  - Letter: the relayed answer was "A". In this story the composition-document option below is
+    lettered B (and was the recommended one); option A below is the one that adds a key to
+    `system.yaml`, and it is not taken. The decision is the content above, not the letter.
+  - Out of scope, and an architecture change that would need its own decision: a runtime that loads
+    two IRs and joins them itself.
+  - Before the design settles, the IR delta is drafted and shown to the runtime that will read it:
+    the binding whose trigger and target belong to different systems, the actor grant that carries
+    `system: true` across, and the prefixed names that keep the two systems' declarations apart. The
+    design page is not final until that runtime has answered on the draft.
+  - The three options as put to the owner:
+    - A: a system includes a second system's domains, each keeping its own prefix, through a new key
+      of `system.yaml` (a source format version). The binding stays in the including system's
+      source. Costs: the source format gains a pin of another system, which
+      `docs/design/composition-contract-roles.md` ("Where it lives") refused for roles because the
+      source format has no construct that pins another specification; the compiler's
+      `check_namespace` and the IR gain a system dimension for domains.
+    - B (recommended, taken): a composition document above both systems (`ess-composition/N`) holds
+      the cross-system binding: `services` already pins each system by version and digest,
+      `conformances` and `roles` already relate them, and each system's own source stays valid alone,
+      unchanged, with its own prefix and `naming.wire`.
+    - C: change nothing; the rename path stays and the two refusals stay. The consumer keeps a
+      stand-in step outside the specification, which moves a checked figure out of it.
+  - B won: it adds no pin to the source format, reuses the construct that already relates two pinned
+    systems, and leaves both systems byte-identical. It also settles where
+    `story:cross-system-relation-target`'s link lives: that story's composition option is the same
+    document.
 - CS-D2, open. How a cross-system binding's field types conform:
   - A (recommended): a declared conformance between the named types, in the composition's
     `conformances:` entries, with the direction `ess-composition/6` already decides (the sender
@@ -190,7 +206,8 @@ binding only).
   `[conflicting_declaration] ... a command the system issues itself`. Alternatives not taken: B, the
   target drops the grant when composed (edits the second specification); C, a stand-in step outside
   the specification. The refusal stays for a binding that invokes such a command inside one system:
-  `docs/design/system-issued-commands.md` ("Two causes of one command need their own design").
+  `docs/design/system-issued-commands.md` ("Two causes of one command need their own design"). With
+  CS-D1 decided, the actor reaches the runtime through the IR's actor grants.
 
 ## Scope
 
@@ -202,3 +219,21 @@ binding only).
 - inferred: docs/design/composition-contract-roles.md
 - inferred: docs/design/system-issued-commands.md
 - inferred: CHANGELOG.md
+
+## Acceptance after CS-D1
+
+CS-D1 decided on 2026-11-27 (composition document, one merged IR). These lines refine the Acceptance
+above and replace none of it:
+
+- `a_composition_of_two_systems_compiles_to_one_ir_without_colliding_declarations`: the test model's
+  composition document, read as one run, compiles to one IR in which both systems' domains, types,
+  commands and events are present under their own prefixes and nothing is a `[conflicting_declaration]`;
+  each system alone still compiles to the bytes it had.
+- `a_runtime_reads_a_composition_directory_as_it_reads_a_system_yaml`: the same loader entry takes the
+  composition's directory and answers the one IR; no second loader and no join of two IRs.
+- `the_cross_system_binding_is_an_ordinary_binding_in_the_ir`: the compiled form of the binding is the
+  IR's existing binding shape, with both ends named by their prefixed names; no new binding kind.
+- `the_system_actor_of_the_target_reaches_the_ir_through_its_actor_grants`: the `system: true` grant
+  of the target's command is in the IR's actor grants, and the cross-system binding counts as that actor.
+- The IR delta (the binding, the actor grant, the prefixed names) is written as a draft and shown to
+  the runtime that will read it before the design page is final; the story records its answer.
