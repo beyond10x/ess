@@ -853,6 +853,52 @@ pub fn check(root: &Path, changelog: &str) -> Result<String, String> {
     })
 }
 
+/// The entries `changelog` lists under `## [Unreleased]`, each with its 1-based line: every line
+/// starting `- ` or `* ` from that heading to the next `## ` heading.
+pub fn unreleased_entries(changelog: &str) -> Vec<(usize, &str)> {
+    let mut inside = false;
+    let mut entries = Vec::new();
+    for (index, line) in changelog.lines().enumerate() {
+        if line.starts_with("## ") {
+            inside = line.trim_end() == "## [Unreleased]";
+            continue;
+        }
+        if inside && (line.starts_with("- ") || line.starts_with("* ")) {
+            entries.push((index + 1, line));
+        }
+    }
+    entries
+}
+
+/// `cargo xtask release unreleased`: refuses a changelog that lists an entry under
+/// `[Unreleased]`.
+///
+/// A tag's tree is all released, so what it ships stands in its dated section. `release.yml`
+/// runs this on a tag push and no pull-request gate does, because `main` lists unreleased entries
+/// between releases. 0.99.8 merged `main` and shipped 25 entries its tree still listed there.
+pub fn unreleased(changelog: &str) -> Result<String, String> {
+    let entries = unreleased_entries(changelog);
+    if entries.is_empty() {
+        return Ok("release: CHANGELOG.md lists no entry under [Unreleased]\n".to_owned());
+    }
+    let count = match entries.len() {
+        1 => "1 entry".to_owned(),
+        count => format!("{count} entries"),
+    };
+    let lines: Vec<String> = entries
+        .iter()
+        .map(|(line, text)| {
+            let shown: String = text.chars().take(100).collect();
+            format!("CHANGELOG.md:{line}: {shown}")
+        })
+        .collect();
+    Err(format!(
+        "CHANGELOG.md lists {count} under [Unreleased] on a tagged tree; move each into the dated \
+         section of the release that ships it:\n{}",
+        lines.join("\n")
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1566,5 +1612,26 @@ Full entry: [CHANGELOG.md, 0.97.0](https://github.com/beyond10x/ess/blob/0.97.0/
         assert!(refusal.contains("release-notes/README.md"), "{refusal}");
         assert!(refusal.contains("release-notes/drafts"), "{refusal}");
         assert!(!refusal.contains("release-notes/0.98.0.md"), "{refusal}");
+    }
+
+    #[test]
+    fn a_tagged_tree_with_an_unreleased_entry_is_refused_at_its_line() {
+        let changelog = CHANGELOG.replace(
+            "## [Unreleased]\n\n",
+            "## [Unreleased]\n\n### Added\n\n- A chart takes `sort: {by, dir}`.\n\n",
+        );
+        let refusal = unreleased(&changelog).expect_err("an unreleased entry");
+        assert!(refusal.contains("1 entry under [Unreleased]"), "{refusal}");
+        assert!(
+            refusal.contains("CHANGELOG.md:7: - A chart takes `sort: {by, dir}`."),
+            "{refusal}"
+        );
+    }
+
+    #[test]
+    fn a_tagged_tree_whose_entries_all_stand_in_dated_sections_passes() {
+        assert!(unreleased_entries(CHANGELOG).is_empty());
+        let report = unreleased(CHANGELOG).expect("every entry is dated");
+        assert!(report.contains("no entry under [Unreleased]"), "{report}");
     }
 }

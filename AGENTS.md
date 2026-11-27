@@ -484,6 +484,8 @@ within one hour of the reproduction.
 1. Branch from the latest release tag, or from the newest release head not yet released.
 2. Write the failing regression test first, then the fix.
 3. Bump the patch version and add its `CHANGELOG.md` section and its `release-notes/<version>.md`.
+   A hotfix that merges `main` moves `main`'s `[Unreleased]` bullets into its own section, since
+   the tag's release run refuses a tree that lists one there (`cargo xtask release unreleased`).
 4. Before the tag, run only the regression test and the touched crates' tests and Clippy: no local
    full gate.
 5. Commit with `b10x-gates bot`, create an annotated tag with `b10x-gates bot -- tag -a`, and push
