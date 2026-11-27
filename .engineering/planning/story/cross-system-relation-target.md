@@ -6,7 +6,7 @@ status: draft
 title: A relation may target an entity another system declares
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -28,3 +28,7 @@ entities (a merge request's author is a person).
 
 Design to settle before implementation: whether the relation lives in the importing system's
 entity (with a composition reference) or in a composition document that joins the two systems.
+
+Related request, 2026-11-27: `story:a-binding-maps-an-event-of-one-system-to-a-command-of-another-system-in-one-run`
+asks for a binding across two systems. Its decision CS-D1 (an included system, or a composition
+document above both) is the same open question as the one above: the two stories take one answer.
