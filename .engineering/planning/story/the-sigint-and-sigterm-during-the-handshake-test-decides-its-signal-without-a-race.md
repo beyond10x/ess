@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:a-killed-childs-outcome-says-which-signal-ended-it
-revision: 2
+revision: 3
 ---
 ## Defect
 
@@ -75,3 +75,7 @@ What the code and the design say:
 - cited: `crates/edge/ess-cli/tests/adversary_process_target_pass2.rs` (269-296), `crates/edge/ess-cli/src/target_process.rs` (50-92, only
   under PT-D1 B)
 - inferred: `docs/design/conformance-target-process.md` (172-182, only under PT-D1 B)
+
+## Delivery
+
+Fixed in 0.99.8 (2026-11-27), and not by a change to the test: the cause was in `ess`. Every thread of `ess` took the ending signals, so the SIGINT's and the SIGTERM's handlers could run on two threads at once, and the SIGTERM's was recorded first when the SIGINT's thread was preempted; this replaces the hypothesis above about the order of a pending set in the iterator. Only the thread that watches for SIGINT, SIGTERM and SIGHUP takes them now, so they are handled one at a time in the order the kernel delivers them. `ess-cli` depends on the `nix` crate (=0.31.4, feature `signal`) for the thread's signal mask, which the workspace's ban on `unsafe` allows. CI shard 12 failed the test with signal 15 in three runs of pull request 843 before the fix. The fix is part of the hotfix 0.99.8, pull request 843 (https://github.com/beyond10x/ess/pull/843), merged into `main` on 2026-11-27 09:23 CET as `e29c029fab`; the tag 0.99.8 is on `e29c029fab` (2026-11-27 09:26 CET); release run 45965734005 pending when this was written.
