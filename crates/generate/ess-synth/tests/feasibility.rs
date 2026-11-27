@@ -5,7 +5,9 @@ use ess_compiler::resolve::compile_locating;
 use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_synth::{synthesize, synthesize_for, Synthesis, SynthesisPlan, Target};
+use ess_synth::{
+    synthesize, synthesize_for, synthesize_laid_out, OutputLayout, Synthesis, SynthesisPlan, Target,
+};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -2602,4 +2604,240 @@ fn adv2_e3_selection_over_nested_newtype_and_escaped_enum_members_compiles() {
     let directory = scratch("adv2-e3-selection-shapes");
     write_emission(&directory, &synthesis);
     check_generated(&directory);
+}
+
+/// A vault issuing a one-time secret on a request, through a binding whose failure policy is
+/// selected per refusal; `{on_failure}` is that policy and `{extra}` any further binding.
+const ESCALATION_MODEL: &str = r"format: ess/22
+system: credentials
+version: v1
+domain: credentials.api
+types:
+  - {name: credentials.api.HolderId, kind: newtype, of: String}
+errors:
+  - {name: credentials.api.Unavailable, fields: []}
+  - {name: credentials.api.Denied, fields: []}
+events:
+  - name: credentials.api.Requested
+    fields: [{name: holder, type: credentials.api.HolderId}]
+  - name: credentials.api.IssueEscalated
+    fields: [{name: holder, type: credentials.api.HolderId}]
+  - name: credentials.api.Noted
+    fields: [{name: holder, type: credentials.api.HolderId}]
+commands:
+  - name: credentials.api.Request
+    input: [{name: holder, type: credentials.api.HolderId}]
+    outcomes:
+      - name: requested
+        emits: [credentials.api.Requested]
+        payload:
+          credentials.api.Requested: {holder: input.holder}
+  - name: credentials.api.Note
+    input: [{name: holder, type: credentials.api.HolderId}]
+    outcomes:
+      - name: noted
+        emits: [credentials.api.Noted]
+        payload:
+          credentials.api.Noted: {holder: input.holder}
+  - name: credentials.api.Issue
+    input: [{name: holder, type: credentials.api.HolderId}]
+    response: [{name: secret, type: String}]
+    outcomes:
+      - {name: unavailable, external: the vault answers a server error, error: credentials.api.Unavailable}
+      - {name: denied, external: the vault refuses the holder, error: credentials.api.Denied}
+      - {name: issued, returns: true, one_time_response: [secret]}
+components:
+  - component: vault-service
+    owns:
+      domains: [credentials.api]
+    accepts:
+      commands: [credentials.api.Request, credentials.api.Note, credentials.api.Issue]
+    publishes:
+      events: [credentials.api.Requested, credentials.api.IssueEscalated, credentials.api.Noted]
+    reached_by: network
+bindings:
+  - id: issue-on-request
+    when:
+      event: credentials.api.Requested
+    invoke:
+      command: credentials.api.Issue
+    mapping:
+      holder: event.holder
+    delivery: at_least_once
+    on_failure:
+{on_failure}
+{extra}";
+
+/// Every refusal of `Issue` is dropped or retried, so the declared escalation answers none.
+const NOTHING_ESCALATES: &str = "      drop: [denied]\n      retry: {outcomes: [unavailable], attempts: 3}\n      escalate:\n        emits: credentials.api.IssueEscalated\n        except: [denied, unavailable]";
+
+/// `denied` escalates, `unavailable` is retried.
+const DENIED_ESCALATES: &str = "      retry: {outcomes: [unavailable], attempts: 3}\n      escalate:\n        emits: credentials.api.IssueEscalated\n        except: [unavailable]";
+
+/// A universal escalation on `Note`, a command that cannot refuse.
+const ESCALATES_WHAT_CANNOT_REFUSE: &str = "  - id: note-on-request\n    when:\n      event: credentials.api.Requested\n    invoke:\n      command: credentials.api.Note\n    mapping:\n      holder: event.holder\n    delivery: at_least_once\n    on_failure:\n      escalate:\n        emits: credentials.api.IssueEscalated\n";
+
+fn escalation_model(on_failure: &str, extra: &str) -> EssIr {
+    fixture(&[(
+        "vault.yaml",
+        &ESCALATION_MODEL
+            .replace("{on_failure}", on_failure)
+            .replace("{extra}", extra),
+    )])
+}
+
+/// The generated `System` keeps an `obligations` field only where the pump reads it: an
+/// escalation no refusal selects, or one on a command that cannot refuse, is never called, so it
+/// leaves no field `-D warnings` refuses as never read. Read from the source, compiling nothing.
+#[test]
+fn the_system_keeps_its_obligations_only_where_the_pump_calls_one() {
+    for (case, on_failure, extra, called) in [
+        ("nothing escalates", NOTHING_ESCALATES, "", false),
+        ("denied escalates", DENIED_ESCALATES, "", true),
+        (
+            "escalates what cannot refuse",
+            NOTHING_ESCALATES,
+            ESCALATES_WHAT_CANNOT_REFUSE,
+            false,
+        ),
+    ] {
+        let ir = escalation_model(on_failure, extra);
+        for layout in [OutputLayout::Workspace, OutputLayout::Crate] {
+            let synthesis = synthesize_laid_out(&ir, Target::Rust, layout)
+                .unwrap_or_else(|failure| panic!("{case}: {failure}"));
+            let system = synthesis
+                .artifacts
+                .values()
+                .find(|artifact| artifact.contents.contains("pub struct System<"))
+                .unwrap_or_else(|| panic!("{case}: no generated System"));
+            let field = system
+                .contents
+                .contains("\n    obligations: Obligations,\n");
+            let read = system.contents.contains("self.obligations.");
+            assert_eq!(
+                field, read,
+                "{case} ({layout:?}): field {field}, read {read}"
+            );
+            assert_eq!(read, called, "{case} ({layout:?})");
+        }
+    }
+}
+
+/// The same vault, with no refusal selecting its escalation, type-checks under `-D warnings`.
+#[test]
+fn a_system_whose_escalation_no_refusal_selects_compiles_without_warnings() {
+    let ir = escalation_model(NOTHING_ESCALATES, "");
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+    let directory = scratch("escalation-nothing-selects");
+    write_emission(&directory, &synthesis);
+    check_generated_denying(&directory, None, true);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+// Adversary pass 2 on E1: every type that spells `System` must agree on its `Obligations`
+// parameter, in every layout and target that spells it.
+
+/// The vault without its one-time key, which the web target still refuses, and with a universal
+/// `drop` on `Issue`, as the web target refuses a policy selected per refusal.
+fn adv2_plain_escalation_model(extra: &str) -> EssIr {
+    fixture(&[(
+        "vault.yaml",
+        &ESCALATION_MODEL
+            .replace(", one_time_response: [secret]", "")
+            .replace("    on_failure:\n{on_failure}", "    on_failure: drop")
+            .replace("{extra}", extra),
+    )])
+}
+
+/// The Rust workspace and the web bridge beside it, type-checked for wasm.
+fn adv2_check_web(ir: &EssIr, name: &str) {
+    let directory = scratch(name);
+    let rust = directory.join("generated/rust/credentials");
+    let web = directory.join("generated/web/credentials");
+    write_emission(
+        &rust,
+        &synthesize(ir).unwrap_or_else(|failure| panic!("{}", details(&failure))),
+    );
+    write_emission(
+        &web,
+        &synthesize_for(ir, Target::Web).unwrap_or_else(|failure| panic!("{}", details(&failure))),
+    );
+    check_generated_for(&web, Some("wasm32-unknown-unknown"));
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// The Rust output in `layout`, type-checked under `-D warnings`.
+fn adv2_check_rust(ir: &EssIr, layout: OutputLayout, name: &str) {
+    let synthesis = synthesize_laid_out(ir, Target::Rust, layout)
+        .unwrap_or_else(|failure| panic!("{name}: {failure}"));
+    let directory = scratch(name);
+    write_emission(&directory, &synthesis);
+    check_generated_denying(&directory, None, true);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A universal `escalate` on a command that cannot refuse: the pump never calls it, so `System`
+/// has no `Obligations` parameter, and the web bridge's `Bound` impl must not name one.
+#[test]
+fn adv2_e1_web_bridge_over_an_escalation_on_a_command_that_cannot_refuse_compiles() {
+    let ir = adv2_plain_escalation_model(ESCALATES_WHAT_CANNOT_REFUSE);
+    adv2_check_web(&ir, "adv2-web-cannot-refuse");
+}
+
+/// The one-time vault whose `denied` escalates, as one crate, under `-D warnings`.
+#[test]
+fn adv2_e1_one_time_vault_whose_refusal_escalates_compiles_as_one_crate() {
+    let ir = escalation_model(DENIED_ESCALATES, "");
+    adv2_check_rust(&ir, OutputLayout::Crate, "adv2-crate-denied-escalates");
+}
+
+/// The one-time vault whose `denied` escalates, as a workspace, under `-D warnings`.
+#[test]
+fn adv2_e1_one_time_vault_whose_refusal_escalates_compiles_as_a_workspace() {
+    let ir = escalation_model(DENIED_ESCALATES, "");
+    adv2_check_rust(
+        &ir,
+        OutputLayout::Workspace,
+        "adv2-workspace-denied-escalates",
+    );
+}
+
+/// The one-time vault with no escalation the pump calls, as one crate, under `-D warnings`.
+#[test]
+fn adv2_e1_one_time_vault_whose_escalation_no_refusal_selects_compiles_as_one_crate() {
+    let ir = escalation_model(NOTHING_ESCALATES, "");
+    adv2_check_rust(&ir, OutputLayout::Crate, "adv2-crate-nothing-selects");
+}
+
+/// Two bindings, only one of whose escalations the pump calls, as a workspace and as one crate.
+#[test]
+fn adv2_e1_one_time_vault_with_one_called_and_one_uncalled_escalation_compiles() {
+    let ir = escalation_model(DENIED_ESCALATES, ESCALATES_WHAT_CANNOT_REFUSE);
+    adv2_check_rust(&ir, OutputLayout::Workspace, "adv2-workspace-mixed");
+    adv2_check_rust(&ir, OutputLayout::Crate, "adv2-crate-mixed");
+}
+
+/// The escalation the pump never calls still owes its trait and stub, as the plan says.
+#[test]
+fn adv2_e1_an_uncalled_escalation_keeps_its_trait_and_stub() {
+    let ir = escalation_model(NOTHING_ESCALATES, ESCALATES_WHAT_CANNOT_REFUSE);
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+    let system = synthesis
+        .artifacts
+        .values()
+        .find(|artifact| artifact.contents.contains("pub struct System<"))
+        .expect("a generated System");
+    for owed in ["IssueOnRequestEscalation", "NoteOnRequestEscalation"] {
+        assert!(
+            system.contents.contains(&format!("pub trait {owed}")),
+            "{owed}: trait missing"
+        );
+        assert!(
+            system
+                .contents
+                .contains(&format!("impl {owed} for Unimplemented")),
+            "{owed}: stub missing"
+        );
+    }
+    assert!(!system.contents.contains("self.obligations."));
 }

@@ -257,11 +257,19 @@ pub(crate) fn input_absent(
 
 /// Structural code generation cannot supply atomic, durable one-time issuance.
 /// Refuse the named policy before emitting any incomplete implementation artifacts.
+///
+/// The Rust target emits it instead as the command behaviour's obligation, which the plan already
+/// holds for every command with a typed `response:` and whose contract carries the one-time duty
+/// of each marked outcome (`plan::one_time_clause`): its stub returns `UnmetObligation`, never the
+/// value. Go, web and the command-line target still refuse it.
 pub(crate) fn one_time_response(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
+    if target == Target::Rust {
+        return Ok(());
+    }
     let causes = ir.commands().values().flat_map(|command| {
         command.outcomes.iter().filter(|outcome| !outcome.one_time_response.is_empty()).map(move |outcome| {
             TargetFailureCause::new(

@@ -224,6 +224,36 @@ pub(super) fn counts_attempts(ir: &EssIr, binding: &ResolvedBinding) -> bool {
                 .any(|(_, answer)| matches!(answer, Answer::Retry(Some(_)))))
 }
 
+/// Whether the generated pump calls `binding`'s escalation obligation: a universal `escalate` on a
+/// command that declares a refusal or behind a selection that can fail ([`delivery_arm`],
+/// [`selection_failure_policy`]), or a policy selected per refusal where some refusal of the
+/// command selects `escalate` ([`per_refusal_match`]).
+///
+/// Only then does `System` hold the escalation among its obligations: a field the pump never
+/// reads is refused by `-D warnings` in the generated crate. The plan still owes the escalation,
+/// so its trait and stub stay in the `obligations` module ([`system_obligations`]).
+pub(crate) fn calls_escalation(ir: &EssIr, binding: &ResolvedBinding) -> bool {
+    match binding.on_failure() {
+        ResolvedFailure::Escalate { .. } => {
+            let command = ir.command(&binding.command);
+            binding.selection.is_some()
+                || command
+                    .outcomes
+                    .iter()
+                    .any(|outcome| outcome.error.is_some())
+                || ess_gen::unknown_instance::unknown_instance_answer(ir, command).is_some()
+        }
+        ResolvedFailure::ByRefusal { .. } | ResolvedFailure::BoundedRetry { .. } => {
+            refusal_answers(ir, binding).is_some_and(|answers| {
+                answers
+                    .iter()
+                    .any(|(_, answer)| matches!(answer, Answer::Escalate(_)))
+            })
+        }
+        ResolvedFailure::Retry | ResolvedFailure::Drop => false,
+    }
+}
+
 /// The event `binding`'s failure policy publishes, where it publishes one: the universal
 /// `escalate`'s, or the escalation a policy selected per refusal names.
 fn escalation_of(binding: &ResolvedBinding) -> Option<&EventHandle> {
@@ -1018,7 +1048,7 @@ fn system_struct(
         if !delivery.transformation_generated {
             used_traits.push(format!("obligations::{pascal}Transformation"));
         }
-        if escalation_of(delivery.binding).is_some() {
+        if calls_escalation(ir, delivery.binding) {
             used_traits.push(format!("obligations::{pascal}Escalation"));
         }
     }
@@ -1246,12 +1276,9 @@ pub(crate) fn components_generics(ir: &EssIr) -> Vec<String> {
         .collect()
 }
 
-/// `true` when the system crate carries obligations of its own — a transformation nobody
-/// determined, or an escalation to build.
-///
-/// The question that decides whether `System` takes a third type parameter, asked by every
-/// artifact that has to spell the type: the system crate itself, the browser bridge and the server
-/// crate. One answer, because three would drift.
+/// `true` when a delivered binding owes a transformation or names an escalation, whether or not
+/// the pump calls it: the Go system's answer (`go::entry`), whose `NewSystem` takes every owed
+/// obligation of a delivered binding.
 pub(crate) fn has_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
     ir.bindings().values().any(|binding| {
         let source = binding.name.to_string();
@@ -1263,12 +1290,29 @@ pub(crate) fn has_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
     })
 }
 
+/// `true` when the Rust `System` holds obligations: a transformation nobody determined, or an
+/// escalation the pump calls ([`calls_escalation`]).
+///
+/// The question that decides whether `System` takes a third type parameter, asked by every
+/// artifact that has to spell the type: the system crate itself, the browser bridge and the server
+/// crate. One answer, because three would drift.
+pub(crate) fn takes_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
+    ir.bindings().values().any(|binding| {
+        let source = binding.name.to_string();
+        if !plan.is_generated(CapabilityKind::BindingDelivery, &source) {
+            return false;
+        }
+        !plan.is_generated(CapabilityKind::BindingTransformation, &source)
+            || calls_escalation(ir, binding)
+    })
+}
+
 /// Every `where` line `System::pump` carries, spelled from outside the system crate: each
 /// component's behaviours bound by its own port, and the system's obligations by the traits the
 /// pump calls. `system` is the system crate's path (`gatepass_system`).
 ///
 /// The server's handlers call `pump` after every command, so they carry exactly these bounds; the
-/// pump's own `impl` block derives them from the same plan answer ([`has_obligations`]'s), and a
+/// pump's own `impl` block derives them from the same answer ([`takes_obligations`]'s), and a
 /// generated server that disagreed with it would not compile.
 pub(crate) fn pump_bounds(
     ir: &EssIr,
@@ -1295,7 +1339,7 @@ pub(crate) fn pump_bounds(
         if !plan.is_generated(CapabilityKind::BindingTransformation, &source) {
             owed.push(format!("{system}::obligations::{pascal}Transformation"));
         }
-        if escalation_of(binding).is_some() {
+        if calls_escalation(ir, binding) {
             owed.push(format!("{system}::obligations::{pascal}Escalation"));
         }
     }
