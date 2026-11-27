@@ -26,7 +26,7 @@ scope:
   path: crates/generate/ess-synth/tests/one_time_response.rs
 - confidence: inferred
   path: docs/design/one-time-response-values.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-27T09:01:54Z", actor: "human:operator", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-27T09:01:55Z", actor: "human:operator", revision: 7}
@@ -194,3 +194,7 @@ CHANGELOG: checked 2026-11-27 on `main` (`e29c029fab`), sections 0.99.3 to 0.99.
 - cited: crates/generate/ess-synth/tests/one_time_response.rs
 - inferred: docs/design/one-time-response-values.md
 - inferred: CHANGELOG.md
+
+## Status
+
+Merged to `main` 2026-11-27 21:10 CET in [PR 844](https://github.com/beyond10x/ess/pull/844) (`fd6049733d`); not released.

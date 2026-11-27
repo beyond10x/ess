@@ -36,7 +36,7 @@ scope:
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T21:10:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T21:11:00Z", actor: "human:timo", revision: 6}
@@ -492,3 +492,7 @@ Added after round 2 of the plan critics, for the wave of 2026-11-23. Not reached
 What the wave delivers of this story: a slow lane exists, six kinds of expensive test leave the
 test step, a test over 60 s is killed, and the step ceilings are pinned. The two-minute end state
 is not claimed.
+
+## Status
+
+Step 1 is in [PR 846](https://github.com/beyond10x/ess/pull/846) (CI running). Step 2 is open.

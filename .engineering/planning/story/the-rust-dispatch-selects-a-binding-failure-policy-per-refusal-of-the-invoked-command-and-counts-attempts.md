@@ -37,7 +37,7 @@ scope:
   path: crates/generate/ess-synth/tests/refusal_policy_runtime.rs
 - confidence: inferred
   path: docs/design/conditional-binding-failure-policies.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-27T09:01:53Z", actor: "human:operator", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-27T09:01:53Z", actor: "human:operator", revision: 7}
@@ -262,3 +262,7 @@ Corrections to the text above, from the unit's two adversary passes (`review-res
   shadows the generated transformation function of a binding with that name, so the generated code did not compile
   (found by pass 1). Synthesis now refuses such a binding, naming it; the name is reserved only for a binding with a
   counted retry.
+
+## Status
+
+Merged to `main` 2026-11-27 21:10 CET in [PR 844](https://github.com/beyond10x/ess/pull/844) (`fd6049733d`); not released.

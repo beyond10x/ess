@@ -22,7 +22,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/binding_optional_wrap_go.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -126,3 +126,7 @@ Two corrections to the text above, from the unit's two adversary passes (`review
   compiled but answered the wire spelling while the predicate compares the variant's name, so a variant with a declared
   wire spelling was never selected; the Go arm had the same defect. Rust and Go now compare the variant's name. These
   are two defects fixed in the unit: the first was in the base, the second came in with the first correction.
+
+## Status
+
+Merged to `main` 2026-11-27 21:10 CET in [PR 844](https://github.com/beyond10x/ess/pull/844) (`fd6049733d`); not released.
