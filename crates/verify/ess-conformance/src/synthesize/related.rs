@@ -525,7 +525,7 @@ fn arrange_within_each(
         named.push((
             read.via,
             Arrangement {
-                steps: Vec::new(),
+                steps: super::Steps::default(),
                 ..referenced.clone()
             },
         ));
@@ -550,7 +550,7 @@ fn arrange_within_each(
         }
         let mut after_steps = Vec::new();
         if let Some(decoy) = after {
-            after_steps = decoy.steps;
+            after_steps = decoy.steps.into();
             setup.source.extend(decoy.source);
         }
         if arranged_here {
@@ -1116,11 +1116,11 @@ fn chained(
         }
         let mut steps = named.steps.clone();
         steps.append(&mut setup.steps);
-        setup.steps = steps;
+        setup.steps = steps.into();
         setup.source.extend(named.source.iter().cloned());
         settle_absent(ir, setup, read);
         Some(Arrangement {
-            steps: Vec::new(),
+            steps: super::Steps::default(),
             ..named
         })
     };
@@ -1164,7 +1164,7 @@ fn chained(
         named.settled.extend(invocation.settled.clone());
     }
     let record = Arrangement {
-        steps: Vec::new(),
+        steps: super::Steps::default(),
         ..named.clone()
     };
     let (moved, retarget) = match retarget {

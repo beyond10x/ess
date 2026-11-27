@@ -4455,7 +4455,7 @@ fn under_subject(
     let row = Arrangement {
         instance: instance.clone(),
         state,
-        steps: setup.steps.clone(),
+        steps: setup.steps.clone().into(),
         source: setup.source.clone(),
         settled,
         unwritten,
@@ -5164,7 +5164,7 @@ fn addressed_related(
     Some(Arrangement {
         instance: instance.clone(),
         state,
-        steps: Vec::new(),
+        steps: super::Steps::default(),
         source: BTreeSet::new(),
         settled,
         unwritten,
