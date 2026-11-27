@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-rust-target-writes-a-one-time-response-outcome-as-an-obligation-that-carries-its-contract-instead-of-refusing-the-workspace
 kind: story
-status: draft
+status: active
 title: The Rust target writes a one-time response outcome as an obligation that carries its contract instead of refusing the workspace
 tags:
 - adopter-report
@@ -26,7 +26,10 @@ scope:
   path: crates/generate/ess-synth/tests/one_time_response.rs
 - confidence: inferred
   path: docs/design/one-time-response-values.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-27T09:01:54Z", actor: "human:operator", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-27T09:01:55Z", actor: "human:operator", revision: 7}
 ---
 ## Outcome
 

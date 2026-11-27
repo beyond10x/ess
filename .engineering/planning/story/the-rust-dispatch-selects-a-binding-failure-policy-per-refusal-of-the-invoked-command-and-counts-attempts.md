@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-rust-dispatch-selects-a-binding-failure-policy-per-refusal-of-the-invoked-command-and-counts-attempts
 kind: story
-status: draft
+status: active
 title: The Rust dispatch selects a binding's failure policy per refusal of the invoked command and counts attempts
 tags:
 - adopter-report
@@ -37,7 +37,10 @@ scope:
   path: crates/generate/ess-synth/tests/refusal_policy_runtime.rs
 - confidence: inferred
   path: docs/design/conditional-binding-failure-policies.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-27T09:01:53Z", actor: "human:operator", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-27T09:01:53Z", actor: "human:operator", revision: 7}
 ---
 ## Outcome
 
