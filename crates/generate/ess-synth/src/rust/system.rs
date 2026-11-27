@@ -514,8 +514,46 @@ fn field_expression(
         };
         proved_expression(determined, (proved, absent), ir, layout, types)
     } else {
-        mapping_expression(determined, ir, layout, types)
+        let wraps = copy_wraps(binding, field, &determined);
+        let expression = mapping_expression(determined, ir, layout, types);
+        if wraps {
+            format!("Some({expression})")
+        } else {
+            expression
+        }
     }
+}
+
+/// Whether `field` is filled by a plain copy of an event member into an Optional of that member's
+/// own type, which the transformation passes as `Some(..)`.
+fn copy_wraps(
+    binding: &ResolvedBinding,
+    field: &ess_compiler::ir::ResolvedField,
+    determined: &DeterminedInput<'_>,
+) -> bool {
+    matches!(determined, DeterminedInput::Copy { .. })
+        && binding
+            .mapping
+            .iter()
+            .find(|mapping| mapping.target == field.name && mapping.conversion.is_none())
+            .is_some_and(|mapping| match &mapping.value {
+                ess_compiler::ir::ResolvedMappingValue::EventField { type_ref, .. } => {
+                    wraps_once(type_ref, &mapping.target_type)
+                }
+                _ => false,
+            })
+}
+
+/// Whether `target` is `Optional` of exactly the plain `source`: a `T` that a copy passes as
+/// `Some(..)` into an `Optional<T>`. The wrap changes presence, not representation, so a newtype
+/// never wraps into an Optional of another newtype, and an Optional source never into a nested
+/// Optional.
+pub(super) fn wraps_once(
+    source: &ess_compiler::ir::ResolvedTypeRef,
+    target: &ess_compiler::ir::ResolvedTypeRef,
+) -> bool {
+    !source.is_optional()
+        && matches!(target, ess_compiler::ir::ResolvedTypeRef::Optional { of } if of.as_ref() == source)
 }
 
 /// The type a mapping assigns into: the mapping's own target where one maps the input, the
