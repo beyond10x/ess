@@ -29,7 +29,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T22:32:35Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-22T22:32:37Z", actor: "human:timo", revision: 15}
@@ -190,3 +190,15 @@ for a wave on 2026-11-22; its premise, that a class is a small enough cut, does 
   already asks for, now with the cut it enables.
 - The report of a sliced run says which slice it is, and `--emit` and `--report-out` of the whole class stay
   byte-identical to the unsliced run.
+
+## A third report: the smallest class does not finish on 0.99.9, 2026-11-27
+
+A third downstream report, on release 0.99.9 (which carries the synthesis speed-up of the story on synthesis time).
+The `sets-drop` class of the same specification, 11 mutants and the smallest class in the table above, did not finish
+in a 30-minute job. One synthesis of that specification took about 223 s on 0.99.9, so 11 mutants need about 2,450 s
+against the 1,800 s a job may name. `mutate` has no per-site selection and no sharding of a class, so the caller had
+no smaller cut than the class.
+
+This confirms the premise of decision D4 and its recommended option A: the cut a caller needs is below a class, and the
+faster synthesis of 0.99.9 did not bring any class of this specification under the job limit. Nothing else changes in
+this story.
