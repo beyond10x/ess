@@ -29,7 +29,7 @@ scope:
   path: crates/verify/ess-conformance/tests/value_invariant_reach.rs
 - confidence: inferred
   path: docs/design/wrapped-value-invariant-observations.md
-revision: 15
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:56Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:57Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
@@ -141,6 +141,13 @@ above and replace none of it:
   `wrapped_value_invariants` target and the suite-bytes pin targets pass with no row moved except the
   model's own new scenarios.
 
+Added 2026-11-27 with the decisions IT-D1 = A and IT-D2 = A (both below):
+
+- Before the release that ships `ess-conformance/64` and `/65`, the coordinator sends the planning,
+  runtime and runbook consumers one line each naming the new majors. That release's `CHANGELOG.md`
+  section names the change a consumer-visible format change. The check is the sent lines and the
+  section's text, both read before the tag.
+
 ## Decisions
 
 - The new input-route scenarios are a new suite shape, so they land in `ess-conformance/64`
@@ -148,9 +155,9 @@ above and replace none of it:
   story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs.
 
 IT-D1, how an input-only constrained type is checked when the command has no input-guarded refusal outcome
-(2026-11-27, from the adopter report; recommended: A; no answer yet).
+(2026-11-27, from the adopter report). Decided A on 2026-11-27 by the operator session.
 
-- A (recommended): through the binding. Where a binding declares `refusals.malformed`, synthesis sends a
+- A (decided): through the binding. Where a binding declares `refusals.malformed`, synthesis sends a
   value that breaks each constraint and expects that answer, and a value that meets the constraints; where
   none does and no refusal outcome guards the input, `ESS-SYNTH-013` stays with the input-route cause.
   Adds no authored key; scenarios change, so `ess-conformance/64` and `/65`.
@@ -158,12 +165,16 @@ IT-D1, how an input-only constrained type is checked when the command has no inp
   adopter's shape refused.
 - C: change nothing; the adopter removes the constraint or checks it in its provider.
 
-IT-D2, a fixture of a constrained type (recommended: A; no answer yet).
+IT-D2, a fixture of a constrained type. Decided A on 2026-11-27 by the operator session.
 
-- A (recommended): accepted at authoring; the provider's value is checked against the type's constraints
+- A (decided): accepted at authoring; the provider's value is checked against the type's constraints
   when the suite runs, and a value that breaks them fails the provider, not the scenario.
 - B: accepted only when the type also has an input position the suite checks (A's first route).
 - C: stay refused and change only the help line to name the cause.
+
+Consequence of IT-D1 A, decided 2026-11-27: the suite majors become `ess-conformance/64` (ordinary) and
+`ess-conformance/65` (coverage), a consumer-visible format change. The acceptance names the notice the
+release owes its consumers.
 
 ## Scope
 
