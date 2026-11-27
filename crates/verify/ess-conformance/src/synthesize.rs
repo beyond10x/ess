@@ -1647,6 +1647,10 @@ impl RefusalCause {
                  the specification that produced it"
             }
             Self::NoWitness(gap) if gap.type_ref == SUBJECT_GAP => SUBJECT_REPAIR,
+            Self::NoWitness(gap) if gap.reason == related_guard::ABSENT_ADDRESSED => {
+                "answer an identity no row carries with `unknown_instance:` on this command, or \
+                 cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -3787,6 +3791,10 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // (story:view-asserts-field-set-from-optional-input).
     synthesis.notes.extend(converted_fields_unasserted(ir));
     disclosure::augment(ir, &mut synthesis);
+    // The disclosure scenarios carry the runs of other scenarios, arranged again, so their row-set
+    // sends are decided again too (weft's accounts, 2026-11-26). Only they: every other scenario
+    // was decided in its caller reading, over rows the declared model cannot read.
+    row_set::disclosure_contradictions(ir, &mut synthesis.suite, &mut synthesis.refusals);
     // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
     // what the run does not exercise.
     synthesis.notes.extend(
@@ -5825,6 +5833,15 @@ fn run_as(
             tried,
             cut: 0,
         });
+    }
+    // Under the one rule a missing row the command addresses is answered by its existence, before
+    // any related row is read: an `exists: false` branch over that row is never reached.
+    if let Some(field) = related_guard::absent_addressed(ir, command, outcome) {
+        return Err(RefusalCause::NoWitness(WitnessGap {
+            path: format!("{}/{}", command.name, outcome.name),
+            type_ref: format!("when_related: {{via: input.{field}, exists: false}}"),
+            reason: related_guard::ABSENT_ADDRESSED,
+        }));
     }
     let routed = subject_fact::routes(command, outcome);
     // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,
@@ -18383,9 +18400,14 @@ fn unknown_instance(
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
+    // Where the guards read the row the command addresses, no row can be present beside the
+    // identity sent: the row arranged for them would be named in its place, and answer a branch the
+    // existence of the record does not. The input chosen on it is kept, the row is not arranged.
     let (mut steps, mut source, bound) = match related_row {
-        Some((row, (_, bound))) => (row.steps, row.source, bound),
-        None => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
+        Some((row, (_, bound))) if !related_guard::reads_addressed_row(command, attempt) => {
+            (row.steps, row.source, bound)
+        }
+        _ => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
     };
     let supplied = supply(ir, command, &input, None, None, &bound);
     steps.extend([

@@ -17,6 +17,12 @@
 //! missing agent at step 4, so `bound` is witnessed for an unknown seat and an agent no row
 //! carries, which only a target reading the seat's existence first answers `bound`; `no-agent` is
 //! witnessed on a seat `bound` stored, naming another agent no row carries.
+//!
+//! `tests/fixtures/related-guard-on-the-addressed-row.yaml` (0.99.8): `Claim` addresses an item
+//! through `item_id` and its `when_related:` guards read the row `item_id` names, the addressed row
+//! itself. No row can be present beside an identity no row carries, so the `no-such-item` scenario
+//! sends an identity no row carries and nothing else: it named the row arranged for the predicate
+//! refusal, and the interpreter answered `owner-mismatch` there.
 
 use std::collections::BTreeMap;
 
@@ -420,4 +426,52 @@ fn below_ess27_a_create_or_update_beside_a_related_refusal_does_not_validate() {
         );
     }
     spec(&BIND_MODEL.replace("format: ess/31", "format: ess/27")).expect("ess/27 admits it");
+}
+
+const ADDRESSED_MODEL: &str = include_str!("fixtures/related-guard-on-the-addressed-row.yaml");
+const NO_SUCH_ITEM: &str = "demo.items.Claim/outcome/no-such-item";
+
+/// Every `Claim` send of the `no-such-item` scenario names an identity no row carries, never the
+/// row arranged for another branch: the row the guards read is the row the command addresses.
+#[test]
+fn an_unknown_identity_beside_a_guard_on_the_addressed_row_names_no_stored_row() {
+    let suite = synthesize(&ir(ADDRESSED_MODEL)).suite;
+    let scenario = suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == NO_SUCH_ITEM)
+        .map(|(_, scenario)| scenario)
+        .expect("synthesized");
+    let sends: Vec<_> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.items.Claim" =>
+            {
+                Some(input)
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(!sends.is_empty(), "{:#?}", scenario.steps);
+    for sent in sends {
+        assert!(
+            matches!(sent.get("item_id"), Some(ScenarioValue::Literal { .. })),
+            "the item is an identity no row carries: {sent:?}"
+        );
+    }
+}
+
+/// The interpreter passes every scenario synthesized for a guard on the addressed row.
+#[test]
+fn the_interpreter_passes_a_guard_on_the_addressed_row() {
+    let model = ir(ADDRESSED_MODEL);
+    let suite = synthesize(&model).suite;
+    let statuses = run_on(&suite, model);
+    assert!(statuses.contains_key(NO_SUCH_ITEM), "{statuses:#?}");
+    assert!(
+        statuses.values().all(|status| *status == Status::Passed),
+        "{statuses:#?}"
+    );
 }
