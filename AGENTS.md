@@ -136,18 +136,20 @@ and nextest refuses an override naming a binary the workspace lacks). Doc-tests 
 run under nextest, so `test-doc` and `test-feature-off-doc` have a step limit of 60 s instead (CI
 measured about 22 s and 7 s): a doc-test of 61 s fails its step.
 
-Each test seen over 60 s in 13 successful CI runs of 2026-11-26 and 2026-11-27 has an override in
-`.config/nextest.toml` at 1.2 times its longest time there, and so has each test whose longest time
-there was 50 to 60 s (1.2 times it, at most 72 s), since tests that close cross 60 s on some runs:
-171 under `ci` (the longest `adversary_u22_pass3`'s wide-inputs case, 366 s, 30 of them the tests
-of 50 to 60 s) and 15 under `slow` (`adv_e_u6_byte_identity_probe`, 337 s; 2 of them the tests of
-50 to 60 s, from the slow job's 11 runs). `ci_lanes.rs` pins both lists (`CI_EXCEPTIONS`,
+Each test seen over 60 s in 14 CI runs of 2026-11-26 and 2026-11-27 (13 successful, and run
+46063361909, the first under these limits, red on one test killed at its override) has an override
+in `.config/nextest.toml` at 1.2 times its longest time there, and so has each test whose longest
+time there was 50 to 60 s (1.2 times it, at most 72 s), since tests that close cross 60 s on some
+runs: 174 under `ci` (the longest `adversary_u22_pass3`'s wide-inputs case, 366 s, 33 of them the
+tests of 50 to 60 s) and 15 under `slow` (`adv_e_u6_byte_identity_probe`, 337 s; 2 of them the
+tests of 50 to 60 s, from the slow job's 12 runs). `ci_lanes.rs` pins both lists (`CI_EXCEPTIONS`,
 `SLOW_EXCEPTIONS`), so an override may only be dropped or lowered, and refuses any spelling of
 `.config/nextest.toml` but the one its reader understands: the workspace has no TOML parser.
 
 The steps' limits: `test-xtask` and `fuzz-check` 120 s, `test-doc` and `test-feature-off-doc` 60 s.
 Three steps are known to be over 120 s and have a ceiling of 1.2 times the longest time seen in
-those 13 runs; a ceiling may only fall (`STEP_CEILINGS` in `ci_lanes.rs`):
+the 13 successful runs; a ceiling may only fall (`STEP_CEILINGS` in `ci_lanes.rs`). In run
+46063361909 every step stayed under its ceiling (`test-shard` 919 s, `test-feature-off` 250 s):
 
 - `test-shard`: 1,235 s (run 45879426222, shard 16/20; 977 s at most in the other twelve), ceiling
   1483 s;

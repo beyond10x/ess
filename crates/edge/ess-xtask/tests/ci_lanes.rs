@@ -6744,7 +6744,7 @@ fn no_workflow_job_runs_tests_outside_a_task_unless_it_is_named_here() {
 
 /// The tests the nextest profile `ci` gives more than 60 s, one per line: binary id, test name and
 /// the most seconds it may be given, 1.2 times the longest time seen on CI from 2026-11-26 to
-/// 2026-11-27 (at most 72 s for the 30 tests whose longest time was 50 to 60 s). A line may only
+/// 2026-11-27 (at most 72 s for the 33 tests whose longest time was 50 to 60 s). A line may only
 /// be dropped or its seconds lowered.
 const CI_EXCEPTIONS: &str = "\
 ess-cli::coverage_producers actual_coverage_producers_refuse_noninvoked_negative_clock_and_report1_without_output 79
@@ -6825,10 +6825,11 @@ ess-synth::adversary_go_behaviour_pass2 adversary_a_domain_named_like_a_standard
 ess-synth::adversary_related_guard_behaviour_pass1 adv319_a_missing_row_answered_before_existing_instance_is_caught_go 83
 ess-synth::adversary_related_guard_behaviour_pass1 adv319_a_related_row_of_another_domain_go 65
 ess-synth::adversary_related_guard_behaviour_pass1 adv319_concurrent_requests_against_the_go_entry_point_race_free 100
-ess-synth::adversary_related_guard_behaviour_pass1 adv319_existing_instance_answers_before_a_missing_related_row_go 63
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_existing_instance_answers_before_a_missing_related_row_go 67
 ess-synth::adversary_related_guard_behaviour_pass1 adv319_generated_go_answers_every_sequence_as_the_interpreter 114
 ess-synth::adversary_related_guard_behaviour_pass1 adv319_generated_rust_answers_every_sequence_as_the_interpreter 73
 ess-synth::declared_behaviour an_absent_optional_reference_reads_no_row_go 76
+ess-synth::declared_behaviour a_related_guard_command_is_generated_and_passes_its_suite_go 64
 ess-synth::emit_swap_served a_typescript_runner_that_discards_event_expectations_fails_the_audit 84
 ess-synth::emit_swap_served the_generated_runners_kill_every_swap_against_each_generated_service_as_the_native_one_does 217
 ess-synth::external_request_binding go_matching_and_missing_proof_controls_compile_and_execute 141
@@ -6843,16 +6844,16 @@ ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_json_input_reaches_th
 ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_percent_encoded_document_path_is_answered_alike 99
 ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_percent_encoded_path_no_route_matches_is_refused_alike 109
 ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_refining_binding_is_served_by_go_at_the_path_it_fills_in 66
-ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_response_body_holding_u2028_is_the_same_bytes_from_both_servers 82
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_response_body_holding_u2028_is_the_same_bytes_from_both_servers 99
 ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_single_view_row_is_the_same_bytes_from_both_servers 77
 ess-synth::http_binding_rust go::adversary_k6_pass1::adv_the_go_server_answers_what_http_reads_first_as_the_rust_server_does 103
 ess-synth::http_binding_rust go::adversary_u9c_pass1::a_delete_query_string_out_of_its_rules_is_malformed_on_both_servers 100
 ess-synth::http_binding_rust go::adversary_u9c_pass1::an_ungranted_caller_is_refused_on_a_delete_query_route 86
 ess-synth::http_binding_rust go::adversary_u9c_pass1::every_flat_kind_is_read_from_a_delete_query_string_by_both_servers 93
 ess-synth::http_binding_rust go::adversary_u9c_pass1::get_and_delete_on_one_path_reach_their_own_commands 100
-ess-synth::http_binding_rust go::adversary_u9d_pass1::both_servers_answer_each_kind_of_field_bare 100
+ess-synth::http_binding_rust go::adversary_u9d_pass1::both_servers_answer_each_kind_of_field_bare 102
 ess-synth::http_binding_rust go::adversary_u9d_pass1::both_servers_write_the_same_bytes_for_each_bare_field 101
-ess-synth::http_binding_rust go::adversary_u9d_pass1::errors_leaves_the_standard_refusals_their_answers 87
+ess-synth::http_binding_rust go::adversary_u9d_pass1::errors_leaves_the_standard_refusals_their_answers 97
 ess-synth::http_binding_rust go::adversary_u9d_pass1::the_embedded_openapi_admits_each_bare_field_both_servers_answer 80
 ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_a_bare_body_object_naming_the_path_field_is_malformed 103
 ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_a_bare_body_that_is_not_the_list_is_malformed 109
@@ -6864,7 +6865,7 @@ ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_the_servers_agree_
 ess-synth::http_binding_rust go::a_fragment_redirect_writes_its_parameters_and_omits_an_absent_optional 66
 ess-synth::http_binding_rust go::a_json_body_is_read_as_the_rust_server_reads_it 101
 ess-synth::http_binding_rust go::answer_forms::both_servers_answer_a_text_body 106
-ess-synth::http_binding_rust go::answer_forms::both_servers_answer_outcomes_declared_alike_with_one_answer 91
+ess-synth::http_binding_rust go::answer_forms::both_servers_answer_outcomes_declared_alike_with_one_answer 97
 ess-synth::http_binding_rust go::answer_forms::both_servers_answer_route_refusals_empty_bodies_and_arrays 78
 ess-synth::http_binding_rust go::authentication::a_call_without_the_credential_gets_the_challenge_and_runs_nothing 103
 ess-synth::http_binding_rust go::authentication::a_credential_of_any_listed_scheme_admits_a_call_the_realization_authenticated 83
@@ -6883,7 +6884,7 @@ ess-synth::http_binding_rust go::ignored_members::under_refuse_a_key_or_member_t
 ess-synth::http_binding_rust go::multipart::a_multipart_request_out_of_its_rules_is_malformed_naming_the_part 98
 ess-synth::http_binding_rust go::multipart::a_multipart_request_runs_the_command_with_its_parts 88
 ess-synth::http_binding_rust go::multipart::review_a_non_ascii_parameter_name_is_no_filename_in_either_server 112
-ess-synth::http_binding_rust go::multipart::review_hostile_multipart_requests_answer_alike 97
+ess-synth::http_binding_rust go::multipart::review_hostile_multipart_requests_answer_alike 99
 ess-synth::http_binding_rust go::multipart::the_go_server_answers_every_multipart_request_as_the_rust_server_does 84
 ess-synth::http_binding_rust go::query_beside_body::a_listed_field_is_read_from_the_query_beside_the_body 99
 ess-synth::http_binding_rust go::query_beside_body::a_listed_field_out_of_its_place_or_its_rules_is_malformed 116
@@ -6893,6 +6894,7 @@ ess-synth::http_binding_rust go::representations::a_text_cell_a_spreadsheet_read
 ess-synth::http_binding_rust go::representations::a_value_no_representation_names_and_a_repeated_selector_are_malformed 95
 ess-synth::http_binding_rust go::representations::a_view_reads_its_own_parameters_beside_the_selector 91
 ess-synth::http_binding_rust go::representations::both_servers_answer_a_view_as_csv_when_the_query_selects_it 107
+ess-synth::http_binding_rust go::the_bound_go_server_builds_and_is_vet_clean 61
 ess-synth::http_binding_rust go::the_go_and_rust_servers_answer_one_binding_alike 79
 ess-synth::http_binding_rust go::undeclared_members::a_struct_that_ignores_undeclared_fields_admits_one_and_refuses_one_in_what_it_holds 99
 ess-synth::http_binding_rust go::undeclared_members::the_go_server_refuses_an_undeclared_member_at_any_depth 113
@@ -6916,6 +6918,7 @@ ess-ui-test::adversary_pass2 a_move_of_exactly_the_limit_is_played 63
 schema-contract::binary64_adversary native_rust_composition_preserves_identity_in_both_number_feature_modes 72
 schema-contract::normalization_binary64_targets native_rust_executes_finite_binary64_and_retained_documents 75
 schema-contract::normalization_positional_targets native_rust_executes_position_and_binary64_contracts 86
+schema-contract::normalization_raw_adversary generated_rust_runs_adversarial_lexical_cases 63
 schema-contract::normalization_raw_targets native_rust_captures_and_decodes_retained_documents 78
 schema-contract::normalization_rust standalone_rust_target_executes_model_owned_wire_records 70
 ";

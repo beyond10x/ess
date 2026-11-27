@@ -17,10 +17,11 @@ filter = "test(=the_cost_of_one_document_stays_within_reach_of_linear_in_the_reg
 threads-required = "num-test-threads"
 
 # A test over 60 s is killed and fails (the organization rule `Tests stay fast`). Each test seen
-# over 60 s on CI has an override below with 1.2 times its longest time there, from 13 successful
-# CI runs of 2026-11-26 and 2026-11-27, and so has each test whose longest time there was 50 to 60 s
-# (1.2 times it, at most 72 s), because tests that close cross 60 s on some runs; each is a
-# defect of story:the-test-step-meets-the-test-budget. `ci_lanes.rs` pins the list, so an override
+# over 60 s on CI has an override below with 1.2 times its longest time there, from 14 CI runs of
+# 2026-11-26 and 2026-11-27 (13 successful, and 46063361909, red on one test killed at its
+# override, whose 82 s is taken as its longest time), and so has each test whose longest time
+# there was 50 to 60 s (1.2 times it, at most 72 s), because tests that close cross 60 s on some
+# runs; each is a defect of story:the-test-step-meets-the-test-budget. `ci_lanes.rs` pins the list, so an override
 # may only be dropped or lowered, and refuses any spelling of this file but the one used here.
 [profile.ci]
 slow-timeout = { period = "60s", terminate-after = 1 }
@@ -29,862 +30,877 @@ final-status-level = "slow"
 [profile.ci.junit]
 path = "junit.xml"
 
-# 65.624 s on CI, run 45970627096 (over 60 s in 4 of 13 runs)
+# 65.624 s on CI, run 45970627096 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::coverage_producers) & test(=actual_coverage_producers_refuse_noninvoked_negative_clock_and_report1_without_output)"
 slow-timeout = { period = "79s", terminate-after = 1 }
 
-# 155.969 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 155.969 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::coverage_producers) & test(=actual_go_coverage_exports_match_the_independent_plan)"
 slow-timeout = { period = "188s", terminate-after = 1 }
 
-# 242.968 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 242.968 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=a_call_whose_answer_was_lost_is_written_indeterminate_counted_and_passes)"
 slow-timeout = { period = "292s", terminate-after = 1 }
 
-# 315.997 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 315.997 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=a_client_count_outside_two_to_four_is_refused_with_one_message_in_both_languages)"
 slow-timeout = { period = "380s", terminate-after = 1 }
 
-# 161.854 s on CI, run 45965268982 (over 60 s in 13 of 13 runs)
+# 161.854 s on CI, run 45965268982 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=a_client_retry_of_a_command_declaring_replays_is_written_equally_and_catches_an_unretained_target)"
 slow-timeout = { period = "195s", terminate-after = 1 }
 
-# 273.947 s on CI, run 45967957305 (over 60 s in 13 of 13 runs)
+# 273.947 s on CI, run 45967957305 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=adversary_every_call_records::every_command_call_of_every_lane_records_its_input_and_every_answered_one_its_events)"
 slow-timeout = { period = "329s", terminate-after = 1 }
 
-# 185.755 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 185.755 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=a_go_history_and_a_typescript_history_from_one_seed_are_equal_bytes_reads_included)"
 slow-timeout = { period = "223s", terminate-after = 1 }
 
-# 201.995 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 201.995 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=a_lost_creation_of_one_entity_never_withholds_a_row_of_another_entitys_view)"
 slow-timeout = { period = "243s", terminate-after = 1 }
 
-# 222.332 s on CI, run 46005987110 (over 60 s in 13 of 13 runs)
+# 222.332 s on CI, run 46005987110 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=a_negative_seed_count_seed_or_call_count_is_refused_with_one_message_in_both_languages)"
 slow-timeout = { period = "267s", terminate-after = 1 }
 
-# 161.983 s on CI, run 45965268982 (over 60 s in 13 of 13 runs)
+# 161.983 s on CI, run 45965268982 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=an_unsupported_command_is_left_out_and_fails_the_check_unless_accepted)"
 slow-timeout = { period = "195s", terminate-after = 1 }
 
-# 185.491 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 185.491 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=both_languages_write_the_same_explore_histories_and_verdicts)"
 slow-timeout = { period = "223s", terminate-after = 1 }
 
-# 57.1 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 57.115 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=check_history_holds_each_answer_to_its_recorded_input_and_events_on_a_model_without_entities)"
 slow-timeout = { period = "69s", terminate-after = 1 }
 
-# 52.0 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.001 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=concurrent_exploration_arranges_external_branches_and_catches_a_backend_dependent_defect)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 195.363 s on CI, run 46005987110 (over 60 s in 13 of 13 runs)
+# 195.363 s on CI, run 46005987110 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=double_apply_on_redelivery_is_caught_through_a_view_read_with_injection_and_missed_without)"
 slow-timeout = { period = "235s", terminate-after = 1 }
 
-# 239.942 s on CI, run 45967957305 (over 60 s in 13 of 13 runs)
+# 239.942 s on CI, run 45967957305 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=every_written_history_is_admitted_and_is_the_readers_own_spelling)"
 slow-timeout = { period = "288s", terminate-after = 1 }
 
-# 219.863 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 219.863 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=go_and_typescript_write_equal_bytes_from_the_same_seed_over_examples_billing)"
 slow-timeout = { period = "264s", terminate-after = 1 }
 
-# 210.727 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 210.727 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=injection_over_examples_billing_writes_equal_bytes_in_go_and_typescript_and_stays_linearizable)"
 slow-timeout = { period = "253s", terminate-after = 1 }
 
-# 243.582 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 243.582 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=seed_one_schedules_with_the_same_splitmix64_outputs_in_rust_typescript_and_go)"
 slow-timeout = { period = "293s", terminate-after = 1 }
 
-# 315.796 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 315.796 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=the_correct_explore_target_gives_no_violation_and_no_unknown_over_200_seeds)"
 slow-timeout = { period = "379s", terminate-after = 1 }
 
-# 201.979 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 201.979 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=the_explorers_read_every_view_and_write_rows_only_on_an_answered_read)"
 slow-timeout = { period = "243s", terminate-after = 1 }
 
-# 221.860 s on CI, run 46005987110 (over 60 s in 13 of 13 runs)
+# 221.860 s on CI, run 46005987110 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=the_lost_update_mutant_gives_a_violation_under_at_least_one_of_200_seeds)"
 slow-timeout = { period = "267s", terminate-after = 1 }
 
-# 194.698 s on CI, run 46005987110 (over 60 s in 13 of 13 runs)
+# 194.698 s on CI, run 46005987110 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=the_lost_update_violations_are_checked_again_by_ess_and_are_violations)"
 slow-timeout = { period = "234s", terminate-after = 1 }
 
-# 234.482 s on CI, run 45967957305 (over 60 s in 13 of 13 runs)
+# 234.482 s on CI, run 45967957305 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=the_same_seed_writes_the_same_history_bytes_on_two_runs_in_each_language)"
 slow-timeout = { period = "282s", terminate-after = 1 }
 
-# 219.958 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 219.958 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=the_stale_read_mutant_gives_a_read_violation_under_at_least_one_of_200_seeds)"
 slow-timeout = { period = "264s", terminate-after = 1 }
 
-# 210.566 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 210.566 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent) & test(=without_ess_on_path_the_concurrent_mode_fails_naming_ess)"
 slow-timeout = { period = "253s", terminate-after = 1 }
 
-# 57.8 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 57.774 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_adversary) & test(=a_target_that_does_not_support_close_ticket_does_not_pass_concurrent_exploration)"
 slow-timeout = { period = "70s", terminate-after = 1 }
 
-# 50.1 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 50.067 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_adversary_pass2) & test(=an_exclusion_found_at_seed_five_leaves_go_and_typescript_histories_equal)"
 slow-timeout = { period = "61s", terminate-after = 1 }
 
-# 52.1 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.149 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_adversary_pass2) & test(=replaying_a_seed_with_seed_writes_the_history_the_batch_wrote_for_it)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 157.115 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 157.115 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary) & test(=a_lost_answer_of_a_rejected_creation_does_not_hide_a_stale_read)"
 slow-timeout = { period = "189s", terminate-after = 1 }
 
-# 160.344 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 160.344 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary) & test(=a_read_that_timed_out_is_written_indeterminate_without_rows_and_equally)"
 slow-timeout = { period = "193s", terminate-after = 1 }
 
-# 181.115 s on CI, run 46005987110 (over 60 s in 13 of 13 runs)
+# 181.115 s on CI, run 46005987110 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary) & test(=a_target_lagging_until_a_token_is_demanded_is_clean_and_a_deaf_one_is_caught)"
 slow-timeout = { period = "218s", terminate-after = 1 }
 
-# 162.712 s on CI, run 46005987110 (over 60 s in 13 of 13 runs)
+# 162.712 s on CI, run 46005987110 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary) & test(=a_view_the_target_does_not_expose_is_excluded_and_never_written)"
 slow-timeout = { period = "196s", terminate-after = 1 }
 
-# 194.142 s on CI, run 45967957305 (over 60 s in 13 of 13 runs)
+# 194.142 s on CI, run 45967957305 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary) & test(=correct_targets_over_200_seeds_wider_and_injected_give_no_violation)"
 slow-timeout = { period = "233s", terminate-after = 1 }
 
-# 138.925 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 138.925 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary_2) & test(=a_stale_read_beside_the_row_of_a_lost_creation_is_not_hidden)"
 slow-timeout = { period = "167s", terminate-after = 1 }
 
-# 122.743 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 122.743 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary_2) & test(=more_phantoms_than_lost_creations_are_still_a_violation)"
 slow-timeout = { period = "148s", terminate-after = 1 }
 
-# 157.929 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 157.929 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_concurrent_reads_adversary_2) & test(=the_rule_writes_equal_bytes_in_go_and_typescript_and_again)"
 slow-timeout = { period = "190s", terminate-after = 1 }
 
-# 60.409 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 60.409 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::explore_optional_unknown_concurrent) & test(=actual_concurrent_ports_record_optional_upserts_and_call_the_native_checker)"
 slow-timeout = { period = "73s", terminate-after = 1 }
 
-# 59.0 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 59.026 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::generate_ui_tui) & test(=the_built_crate_reads_a_view_from_a_synthesized_gatepass_server)"
 slow-timeout = { period = "71s", terminate-after = 1 }
 
-# 78.195 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 78.195 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::generate_ui_tui) & test(=the_generated_crate_builds_and_its_help_names_base_url)"
 slow-timeout = { period = "94s", terminate-after = 1 }
 
-# 59.9 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 59.861 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-cli::known_failures_cli) & test(=mutation_audit_of_a_generated_go_runner_under_a_bound_declaration)"
 slow-timeout = { period = "72s", terminate-after = 1 }
 
-# 58.2 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 58.167 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_273_pass1) & test(=sweep_every_input_identity_an_event_copies_is_compared)"
 slow-timeout = { period = "70s", terminate-after = 1 }
 
-# 92.487 s on CI, run 45800459549 (over 60 s in 11 of 13 runs)
+# 92.487 s on CI, run 45800459549 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_273_pass1) & test(=sweep_identity_comparisons_never_fail_the_reference_interpreter)"
 slow-timeout = { period = "111s", terminate-after = 1 }
 
-# 84.143 s on CI, run 45955734414 (over 60 s in 8 of 13 runs)
+# 84.143 s on CI, run 45955734414 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_287_pass1) & test(=caller_upsert_go_and_typescript_match_actual_native_outcomes)"
 slow-timeout = { period = "101s", terminate-after = 1 }
 
-# 249.752 s on CI, run 45800459549 (over 60 s in 13 of 13 runs)
+# 249.752 s on CI, run 45800459549 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_287_pass1) & test(=wasm_executes_the_same_shared_row_and_isolation_fixtures)"
 slow-timeout = { period = "300s", terminate-after = 1 }
 
-# 107.081 s on CI, run 45898236720 (over 60 s in 13 of 13 runs)
+# 107.081 s on CI, run 45898236720 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_e1_reachability) & test(=go_gives_the_native_verdict_at_every_position)"
 slow-timeout = { period = "129s", terminate-after = 1 }
 
-# 129.030 s on CI, run 45800459549 (over 60 s in 13 of 13 runs)
+# 129.030 s on CI, run 45800459549 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_e1_reachability) & test(=typescript_gives_the_native_verdict_at_every_position)"
 slow-timeout = { period = "155s", terminate-after = 1 }
 
-# 52.2 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.199 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_ess_issues_2_u9) & test(=accepting_pairs_over_the_enum_stand_in_decide_soundly)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 52.4 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.378 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_ess_issues_2_u9) & test(=guards_differing_only_by_the_answer_stay_scored)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 54.9 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.919 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_ess_issues_2_u9) & test(=not_and_defined_decide_soundly)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 125.150 s on CI, run 45967418523 (over 60 s in 13 of 13 runs)
+# 125.150 s on CI, run 45967418523 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_map_witness_pass1) & test(=adv196_go_runtime_agrees_and_catches_every_dropped_map)"
 slow-timeout = { period = "151s", terminate-after = 1 }
 
-# 65.515 s on CI, run 45898236720 (over 60 s in 8 of 13 runs)
+# 65.515 s on CI, run 45898236720 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_mutate_pass2) & test(=a_mutant_whose_only_excluded_scenario_is_unchanged_from_the_baseline_survives)"
 slow-timeout = { period = "79s", terminate-after = 1 }
 
-# 78.567 s on CI, run 45970627096 (over 60 s in 6 of 13 runs)
+# 78.567 s on CI, run 45970627096 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_one_row_pass2) & test(=adv2_one_row_no_repository_model_loses_a_one_row_snapshot)"
 slow-timeout = { period = "95s", terminate-after = 1 }
 
-# 223.028 s on CI, run 45967957305 (over 60 s in 13 of 13 runs)
+# 223.028 s on CI, run 45967957305 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_u22_pass2) & test(=every_reachable_branch_of_seeded_chains_over_optional_integer_and_compared_enums_has_its_scenario)"
 slow-timeout = { period = "268s", terminate-after = 1 }
 
-# 366.416 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 366.416 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_u22_pass3) & test(=every_reachable_branch_of_seeded_chains_over_wide_shared_inputs_has_its_scenario)"
 slow-timeout = { period = "440s", terminate-after = 1 }
 
-# 146.422 s on CI, run 45967957305 (over 60 s in 13 of 13 runs)
+# 146.422 s on CI, run 45967957305 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_u22_pass3) & test(=guards_sharing_an_enum_have_their_scenarios_at_sixteen_variants_and_name_the_bound_at_seventeen)"
 slow-timeout = { period = "176s", terminate-after = 1 }
 
-# 74.953 s on CI, run 45800459549 (over 60 s in 1 of 13 runs)
+# 74.953 s on CI, run 45800459549 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::adversary_w3_389_s2_pass1) & test(=adversary_player_and_rust_agree_a_1025_source_manifest_is_a_resource_limit)"
 slow-timeout = { period = "90s", terminate-after = 1 }
 
-# 80.362 s on CI, run 45819511304 (over 60 s in 12 of 13 runs)
+# 80.362 s on CI, run 45819511304 (over 60 s in 12 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::aggregate_delta_go) & test(=go_gives_the_reference_verdict_for_every_change_mutant_on_both_seeds)"
 slow-timeout = { period = "97s", terminate-after = 1 }
 
-# 96.038 s on CI, run 45898236720 (over 60 s in 13 of 13 runs)
+# 96.038 s on CI, run 45898236720 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::aggregate_group_selection) & test(=the_generated_go_runtime_agrees_with_the_native_runner)"
 slow-timeout = { period = "116s", terminate-after = 1 }
 
-# 80.573 s on CI, run 45970627096 (over 60 s in 8 of 13 runs)
+# 80.573 s on CI, run 45970627096 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::aggregate_group_selection) & test(=the_generated_typescript_runtime_agrees_with_the_native_runner)"
 slow-timeout = { period = "97s", terminate-after = 1 }
 
-# 223.315 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 223.315 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::aggregate_group_selection) & test(=the_wasm_runner_agrees_with_the_native_runner)"
 slow-timeout = { period = "268s", terminate-after = 1 }
 
-# 54.7 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.659 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::binding_arrangement_go) & test(=go_fails_every_drop_control)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 52.2 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.163 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::binding_arrangement_typescript) & test(=typescript_fails_every_drop_control)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 63.526 s on CI, run 45898236720 (over 60 s in 4 of 13 runs)
+# 63.526 s on CI, run 45898236720 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::direct_response_constraints) & test(=the_go_runner_gives_the_native_verdicts_on_the_same_vectors)"
 slow-timeout = { period = "77s", terminate-after = 1 }
 
-# 84.050 s on CI, run 45966151501 (over 60 s in 8 of 13 runs)
+# 84.050 s on CI, run 45966151501 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::direct_response_constraints) & test(=the_typescript_runner_gives_the_native_verdicts_on_the_same_vectors)"
 slow-timeout = { period = "101s", terminate-after = 1 }
 
-# 61.701 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 61.701 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::mixed_guard_overlap) & test(=no_condition_contradicts_itself)"
 slow-timeout = { period = "75s", terminate-after = 1 }
 
-# 195.837 s on CI, run 45970627096 (over 60 s in 13 of 13 runs)
+# 195.837 s on CI, run 45970627096 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::nested_response_observations) & test(=actual_foreign_readers_refuse_malformed_authority_before_any_target_callback)"
 slow-timeout = { period = "236s", terminate-after = 1 }
 
-# 80.588 s on CI, run 45879426222 (over 60 s in 6 of 13 runs)
+# 80.588 s on CI, run 45879426222 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::one_row_instance_bound) & test(=one_row_no_repository_scenario_reads_an_instance_no_earlier_step_binds)"
 slow-timeout = { period = "97s", terminate-after = 1 }
 
-# 67.448 s on CI, run 45898236720 (over 60 s in 3 of 13 runs)
+# 67.448 s on CI, run 45898236720 (over 60 s in 3 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::one_time_compact_suite) & test(=a_malformed_absent_run_or_unpublished_list_is_refused_by_every_reader)"
 slow-timeout = { period = "81s", terminate-after = 1 }
 
-# 54.4 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.412 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::refusal_policy) & test(=go_gives_the_native_verdicts_for_every_sender)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 74.973 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 74.973 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::row_sets_runtimes) & test(=row_sets_typescript_gives_the_reference_verdicts_for_the_healthy_and_each_faulty_target)"
 slow-timeout = { period = "90s", terminate-after = 1 }
 
-# 59.2 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 59.187 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::runtime_parity_go_28_35) & test(=direct_profile_preserves_presence_and_payload_local_bounds)"
 slow-timeout = { period = "72s", terminate-after = 1 }
 
-# 55.6 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 55.558 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::set_effects_go) & test(=go_gives_the_reference_verdict_for_every_set_effect_mode)"
 slow-timeout = { period = "67s", terminate-after = 1 }
 
-# 64.631 s on CI, run 45967957305 (over 60 s in 1 of 13 runs)
+# 64.631 s on CI, run 45967957305 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-conformance::undeclared_fields) & test(=the_typescript_runner_gives_the_native_verdicts_on_the_same_vectors)"
 slow-timeout = { period = "78s", terminate-after = 1 }
 
-# 51.3 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 51.322 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::actor_grants) & test(=the_go_server_refuses_a_caller_no_grant_admits_before_the_port_runs)"
 slow-timeout = { period = "62s", terminate-after = 1 }
 
-# 60.075 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 60.075 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_go_behaviour_pass2) & test(=adversary_a_domain_named_like_a_standard_library_import_still_builds)"
 slow-timeout = { period = "73s", terminate-after = 1 }
 
-# 68.502 s on CI, run 45955734414 (over 60 s in 3 of 13 runs)
+# 68.502 s on CI, run 45955734414 (over 60 s in 3 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_related_guard_behaviour_pass1) & test(=adv319_a_missing_row_answered_before_existing_instance_is_caught_go)"
 slow-timeout = { period = "83s", terminate-after = 1 }
 
-# 53.9 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 53.863 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_related_guard_behaviour_pass1) & test(=adv319_a_related_row_of_another_domain_go)"
 slow-timeout = { period = "65s", terminate-after = 1 }
 
-# 83.313 s on CI, run 46005987110 (over 60 s in 8 of 13 runs)
+# 83.313 s on CI, run 46005987110 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_related_guard_behaviour_pass1) & test(=adv319_concurrent_requests_against_the_go_entry_point_race_free)"
 slow-timeout = { period = "100s", terminate-after = 1 }
 
-# 52.3 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 55.823 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_related_guard_behaviour_pass1) & test(=adv319_existing_instance_answers_before_a_missing_related_row_go)"
-slow-timeout = { period = "63s", terminate-after = 1 }
+slow-timeout = { period = "67s", terminate-after = 1 }
 
-# 94.565 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 94.565 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_related_guard_behaviour_pass1) & test(=adv319_generated_go_answers_every_sequence_as_the_interpreter)"
 slow-timeout = { period = "114s", terminate-after = 1 }
 
-# 60.167 s on CI, run 45819511304 (over 60 s in 1 of 13 runs)
+# 60.167 s on CI, run 45819511304 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::adversary_related_guard_behaviour_pass1) & test(=adv319_generated_rust_answers_every_sequence_as_the_interpreter)"
 slow-timeout = { period = "73s", terminate-after = 1 }
 
-# 62.837 s on CI, run 45955734414 (over 60 s in 2 of 13 runs)
+# 62.837 s on CI, run 45955734414 (over 60 s in 2 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::declared_behaviour) & test(=an_absent_optional_reference_reads_no_row_go)"
 slow-timeout = { period = "76s", terminate-after = 1 }
 
-# 69.791 s on CI, run 45901071526 (over 60 s in 5 of 13 runs)
+# 53.109 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
+[[profile.ci.overrides]]
+filter = "binary_id(ess-synth::declared_behaviour) & test(=a_related_guard_command_is_generated_and_passes_its_suite_go)"
+slow-timeout = { period = "64s", terminate-after = 1 }
+
+# 69.791 s on CI, run 45901071526 (over 60 s in 5 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::emit_swap_served) & test(=a_typescript_runner_that_discards_event_expectations_fails_the_audit)"
 slow-timeout = { period = "84s", terminate-after = 1 }
 
-# 180.826 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 180.826 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::emit_swap_served) & test(=the_generated_runners_kill_every_swap_against_each_generated_service_as_the_native_one_does)"
 slow-timeout = { period = "217s", terminate-after = 1 }
 
-# 116.783 s on CI, run 45955734414 (over 60 s in 13 of 13 runs)
+# 116.783 s on CI, run 45955734414 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::external_request_binding) & test(=go_matching_and_missing_proof_controls_compile_and_execute)"
 slow-timeout = { period = "141s", terminate-after = 1 }
 
-# 106.740 s on CI, run 45819511304 (over 60 s in 13 of 13 runs)
+# 106.740 s on CI, run 45819511304 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::external_request_binding) & test(=go_substituted_request_is_refused_by_direct_and_http)"
 slow-timeout = { period = "129s", terminate-after = 1 }
 
-# 231.575 s on CI, run 45996485809 (over 60 s in 13 of 13 runs)
+# 231.575 s on CI, run 45996485809 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::external_request_binding) & test(=no_use_and_owed_only_models_compile_without_an_external_port)"
 slow-timeout = { period = "278s", terminate-after = 1 }
 
-# 292.986 s on CI, run 45879426222 (over 60 s in 13 of 13 runs)
+# 292.986 s on CI, run 45879426222 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::external_request_binding) & test(=served_code_alias_preserves_direct_and_http_request_binding)"
 slow-timeout = { period = "352s", terminate-after = 1 }
 
-# 54.2 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.199 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::a_bearer_challenge_quotes_the_error_wire_name)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 84.571 s on CI, run 45819511304 (over 60 s in 10 of 13 runs)
+# 84.571 s on CI, run 45819511304 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adopter_wire_reports::a_bound_view_reads_its_parameter_and_writes_its_field_under_their_wire_names)"
 slow-timeout = { period = "102s", terminate-after = 1 }
 
-# 84.248 s on CI, run 45800459549 (over 60 s in 7 of 13 runs)
+# 84.248 s on CI, run 45800459549 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adopter_wire_reports::a_delete_command_encoded_query_reads_its_input_from_the_query_string)"
 slow-timeout = { period = "102s", terminate-after = 1 }
 
-# 70.504 s on CI, run 46005987110 (over 60 s in 6 of 13 runs)
+# 70.504 s on CI, run 46005987110 (over 60 s in 6 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_json_body_with_trailing_text_or_a_repeated_member_is_read_alike)"
 slow-timeout = { period = "85s", terminate-after = 1 }
 
-# 75.682 s on CI, run 45879426222 (over 60 s in 7 of 13 runs)
+# 75.682 s on CI, run 45879426222 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_json_input_reaches_the_command_as_the_rust_server_delivers_it)"
 slow-timeout = { period = "91s", terminate-after = 1 }
 
-# 81.693 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 81.693 s on CI, run 45879426222 (over 60 s in 2 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_percent_encoded_document_path_is_answered_alike)"
 slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 90.368 s on CI, run 46005987110 (over 60 s in 10 of 13 runs)
+# 90.368 s on CI, run 46005987110 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_percent_encoded_path_no_route_matches_is_refused_alike)"
 slow-timeout = { period = "109s", terminate-after = 1 }
 
-# 55.0 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.977 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_refining_binding_is_served_by_go_at_the_path_it_fills_in)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 67.796 s on CI, run 45966151501 (over 60 s in 5 of 13 runs)
+# 82.011 s on CI at least: killed at its override in run 46063361909 (over 60 s in 6 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_response_body_holding_u2028_is_the_same_bytes_from_both_servers)"
-slow-timeout = { period = "82s", terminate-after = 1 }
+slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 63.976 s on CI, run 45819511304 (over 60 s in 1 of 13 runs)
+# 63.976 s on CI, run 45819511304 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_a_single_view_row_is_the_same_bytes_from_both_servers)"
 slow-timeout = { period = "77s", terminate-after = 1 }
 
-# 85.332 s on CI, run 45898236720 (over 60 s in 10 of 13 runs)
+# 85.332 s on CI, run 45898236720 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_k6_pass1::adv_the_go_server_answers_what_http_reads_first_as_the_rust_server_does)"
 slow-timeout = { period = "103s", terminate-after = 1 }
 
-# 82.952 s on CI, run 45955734414 (over 60 s in 8 of 13 runs)
+# 82.952 s on CI, run 45955734414 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9c_pass1::a_delete_query_string_out_of_its_rules_is_malformed_on_both_servers)"
 slow-timeout = { period = "100s", terminate-after = 1 }
 
-# 70.926 s on CI, run 45955734414 (over 60 s in 5 of 13 runs)
+# 70.926 s on CI, run 45955734414 (over 60 s in 5 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9c_pass1::an_ungranted_caller_is_refused_on_a_delete_query_route)"
 slow-timeout = { period = "86s", terminate-after = 1 }
 
-# 77.053 s on CI, run 45965268982 (over 60 s in 7 of 13 runs)
+# 77.053 s on CI, run 45965268982 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9c_pass1::every_flat_kind_is_read_from_a_delete_query_string_by_both_servers)"
 slow-timeout = { period = "93s", terminate-after = 1 }
 
-# 83.041 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 83.041 s on CI, run 45879426222 (over 60 s in 2 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9c_pass1::get_and_delete_on_one_path_reach_their_own_commands)"
 slow-timeout = { period = "100s", terminate-after = 1 }
 
-# 83.045 s on CI, run 45967957305 (over 60 s in 7 of 13 runs)
+# 84.998 s on CI, run 46063361909 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9d_pass1::both_servers_answer_each_kind_of_field_bare)"
-slow-timeout = { period = "100s", terminate-after = 1 }
+slow-timeout = { period = "102s", terminate-after = 1 }
 
-# 83.482 s on CI, run 45970627096 (over 60 s in 11 of 13 runs)
+# 83.482 s on CI, run 45970627096 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9d_pass1::both_servers_write_the_same_bytes_for_each_bare_field)"
 slow-timeout = { period = "101s", terminate-after = 1 }
 
-# 72.441 s on CI, run 45955734414 (over 60 s in 6 of 13 runs)
+# 80.397 s on CI, run 46063361909 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9d_pass1::errors_leaves_the_standard_refusals_their_answers)"
-slow-timeout = { period = "87s", terminate-after = 1 }
+slow-timeout = { period = "97s", terminate-after = 1 }
 
-# 66.197 s on CI, run 45819511304 (over 60 s in 2 of 13 runs)
+# 66.197 s on CI, run 45819511304 (over 60 s in 3 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_u9d_pass1::the_embedded_openapi_admits_each_bare_field_both_servers_answer)"
 slow-timeout = { period = "80s", terminate-after = 1 }
 
-# 85.593 s on CI, run 45898236720 (over 60 s in 10 of 13 runs)
+# 85.593 s on CI, run 45898236720 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_a_bare_body_object_naming_the_path_field_is_malformed)"
 slow-timeout = { period = "103s", terminate-after = 1 }
 
-# 90.274 s on CI, run 45955734414 (over 60 s in 9 of 13 runs)
+# 90.274 s on CI, run 45955734414 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_a_bare_body_that_is_not_the_list_is_malformed)"
 slow-timeout = { period = "109s", terminate-after = 1 }
 
-# 70.536 s on CI, run 45996485809 (over 60 s in 6 of 13 runs)
+# 70.536 s on CI, run 45996485809 (over 60 s in 6 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_a_bare_empty_list_reaches_the_command)"
 slow-timeout = { period = "85s", terminate-after = 1 }
 
-# 87.925 s on CI, run 45879426222 (over 60 s in 10 of 13 runs)
+# 87.925 s on CI, run 45879426222 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_a_literal_spelled_with_a_percent_encoded_unreserved_character_takes_precedence)"
 slow-timeout = { period = "106s", terminate-after = 1 }
 
-# 87.772 s on CI, run 45879426222 (over 60 s in 4 of 13 runs)
+# 87.772 s on CI, run 45879426222 (over 60 s in 5 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_another_method_on_the_literal_path_is_one_405)"
 slow-timeout = { period = "106s", terminate-after = 1 }
 
-# 96.510 s on CI, run 46005987110 (over 60 s in 10 of 13 runs)
+# 96.510 s on CI, run 46005987110 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_the_servers_agree_on_a_bare_body_not_labelled_json)"
 slow-timeout = { period = "116s", terminate-after = 1 }
 
-# 86.931 s on CI, run 45970627096 (over 60 s in 7 of 13 runs)
+# 86.931 s on CI, run 45970627096 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::adversary_w089_u2_pass1::adv_the_servers_agree_on_an_extra_member_in_a_bare_body)"
 slow-timeout = { period = "105s", terminate-after = 1 }
 
-# 54.5 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.497 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::a_fragment_redirect_writes_its_parameters_and_omits_an_absent_optional)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 83.627 s on CI, run 45967957305 (over 60 s in 6 of 13 runs)
+# 83.627 s on CI, run 45967957305 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::a_json_body_is_read_as_the_rust_server_reads_it)"
 slow-timeout = { period = "101s", terminate-after = 1 }
 
-# 88.252 s on CI, run 45967418523 (over 60 s in 11 of 13 runs)
+# 88.252 s on CI, run 45967418523 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::answer_forms::both_servers_answer_a_text_body)"
 slow-timeout = { period = "106s", terminate-after = 1 }
 
-# 75.504 s on CI, run 45955734414 (over 60 s in 9 of 13 runs)
+# 80.577 s on CI, run 46063361909 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::answer_forms::both_servers_answer_outcomes_declared_alike_with_one_answer)"
-slow-timeout = { period = "91s", terminate-after = 1 }
+slow-timeout = { period = "97s", terminate-after = 1 }
 
-# 64.932 s on CI, run 45819511304 (over 60 s in 2 of 13 runs)
+# 64.932 s on CI, run 45819511304 (over 60 s in 3 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::answer_forms::both_servers_answer_route_refusals_empty_bodies_and_arrays)"
 slow-timeout = { period = "78s", terminate-after = 1 }
 
-# 85.541 s on CI, run 45955734414 (over 60 s in 9 of 13 runs)
+# 85.541 s on CI, run 45955734414 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::authentication::a_call_without_the_credential_gets_the_challenge_and_runs_nothing)"
 slow-timeout = { period = "103s", terminate-after = 1 }
 
-# 68.704 s on CI, run 45996485809 (over 60 s in 6 of 13 runs)
+# 68.704 s on CI, run 45996485809 (over 60 s in 6 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::authentication::a_credential_of_any_listed_scheme_admits_a_call_the_realization_authenticated)"
 slow-timeout = { period = "83s", terminate-after = 1 }
 
-# 96.188 s on CI, run 46005987110 (over 60 s in 10 of 13 runs)
+# 96.188 s on CI, run 46005987110 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::authentication::an_open_route_and_an_ungranted_caller_answer_as_today)"
 slow-timeout = { period = "116s", terminate-after = 1 }
 
-# 81.590 s on CI, run 45879426222 (over 60 s in 10 of 13 runs)
+# 81.590 s on CI, run 45879426222 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::authentication::a_route_override_answers_a_call_without_its_cookie)"
 slow-timeout = { period = "98s", terminate-after = 1 }
 
-# 90.065 s on CI, run 45970627096 (over 60 s in 7 of 13 runs)
+# 90.065 s on CI, run 45970627096 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::authentication::both_servers_answer_every_request_alike)"
 slow-timeout = { period = "109s", terminate-after = 1 }
 
-# 84.786 s on CI, run 45967418523 (over 60 s in 11 of 13 runs)
+# 84.786 s on CI, run 45967418523 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::bare_field_and_errors::both_servers_answer_an_unlisted_error_outcome_as_errors_declares)"
 slow-timeout = { period = "102s", terminate-after = 1 }
 
-# 81.516 s on CI, run 45955734414 (over 60 s in 10 of 13 runs)
+# 81.516 s on CI, run 45955734414 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::bare_field_and_errors::both_servers_answer_one_response_field_bare)"
 slow-timeout = { period = "98s", terminate-after = 1 }
 
-# 67.574 s on CI, run 45955734414 (over 60 s in 3 of 13 runs)
+# 67.574 s on CI, run 45955734414 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::bare_field_and_errors::errors_leaves_a_success_its_envelope)"
 slow-timeout = { period = "82s", terminate-after = 1 }
 
-# 88.044 s on CI, run 45955734414 (over 60 s in 9 of 13 runs)
+# 88.044 s on CI, run 45955734414 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::board_routes::both_servers_decode_a_bare_array_body)"
 slow-timeout = { period = "106s", terminate-after = 1 }
 
-# 69.463 s on CI, run 45955734414 (over 60 s in 5 of 13 runs)
+# 69.463 s on CI, run 45955734414 (over 60 s in 5 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::board_routes::both_servers_serve_the_literal_route_before_the_variable_one)"
 slow-timeout = { period = "84s", terminate-after = 1 }
 
-# 96.590 s on CI, run 45879426222 (over 60 s in 4 of 13 runs)
+# 96.590 s on CI, run 45879426222 (over 60 s in 5 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::errors_of_one_wire_name::both_servers_answer_each_outcome_of_one_wire_name_with_its_own_fields)"
 slow-timeout = { period = "116s", terminate-after = 1 }
 
-# 101.538 s on CI, run 46005987110 (over 60 s in 10 of 13 runs)
+# 101.538 s on CI, run 46005987110 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::ignored_members::a_form_or_query_key_the_path_carries_must_hold_the_path_value_under_ignore)"
 slow-timeout = { period = "122s", terminate-after = 1 }
 
-# 82.562 s on CI, run 45970627096 (over 60 s in 6 of 13 runs)
+# 82.562 s on CI, run 45970627096 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::ignored_members::a_json_body_under_ignore_drops_what_no_field_names_and_an_echo_of_the_path)"
 slow-timeout = { period = "100s", terminate-after = 1 }
 
-# 87.068 s on CI, run 45967418523 (over 60 s in 11 of 13 runs)
+# 87.068 s on CI, run 45967418523 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::ignored_members::under_refuse_a_key_or_member_the_path_carries_stays_malformed)"
 slow-timeout = { period = "105s", terminate-after = 1 }
 
-# 80.868 s on CI, run 45955734414 (over 60 s in 9 of 13 runs)
+# 80.868 s on CI, run 45955734414 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::multipart::a_multipart_request_out_of_its_rules_is_malformed_naming_the_part)"
 slow-timeout = { period = "98s", terminate-after = 1 }
 
-# 72.606 s on CI, run 45955734414 (over 60 s in 5 of 13 runs)
+# 72.606 s on CI, run 45955734414 (over 60 s in 5 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::multipart::a_multipart_request_runs_the_command_with_its_parts)"
 slow-timeout = { period = "88s", terminate-after = 1 }
 
-# 92.801 s on CI, run 45898236720 (over 60 s in 11 of 13 runs)
+# 92.801 s on CI, run 45898236720 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::multipart::review_a_non_ascii_parameter_name_is_no_filename_in_either_server)"
 slow-timeout = { period = "112s", terminate-after = 1 }
 
-# 80.736 s on CI, run 45955734414 (over 60 s in 6 of 13 runs)
+# 82.368 s on CI, run 46063361909 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::multipart::review_hostile_multipart_requests_answer_alike)"
-slow-timeout = { period = "97s", terminate-after = 1 }
+slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 69.756 s on CI, run 45996485809 (over 60 s in 4 of 13 runs)
+# 69.756 s on CI, run 45996485809 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::multipart::the_go_server_answers_every_multipart_request_as_the_rust_server_does)"
 slow-timeout = { period = "84s", terminate-after = 1 }
 
-# 82.086 s on CI, run 45879426222 (over 60 s in 10 of 13 runs)
+# 82.086 s on CI, run 45879426222 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::query_beside_body::a_listed_field_is_read_from_the_query_beside_the_body)"
 slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 95.944 s on CI, run 45879426222 (over 60 s in 4 of 13 runs)
+# 95.944 s on CI, run 45879426222 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::query_beside_body::a_listed_field_out_of_its_place_or_its_rules_is_malformed)"
 slow-timeout = { period = "116s", terminate-after = 1 }
 
-# 87.970 s on CI, run 46005987110 (over 60 s in 9 of 13 runs)
+# 87.970 s on CI, run 46005987110 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::query_beside_body::review_a_listed_field_in_the_body_is_malformed_when_the_query_is_silent)"
 slow-timeout = { period = "106s", terminate-after = 1 }
 
-# 84.804 s on CI, run 45970627096 (over 60 s in 6 of 13 runs)
+# 84.804 s on CI, run 45970627096 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::query_beside_body::the_go_server_answers_every_query_request_as_the_rust_server_does)"
 slow-timeout = { period = "102s", terminate-after = 1 }
 
-# 81.892 s on CI, run 45967418523 (over 60 s in 11 of 13 runs)
+# 81.892 s on CI, run 45967418523 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::representations::a_text_cell_a_spreadsheet_reads_as_a_formula_is_written_behind_an_apostrophe)"
 slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 78.595 s on CI, run 45955734414 (over 60 s in 9 of 13 runs)
+# 78.595 s on CI, run 45955734414 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::representations::a_value_no_representation_names_and_a_repeated_selector_are_malformed)"
 slow-timeout = { period = "95s", terminate-after = 1 }
 
-# 75.354 s on CI, run 45955734414 (over 60 s in 7 of 13 runs)
+# 75.354 s on CI, run 45955734414 (over 60 s in 7 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::representations::a_view_reads_its_own_parameters_beside_the_selector)"
 slow-timeout = { period = "91s", terminate-after = 1 }
 
-# 88.586 s on CI, run 45898236720 (over 60 s in 10 of 13 runs)
+# 88.586 s on CI, run 45898236720 (over 60 s in 10 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::representations::both_servers_answer_a_view_as_csv_when_the_query_selects_it)"
 slow-timeout = { period = "107s", terminate-after = 1 }
 
-# 65.754 s on CI, run 46005987110 (over 60 s in 4 of 13 runs)
+# 50.306 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
+[[profile.ci.overrides]]
+filter = "binary_id(ess-synth::http_binding_rust) & test(=go::the_bound_go_server_builds_and_is_vet_clean)"
+slow-timeout = { period = "61s", terminate-after = 1 }
+
+# 65.754 s on CI, run 46005987110 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::the_go_and_rust_servers_answer_one_binding_alike)"
 slow-timeout = { period = "79s", terminate-after = 1 }
 
-# 82.083 s on CI, run 45879426222 (over 60 s in 10 of 13 runs)
+# 82.083 s on CI, run 45879426222 (over 60 s in 11 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::undeclared_members::a_struct_that_ignores_undeclared_fields_admits_one_and_refuses_one_in_what_it_holds)"
 slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 93.901 s on CI, run 45879426222 (over 60 s in 4 of 13 runs)
+# 93.901 s on CI, run 45879426222 (over 60 s in 4 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::undeclared_members::the_go_server_refuses_an_undeclared_member_at_any_depth)"
 slow-timeout = { period = "113s", terminate-after = 1 }
 
-# 83.313 s on CI, run 46005987110 (over 60 s in 9 of 13 runs)
+# 83.313 s on CI, run 46005987110 (over 60 s in 9 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::uuid_segments::both_servers_read_a_uuid_from_a_path_segment)"
 slow-timeout = { period = "100s", terminate-after = 1 }
 
-# 75.065 s on CI, run 45879426222 (over 60 s in 8 of 13 runs)
+# 75.065 s on CI, run 45879426222 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::http_binding_rust) & test(=go::wrapped_answers::both_servers_answer_a_wrapped_row_rows_and_response)"
 slow-timeout = { period = "91s", terminate-after = 1 }
 
-# 54.3 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 54.327 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::json_go) & test(=issue_224_json_round_trips_through_the_go_server_package)"
 slow-timeout = { period = "66s", terminate-after = 1 }
 
-# 286.783 s on CI, run 45819511304 (over 60 s in 13 of 13 runs)
+# 286.783 s on CI, run 45819511304 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::nested_response_wasm) & test(=actual_wasm_observes_independent_response_event_and_generated_sibling)"
 slow-timeout = { period = "345s", terminate-after = 1 }
 
-# 283.220 s on CI, run 45819511304 (over 60 s in 13 of 13 runs)
+# 283.220 s on CI, run 45819511304 (over 60 s in 14 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::one_time_wasm) & test(=shared_disclosure_controls_execute_inside_wasm_through_browser_bridge)"
 slow-timeout = { period = "340s", terminate-after = 1 }
 
-# 69.082 s on CI, run 45966151501 (over 60 s in 8 of 13 runs)
+# 69.082 s on CI, run 45966151501 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::optional_recursive_codecs) & test(=adv_g_dotted_and_coded_labels_reach_every_rust_and_go_site)"
 slow-timeout = { period = "83s", terminate-after = 1 }
 
-# 72.985 s on CI, run 45879426222 (over 60 s in 8 of 13 runs)
+# 72.985 s on CI, run 45879426222 (over 60 s in 8 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::optional_recursive_codecs) & test(=a_variant_code_names_its_identifier_on_every_target)"
 slow-timeout = { period = "88s", terminate-after = 1 }
 
-# 67.090 s on CI, run 45819511304 (over 60 s in 1 of 13 runs)
+# 67.090 s on CI, run 45819511304 (over 60 s in 2 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::optional_recursive_codecs) & test(=dotted_labels_synthesize_as_derived_identifiers_on_every_code_target)"
 slow-timeout = { period = "81s", terminate-after = 1 }
 
-# 60.320 s on CI, run 45819511304 (over 60 s in 1 of 13 runs)
+# 60.320 s on CI, run 45819511304 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::optional_recursive_codecs) & test(=go_server_codecs_carry_labels_and_recursive_values)"
 slow-timeout = { period = "73s", terminate-after = 1 }
 
-# 52.7 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.716 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::served_entry) & test(=generated_names_do_not_hide_ports_or_runtime_imports)"
 slow-timeout = { period = "64s", terminate-after = 1 }
 
-# 62.542 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 62.542 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::served_unfinished_committed) & test(=the_go_server_answers_a_failed_delivery_as_committed)"
 slow-timeout = { period = "76s", terminate-after = 1 }
 
-# 52.2 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 52.196 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::typed_text_operands) & test(=t200_the_generated_rust_system_applies_every_operand_and_each_fault_fails)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 77.208 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 77.208 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::union_unit_variants) & test(=go_server_codecs_round_trip_both_variants_and_refuse_the_malformed_shapes)"
 slow-timeout = { period = "93s", terminate-after = 1 }
 
-# 55.1 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 55.138 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::union_unit_variants_adversary) & test(=the_go_target_vets_an_optional_union_with_a_unit_variant)"
 slow-timeout = { period = "67s", terminate-after = 1 }
 
-# 72.187 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 72.187 s on CI, run 45879426222 (over 60 s in 1 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::view_params_served) & test(=a_param_bound_by_the_ui_binding_reaches_the_port_through_both_servers)"
 slow-timeout = { period = "87s", terminate-after = 1 }
 
-# 58.9 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 58.904 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-synth::view_params_served) & test(=a_request_head_past_the_shared_bound_is_a_431_from_both_servers)"
 slow-timeout = { period = "71s", terminate-after = 1 }
 
-# 51.8 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 51.779 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(ess-ui-test::adversary_pass2) & test(=a_move_of_exactly_the_limit_is_played)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 59.4 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 59.352 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(schema-contract::binary64_adversary) & test(=native_rust_composition_preserves_identity_in_both_number_feature_modes)"
 slow-timeout = { period = "72s", terminate-after = 1 }
 
-# 62.225 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 62.225 s on CI, run 45879426222 (over 60 s in 2 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(schema-contract::normalization_binary64_targets) & test(=native_rust_executes_finite_binary64_and_retained_documents)"
 slow-timeout = { period = "75s", terminate-after = 1 }
 
-# 71.217 s on CI, run 45996485809 (over 60 s in 5 of 13 runs)
+# 71.217 s on CI, run 45996485809 (over 60 s in 6 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(schema-contract::normalization_positional_targets) & test(=native_rust_executes_position_and_binary64_contracts)"
 slow-timeout = { period = "86s", terminate-after = 1 }
 
-# 64.773 s on CI, run 45879426222 (over 60 s in 1 of 13 runs)
+# 52.246 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
+[[profile.ci.overrides]]
+filter = "binary_id(schema-contract::normalization_raw_adversary) & test(=generated_rust_runs_adversarial_lexical_cases)"
+slow-timeout = { period = "63s", terminate-after = 1 }
+
+# 64.773 s on CI, run 45879426222 (over 60 s in 2 of 14 runs)
 [[profile.ci.overrides]]
 filter = "binary_id(schema-contract::normalization_raw_targets) & test(=native_rust_captures_and_decodes_retained_documents)"
 slow-timeout = { period = "78s", terminate-after = 1 }
 
-# 58.0 s on CI at most, under 60 s in all 13 runs; held at 1.2 times it, at most 72 s
+# 58.046 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
 [[profile.ci.overrides]]
 filter = "binary_id(schema-contract::normalization_rust) & test(=standalone_rust_target_executes_model_owned_wire_records)"
 slow-timeout = { period = "70s", terminate-after = 1 }
 
-# The slow lane is held to the same 60 s, with its own exceptions from 11 runs of its job.
+# The slow lane is held to the same 60 s, with its own exceptions from 12 runs of its job.
 [profile.slow]
 slow-timeout = { period = "60s", terminate-after = 1 }
 final-status-level = "slow"
@@ -892,77 +908,77 @@ final-status-level = "slow"
 [profile.slow.junit]
 path = "junit.xml"
 
-# 179.742 s on CI, run 45901071526 (over 60 s in 11 of 11 runs)
+# 179.742 s on CI, run 45901071526 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_244b_window_free_bytes) & test(=adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a)"
 slow-timeout = { period = "216s", terminate-after = 1 }
 
-# 84.556 s on CI, run 45970627096 (over 60 s in 7 of 11 runs)
+# 84.556 s on CI, run 45970627096 (over 60 s in 8 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_287_pass1) & test(=caller_set_wasm_matches_actual_native_outcomes)"
 slow-timeout = { period = "102s", terminate-after = 1 }
 
-# 88.874 s on CI, run 45970627096 (over 60 s in 8 of 11 runs)
+# 88.874 s on CI, run 45970627096 (over 60 s in 9 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_287_pass1) & test(=caller_upsert_wasm_matches_actual_native_outcomes)"
 slow-timeout = { period = "107s", terminate-after = 1 }
 
-# 82.384 s on CI, run 45970627096 (over 60 s in 4 of 11 runs)
+# 82.384 s on CI, run 45970627096 (over 60 s in 5 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_u22_pass1) & test(=a_refusal_the_step_bound_cut_short_names_the_bound)"
 slow-timeout = { period = "99s", terminate-after = 1 }
 
-# 311.835 s on CI, run 45970627096 (over 60 s in 11 of 11 runs)
+# 311.835 s on CI, run 45970627096 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_u22_pass1) & test(=every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario)"
 slow-timeout = { period = "375s", terminate-after = 1 }
 
-# 189.114 s on CI, run 45970627096 (over 60 s in 11 of 11 runs)
+# 189.114 s on CI, run 45970627096 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_u22_pass1) & test(=every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario)"
 slow-timeout = { period = "227s", terminate-after = 1 }
 
-# 283.669 s on CI, run 45901071526 (over 60 s in 11 of 11 runs)
+# 283.669 s on CI, run 45901071526 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::adversary_w3_266_267_dump) & test(=adv_every_model_synthesizes_one_document_and_dumps_for_base_comparison)"
 slow-timeout = { period = "341s", terminate-after = 1 }
 
-# 159.496 s on CI, run 45970627096 (over 60 s in 10 of 11 runs)
+# 159.496 s on CI, run 45970627096 (over 60 s in 11 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::enum_presence_guard) & test(=no_corpus_suite_requires_a_branch_the_precedence_takes_elsewhere)"
 slow-timeout = { period = "192s", terminate-after = 1 }
 
-# 159.464 s on CI, run 45970627096 (over 60 s in 11 of 11 runs)
+# 159.464 s on CI, run 45970627096 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::synthesis_suite_bytes_table) & test(=every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs)"
 slow-timeout = { period = "192s", terminate-after = 1 }
 
-# 55.390 s on CI at most, under 60 s in all 11 runs; held at 1.2 times it, at most 72 s
+# 55.390 s on CI at most, under 60 s in all 12 runs; held at 1.2 times it, at most 72 s
 [[profile.slow.overrides]]
 filter = "binary_id(ess-conformance::synthesis_suite_bytes_table) & test(=every_repository_model_keeps_its_synthesized_bytes)"
 slow-timeout = { period = "67s", terminate-after = 1 }
 
-# 221.704 s on CI, run 45970627096 (over 60 s in 11 of 11 runs)
+# 221.704 s on CI, run 45970627096 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-synth::adversary_e_u2_bytes) & test(=adv_e_u2_byte_identity_probe)"
 slow-timeout = { period = "267s", terminate-after = 1 }
 
-# 337.143 s on CI, run 45970627096 (over 60 s in 11 of 11 runs)
+# 337.143 s on CI, run 45970627096 (over 60 s in 12 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-synth::adversary_e_u6_bytes) & test(=adv_e_u6_byte_identity_probe)"
 slow-timeout = { period = "405s", terminate-after = 1 }
 
-# 119.806 s on CI, run 45970627096 (over 60 s in 7 of 11 runs)
+# 119.806 s on CI, run 45970627096 (over 60 s in 8 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-synth::generated_view_queries) & test(=conditional_measure_all_six_functions_execute_in_the_generated_go_queries)"
 slow-timeout = { period = "144s", terminate-after = 1 }
 
-# 132.444 s on CI, run 45970627096 (over 60 s in 7 of 11 runs)
+# 132.444 s on CI, run 45970627096 (over 60 s in 8 of 12 runs)
 [[profile.slow.overrides]]
 filter = "binary_id(ess-synth::generated_view_queries) & test(=conditional_measure_all_six_functions_execute_in_the_generated_rust_queries)"
 slow-timeout = { period = "159s", terminate-after = 1 }
 
-# 57.113 s on CI at most, under 60 s in all 11 runs; held at 1.2 times it, at most 72 s
+# 57.113 s on CI at most, under 60 s in all 12 runs; held at 1.2 times it, at most 72 s
 [[profile.slow.overrides]]
 filter = "binary_id(ess-synth::generated_view_queries) & test(=the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders)"
 slow-timeout = { period = "69s", terminate-after = 1 }
