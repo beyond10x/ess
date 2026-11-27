@@ -863,6 +863,7 @@ fn reached_as(
         let Some((command, branch)) = read_as(&models, command, branch) else {
             continue;
         };
+        let _held = super::held(models.arrangement);
         let mut tried = Vec::new();
         if let Some(scenario) =
             super::reached_branch(&models, command, branch, actors, id, &mut tried)
@@ -907,6 +908,9 @@ fn denied_run(
         let Some(command) = models.acting.commands().get(&command.name) else {
             continue;
         };
+        // The model itself is held by the synthesis; a caller reading here, kept by [`Readings`].
+        let _held =
+            (!std::ptr::eq(models.arrangement, ir)).then(|| super::held(models.arrangement));
         for branch in &command.outcomes {
             match super::run_as(models, command, branch, actors, super::Witness::Full) {
                 Ok(run) => return Ok(run),

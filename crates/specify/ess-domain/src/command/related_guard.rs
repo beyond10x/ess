@@ -1001,16 +1001,27 @@ fn missing_row_answers(
         } else {
             missing_row_message(command)
         };
+        // A hint names only a form validation accepts: a `via` naming no input of the command is
+        // refused itself (`entity_or_refusal`), so the hint names the inputs instead.
+        let hint = match via {
+            RelatedVia::Input(field) if command.input_field(field).is_none() => format!(
+                "declare the branch taken when it does not, `exists: false` over the input of \
+                 `{}` that names the row; declared input: {}",
+                command.name,
+                super::join(command.input.iter().map(|field| &field.name))
+            ),
+            _ => format!(
+                "declare the branch taken when it does not: `when_related: {{via: {via}, \
+                     exists: false}}`"
+            ),
+        };
         errors.push(
             ValidationError::at(
                 command.site().key("outcomes"),
                 ValidationCode::NonExhaustiveBranches,
                 message,
             )
-            .with_hint(format!(
-                "declare the branch taken when it does not: `when_related: {{via: {via}, \
-                     exists: false}}`"
-            )),
+            .with_hint(hint),
         );
     }
     errors
