@@ -1,0 +1,5 @@
+refused: refusal[ESS-SYNTH-001]: outcome shelf.stock.StageRelease/staged has no scenario `shelf.stock.StageRelease/outcome/staged`
+  no witness: `staged.affects[0]` is `entries`, which offers no four elements that keep three identities apart, change every member the entry reads on a held row, and reach the branch
+  help: give the field a type that has a finite value, or drop it from the command's input
+note: `shelf.stock.StageRelease/outcome/unit-not-for-tiered` sends the list `exists e in entries: ((e.kind != tiered and defined(e.unit)))` walks without spreading it: no values the list's element type admits were found that, beside the deciding element, leave the quantifier decided by that element alone, so the list is sent with it first, last or on every position, and a target reading only the first element, only the last, or `forall` for `exists` is not failed by it
+6 scenario(s) (0 authored), 1 refusal(s), written to out/suite.json

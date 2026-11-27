@@ -9,7 +9,7 @@ tags:
 - adopter-report
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
 ---
 ## Outcome
 
@@ -94,3 +94,74 @@ EA-D1, how the report is handled (2026-11-27; recommended: C; no answer yet).
   pass with no row moved.
 - Before the story moves, the adopter's reduction is read: either it reproduces on the released binary and a test of its
   own joins the acceptance, or the story says it did not.
+
+## Adopter reduction, 2026-11-27 (0.99.9): the original report had another cause, and an each-move refuses its outcome beside a row-set guard
+
+The downstream adopter whose report opened this story reduced its two refused outcomes to a model of 157 lines on 0.99.9
+(its specification is not in the store). The reduction answers the question this story's Reproduction left open.
+
+**The original report had a different cause.** The two outcomes the adopter named (a list input and an `affects:` entry
+with `each:`, refused `ESS-SYNTH-001`) are refused because of a row-set guard in the same command, whose stored-row
+selector holds a membership over the list with a body of several tests; the list input and the each-move are not the
+cause. Deleting the guard gives the outcome a scenario; deleting the each-move, or the list input with its `distinct`
+guard, leaves the message unchanged. That cause is recorded on
+`story:a-row-set-selected-by-a-literal-identity-and-an-input-list-is-witnessed` (the membership counts only when its body
+is the one equality), with the neutral model `C1` and its controls under
+`.engineering/repro/a-row-set-selected-by-a-literal-identity-and-an-input-list-is-witnessed/`. The reproduction models of
+this story had no row-set guard, which is why the adopter's failure did not reproduce here.
+
+**Behind that cause there is one that belongs here.** Where the guard's equality is counted (the body is the one
+equality), the success outcome that moves the entity and writes the guard's rows with `affects:` and `each:` is still
+refused `ESS-SYNTH-001`:
+
+> a step of the scenario changes rows of the selector's entity in a way synthesis does not follow (a set effect, a
+> binding or a direct setup)
+
+Neutral models, from the same directory (ess 0.99.9; one entity of entries that the staging command writes through
+`each:` over its list input, one row-set guard over those entries):
+
+| model | guard body | `affects:` each | scenarios | refusals |
+|---|---|---|---|---|
+| C2 | `e.name == name` | kept | 5 | 2 |
+| C3 | `e.name == name` | deleted | 6 | 1 |
+
+C2 refuses the guard's own outcome (no arrangement takes that branch) and the success outcome with the text above; C3
+refuses the guard's own outcome only (`Entry.name` is read by a filter and no declared command writes it, because the
+each-move was the one writer), and the success outcome and its transition have scenarios. So the each-move that writes
+the rows a guard of the same command reads is what refuses the success outcome. It is not the state-only each-move of
+the neighbour above (`ESS-SYNTH-004` on a state no other move reaches): the code differs and the shape does not need
+another command.
+
+Adopter's impact: in its whole specification on 0.99.9 (493 scenarios, 673 refusals, 512 of them `ESS-SYNTH-001`), 171
+refusals carry this text, 133 of them naming the preview outcome as the step. The preview
+outcome itself and the release outcome of a second command carry the "no equality" refusal first (the other story), so
+this refusal is what follows once that one is cleared.
+
+A third refusal sits behind this one: a list guard that excludes some element values leaves the each-entry with no four
+elements to send, `story:an-each-entry-beside-a-list-guard-that-refuses-some-element-values-is-witnessed`.
+
+Fit, in the words of `.agents/skills/assessing-external-requests/SKILL.md`:
+
+1. Need: an outcome whose `affects:`/`each:` entry writes the rows a guard of its own command selects is witnessed, as
+   the first section of this story asks (an each-entry does not stop its outcome from being witnessed).
+2. Class: the same defect as this story's Outcome, in a shape its first reproduction did not hold.
+3. Already expressible: partly. Dropping the guard or the each-move makes the outcome witnessed and drops the rule.
+4. Fit: no new key. The arrangement follows an each-entry's effect on rows a guard reads, as it follows a set effect
+   on them. Whether the entity's other row-set refusals of the command can be witnessed beside it is part of the work.
+5. Second adopter: any command that registers each listed line and refuses a line already registered.
+6. Cost: no format bump; suites change only for models with this pair.
+
+Acceptance added by this report:
+
+- C2 writes a scenario for the success outcome, so its 5 scenarios and 2 refusals become 6 or more scenarios and at most
+  1 refusal (the guard's own outcome stays refused, as in C3, until a command writes the guard's field). Test: `C2` with
+  its success outcome and transition witnessed and the interpreted target passing the suite.
+- A target that ignores the each-entry fails a scenario of that suite.
+- The acceptance above (the state-only each-move, the original report) is unchanged.
+
+## Decision EA-D1 answered in part, 2026-11-27
+
+EA-D1 option B asked the adopter for a reduction. The adopter sent one on 0.99.9 (section above): the original report is the
+row-set guard of `story:a-row-set-selected-by-a-literal-identity-and-an-input-list-is-witnessed`, and the each-move refusal of the
+success outcome is the part that belongs to this story. The neighbour above (the state-only each-move, `ESS-SYNTH-004`) is
+unchanged and still reproduces only on its own model.

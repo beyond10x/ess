@@ -1,0 +1,7 @@
+refused: refusal[ESS-SYNTH-001]: outcome shelf.stock.StageRelease/tier-unit-differs has no scenario `shelf.stock.StageRelease/outcome/tier-unit-differs`
+  no witness: `shelf.stock.StageRelease/tier-unit-differs: its own row set is False` is `row set`, which has no arrangement of rows the declared commands produce on which the rows its selector selects take this branch
+  help: let a command that creates the entity write each field the filter reads from an input or from a caller attribute (`{caller: <attribute>}`) rather than from a literal or a generated value, so the arranged rows can hold values on both sides of the filter
+refused: refusal[ESS-SYNTH-001]: outcome shelf.stock.StageRelease/staged has no scenario `shelf.stock.StageRelease/outcome/staged`
+  no witness: ``shelf.stock.StageRelease/staged` a step of the scenario changes rows of the selector's entity in a way synthesis does not follow (a set effect, a binding or a direct setup)` is `row set`, which sends a row-set command whose required branch the rows the scenario arranges do not decide
+  help: give the field a type that has a finite value, or drop it from the command's input
+5 scenario(s) (0 authored), 2 refusal(s), written to out/suite.json

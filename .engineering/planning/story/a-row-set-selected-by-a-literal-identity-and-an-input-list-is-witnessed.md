@@ -11,7 +11,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Summary
 
@@ -92,3 +92,82 @@ guard of this shape, both outcomes refused `ESS-SYNTH-001`, "1 scenario(s) (0 au
 - `crates/verify/ess-conformance/tests/fixtures/synthesis-sources.digest`: the stamp.
 - `website/docs/reference/predicates.md`: one paragraph under the row-set section.
 - `CHANGELOG.md`: one `### Fixed` bullet under Unreleased.
+
+## Adopter report, 2026-11-27 (0.99.9): a membership whose body has a second conjunct
+
+A downstream product specification, on 0.99.9, reduced a refusal of two success outcomes to a model of 157 lines
+(its specification is not in the store). The shape is this story's membership, with one more test in the body.
+
+- A command takes a list of struct elements. A `when_related` guard over the stored rows of another entity has a
+  `where:` of two tests of the stored row's own fields and an `exists:` over that list, whose body is an `all:` of
+  four tests: an equality of an element's `String` field with the stored row's field (the membership equality), a test
+  of the element's kind against a literal, `defined(...)` of an element's optional field, and a `!=` of that optional
+  field against the stored row's.
+- `ess verify conform synthesize` refuses `ESS-SYNTH-001` "selects rows by no equality between a String or Uuid field
+  and the input or the addressed subject" on the guard's outcome, on the success outcome after it and on the
+  transition that outcome moves, with an equality of exactly the kind this story's fix counts.
+- Impact on the adopter: two success outcomes of two commands (the preview and the release of a versioned record)
+  carry the refusal, with the transitions they move. In its whole specification on 0.99.9 the synthesis writes 493
+  scenarios and 673 refusals, 512 of them `ESS-SYNTH-001`; 88 of those 512 carry this reason text. Which of the 88 hold
+  this shape, and what the other 424 are, was not sorted.
+- The adopter's own reading: the cause is the guard, not the list input or the each-move of the outcome. Deleting the
+  guard gives the outcome a scenario; deleting the each-move, or the list input with its `distinct` guard, leaves the
+  message unchanged. Their hypothesis: the equality counts only when it is the one predicate of the body, not inside
+  an `all:`.
+
+Reproduced on 0.99.9 with a neutral model (`C1`), and the hypothesis tested directly on three more (`C2` to `C4`),
+committed under
+`.engineering/repro/a-row-set-selected-by-a-literal-identity-and-an-input-list-is-witnessed/`, each with its
+`README.md`, commands and observed output. One entity with a draft-to-staged lifecycle, one entity of entries that
+the staging command writes with `affects:` and `each:` over its list input, five outcomes.
+
+| model | body of the `exists:` | `affects:` each | scenarios | refusals |
+|---|---|---|---|---|
+| C1 | `all: [e.kind == tiered, e.name == name, defined(e.unit), e.unit != unit]` | kept | 4 | 3 |
+| C2 | `e.name == name` | kept | 5 | 2 |
+| C3 | `e.name == name` | deleted | 6 | 1 |
+| C4 | `all: [e.name == name, e.kind == tiered]` | deleted | 4 | 3 |
+
+C1 and C4 refuse the guard's outcome, the success outcome and its transition, all with the "no equality" text. C2 and
+C3 do not carry that text: the equality is counted. Run and not committed: a body that is an `all:` of the equality
+alone gives the C2 and C3 counts; `all: [e.name == name, e.unit != unit]`, `all: [e.name == name, e.kind == kind]`
+and `all: [e.kind == tiered, e.name == name]` (each-move deleted) give the C4 counts; an `all:` around the quantifier
+(`all: [kind == tiered, {exists: {..., that: e.name == name}}]`) gives the C2 and C3 counts. The guard deleted from the
+C1 model writes 6 scenarios and 0 refusals; the each-move deleted from C1 (guard kept) writes 4 and 3.
+
+The adopter's hypothesis holds, with a sharper edge: the equality is counted when it is the whole body (or an `all:` of
+one), and is not counted when any other predicate sits beside it, in either order and whatever that predicate is (a
+literal equality, a `!=`, an enum equality with the input; `defined(...)` was run only inside C1). Cause, read at `main` (`fd6049733`):
+`scoped_at` in `crates/verify/ess-conformance/src/synthesize/row_set.rs`, the `Predicate::Exists` arm, counts the
+quantifier only where `quantified.body` is itself the one `Compare` equality; a `Predicate::All` body falls to
+`false`. The decision of this story, "a body that is more than one equality between the field and the element does not
+[scope]", is the limit; this shape has one equality and other tests, which narrow the rows the equality selects and
+leave them the scenario's own.
+
+Fit, in the words of `.agents/skills/assessing-external-requests/SKILL.md`:
+
+1. Need: a guard over stored rows that selects them by an element's field and narrows by the element's other fields
+   gets a scenario for itself and for the outcomes after it.
+2. Class: defect against this story's own fit review (`website/docs/reference/predicates.md`: "A selector needs an
+   equality ... so a scenario counts only its own rows"): rows chosen by a membership equality are the scenario's own
+   with or without a further test of the element.
+3. Already expressible: partly. An element test can move out of the body into a second `exists:` conjunct of the
+   `where:`, which changes the rule (the two tests then name different elements). No idiom keeps the meaning.
+4. Fit: no new key. The counted shape widens to a body whose conjuncts include the one equality; the arrangement that
+   writes the quantifier out element by element reads any body, and the listed-input attempt of this story reads only
+   the equality and the literals beside it (from its doc comment). Whether the second step needs a change is part of the work.
+5. Second adopter: any model that compares an element's name with a stored name and also tests the element's kind.
+6. Cost: no format bump; suites change only for models with such a body (more scenarios); `ess/23` and later only.
+
+Acceptance added by this report:
+
+- A body of `all:` with one equality of the field and the element and any other tests counts as that equality: C1 no
+  longer prints the "no equality" text on any outcome, and neither does C4. Test: the
+  four models, `C1` to `C4`, with the counts of each written down (C1 is then expected to stand where C2 does, 5 and 2, its success
+  outcome refused for the cause named in `story:a-state-only-an-each-move-reaches-is-arranged-for-the-refusals-of-the-entitys-other-commands`).
+- A body whose conjuncts hold no such equality, or an `any:` body, keeps its refusal; below `ess/23` the model keeps its
+  refusal.
+- Every repository model and component keeps its synthesized bytes.
+
+CHANGELOG: checked 2026-11-27 on `main` (`fd6049733`), `[Unreleased]` and 0.99.1 to 0.99.8: 0.99.1 counts the
+membership whose body is the one equality; no entry counts a body with a second predicate.
