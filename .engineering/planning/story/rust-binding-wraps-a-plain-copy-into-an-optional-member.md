@@ -14,13 +14,15 @@ relations:
 - decomposes: epic:adopter-gaps-generated-code
 - decomposes: epic:zero-open-issues-2026-11
 scope:
+- confidence: inferred
+  path: CHANGELOG.md
 - confidence: cited
   path: crates/generate/ess-synth/src/rust/feasibility.rs
 - confidence: inferred
   path: crates/generate/ess-synth/src/rust/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/binding_optional_wrap_go.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}

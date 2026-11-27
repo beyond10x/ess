@@ -37,15 +37,16 @@ scope:
   path: crates/generate/ess-synth/tests/refusal_policy_runtime.rs
 - confidence: inferred
   path: docs/design/conditional-binding-failure-policies.md
-revision: 4
+revision: 5
 ---
 ## Outcome
 
 The dispatch that `ess generate synthesize --target rust` writes for a binding whose `on_failure:`
 selects a policy per refusal of the invoked command (`drop: [...]`, `retry: {outcomes, attempts,
 final}`, `escalate: {emits, except}`) selects the policy from the refusal the command answered,
-counts the attempts of one occurrence against the policy's bound, and answers any other failure with
-the fallback, as the conformance interpreter does. Such a binding no longer refuses the Rust
+counts the attempts of one occurrence against the policy's bound, and answers any declared refusal
+no policy names with the fallback, as the conformance interpreter does. An unmet obligation still
+propagates (RP-D4). Such a binding no longer refuses the Rust
 workspace. The Go and web targets keep their refusal (RP-D1); they follow in their own story.
 
 ## Problem
@@ -82,7 +83,12 @@ controls for duplicate escalation remain owed with the generated dispatch".
 The interpreter already does it (the same page: it "selects the policy from each attempt's actual
 answer, counts the occurrence's total attempts against the bound, answers an untyped port failure
 with the fallback"), and the conformance suite holds one scenario per declared refusal,
-`<binding>/binding/refusal/<outcome>`. No generated-Rust conformance runner exists
+`<binding>/binding/refusal/<outcome>`. The interpreter's fallback also answers an untyped
+transport or adapter failure returned by the invocation (the same page, :225). The generated Rust
+command port has no such failure: its method returns `Result<Outcome, UnmetObligation>`
+(`rust/obligation.rs:289`), every declared refusal is a variant of `Outcome`, and the dispatch's
+`?` propagates `UnmetObligation` past every policy (`rust/system.rs:1573-1579`, `:1629-1639`), because
+an unimplemented behaviour is not a delivery failure. RP-D4 decides how that stays. No generated-Rust conformance runner exists
 (`ess-conformance` runs Go and TypeScript only), so this story checks the generated dispatch through
 a harness, not through the suite.
 
@@ -116,20 +122,27 @@ All tests below run under the test budget: each case under 60 s, and no test spa
   attempt from a script on its standard input and prints one line per attempt (refusal, policy
   applied, attempt number, events published). Cases:
   - `rust_dispatch_selects_the_policy_per_refusal`: `wrong-state` is dropped with no publication;
-    `busy` (`demo.ledger.Unavailable`) is retried; `rejected` is final at its first answer;
-    `at-limit` and an untyped port failure take the fallback and publish `RecordEscalated` exactly
-    once per occurrence. These are the verdicts the suite's `notify-ledger/binding/refusal/<outcome>`
-    scenarios state for the fixture, with their `expect_publication_count` and
-    `expect_no_publication` steps.
+    `busy` (`demo.ledger.Unavailable`) is retried; `rejected` is final at its first answer and is
+    dropped with no publication, never rerouted to escalation; `at-limit`, the declared refusal no
+    policy names, takes the fallback and publishes `RecordEscalated` exactly once per occurrence;
+    an `UnmetObligation` from the port propagates out of the pump with no publication and no
+    policy applied (RP-D4 A). These are the verdicts the suite's
+    `notify-ledger/binding/refusal/<outcome>` scenarios state for the fixture, with their
+    `expect_publication_count` and `expect_no_publication` steps.
   - `rust_dispatch_counts_attempts_of_one_occurrence`: a third `unavailable`/`busy` answer of one
     occurrence ends its retries at the bound of 3 attempts, across the two outcomes that select the
-    retry; a second occurrence starts at attempt 1.
+    retry, and the occurrence is dropped with no publication (bound exhaustion loses the work:
+    `docs/design/binding-delivery-guarantees.md:146`,
+    `docs/design/conditional-binding-failure-policies.md:233-235`); a second occurrence starts at
+    attempt 1.
   - `rust_dispatch_stops_a_plain_bounded_retry`: the plain bounded binding stops after its
-    `attempts:` and at once on a `final:` refusal.
+    `attempts:` and at once on a `final:` refusal, and in both cases drops the occurrence with no
+    publication.
 - No Rust synthesis prints "cannot select the policy per refusal of the invoked command" or "cannot
-  stop after `attempts:`". A binding with one universal policy generates the bytes it generated:
-  the byte pins of `AGENTS.md` § Gate (`ess-synth`'s `served_codec_names`, `go`, `http_binding_rust`)
-  stay unchanged.
+  stop after `attempts:`". Under RP-D4 A the port signature does not change, so a binding with one
+  universal policy generates the bytes it generated: the byte pins of `AGENTS.md` § Gate
+  (`ess-synth`'s `served_codec_names`, `go`, `http_binding_rust`) stay unchanged. Under RP-D4 B
+  this row does not hold and those pins move.
 - Three mutants of the dispatch in `rust/system.rs`, each applied and the harness rebuilt with
   `task refusal-policy-harness`, turn a case of `refusal_policy_runtime.rs` red: the policy of the
   wrong refusal, a retry that ignores the count, an escalation published twice. The result is
@@ -187,14 +200,34 @@ CHANGELOG: checked 2026-11-27 on `main` (`e29c029fab`), sections 0.99.3 to 0.99.
     Costs one harness binding, one runtime case and the `bounded_retry.rs` changes above.
   - B: it stays refused in Rust. Costs nothing here and leaves `retry_bound` refusing Rust for a
     shape whose counter exists.
+- RP-D4, open. How an untyped failure of the invoked command is reported in Rust:
+  - A (recommended): it has no report, because the generated in-process port has no untyped
+    failure. The port keeps `Result<Outcome, UnmetObligation>`; the fallback answers every declared
+    refusal no policy names; `UnmetObligation` propagates out of the pump before any policy, as it
+    does for every policy today. No port signature changes, so the bytes of bindings with one
+    universal policy stay unchanged. Cost: the language's fallback for an untyped transport or
+    adapter failure has no case in the generated Rust runtime; a future transport that can fail
+    untyped reopens this decision, and `conditional-binding-failure-policies.md` says so.
+  - B: the port's error becomes a generated enum of `UnmetObligation` and an untyped port failure,
+    and the dispatch answers the second with the fallback. Changes every generated command port
+    signature and the pump's error type, so the bytes of every workspace with a binding, universal
+    policies included, move, the byte pins above are re-pinned, and every hand-written port
+    implementation breaks.
+  - C: an untyped failure only for commands a refusal-selected binding invokes, beside the trait, as
+    the selection transport's `TransportFailure` is (`pump_fails_with_transport`). Keeps the bytes of
+    models without such a binding; costs a second error path in the port surface and a pump error
+    type that depends on the model.
+  No option keeps the bytes and also reports an untyped failure; A keeps the bytes.
 
 ## Order
 
 - `depends_on story:rust-binding-wraps-a-plain-copy-into-an-optional-member`: both change
   `crates/generate/ess-synth/src/rust/system.rs` (that story at the binding copy, `:537`; this one at
-  the dispatch, `:859-863` and `:1681`). That story is active and approved, so it lands first.
+  the dispatch, `:859-863` and `:1681`), and both add a `CHANGELOG.md` entry. That story is active
+  and approved, so it lands first.
 - `story:the-rust-target-writes-a-one-time-response-outcome-as-an-obligation-that-carries-its-contract-instead-of-refusing-the-workspace`
-  depends on this one: both change `src/failure.rs`, `src/plan.rs` and `src/lib.rs`.
+  depends on this one: both change `src/failure.rs`, `src/plan.rs`, `src/lib.rs`, `src/rust/mod.rs`
+  and `CHANGELOG.md`.
 
 ## Scope
 

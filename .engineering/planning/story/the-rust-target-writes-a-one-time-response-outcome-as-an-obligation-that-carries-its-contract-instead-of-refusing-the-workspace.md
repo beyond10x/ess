@@ -26,7 +26,7 @@ scope:
   path: crates/generate/ess-synth/tests/one_time_response.rs
 - confidence: inferred
   path: docs/design/one-time-response-values.md
-revision: 4
+revision: 5
 ---
 ## Outcome
 
@@ -97,8 +97,17 @@ the Rust target took the refusal branch.
 - No synthesis of the Rust target prints "this code target cannot implement that policy".
 - A model without `one_time_response:` generates the bytes it generated: the byte pins of
   `AGENTS.md` § Gate stay unchanged, and so does its plan.
-- Mutants killed by the new case: the clause added to another outcome's or command's contract, the
-  clause dropped, and the Rust refusal skipped while the clause is missing.
+- **New case `the_one_time_clause_names_only_its_outcome`, same file**, on a second model
+  `SIBLINGS` beside `MODEL`: `credentials.api.Issue` keeps `issued` with `one_time_response:
+  [secret]` and gains a second outcome without the key (a declared refusal `denied` with its error
+  type), and a second command `credentials.api.Rotate` has `response: [{name: secret, type:
+  String}]` (the same field name) and one outcome `rotated` without the key. The plan has exactly
+  2 obligations (the two behaviours) and 0 refused; the clause sits in `Issue`'s contract, naming
+  `issued` and not `denied`, and `Rotate`'s contract and stub hold no clause.
+- Mutants killed: the clause written on every outcome of the command or on every command whose
+  response has the field (`the_one_time_clause_names_only_its_outcome`), the clause dropped
+  (`rust_target_carries_a_one_time_response_outcome_as_an_obligation`), and the Rust refusal
+  skipped while the clause is missing (the same case).
 
 ## Fit review
 
@@ -170,7 +179,8 @@ CHANGELOG: checked 2026-11-27 on `main` (`e29c029fab`), sections 0.99.3 to 0.99.
 
 - `depends_on story:the-rust-dispatch-selects-a-binding-failure-policy-per-refusal-of-the-invoked-command-and-counts-attempts`:
   both change `crates/generate/ess-synth/src/failure.rs`, `src/plan.rs` and `src/lib.rs`
-  (`emit` calls both refusals, `lib.rs:490` and `:494`), and `src/rust/mod.rs` (`:195`, `:201`).
+  (`emit` calls both refusals, `lib.rs:490` and `:494`), `src/rust/mod.rs` (`:195`, `:201`) and
+  `CHANGELOG.md`.
 
 ## Scope
 
