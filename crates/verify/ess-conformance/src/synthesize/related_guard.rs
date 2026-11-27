@@ -5217,13 +5217,28 @@ pub(super) fn overlaps(
         ));
     }
     let sends = unclaimed_sends(ir, command, outcome, sends)?;
+    send_overlaps(models, command, outcome, actors, sends, steps, setup);
+    Ok(())
+}
+
+/// Appends to `setup` the rows `steps` arranges and each of [`overlaps`]' `sends` expecting
+/// `outcome`, between the arrange and act marks; nothing where no send is left.
+fn send_overlaps(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    sends: Vec<BoundInput>,
+    mut steps: Vec<super::ScenarioStep>,
+    setup: &mut Setup,
+) {
     if sends.is_empty() {
-        return Ok(());
+        return;
     }
     models.mark(super::caller::InvocationPhase::Arrange, &mut steps);
     for (sent, bound) in sends {
         send_each_without_row(
-            ir,
+            models.arrangement,
             command,
             actors,
             &bound,
@@ -5233,7 +5248,6 @@ pub(super) fn overlaps(
     }
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
     setup.steps.append(&mut steps);
-    Ok(())
 }
 
 /// Of `sends`, those no input-guarded refusal the plan reads before `outcome` claims ([`overlaps`]):
