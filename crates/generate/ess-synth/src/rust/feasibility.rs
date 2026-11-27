@@ -726,12 +726,8 @@ fn components_and_system(
         })
         .collect::<Vec<_>>();
     delivery_initializers(inventory, ir, plan, &delivered);
-    let has_obligations = delivered.iter().any(|binding| {
-        !plan.is_generated(
-            CapabilityKind::BindingTransformation,
-            &binding.name.to_string(),
-        ) || binding.escalation.is_some()
-    });
+    // The `obligations` field and `Obligations` parameter exist exactly where `System` takes them.
+    let has_obligations = super::system::takes_obligations(ir, plan);
     // Every binding the pump may attempt again keeps its own held-back list, taken with
     // `core::mem::take` at the start of each pump.
     let holding: Vec<_> = delivered
