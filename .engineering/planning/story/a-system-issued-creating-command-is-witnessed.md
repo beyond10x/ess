@@ -41,7 +41,7 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:05Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
@@ -162,3 +162,54 @@ proposes its `CHANGELOG.md` sentence; the instance-less await is a suite shape o
 SW-D6, the instance-less await for set effects. A: one acceptance sentence on this story. B: a separate story. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation).
 
 RN-D4, the no-subject system-issued command. A: the acceptance sentence above, as SW-D6 did for set effects. B: a separate story. Decided: A, 2026-11-24 16:29 CET (the coordinator, under the owner's delegation), taken on the default.
+
+## Second adopter report, 2026-11-27 (0.99.8)
+
+Another downstream adopter, on 0.99.8 (read-only probes of its specification), with the same gap on
+three commands that only a `system: true` actor holds:
+
+- a command that records a purchase;
+- a command that opens a session, which needs a channel that another system-issued command creates
+  first, so the arrangement is itself a chain of system-issued steps;
+- a command that reports usage.
+
+What 0.99.8 does with them:
+
+- An authored scenario that sends such a command as the system actor is refused `ESS-AUTHOR-044`.
+- An authored scenario that awaits it is refused `ESS-AUTHOR-045` (the awaited step names no instance).
+- Synthesis refuses its scenarios `ESS-SYNTH-023`.
+- The adopter's runtime conformance run therefore skips every awaited system step: 50 of its 62 skips
+  are such steps.
+
+Reproduced on 0.99.8 with a minimal model (one entity with a lifecycle, a command that creates a row
+and is granted only to a `system: true` actor, a second command whose row-set refusal reads rows that
+first command creates). `ess verify conform synthesize` ends "1 scenario(s), 7 refusal(s)": the
+creating command's `recorded` outcome is `ESS-SYNTH-023`, and the second command's outcomes are refused
+`ESS-SYNTH-023` or `ESS-SYNTH-001` where their rows need the system step. The `ESS-AUTHOR-044`/`045` refusals
+were not reproduced on that model (no authored scenario was written for it).
+
+What this adds to the story:
+
+- The chain. A scenario for a system-issued command whose arrangement needs another system-issued
+  creating command awaits both in order; the second await names the identity captured from the first
+  (the instance-less await this story already decides on, with `capture:`). Acceptance: a model whose
+  system-issued command needs a record that another system-issued command creates gets a scenario that
+  awaits the creator, captures its identity, and awaits the command on it, and the interpreted target
+  passes it.
+- The same refusals reach authored scenarios: an authored act that awaits a system-issued creating
+  command names no instance and states the identity it expects to capture, rather than being refused
+  `ESS-AUTHOR-045`. Acceptance: such an authored scenario compiles and the interpreted target passes
+  it.
+- The report-usage shape (a command that reads and emits and changes no row, or changes rows by
+  `instances:` only) is covered by the two amendments above (2026-11-24); the adopter's command still
+  gets no scenario on 0.99.8, so the exact outcome shape is to be read from the adopter's specification
+  before this story is closed: a command that matches an amendment and is still refused is a defect of
+  that amendment, not a new case.
+- The consumer effect is the measure: with the three shapes witnessed, the awaited system steps of the
+  adopter's runtime run instead of being skipped. This story does not make a runtime implement the
+  await; a runtime that answers "unsupported" still skips, which is the existing contract.
+
+CHANGELOG: checked 2026-11-27 on `main`, sections 0.99.3 to 0.99.8: no entry lifts `ESS-SYNTH-023` for a
+creating command or `ESS-AUTHOR-044`/`045`. No new decision: the open
+decision of this story (how an await names a record that does not exist yet) now carries a second
+adopter.
