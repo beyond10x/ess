@@ -200,11 +200,13 @@ pub(super) fn beside_named(
 /// row under its owner through `via` declares, before its creating branch, one that refuses when a
 /// row of `entity` under the owner it names exists (`when_related: {entity, where: <via> ==
 /// input.<field>, exists: true}`, beyond10x/ess#795); the first creator's, `None` where a creator
-/// declares none.
+/// declares none. With `alone`, only where that link is the whole selector, so the rows the scenario
+/// leaves decide the refusal for every second row ([`contradictions`]).
 pub(super) fn answers_second(
     ir: &EssIr,
     entity: &EntityHandle,
     via: &str,
+    alone: bool,
 ) -> Option<ess_compiler::refs::OutcomeRef> {
     let drivers = ir.drivers_of(entity);
     let mut answers = drivers
@@ -235,7 +237,7 @@ pub(super) fn answers_second(
                             selection,
                             test: ess_compiler::ir::ResolvedRowSetTest::Exists(true),
                             input: None,
-                        } if selection.entity == *entity && links(&selection.filter, via, field))
+                        } if selection.entity == *entity && links(&selection.filter, via, field, alone))
                 })
                 .map(|branch| {
                     ess_compiler::refs::OutcomeRef::new(
@@ -248,10 +250,14 @@ pub(super) fn answers_second(
     answers.all(|answer| answer.is_some()).then_some(first)
 }
 
-/// Whether `filter` holds the conjunct `<via> == input.<field>`, either way round.
-fn links(filter: &Predicate, via: &str, field: &str) -> bool {
+/// Whether `filter` holds the conjunct `<via> == input.<field>`, either way round; with `alone`,
+/// as its only conjunct.
+fn links(filter: &Predicate, via: &str, field: &str, alone: bool) -> bool {
     let mut conjuncts: Vec<&Predicate> = Vec::new();
     conjoined(filter, &mut conjuncts);
+    if alone && conjuncts.len() != 1 {
+        return false;
+    }
     conjuncts.into_iter().any(|conjunct| {
         let Predicate::Compare {
             left: Operand::Fact(left),

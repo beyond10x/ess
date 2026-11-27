@@ -12698,6 +12698,23 @@ impl Beside<'_> {
     }
 }
 
+/// Why one owner's rows of `entity`, read through `via`, never hold a second row: the owning
+/// relation holds one, or every creator refuses a second row under one owner on a row set over that
+/// link alone. The rows a scenario leaves decide that refusal (`row_set::contradictions`), so a
+/// further row arranged under the subject's owner would take the scenario out with it; none is
+/// arranged, and the order is refused beside the scenario (beyond10x/ess#795).
+fn holds_one(ir: &EssIr, entity: &EntityHandle, via: &str) -> Option<Unreachable> {
+    if !shares_owner(ir, entity) {
+        return Some(Unreachable::OwnerHoldsOne {
+            via: via.to_owned(),
+        });
+    }
+    row_set::answers_second(ir, entity, via, true).map(|outcome| Unreachable::SecondAnswered {
+        via: via.to_owned(),
+        outcome: Box::new(outcome),
+    })
+}
+
 /// The further instances every ranked view among `decided` needs to hold [`RANKING_ROWS`] rows, and
 /// the ranked views that could not be given them, each refused as `OrderUnwitnessed`.
 fn arrange_ranked(
@@ -12723,7 +12740,7 @@ fn arrange_ranked(
         // may hold many. One that holds one never shows a second row, and the order is refused.
         let read_by_owner = owner_of_row(ir, beside.entity, beside.settled)
             .filter(|(via, _)| reads_root(view, via));
-        if let (Some((via, _)), false) = (read_by_owner, shares_owner(ir, beside.entity)) {
+        if let Some(reason) = read_by_owner.and_then(|(via, _)| holds_one(ir, beside.entity, via)) {
             if rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
                 // The scenario stands without the order (beyond10x/ess#795).
                 refusals.push(Refusal::beside(
@@ -12732,9 +12749,7 @@ fn arrange_ranked(
                         view: name.clone(),
                         entity: EntityRef::from(beside.entity),
                         arranged: rows_shown(ir, view, *admits_subject, &companions, &params),
-                        reason: Unreachable::OwnerHoldsOne {
-                            via: via.to_owned(),
-                        },
+                        reason,
                     },
                 ));
                 unwitnessed.insert(name.clone());
@@ -12786,7 +12801,7 @@ fn arrange_ranked(
                     // (beyond10x/ess#795); the scenario stands without the order.
                     let reason = read_by_owner
                         .and_then(|(via, _)| {
-                            row_set::answers_second(ir, beside.entity, via).map(|outcome| {
+                            row_set::answers_second(ir, beside.entity, via, false).map(|outcome| {
                                 Unreachable::SecondAnswered {
                                     via: via.to_owned(),
                                     outcome: Box::new(outcome),
