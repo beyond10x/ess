@@ -49,7 +49,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/stored_rows_decided_once_work.rs
-revision: 23
+revision: 24
 ---
 ## Outcome
 
@@ -230,5 +230,4 @@ model alone and wants building once; a step list wants sharing, not cloning, whe
 
 ## Status
 
-The hotfix is in progress on the branch `hotfix/0.99.9`; nothing is delivered. A release that carries the fix names
-this story in its pull-request line.
+The hotfix is delivered as a tag, not yet as a release. 0.99.9 tagged 2026-11-27 18:00 CET on `88d3d695df` (`hotfix/0.99.9`); release run [46038774492](https://github.com/beyond10x/ess/actions/runs/46038774492) ("Release preparation") queued, and release 0.99.9 not found, at 18:10 CET. "Shared source gates" on the tag passed (run [46038774677](https://github.com/beyond10x/ess/actions/runs/46038774677)). A release that carries the fix names this story in its pull-request line. Not "published" until the release exists with its four archives and `SHA256SUMS`.
