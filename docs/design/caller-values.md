@@ -153,6 +153,20 @@ appended, it would be read over both runs' rows. Such a scenario loses the swapp
 asserts `first`'s values where they are read, but no longer shows they are the sender's rather
 than fixed.
 
+What a reading computes is shared wherever it does not depend on the caller's values. Each model
+keeps its witness answers and the rows it made for as long as a synthesis reads it
+(`witness_memo`, `synthesize/made.rs`), and a witness question is known by the command's content,
+so a command no caller read rewrites asks the same question under either reading. With no
+caller-reading command both callers read one model, which therefore answers both whole readings
+and every focused run. With one, `first` and `second` are two models, each with a memory of its
+own that every reading on it shares: its whole reading, its focused runs and the one-time
+follow-up cells (`synthesize/disclosure.rs`), which fall back to the two readings where the model
+itself reaches no branch. Per assignment is only what the caller's values change: the outcomes
+whose guard or value reads the caller, and the arrangement of the rows they read. A test bounds
+it: one read adds no search a model already answered and stays within twice the searches of the
+same model without the read (`synthesize/caller.rs`, the test
+`one_command_that_reads_the_caller_costs_a_constant_factor_of_the_model_without_the_read`).
+
 ### Authored scenarios
 
 An authored act states the caller it is sent as under `caller:`, in `ess-scenario/5`. Each value is
