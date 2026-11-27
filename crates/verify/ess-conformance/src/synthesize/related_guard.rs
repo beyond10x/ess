@@ -1027,19 +1027,45 @@ fn reads_any_addressed_row(command: &ResolvedCommand) -> bool {
     })
 }
 
-/// Whether a command reading several related rows reads, through a required input, the row one of
-/// its non-creating branches addresses: the same entity, named by the same input field.
-fn reads_addressed_among_several(command: &ResolvedCommand) -> bool {
+/// Whether a scenario of `outcome`, arranged around the row `focus` names on a command reading
+/// several related rows, sets up beside it, apart from the subject, the row one of the command's
+/// non-creating branches addresses through a required input, while a branch declared before
+/// `outcome` holds a predicate over that row's stored fields. The input names the row arranged
+/// beside, whose stored values are not the ones sent, so that earlier branch answers in place of
+/// `outcome`. Arranged around the addressed row itself, or with no predicate over it declared
+/// first, the scenario is kept.
+fn addressed_beside_an_earlier_predicate(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    focus: &str,
+) -> bool {
+    let Some(position) = command
+        .outcomes
+        .iter()
+        .position(|declared| declared.name == outcome.name)
+    else {
+        return false;
+    };
+    let earlier = &command.outcomes[..position];
     several(command)
         && rows(command).iter().any(|(via, entity)| {
             matches!(via, ResolvedRelatedVia::Input { .. })
-                && command.outcomes.iter().any(|outcome| {
-                    outcome.subject.as_ref().is_some_and(|subject| {
+                && !via.type_ref().is_optional()
+                && via.field() != focus
+                && command.outcomes.iter().any(|declared| {
+                    declared.subject.as_ref().is_some_and(|subject| {
                         !matches!(subject.effect, ResolvedEffect::Creates)
                             && subject.entity == **entity
                             && matches!(&subject.instance,
                                 ResolvedInstance::Supplied { field } if field.name == via.field())
                     })
+                })
+                && earlier.iter().any(|declared| {
+                    matches!(&declared.condition, ResolvedCondition::Related {
+                        via: read,
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    } if read.field() == via.field())
                 })
         })
 }
@@ -4005,18 +4031,18 @@ fn arranged_choosing(
     if !several(command) {
         return arranged_at(models, command, outcome, actors, distinction, goal, None);
     }
-    // A row read through the input that the command also addresses is arranged here apart from
-    // the subject, as two rows, and the input can name only one: refused, as on a command reading
-    // that row alone ([`arranged_at`]).
-    if reads_addressed_among_several(command) {
-        return Err(unarranged());
-    }
     let ir = models.arrangement;
     let (via, _) = match goal {
         Some(goal) => goal_row(ir, command, goal),
         None => focus(ir, command, outcome),
     }
     .ok_or_else(unarranged)?;
+    // A row read through the input that the command also addresses is arranged beside the focus
+    // row apart from the subject, as two rows, and the input can name only one; where a predicate
+    // over that row is declared first, it answers: refused ([`addressed_beside_an_earlier_predicate`]).
+    if addressed_beside_an_earlier_predicate(command, outcome, via.field()) {
+        return Err(unarranged());
+    }
     let around = |via: &ResolvedRelatedVia| {
         arranged_around(
             models,
