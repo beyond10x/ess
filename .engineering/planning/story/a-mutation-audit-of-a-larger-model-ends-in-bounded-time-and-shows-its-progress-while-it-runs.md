@@ -29,7 +29,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T22:32:35Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-22T22:32:37Z", actor: "human:timo", revision: 15}
@@ -143,3 +143,7 @@ defaults stand.
 This wave builds the progress unit and the design page. The reuse itself follows the page.
 
 Its units are scheduled for the wave after the wave of 2026-11-23 (decision D33).
+
+## Cost of a mutant, 2026-11-27
+
+Cost of a mutant, reported 2026-11-27 on a downstream model: about 20 s per mutant, so the whole class set of that model exceeds a pool job's 30-minute limit (the most a job may name, `slot --timeout 30m`). It agrees with the measure under Need (one full synthesis of the mutated model per mutant, about 79e9 instructions on that report's model) and means a caller must split the audit by class or by site to stay inside one job. The progress lines of D1 A show how far a cut run got; the reuse across mutants (D2 A, the design page) is what lowers the per-mutant cost, and nothing here lowers it yet. Acceptance to add: a run over the model of this report ends within a stated bound of work, or names at its start how many mutants it will decide and the cost of one, so a caller can split it before a job limit cuts it.
