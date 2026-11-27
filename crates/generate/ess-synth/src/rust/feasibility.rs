@@ -657,6 +657,7 @@ fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &
 
 fn delivery_initializers(
     inventory: &mut Inventory,
+    ir: &EssIr,
     plan: &SynthesisPlan,
     delivered: &[&ResolvedBinding],
 ) {
@@ -683,6 +684,11 @@ fn delivery_initializers(
                     .expect("generated event capability")
                     .to_string(),
             );
+            // A dispatch that counts attempts takes the occurrence's count as the parameter
+            // `made` of `deliver_…`, which the transformation's call would otherwise name.
+            if super::system::counts_attempts(ir, binding) {
+                inventory.helper(&scope, "made", &source);
+            }
             if let Some(prior) = prior_inputs.get(
                 binding
                     .cause
@@ -719,7 +725,7 @@ fn components_and_system(
             plan.is_generated(CapabilityKind::BindingDelivery, &binding.name.to_string())
         })
         .collect::<Vec<_>>();
-    delivery_initializers(inventory, plan, &delivered);
+    delivery_initializers(inventory, ir, plan, &delivered);
     let has_obligations = delivered.iter().any(|binding| {
         !plan.is_generated(
             CapabilityKind::BindingTransformation,
