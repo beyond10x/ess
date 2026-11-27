@@ -38,7 +38,7 @@ scope:
   path: website/docs/guides/synthesize.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 25
+revision: 26
 ---
 ## Need
 
@@ -297,3 +297,7 @@ Derived 2026-11-25 by `story-scoper`, read against tag `0.99.1`. Every line is *
 Commits `0a55c9b57f` (U1), `db3b964241` (U2), `0f54c9a516` (U3) and `b070c140ab` (U4) on the branch `feat/a-synthesized-rust-crate-carries-typed-decoders-without-a-server`, pushed. The whole check ran 21 lines, exit 0. No pull request yet: this story and the shorthand story ship in one (D127).
 
 Pull request 836, head `aa04d59d34`, open when this was written; it adds no format key; flags `--package` and `--no-workspace-table`.
+
+## Status
+
+Pull request 836 (https://github.com/beyond10x/ess/pull/836) is open and not delivered (2026-11-27); `main` at `a861afd90e` (release 0.99.7) is merged into its branch. Not in any release.

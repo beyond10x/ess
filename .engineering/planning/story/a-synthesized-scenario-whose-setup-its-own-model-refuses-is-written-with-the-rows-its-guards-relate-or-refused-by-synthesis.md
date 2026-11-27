@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 9
+revision: 10
 ---
 ## Summary
 
@@ -135,6 +135,8 @@ written.
 0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
 
 N93: in 0.99.7, prepared on branch `hotfix/0.99.7` at `e4232da4eb`; not tagged when written.
+
+0.99.7 is released (2026-11-26 13:17 CET) with the N93 fix, a branch reading the row the subject links is sent that row: https://github.com/beyond10x/ess/releases/tag/0.99.7. It is on `main` through pull request 839 (https://github.com/beyond10x/ess/pull/839, merge commit `a861afd90e`, merged 2026-11-26 18:33 CET).
 
 ## Left open
 

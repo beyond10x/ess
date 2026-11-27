@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:an-absent-optional-under-false-and-unknown-is-arranged
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -61,3 +61,7 @@ Open, lettered. Recommended: B.
 
 - `crates/specify/ess-primitives/src/predicate.rs`, `crates/specify/ess-domain/src/command/row_set.rs`, `related_guard.rs`, `subject_fact.rs` (checks of the four positions).
 - `docs/design/cross-record-and-stored-field-guards.md`, `website/docs/reference/predicates.md`.
+
+## Status
+
+Pull request 842 (https://github.com/beyond10x/ess/pull/842) is open and not delivered (2026-11-27): red test `f016bb9345` and fix `90b61d2a6a`; a refusal from `ess/38`, a warning below. Not in any release.

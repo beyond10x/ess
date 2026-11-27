@@ -13,7 +13,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:periodic-binding-trigger-contract
 - informed_by: story:system-issued-command-is-awaited-not-driven
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -72,3 +72,7 @@ Open, lettered. The form is open. Recommended: C.
 - `crates/specify/ess-compiler/src/ir.rs`, `resolve.rs`.
 - `crates/verify/ess-conformance/src/interpret/`, `synthesize/`.
 - `docs/design/` (new page), `website/docs/reference/`.
+
+## Status
+
+Pull request 842 (https://github.com/beyond10x/ess/pull/842, "feat: component steps, and batch 10's units") is open and not delivered (2026-11-27): red test `e7df708f0e` and fix `b6991cb9de` for component steps; the pull request also carries the open-format batch of `ess/38` and the story of the comparison over an absent Optional field. Delivery form D162 A. Not in any release.

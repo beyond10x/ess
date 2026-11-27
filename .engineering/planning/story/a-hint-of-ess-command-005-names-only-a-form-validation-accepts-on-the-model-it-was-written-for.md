@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:via-and-instance-may-name-a-member-of-a-struct-input
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -56,3 +56,7 @@ A hint of a diagnostic names only a form that validation accepts on that model. 
 ## Scope
 
 - `crates/specify/ess-domain/src/command/related_guard.rs` (`missing_row_answers`, `entity_or_refusal`), `crates/specify/ess-domain/tests/` (a hint test).
+
+## Status
+
+Pull request 840 (https://github.com/beyond10x/ess/pull/840) is open and not delivered (2026-11-27): red test `fe7e44443b` and fix `2a442882be`, with the fix of `story:a-synthesis-with-one-command-that-reads-the-caller-costs-at-most-a-constant-factor-of-the-same-model-without-the-read` in the same pull request. Not in any release.

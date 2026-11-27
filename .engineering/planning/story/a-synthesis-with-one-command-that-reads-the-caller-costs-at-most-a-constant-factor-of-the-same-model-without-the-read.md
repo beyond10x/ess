@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:every-caller-reading-of-a-synthesis-is-computed-from-explicit-inputs-in-a-fixed-plan
 - informed_by: story:the-caller-readings-of-a-synthesis-run-on-several-threads-and-write-the-suite-a-single-thread-writes
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -87,3 +87,7 @@ No change to which scenarios the suite holds or to the swapped second run.
 - `crates/verify/ess-conformance/src/synthesize/caller.rs` and `caller/readings.rs` (cited).
 - `crates/verify/ess-conformance/src/synthesize.rs`, the memo scoping at `:3956-3961` (cited).
 - `docs/design/caller-values.md`.
+
+## Status
+
+Pull request 840 (https://github.com/beyond10x/ess/pull/840) is open and not delivered (2026-11-27): red test `d0b9a0da72` and fix `402a0c2cd2`, with the fix of `story:a-hint-of-ess-command-005-names-only-a-form-validation-accepts-on-the-model-it-was-written-for` in the same pull request. Not in any release; no entry in CHANGELOG sections 0.99.3 to 0.99.8.
