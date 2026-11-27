@@ -1,0 +1,79 @@
+format: ess/37
+system: demo
+version: v1
+domain: demo.items
+summary: An item claimed by its owner, whose related guard reads the row the command addresses.
+types:
+  - {name: demo.items.ItemId, kind: newtype, of: Uuid}
+  - {name: demo.items.OwnerId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.items.Item
+    identity: {name: item_id, type: demo.items.ItemId}
+    fields:
+      - {name: owner_id, type: demo.items.OwnerId}
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Claimed]
+      terminal: [Claimed]
+      transitions:
+        - {name: claim, from: [Open], to: Claimed}
+errors:
+  - {name: demo.items.ItemNotFound}
+  - {name: demo.items.OwnerMismatch}
+  - {name: demo.items.ItemStateConflict}
+commands:
+  - name: demo.items.Create
+    input:
+      - {name: owner_id, type: demo.items.OwnerId}
+      - {name: label, type: String}
+    outcomes:
+      - name: created
+        creates: demo.items.Item
+        instance: item_id
+        sets:
+          owner_id: input.owner_id
+          label: input.label
+        emits: [demo.items.ItemCreated]
+        payload:
+          demo.items.ItemCreated:
+            item_id: {generated: true}
+  - name: demo.items.Claim
+    input:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: owner_id, type: demo.items.OwnerId}
+    outcomes:
+      - name: no-such-item
+        unknown_instance: true
+        error: demo.items.ItemNotFound
+      - name: no-such-item-row
+        when_related: {via: input.item_id, exists: false}
+        error: demo.items.ItemNotFound
+      - name: owner-mismatch
+        when_related: {via: input.item_id, predicate: owner_id != input.owner_id}
+        error: demo.items.OwnerMismatch
+      - name: claimed
+        moves: demo.items.Item.claim
+        instance: item_id
+        emits: [demo.items.ItemClaimed]
+        payload:
+          demo.items.ItemClaimed:
+            item_id: input.item_id
+      - name: wrong-state
+        wrong_state: true
+        error: demo.items.ItemStateConflict
+events:
+  - name: demo.items.ItemCreated
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+  - name: demo.items.ItemClaimed
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+views:
+  - name: demo.items.Items
+    source: demo.items.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.items.ItemId}
+      - {name: owner_id, type: demo.items.OwnerId}
+      - {name: label, type: String}

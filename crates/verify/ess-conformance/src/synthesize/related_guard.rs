@@ -999,6 +999,77 @@ fn read(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle
         })
 }
 
+/// Whether the one row the command's related guards read through a required input is the row
+/// `outcome` addresses: the same entity, named by the same input field. No such row can be present
+/// beside an identity no row carries, nor missing beside a stored addressed row.
+pub(super) fn reads_addressed_row(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    if several(command) || optional(command) {
+        return false;
+    }
+    let Some((ResolvedRelatedVia::Input { field: via, .. }, entity)) = read(command) else {
+        return false;
+    };
+    outcome.subject.as_ref().is_some_and(|subject| {
+        subject.entity == *entity
+            && matches!(&subject.instance, ResolvedInstance::Supplied { field } if field.name == *via)
+    })
+}
+
+/// Whether the one row the command's related guards read through a required input is the row one
+/// of its non-creating branches addresses ([`reads_addressed_row`]).
+fn reads_any_addressed_row(command: &ResolvedCommand) -> bool {
+    command.outcomes.iter().any(|outcome| {
+        outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| !matches!(subject.effect, ResolvedEffect::Creates))
+            && reads_addressed_row(command, outcome)
+    })
+}
+
+/// Whether a scenario of `outcome`, arranged around the row `focus` names on a command reading
+/// several related rows, sets up beside it, apart from the subject, the row one of the command's
+/// non-creating branches addresses through a required input, while a branch declared before
+/// `outcome` holds a predicate over that row's stored fields. The input names the row arranged
+/// beside, whose stored values are not the ones sent, so that earlier branch answers in place of
+/// `outcome`. Arranged around the addressed row itself, or with no predicate over it declared
+/// first, the scenario is kept.
+fn addressed_beside_an_earlier_predicate(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    focus: &str,
+) -> bool {
+    let Some(position) = command
+        .outcomes
+        .iter()
+        .position(|declared| declared.name == outcome.name)
+    else {
+        return false;
+    };
+    let earlier = &command.outcomes[..position];
+    several(command)
+        && rows(command).iter().any(|(via, entity)| {
+            matches!(via, ResolvedRelatedVia::Input { .. })
+                && !via.type_ref().is_optional()
+                && via.field() != focus
+                && command.outcomes.iter().any(|declared| {
+                    declared.subject.as_ref().is_some_and(|subject| {
+                        !matches!(subject.effect, ResolvedEffect::Creates)
+                            && subject.entity == **entity
+                            && matches!(&subject.instance,
+                                ResolvedInstance::Supplied { field } if field.name == via.field())
+                    })
+                })
+                && earlier.iter().any(|declared| {
+                    matches!(&declared.condition, ResolvedCondition::Related {
+                        via: read,
+                        test: ResolvedRelatedTest::Holds { .. },
+                        ..
+                    } if read.field() == via.field())
+                })
+        })
+}
+
 /// Every related row the command's guards read — the `via` naming it and its entity — in the
 /// order first declared: one, but on a command reading several rows through its input (ess/22,
 /// beyond10x/ess#283).
@@ -3966,6 +4037,12 @@ fn arranged_choosing(
         None => focus(ir, command, outcome),
     }
     .ok_or_else(unarranged)?;
+    // A row read through the input that the command also addresses is arranged beside the focus
+    // row apart from the subject, as two rows, and the input can name only one; where a predicate
+    // over that row is declared first, it answers: refused ([`addressed_beside_an_earlier_predicate`]).
+    if addressed_beside_an_earlier_predicate(command, outcome, via.field()) {
+        return Err(unarranged());
+    }
     let around = |via: &ResolvedRelatedVia| {
         arranged_around(
             models,
@@ -5772,7 +5849,9 @@ fn missing_late(ir: &EssIr, command: &ResolvedCommand) -> bool {
 /// at an identity no row carries, and `bound` without that field: a send the addressed record's
 /// existence and held state answer before the missing row (`docs/design/generic-language-features.md`
 /// § G4), so a target reading the row first answers its `exists: false` and fails. `None` below the
-/// rule, on a command reading several rows, an Optional reference or a stored one.
+/// rule, on a command reading several rows, an Optional reference or a stored one, and where the
+/// row read is the one the command addresses ([`reads_addressed_row`]): naming an identity no row
+/// carries there is the addressed record's own absence, which existence answers.
 #[allow(
     clippy::type_complexity,
     reason = "the input and the bound names one send is built from"
@@ -5790,6 +5869,7 @@ pub(super) fn missing_row_send(
         || several(command)
         || optional(command)
         || stored::field(command).is_some()
+        || reads_any_addressed_row(command)
     {
         return None;
     }

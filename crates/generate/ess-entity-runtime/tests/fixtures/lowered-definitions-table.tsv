@@ -1,4 +1,4 @@
-#	models=494	lines=677
+#	models=495	lines=678
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -347,6 +347,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-checked-graph.yaml	co
 crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	run-service	REFUSED	9f6cff851b812ef95fdc68c59aa6b9544975365ea1cd34c2db4629967fd60a7a:1542
+crates/verify/ess-conformance/tests/fixtures/related-guard-on-the-addressed-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	release-service	REFUSED	3bd8d0f48acca624a5fa1c21ee7839ab555df37780523afcc8a8e17f7b7afa7d:783
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	components=0
