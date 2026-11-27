@@ -122,7 +122,7 @@ fn scalar(emit: &Emit<'_>, ty: &ResolvedTypeRef, value: &str) -> String {
                         format!(
                             "case {}: return {:?}, true, true",
                             emit.reference_variant(name.name(), variant),
-                            variant.wire()
+                            variant.name()
                         )
                     })
                     .collect::<Vec<_>>()

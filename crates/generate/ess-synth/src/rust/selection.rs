@@ -90,7 +90,7 @@ fn scalar(ir: &EssIr, layout: &Layout, types: &str, ty: &ResolvedTypeRef, value:
                         format!(
                             "{owner}::{} => {:?}.to_owned()",
                             layout.variant(handle.name(), variant),
-                            variant
+                            variant.name()
                         )
                     })
                     .collect::<Vec<_>>()
