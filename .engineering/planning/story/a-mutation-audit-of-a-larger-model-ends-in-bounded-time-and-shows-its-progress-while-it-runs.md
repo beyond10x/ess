@@ -29,7 +29,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T22:32:35Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-22T22:32:37Z", actor: "human:timo", revision: 15}
@@ -147,3 +147,46 @@ Its units are scheduled for the wave after the wave of 2026-11-23 (decision D33)
 ## Cost of a mutant, 2026-11-27
 
 Cost of a mutant, reported 2026-11-27 on a downstream model: about 20 s per mutant, so the whole class set of that model exceeds a pool job's 30-minute limit (the most a job may name, `slot --timeout 30m`). It agrees with the measure under Need (one full synthesis of the mutated model per mutant, about 79e9 instructions on that report's model) and means a caller must split the audit by class or by site to stay inside one job. The progress lines of D1 A show how far a cut run got; the reuse across mutants (D2 A, the design page) is what lowers the per-mutant cost, and nothing here lowers it yet. Acceptance to add: a run over the model of this report ends within a stated bound of work, or names at its start how many mutants it will decide and the cost of one, so a caller can split it before a job limit cuts it.
+
+## A second report: no class of one adopter's specification fits a 30-minute run, 2026-11-27
+
+A second downstream report on the cost of the audit. `ess verify conform
+mutate` rebuilds the whole suite for every mutant and cannot select sites, so the only cut a caller has is the class.
+On this specification no class fits one pool job of 30 minutes, the most a job may name (`slot --timeout 30m`). Sites
+per class:
+
+| class | sites |
+|---|---|
+| `sets-drop` | 11 |
+| `guard-boundary` | 23 |
+| `emit-swap` | 54 |
+| `from-drop` | 29 |
+
+Two reports now say the same thing: the cost of a mutant is one full synthesis of the
+mutated model, and the unit a caller can ask for is a class, which is too large.
+
+This reopens decision D3 above. Its default B (no bound; "a caller who wants fewer mutants selects classes") was taken
+for a wave on 2026-11-22; its premise, that a class is a small enough cut, does not hold for this specification. D2 A
+(reuse across mutants) lowers the cost of every mutant but is not built, and nothing about it makes a cut possible.
+
+### Decisions
+
+- **D4 (open). How does a caller cut one audit into runs that each fit a job?** (A) A deterministic slice of the site
+  list: `--sites <k>/<n>` runs the k-th of n slices of the sites in the order the report lists them. A slice that
+  selects no site is a refusal, not an empty pass, so a mistyped `n` fails closed. The slices of one class together are
+  exactly its sites, and the caller merges the reports. (B) Select by identifier: `--site <id>` repeated, with the
+  identifier each line of the report already carries; the caller lists the sites first and chooses the cut. (C) Nothing
+  new: only D2 A, so the cost per mutant falls and the class stays the cut. **Recommended: (A).** It needs no listing
+  step, each job is independent, and its union is checkable; (B) costs the caller one extra run to list the sites and
+  gives no guarantee that the cuts together cover the class; (C) cannot be measured to fit before it is built.
+
+### Acceptance
+
+- `mutate --class <class> --sites <k>/<n>` on a generic model with invented names runs exactly the mutants of the k-th
+  slice, and the verdicts of the n slices of a class, put together, equal the verdicts of the whole class run; a test in
+  `ess-conformance` holds it on a model small enough to synthesize once per run, under 60 s.
+- A report names how many mutants the run decides and, before the first synthesis, the cost of one mutant (its
+  synthesis count), so a caller can split the audit before a job limit cuts it. This is the line the section above
+  already asks for, now with the cut it enables.
+- The report of a sliced run says which slice it is, and `--emit` and `--report-out` of the whole class stay
+  byte-identical to the unsliced run.
