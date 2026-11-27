@@ -31,7 +31,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-08T15:49:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-08T15:49:58Z", actor: "human:timo", revision: 4}
@@ -177,3 +177,5 @@ This story is the one that covers the rendering half of the need: a column or re
 - Recommended A. Open with the owner; no format change in any option (the key set of `ess-ui/1` does not move).
 
 Acceptance line added by this report: a document whose field path crosses a list gives the same result in both renderers, or is refused by `ess ui check` at the field's node path, under the pick of LR-D1; the acceptance of the story above holds either way.
+
+Fact for LR-D1, from the downstream application whose documents raised it (2026-11-27): 3 dotted field paths that cross a list are in use in its documents. Option A refuses those 3 documents' paths at `ess ui check`, and option B reads each as a list of its members' values in both renderers; the count is the cost A puts on that one adopter and is not a reason for either option.
