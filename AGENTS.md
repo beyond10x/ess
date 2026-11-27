@@ -122,6 +122,62 @@ once, as `plan` and `tested` at the top of the `plan-only` step. `ci_lanes.rs` r
 and `Gate`'s step against canned inputs, and fails when an archived test reads the plan store
 outside `.engineering/repro/`.
 
+**Every test-running step has a limit, and so has every test** (the organization rule `Tests stay
+fast`; story:the-test-step-meets-the-test-budget). Each task that runs tests in a lane runs its
+test command as `{{.TEST_STEP}} <task> <seconds> <command>` (`TEST_STEP` in `Taskfile.yml`), locally
+and on CI: the command is killed at its limit and the step fails with `test step <task> ran <n> s,
+over its limit of <m> s`; within it the step prints `test step <task> ran <n> s of its <m> s`.
+
+The nextest profiles `ci` and `slow` kill a test at 60 s (`terminate-after = 1`) and count it
+failed; before, `slow` killed at 1,200 s (`period = "120s", terminate-after = 10`). The nextest
+steps are `test-shard`, `test-feature-off`, `test-packages`, `test-xtask` and `fuzz-check` (under
+`fuzz/.config/nextest.toml`, the same 60 s with no exception: `fuzz/` is a workspace of its own,
+and nextest refuses an override naming a binary the workspace lacks). Doc-tests cannot
+run under nextest, so `test-doc` and `test-feature-off-doc` have a step limit of 60 s instead (CI
+measured about 22 s and 7 s): a doc-test of 61 s fails its step.
+
+Each test seen over 60 s in 13 successful CI runs of 2026-11-26 and 2026-11-27 has an override in
+`.config/nextest.toml` at 1.2 times its longest time there, and so has each test whose longest time
+there was 50 to 60 s (1.2 times it, at most 72 s), since tests that close cross 60 s on some runs:
+171 under `ci` (the longest `adversary_u22_pass3`'s wide-inputs case, 366 s, 30 of them the tests
+of 50 to 60 s) and 15 under `slow` (`adv_e_u6_byte_identity_probe`, 337 s; 2 of them the tests of
+50 to 60 s, from the slow job's 11 runs). `ci_lanes.rs` pins both lists (`CI_EXCEPTIONS`,
+`SLOW_EXCEPTIONS`), so an override may only be dropped or lowered, and refuses any spelling of
+`.config/nextest.toml` but the one its reader understands: the workspace has no TOML parser.
+
+The steps' limits: `test-xtask` and `fuzz-check` 120 s, `test-doc` and `test-feature-off-doc` 60 s.
+Three steps are known to be over 120 s and have a ceiling of 1.2 times the longest time seen in
+those 13 runs; a ceiling may only fall (`STEP_CEILINGS` in `ci_lanes.rs`):
+
+- `test-shard`: 1,235 s (run 45879426222, shard 16/20; 977 s at most in the other twelve), ceiling
+  1483 s;
+- `test-feature-off`: 556.9 s (run 45965268982, shard 3/20: 546.2 s of tests and 10.7 s of
+  listing; the listing took up to 11.9 s), ceiling 669 s; it extracts its archive (up to 345 s)
+  before the step, in `test-feature-off-extract`;
+- `test-packages` (a patch tag's targeted gate): not measured, no patch tag has run it; estimated
+  at 837 s from the 3,346 test-seconds of every crate it may select over 4 threads, ceiling 1004 s.
+
+What a step builds runs before it, outside the limit (`cargo nextest run --no-run`, `cargo test
+--no-run`, an archive extraction), except in the doc-test steps: `cargo test --doc` refuses
+`--no-run`, so they build the libraries first (`cargo build --lib`), and the dev-dependencies and
+the crates whose features those change still compile inside the step (16 crates for `test-doc`,
+6 for `test-feature-off-doc`, about 12 s on the shared host).
+
+Every test-running step prints its ten slowest tests through `test-slowest` from a JUnit report,
+also when it fails, and removes the report it prints before it runs, so a run that writes none
+prints `test-slowest: no JUnit report at <path>` and never an earlier step's. One exception: stable
+libtest prints no time per test, so the doc-test steps print their ten slowest crates, read from
+the `finished in` line of each crate's doc-tests (`DOC_TEST_TIMES`); a crate still running when
+its step was killed is listed with the step's time. `test-packages` prints its
+own before it runs `test-xtask`, which prints its own.
+
+`ci_lanes.rs` fails when a test-running task runs outside `TEST_STEP` or over its ceiling, when a
+step prints no ten slowest or does not remove its report first, and when an override is added or
+raised. Outside the test step: local `test`, `test-slow` (its tests are held by the `slow`
+profile), `test-browser-product` and `typescript-check` (in no lane), `test-transport-network` and
+the macOS witness job. Tests run slower on the shared host than on CI, so there a test under 60 s
+on CI can be killed.
+
 Test builds carry line tables only (`[profile.dev] debug`), and `sha2`, `flate2` and `tar` are
 optimised in them. CI's Linux jobs link with lld through
 `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` in `ci.yml`, not `.cargo/config.toml`, so local

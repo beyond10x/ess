@@ -20,6 +20,7 @@
 
 ### Changed
 
+- CI and the local gate: every test-running step is killed at its limit and fails naming the step and its time (120 s, 60 s for the doc-test steps, or a measured ceiling for the three steps known to be over 120 s), and prints its ten slowest tests; the nextest profiles `ci` and `slow` kill a test at 60 s and count it failed, except the tests seen over 50 s on CI, which are listed with their measured times and may only be dropped or lowered (story:the-test-step-meets-the-test-budget).
 - The terminal reads a display, `visible` or `checked` expression joined with `and`, `or`, `not`, `in` or parentheses with the grammar React reads, where it split it at its first `==`, so `state.a == on and state.b == off` with both true hid the section; a string that reads no path is still literal text (beyond10x/ess#723).
 - The terminal draws no header action whose `visible:` is false, as its palette already offered none, and reads `selection.<field>` in a bulk action as the list of that field over the selected rows, where it sent the text `selection.id` (beyond10x/ess#722).
 - A generated UI reads a command answered `401` as not signed in (`not_granted` with no actor), whatever its body, in `ess_ui::binding::classify` and the React port, where it read it as no answer from the server (beyond10x/ess#723).
