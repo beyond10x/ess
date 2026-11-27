@@ -3687,8 +3687,42 @@ pub(super) struct Preparing<'p> {
     pub(super) actors: &'p BTreeMap<QualifiedName, ActorRef>,
 }
 
-/// [`prepare`], made afresh.
-fn prepared(
+/// [`prepare`], made afresh: where no arrangement stands with a row for every reference the
+/// input names, once more with every Optional input reference left out
+/// ([`super::related_guard::without_optional_references`]). An absent Optional reference reads no
+/// row and selects no `when_related` branch over it, so the `when:` guards over it are met with it
+/// absent: weft's `CreateSecret/created` in the `Account` scope beside `name-taken` (2026-11-26).
+fn prepared(preparing: &Preparing<'_>) -> Result<Prepared, RefusalCause> {
+    let refused = match prepared_with_every_reference(preparing) {
+        Err(refused) => refused,
+        prepared => return prepared,
+    };
+    let Some(reduced) = super::related_guard::uses(preparing.command)
+        .then(|| {
+            super::related_guard::without_optional_references(preparing.command, preparing.outcome)
+        })
+        .flatten()
+    else {
+        return Err(refused);
+    };
+    let Some(own) = reduced
+        .outcomes
+        .iter()
+        .find(|branch| branch.name == preparing.outcome.name)
+    else {
+        return Err(refused);
+    };
+    prepared_with_every_reference(&Preparing {
+        arrangement: preparing.arrangement,
+        command: &reduced,
+        outcome: own,
+        actors: preparing.actors,
+    })
+    .map_err(|_| refused)
+}
+
+/// [`prepared`] with the command as `preparing` names it.
+fn prepared_with_every_reference(
     &Preparing {
         arrangement,
         command,
@@ -5367,12 +5401,38 @@ pub(super) fn contradictions(
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
+    contradictions_among(ir, suite, refusals, |_| true);
+}
+
+/// [`contradictions`] over the one-time disclosure scenarios alone, which `disclosure::augment`
+/// arranges after the per-reading check. Every other scenario was checked in its own caller
+/// reading, whose model has the caller's values written in; walked again over the model as
+/// declared, a row field written from the caller (`sets: {owner: {caller: user_id}}`) is read as
+/// unknown and a branch its rows decided is refused (`caller_arranged_rows`, 2026-11-26).
+pub(super) fn disclosure_contradictions(
+    ir: &EssIr,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    contradictions_among(ir, suite, refusals, |id| {
+        matches!(id, crate::scenario::ScenarioId::Disclosure { .. })
+    });
+}
+
+/// [`contradictions`] over the scenarios whose id `among` keeps.
+fn contradictions_among(
+    ir: &EssIr,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+    among: impl Fn(&crate::scenario::ScenarioId) -> bool,
+) {
     if !ir.commands().values().any(uses) {
         return;
     }
     let refused: Vec<(crate::scenario::ScenarioId, String)> = suite
         .scenarios
         .iter()
+        .filter(|(id, _)| among(id))
         .filter(|(_, scenario)| {
             scenario.steps.iter().any(|step| {
                 matches!(step, ScenarioStep::ExecuteCommand { command, .. }
