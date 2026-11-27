@@ -1,0 +1,2362 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/34",
+    "system": "repro",
+    "specification_version": "v1",
+    "spec_digest": "e73399eeefbe84843fb9e03c6e2436732b9d06f3d5bedf6b1bbdae450efdf436",
+    "contract_digest": "04ebe1f8128bb78ad3c7e83e3374f44c05eb8feac6be7d5d30524e5d34ba36f8",
+    "scenario_initial_state": "empty"
+  },
+  "scenarios": {
+    "repro.catalog.AddVariant/outcome/added": {
+      "purpose": "`repro.catalog.AddVariant` answers `added` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138599"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138600",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-138600"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138600"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138601",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138601"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138602",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-138602"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Kinds",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "kind_id": {
+                "kind": "instance",
+                "instance": "kind-138601"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Available"
+              }
+            }
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.AddVariant",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-138601"
+            },
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "variant",
+          "entity": "repro.catalog.Variant",
+          "event": "repro.catalog.VariantAdded",
+          "field": "variant_id"
+        },
+        {
+          "step": "expect_no_error"
+        },
+        {
+          "step": "expect_event_values",
+          "event": "repro.catalog.VariantAdded",
+          "payload": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-138601"
+            }
+          },
+          "shape": {
+            "kind_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            },
+            "variant_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Variants"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Variants",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "kind_id": {
+                "kind": "instance",
+                "instance": "kind-138601"
+              },
+              "name": {
+                "kind": "literal",
+                "value": "name"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Offered"
+              },
+              "variant_id": {
+                "kind": "instance",
+                "instance": "variant"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.KindId"
+        },
+        {
+          "kind": "type",
+          "name": "repro.catalog.VariantId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Variant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.AddVariant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.WithdrawKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Kinds"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Variants"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.AddVariant/outcome/kind-withdrawn": {
+      "purpose": "`repro.catalog.AddVariant` answers `kind-withdrawn` for an arranged row of the entity its input names, or none",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138599"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138600",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138600"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138601",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-138601"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138601"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138602",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Kinds",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "kind_id": {
+                "kind": "instance",
+                "instance": "kind-138601"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Withdrawn"
+              }
+            }
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.AddVariant",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-138601"
+            },
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "kind-withdrawn"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "repro.catalog.KindNotAvailable"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.KindId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.AddVariant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.WithdrawKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "kind-withdrawn"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "error",
+          "name": "repro.catalog.KindNotAvailable"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Kinds"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.AddVariant/outcome/no-such-kind": {
+      "purpose": "`repro.catalog.AddVariant` answers `no-such-kind` for an arranged row of the entity its input names, or none",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138599"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138600",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-138601"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-138602",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.AddVariant",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-496f06fdd01b"
+            },
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "no-such-kind"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "repro.catalog.KindNotFound"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.KindId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.AddVariant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "no-such-kind"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "error",
+          "name": "repro.catalog.KindNotFound"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.Configure/outcome/configured": {
+      "purpose": "`repro.catalog.Configure` answers `configured` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-970200"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-970201",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.AddVariant",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-970201"
+            },
+            "name": {
+              "kind": "literal",
+              "value": "name-194040"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "variant-194041",
+          "entity": "repro.catalog.Variant",
+          "event": "repro.catalog.VariantAdded",
+          "field": "variant_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Install",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "variant_id": {
+              "kind": "instance",
+              "instance": "variant-194041"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Install",
+            "outcome": "enabled"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "instance",
+          "entity": "repro.catalog.Instance",
+          "event": "repro.catalog.Installed",
+          "field": "instance_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Configure",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Configure",
+            "outcome": "configured"
+          }
+        },
+        {
+          "step": "expect_event_values",
+          "event": "repro.catalog.Configured",
+          "payload": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          },
+          "shape": {
+            "instance_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Instances"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Instances",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "instance_id": {
+                "kind": "instance",
+                "instance": "instance"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Ready"
+              },
+              "variant_id": {
+                "kind": "instance",
+                "instance": "variant-194041"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.InstanceId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Instance"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.AddVariant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Configure"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Install"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Configure",
+            "outcome": "configured"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Install",
+            "outcome": "enabled"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Instances"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.Configure/outcome/no-such-instance": {
+      "purpose": "`repro.catalog.Configure` for an identity no record carries takes `no-such-instance` and reports `repro.catalog.InstanceNotFound`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Configure",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "instance_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-58d9f5de8bc4"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Configure",
+            "outcome": "no-such-instance"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "repro.catalog.InstanceNotFound"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Instance"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Configure"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Configure",
+            "outcome": "no-such-instance"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "error",
+          "name": "repro.catalog.InstanceNotFound"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.Instance/state/Ready/refuses/repro.catalog.Configure": {
+      "purpose": "`repro.catalog.Configure` does not move a `repro.catalog.Instance` that is in `Ready`, and reports `repro.catalog.InstanceStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-970200"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-970201",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.AddVariant",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-970201"
+            },
+            "name": {
+              "kind": "literal",
+              "value": "name-194040"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "variant-194041",
+          "entity": "repro.catalog.Variant",
+          "event": "repro.catalog.VariantAdded",
+          "field": "variant_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Install",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "variant_id": {
+              "kind": "instance",
+              "instance": "variant-194041"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Install",
+            "outcome": "enabled"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "instance",
+          "entity": "repro.catalog.Instance",
+          "event": "repro.catalog.Installed",
+          "field": "instance_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Configure",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Configure",
+            "outcome": "configured"
+          }
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Instances"
+        },
+        {
+          "step": "snapshot_complete_subject",
+          "view": "repro.catalog.Instances",
+          "subject": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          },
+          "shape": {
+            "identity_field": "instance_id",
+            "fields": [
+              {
+                "name": "instance_id",
+                "type": "repro.catalog.InstanceId"
+              },
+              {
+                "name": "kind_id",
+                "type": "repro.catalog.KindId"
+              },
+              {
+                "name": "variant_id",
+                "type": "repro.catalog.VariantId"
+              },
+              {
+                "name": "state",
+                "type": "repro.catalog.Instance.State"
+              }
+            ],
+            "declarations": {
+              "repro.catalog.Instance.State": {
+                "kind": "enum",
+                "variants": [
+                  "Configuring",
+                  "Ready"
+                ]
+              },
+              "repro.catalog.InstanceId": {
+                "kind": "newtype",
+                "of": "Uuid"
+              },
+              "repro.catalog.KindId": {
+                "kind": "newtype",
+                "of": "Uuid"
+              },
+              "repro.catalog.VariantId": {
+                "kind": "newtype",
+                "of": "Uuid"
+              }
+            }
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Configure",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Configure",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "repro.catalog.InstanceStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "expect_no_events"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Instances"
+        },
+        {
+          "step": "expect_complete_subject_unchanged",
+          "view": "repro.catalog.Instances"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Instance"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.AddVariant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Configure"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Install"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Configure",
+            "outcome": "configured"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Configure",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Install",
+            "outcome": "enabled"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "error",
+          "name": "repro.catalog.InstanceStateConflict"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Instances"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.Instance/transition/configured/by/repro.catalog.Configure/configured": {
+      "purpose": "`repro.catalog.Configure` on `configured` moves a `repro.catalog.Instance` to `Ready` along `configured`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name-970200"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind-970201",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.AddVariant",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind-970201"
+            },
+            "name": {
+              "kind": "literal",
+              "value": "name-194040"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "variant-194041",
+          "entity": "repro.catalog.Variant",
+          "event": "repro.catalog.VariantAdded",
+          "field": "variant_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Install",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "variant_id": {
+              "kind": "instance",
+              "instance": "variant-194041"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Install",
+            "outcome": "enabled"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "instance",
+          "entity": "repro.catalog.Instance",
+          "event": "repro.catalog.Installed",
+          "field": "instance_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.Configure",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.Configure",
+            "outcome": "configured"
+          }
+        },
+        {
+          "step": "expect_event_values",
+          "event": "repro.catalog.Configured",
+          "payload": {
+            "instance_id": {
+              "kind": "instance",
+              "instance": "instance"
+            }
+          },
+          "shape": {
+            "instance_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Instances"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Instances",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "instance_id": {
+                "kind": "instance",
+                "instance": "instance"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Ready"
+              },
+              "variant_id": {
+                "kind": "instance",
+                "instance": "variant-194041"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.InstanceId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Instance"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.AddVariant"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Configure"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.Install"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.AddVariant",
+            "outcome": "added"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Configure",
+            "outcome": "configured"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.Install",
+            "outcome": "enabled"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Instances"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.Kind/state/Withdrawn/refuses/repro.catalog.WithdrawKind": {
+      "purpose": "`repro.catalog.WithdrawKind` does not move a `repro.catalog.Kind` that is in `Withdrawn`, and reports `repro.catalog.KindNotAvailable`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "snapshot_complete_subject",
+          "view": "repro.catalog.Kinds",
+          "subject": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          },
+          "shape": {
+            "identity_field": "kind_id",
+            "fields": [
+              {
+                "name": "kind_id",
+                "type": "repro.catalog.KindId"
+              },
+              {
+                "name": "name",
+                "type": "String"
+              },
+              {
+                "name": "state",
+                "type": "repro.catalog.Kind.State"
+              }
+            ],
+            "declarations": {
+              "repro.catalog.Kind.State": {
+                "kind": "enum",
+                "variants": [
+                  "Available",
+                  "Withdrawn"
+                ]
+              },
+              "repro.catalog.KindId": {
+                "kind": "newtype",
+                "of": "Uuid"
+              }
+            }
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "repro.catalog.KindNotAvailable"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "expect_no_events"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "expect_complete_subject_unchanged",
+          "view": "repro.catalog.Kinds"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.WithdrawKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "error",
+          "name": "repro.catalog.KindNotAvailable"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Kinds"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.Kind/transition/withdraw/by/repro.catalog.WithdrawKind/withdrawn": {
+      "purpose": "`repro.catalog.WithdrawKind` on `withdrawn` moves a `repro.catalog.Kind` to `Withdrawn` along `withdraw`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "step": "expect_event_values",
+          "event": "repro.catalog.KindWithdrawn",
+          "payload": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          },
+          "shape": {
+            "kind_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Kinds",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "kind_id": {
+                "kind": "instance",
+                "instance": "kind"
+              },
+              "name": {
+                "kind": "literal",
+                "value": "name"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Withdrawn"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.KindId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.WithdrawKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Kinds"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.RegisterKind/outcome/registered": {
+      "purpose": "`repro.catalog.RegisterKind` answers `registered` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "expect_event",
+          "event": "repro.catalog.KindRegistered",
+          "shape": {
+            "kind_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Kinds",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "kind_id": {
+                "kind": "observed",
+                "event": "repro.catalog.KindRegistered",
+                "field": "kind_id"
+              },
+              "name": {
+                "kind": "literal",
+                "value": "name"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Available"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.KindId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Kinds"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.WithdrawKind/outcome/no-such-kind": {
+      "purpose": "`repro.catalog.WithdrawKind` for an identity no record carries takes `no-such-kind` and reports `repro.catalog.KindNotFound`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-496f06fdd01b"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "no-such-kind"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "repro.catalog.KindNotFound"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.WithdrawKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "no-such-kind"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "error",
+          "name": "repro.catalog.KindNotFound"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    },
+    "repro.catalog.WithdrawKind/outcome/withdrawn": {
+      "purpose": "`repro.catalog.WithdrawKind` answers `withdrawn` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.RegisterKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "name": {
+              "kind": "literal",
+              "value": "name"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "kind",
+          "entity": "repro.catalog.Kind",
+          "event": "repro.catalog.KindRegistered",
+          "field": "kind_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "repro.catalog.WithdrawKind",
+          "actor": "repro.catalog.Operator",
+          "input": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "step": "expect_event_values",
+          "event": "repro.catalog.KindWithdrawn",
+          "payload": {
+            "kind_id": {
+              "kind": "instance",
+              "instance": "kind"
+            }
+          },
+          "shape": {
+            "kind_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Configured"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.Installed"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.KindRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "repro.catalog.VariantAdded"
+        },
+        {
+          "step": "query_view",
+          "view": "repro.catalog.Kinds"
+        },
+        {
+          "step": "expect_view",
+          "view": "repro.catalog.Kinds",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "kind_id": {
+                "kind": "instance",
+                "instance": "kind"
+              },
+              "name": {
+                "kind": "literal",
+                "value": "name"
+              },
+              "state": {
+                "kind": "literal",
+                "value": "Withdrawn"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "repro.catalog.KindId"
+        },
+        {
+          "kind": "entity",
+          "name": "repro.catalog.Kind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.RegisterKind"
+        },
+        {
+          "kind": "command",
+          "name": "repro.catalog.WithdrawKind"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.RegisterKind",
+            "outcome": "registered"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "repro.catalog.WithdrawKind",
+            "outcome": "withdrawn"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Configured"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.Installed"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.KindWithdrawn"
+        },
+        {
+          "kind": "event",
+          "name": "repro.catalog.VariantAdded"
+        },
+        {
+          "kind": "view",
+          "name": "repro.catalog.Kinds"
+        },
+        {
+          "kind": "actor",
+          "name": "repro.catalog.Operator"
+        }
+      ]
+    }
+  }
+}

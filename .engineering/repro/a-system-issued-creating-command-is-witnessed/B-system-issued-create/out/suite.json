@@ -1,0 +1,11 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/34",
+    "system": "repro",
+    "specification_version": "v1",
+    "spec_digest": "e023fb2afc0cfbb7882aa10520a14dc08671c3881c06ac212183706da2a9ec4d",
+    "contract_digest": "43f4032735c4bc8e56b8eeef63933385a8778c576128fb903cecbd18535cba33",
+    "scenario_initial_state": "empty"
+  },
+  "scenarios": {}
+}

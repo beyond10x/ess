@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/adversary_d368_u4_pass1.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:40:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:40:43Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
@@ -145,3 +145,35 @@ Acceptance added by this report:
 
 CHANGELOG: checked 2026-11-27 on `main` (`ff5c4713e`), sections 0.99.3 to 0.99.8 and `[Unreleased]`: no entry
 witnesses a selector without a scoping equality.
+
+## Repro, 2026-11-27 (0.99.8): the row-set refusal and the 563 to 335 drop
+
+Reproduced on 0.99.8 with two minimal models, committed beside this story under
+`.engineering/repro/a-not-equal-or-any-selector-beside-named-rows-is-witnessed/` (each with its `README.md`,
+the commands, and `out/` holding the observed output, the suite and the scenario ids). Both are one catalog
+of three entities (a kind, a variant of a kind, an instance an install creates) and two commands.
+
+- `A1-rowset-no-input-equality/`: a creating outcome behind a row-set refusal whose `where:` holds no
+  equality with an input (the input is reached only through an `exists:` quantifier over the variant rows).
+  `ess verify conform synthesize` writes 12 scenarios and 3 refusals, all `ESS-SYNTH-001` "selects rows by no
+  equality between a String or Uuid field and the input or the addressed subject", on the three outcomes of
+  the command, including `no-such-variant`, which is a plain `when_related: {via: input.variant_id, exists:
+  false}` existence check and is still called a row set. The same model without the row-set outcome writes
+  14 scenarios and 0 refusals, so the one row-set outcome costs every outcome of its command.
+  The refusal's help line ("give the field a type that has a finite value, or drop it from the command's
+  input") does not match the cause: the cause is the selector, not an input's type, so the suggested fix
+  does nothing here. The need is that the accepting and the existence-check outcomes get a scenario.
+- `A2-rowset-input-equality/`: the same model with the row set rewritten to select by an input equality
+  (the workaround the refusal's wording points at). It writes 9 scenarios and 6 refusals: the same three
+  outcomes of the install command, plus three scenarios of the second command (its accepting outcome, one
+  state refusal and one transition) refused `ESS-SYNTH-001` "its row set is Unknown": synthesis no longer
+  sends the install command to arrange the instance the second command moves, because the arranging send
+  now has an undecided row set. This is the likely mechanism of the drop from 563 to 335 scenarios that the report
+  above could not reproduce: it needs the downstream command. Without that second command, A1 and A2 both
+  write 8 scenarios and refuse the same three outcomes, so the loss shows only where a second command needs the
+  row the install command creates: the arranging send of a command whose row set is Unknown is dropped.
+
+So the acceptance above gains: an outcome whose row set is not selected by an input equality is refused
+for itself only, naming its selector (not an input type), and a command that creates the row another command
+moves is still sent to arrange that row when only a branch it does not need is undecided; test: the A2 model
+with its second command's three scenarios present.

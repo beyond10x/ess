@@ -1,0 +1,12 @@
+repro.catalog.AddVariant/outcome/added
+repro.catalog.AddVariant/outcome/kind-withdrawn
+repro.catalog.AddVariant/outcome/no-such-kind
+repro.catalog.Configure/outcome/configured
+repro.catalog.Configure/outcome/no-such-instance
+repro.catalog.Instance/state/Ready/refuses/repro.catalog.Configure
+repro.catalog.Instance/transition/configured/by/repro.catalog.Configure/configured
+repro.catalog.Kind/state/Withdrawn/refuses/repro.catalog.WithdrawKind
+repro.catalog.Kind/transition/withdraw/by/repro.catalog.WithdrawKind/withdrawn
+repro.catalog.RegisterKind/outcome/registered
+repro.catalog.WithdrawKind/outcome/no-such-kind
+repro.catalog.WithdrawKind/outcome/withdrawn

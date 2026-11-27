@@ -41,7 +41,7 @@ scope:
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
 - confidence: cited
   path: docs/design/system-issued-commands.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:04Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:05Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
@@ -213,3 +213,24 @@ CHANGELOG: checked 2026-11-27 on `main`, sections 0.99.3 to 0.99.8: no entry lif
 creating command or `ESS-AUTHOR-044`/`045`. No new decision: the open
 decision of this story (how an await names a record that does not exist yet) now carries a second
 adopter.
+
+## Repro, 2026-11-27 (0.99.8): the authored and the synthesized refusals
+
+Reproduced on 0.99.8 with a minimal model, committed under
+`.engineering/repro/a-system-issued-creating-command-is-witnessed/B-system-issued-create/` (`README.md`, the
+commands, two authored scenarios in `scenarios/`, and `out/`). One entity with a lifecycle, one command that
+only a `system: true` actor holds, whose outcome creates the row.
+
+- B1, an authored act that names the system actor: refused `ESS-AUTHOR-044` ("is sent as the system itself;
+  the system issues it, so the act names no actor and the scenario awaits it"). This one is the intended
+  answer; its help points at B2.
+- B2, the same act with no actor (awaited): refused `ESS-AUTHOR-045` ("issued by the system and awaited on a
+  record, and its outcome creates the record it addresses, so no record exists before the step").
+- `ess verify conform synthesize` writes 0 scenarios and 1 refusal: `ESS-SYNTH-023` on the creating outcome.
+  No route in 0.99.8 gives that outcome a scenario without granting the command to a non-system caller.
+
+So `ESS-AUTHOR-044`/`045`, which the section above says were not reproduced, are reproduced, and the three
+refusals (two authored, one synthesized) are one gap: a system-issued step that creates its record cannot be
+awaited on the creation it claims. Acceptance, added: B2 compiles, the awaited act being checked on the event
+and the view row it states; B1 stays refused `ESS-AUTHOR-044`; synthesis writes a scenario for the creating
+outcome that the interpreted target passes. Test: the B model with its two scenarios.

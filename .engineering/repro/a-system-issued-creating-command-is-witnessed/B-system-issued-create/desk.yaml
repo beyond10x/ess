@@ -1,0 +1,53 @@
+domain: repro.desk
+
+types:
+  - {name: repro.desk.ItemId, kind: newtype, of: Uuid}
+
+entities:
+  - name: repro.desk.Item
+    identity: {name: item_id, type: repro.desk.ItemId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+events:
+  - name: repro.desk.ItemRecorded
+    fields:
+      - {name: item_id, type: repro.desk.ItemId}
+      - {name: label, type: String}
+
+commands:
+  # Shaped like a purchase-recording command: only a system actor may issue it,
+  # and its success outcome creates a row.
+  - name: repro.desk.RecordItem
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: recorded
+        creates: repro.desk.Item
+        instance: item_id
+        sets:
+          label: input.label
+        emits: [repro.desk.ItemRecorded]
+        payload:
+          repro.desk.ItemRecorded:
+            item_id: {generated: true}
+            label: input.label
+
+views:
+  - name: repro.desk.Items
+    source: repro.desk.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: repro.desk.ItemId}
+      - {name: label, type: String}
+      - {name: state, type: repro.desk.Item.State}
+
+actors:
+  - name: repro.desk.Desk
+    system: true
+    may:
+      - repro.desk.RecordItem
