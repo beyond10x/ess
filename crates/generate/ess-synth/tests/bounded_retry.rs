@@ -1,6 +1,8 @@
-//! A bounded retry (ess/16, beyond10x/ess#165) in generated runtimes: every code target that
-//! delivers bindings refuses it by name. Their retry holds the event for the next pump and counts
-//! no attempts, so emitting it would retry forever where the specification says three times.
+//! A bounded retry (ess/16, beyond10x/ess#165) in generated runtimes. The Rust dispatch counts the
+//! attempts of each occurrence, so the Rust target synthesizes it (`refusal_policy_runtime.rs`
+//! runs what it writes). The Go and web targets still refuse it by name: their retry holds the
+//! event for the next pump and counts no attempts, so emitting it would retry forever where the
+//! specification says three times.
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
@@ -21,9 +23,18 @@ fn ir(text: &str) -> EssIr {
 }
 
 #[test]
+fn rust_target_synthesizes_a_bounded_retry() {
+    if let Err(failure) = synthesize_for(&ir(MODEL), Target::Rust) {
+        panic!("Rust synthesizes a bounded retry: {failure}");
+    }
+}
+
+/// The targets that still refuse: Go, until its dispatch counts attempts too.
+#[test]
+#[allow(clippy::single_element_loop)]
 fn every_code_target_refuses_the_bound_by_name() {
     let ir = ir(MODEL);
-    for target in [Target::Rust, Target::Go] {
+    for target in [Target::Go] {
         let failure = synthesize_for(&ir, target)
             .err()
             .unwrap_or_else(|| panic!("{target:?} refuses a bounded retry"));
@@ -51,7 +62,6 @@ fn every_direct_workspace_entry_that_delivers_bindings_refuses_the_bound_by_name
     let ir = ir(MODEL);
     let plan = ess_synth::SynthesisPlan::of(&ir);
     let failures = [
-        ("rust", ess_synth::rust::workspace(&ir, &plan).err()),
         ("go", ess_synth::go::workspace(&ir, &plan).err()),
         ("web", ess_synth::web::workspace(&ir, &plan).err()),
     ];
