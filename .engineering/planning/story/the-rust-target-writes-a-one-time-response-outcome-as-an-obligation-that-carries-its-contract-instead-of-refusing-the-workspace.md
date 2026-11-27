@@ -10,14 +10,32 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-generated-code
-revision: 1
+- depends_on: story:the-rust-dispatch-selects-a-binding-failure-policy-per-refusal-of-the-invoked-command-and-counts-attempts
+scope:
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/generate/ess-synth/src/failure.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/lib.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/plan.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/mod.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/one_time_response.rs
+- confidence: inferred
+  path: docs/design/one-time-response-values.md
+revision: 4
 ---
 ## Outcome
 
-`ess generate synthesize --target rust` writes an outcome that declares `one_time_response:` as an
-implementation obligation that carries the one-time contract (atomic durable consumption, fresh
-issuance, no replay), to be written by hand, and no longer refuses the whole workspace because of
-it. Every other capability of the model is generated as it is for a model without the key.
+`ess generate synthesize --target rust` writes a command whose outcome declares
+`one_time_response:` with its behaviour as an implementation obligation whose contract carries the
+one-time duty (atomic durable consumption, fresh issuance, no replay), to be written by hand, and no
+longer refuses the whole workspace because of it. Every other capability of the model is generated
+as it is for a model without the key. The Go and web targets keep their refusal (OT-D1); they follow
+in their own story.
 
 ## Problem
 
@@ -34,39 +52,53 @@ kind's one binding dropped, the same model synthesizes with exit 0 in 15 s: 3019
 generated, 284 obligations, 0 refused, 7 crates. So these three kinds are the whole gap, and this
 one is 8 of the 51 refusals.
 
-Where it comes from: `crates/generate/ess-synth/src/failure.rs`, `fn one_time_response`, is called
-by the Rust, Go, web and command-line entry points (`rust/mod.rs`, `go/mod.rs`, `web/mod.rs`,
-`clap/mod.rs`) and raises `MissingRepresentation` for every outcome that has the key. Its test is
+Where it comes from: `crates/generate/ess-synth/src/failure.rs`, `fn one_time_response` (:260),
+raises `MissingRepresentation` for every outcome that has the key, for every target. It is called
+by `lib.rs::emit` (`lib.rs:490`) before any target emits, and by each direct entry
+(`rust/mod.rs:195`, `go/mod.rs:323`, `web/mod.rs:303`, `clap/mod.rs:65`). Its test is
 `crates/generate/ess-synth/tests/one_time_response.rs`
-(`all_implementation_entry_points_refuse_an_unimplemented_disclosure_policy`), whose model is a
-minimal reproduction: one command `Issue` with one outcome `issued` returning
-`one_time_response: [secret]`.
+(`all_implementation_entry_points_refuse_an_unimplemented_disclosure_policy`, :31), whose model is a
+minimal reproduction: one command `credentials.api.Issue` with `response: [secret]` and one outcome
+`issued` returning `one_time_response: [secret]`.
 
-`docs/design/one-time-response-values.md`, "Projection and implementation scope", says every
-projection must "preserve the policy and state its implementation/verification obligations, or
-refuse it explicitly by name"; the Rust target took the second branch, and the first has no
-implementation. The same page lists "implementation-owned obligations" beside the explicit
-unsupported restart and concurrency cells ("Record these implementation-owned obligations"), and the
-synthesis design (`docs/design/ess-structural-synthesis-obligations-realizations-design-v0.1.md`)
-has the general rule "Generate it, create an explicit obligation, or refuse synthesis". The Rust
-target already writes obligations as stubs (`rust/obligation.rs`, `ImplementationObligation`).
+The plan already owes that command's behaviour. `SynthesisPlan::of` is target-independent and
+`determined::command` (`determined.rs:55`) keeps every command with a typed `response:` an
+obligation; `one_time_response:` names response fields, so every outcome that has the key sits in a
+command whose behaviour is an obligation. Run on 0.99.2, the refusal document
+(`ess-target-failure/1`) of the test model embeds that plan: 2 capabilities,
+`command_contract` generated and `command_behavior` an obligation of class `undetermined`
+("a typed response (`response:`)"), whose contract does not mention the one-time duty. The Rust
+target writes each plan obligation as a stub that returns `UnmetObligation` and carries the
+contract in its documentation (`rust/obligation.rs`), never the value.
+
+`docs/design/one-time-response-values.md` (:219-225) says every projection must "preserve the
+policy and state its implementation/verification obligations, or refuse it explicitly by name", and
+"Generated server/library code must not silently present a policy-free implementation as complete";
+the Rust target took the refusal branch.
 
 ## Acceptance
 
-- `rust_target_carries_a_one_time_response_outcome_as_an_obligation`, in
-  `crates/generate/ess-synth/tests/one_time_response.rs`: for the model of that file,
-  `synthesize_for(.., Target::Rust)` returns a workspace and no `TargetFailure`; its obligation
-  module holds one obligation for `commands.credentials.api.Issue.outcomes.issued` whose text names
-  atomic durable consumption, fresh issuance and the marked field `secret`; the obligation is listed
-  in the workspace's obligation inventory with the count the plan reports.
+- **`crates/generate/ess-synth/tests/one_time_response.rs`, new case
+  `rust_target_carries_a_one_time_response_outcome_as_an_obligation`.** For the model of that file,
+  `synthesize_for(.., Target::Rust)`, `rust::workspace` and `rust::single_crate` return output and
+  no `TargetFailure`. The plan's counts are exactly 1 generated, 1 obligation, 0 refused: the
+  command contract of `credentials.api.Issue` is generated, and its command behaviour is the one
+  obligation, class `undetermined`, as today; no second obligation is added. That obligation's
+  contract names `issued`, the field `secret`, atomic durable consumption, fresh issuance and no
+  replay. The generated stub of that behaviour carries the same text and returns `UnmetObligation`;
+  the case reads the generated source and fails when the stub's body names `secret` or builds the
+  response.
+- **`all_implementation_entry_points_refuse_an_unimplemented_disclosure_policy` (:31)** loops over
+  `[Target::Go, Target::Web, Target::Clap]`, and its direct-entry list keeps `go::workspace`,
+  `web::workspace` and `clap::workspace`: Rust leaves both lists (`rust::workspace`,
+  `rust::single_crate`), the others stay refused with the same text.
+  `ordinary_direct_returns_keep_their_existing_implementation_path` and
+  `direct_browser_catalog_refuses_dispatch_without_losing_policy_location` are unchanged.
 - No synthesis of the Rust target prints "this code target cannot implement that policy".
-- The generated code does not present a policy-free implementation as complete: the stub for such an
-  outcome does not compile into a body that returns the response without issuing it once
-  (`docs/design/one-time-response-values.md`, "Generated server/library code must not silently
-  present a policy-free implementation as complete"); a test fails when the stub returns the value.
-- A model without `one_time_response:` generates the bytes it generated.
-- The mutation that removes the obligation (the stub emitted for a different outcome, or none) fails
-  a test.
+- A model without `one_time_response:` generates the bytes it generated: the byte pins of
+  `AGENTS.md` § Gate stay unchanged, and so does its plan.
+- Mutants killed by the new case: the clause added to another outcome's or command's contract, the
+  clause dropped, and the Rust refusal skipped while the clause is missing.
 
 ## Fit review
 
@@ -82,13 +114,13 @@ Per `.agents/skills/assessing-external-requests/SKILL.md`.
 3. Already expressible: no. Removing `one_time_response:` loses the disclosure scenarios
    (`docs/design/one-time-read-cells-for-other-actors.md`) and the policy itself, so it is no idiom
    (skill question 3).
-4. Fit: it reuses the obligation vocabulary the plan and `rust/obligation.rs` already have. Siblings:
-   the Go, web and command-line targets raise the same refusal from the same function; the decision
-   below asks whether they follow.
+4. Fit: it reuses the obligation the plan already holds for the command's behaviour; no new
+   construct. Siblings: the Go, web and command-line targets raise the same refusal from the same
+   function; OT-D1 leaves them to their own story.
 5. A second adopter: any model that issues a credential, an invitation code or a reset token has
    the same marked field.
-6. Cost: no source key, no format version. A new obligation kind or text in the generated crate;
-   the generated API of a workspace that was refused changes from absent to present.
+6. Cost: no source key, no format version (OT-D2 A). The contract text of such a command grows a
+   clause; the generated API of a workspace that was refused changes from absent to present.
 7. Considered: change nothing (the downstream deletes the key and loses the policy); an in-library
    atomic store (refused: `docs/design/one-time-response-values.md` says a structural library cannot
    enforce temporal disclosure and must not claim to); the obligation (chosen).
@@ -99,23 +131,53 @@ CHANGELOG: checked 2026-11-27 on `main` (`e29c029fab`), sections 0.99.3 to 0.99.
 ## Decisions
 
 - **accept, redesigned** (the fit review above): the requester wanted obligations; the design is the
-  obligation the plan already knows, not a new construct.
-- OT-D1, open. Which targets carry the obligation:
-  - A (recommended): Rust, Go and web together, one change to `failure::one_time_response`, one test
-    row per target. Costs a wider change; the three share the function and the page's parity rule.
-  - B: Rust only, the others keep the refusal. Costs a second story and a target that refuses what
-    its sibling generates.
+  obligation the plan already holds, not a new construct.
+- OT-D1, open. Which targets stop refusing:
+  - A (recommended): Rust only. `failure::one_time_response` skips `Target::Rust`, so `lib.rs:490`
+    and `rust/mod.rs:195` pass; Go and web keep the refusal and get
+    `story:the-go-and-web-targets-carry-a-one-time-response-outcome-as-the-command-behaviour-obligation-instead-of-refusing`.
+    Costs a second story and targets that are unequal until it lands; matches the need, which is
+    the Rust target.
+  - B: Rust, Go and web in this story. Costs acceptance rows for Go's stubs and the browser
+    catalog, which no consumer asked for.
   - C: change nothing. Fails closed, and keeps the whole workspace refused.
-  Option C fails closed; A and B fail closed per outcome, because the obligation stub refuses to
-  return the value (acceptance 3).
+  C fails closed; A and B fail closed per outcome, because the stub returns `UnmetObligation`,
+  never the value.
 - The command-line target keeps its refusal under every option; it is not part of this story.
+- OT-D2, open. The format consequence. The plan is target-independent: `plan.json` in every
+  generated tree, the plan embedded in `ess-target-failure/1`, and the plans `ess-service-contract`
+  and `ess-entity-runtime` read are all `SynthesisPlan::of`, and an obligation's reason is a tagged
+  enum (`class`).
+  - A (recommended): no new reason. The one-time duty is a clause of the contract string of the
+    command behaviour's existing obligation (`plan.rs`, `behavior_contract`). No key, class,
+    capability kind or value set changes, so no format version (`AGENTS.md` § Determinism and
+    formats). Cost: the contract string of a command with `one_time_response:` changes for every
+    target and in every reader of the plan; no committed tree holds such a model today, because
+    every code target refuses it; and a reader learns the duty from prose, not from a class it can
+    switch on.
+  - B: a new reason class `one_time_response` (or a new capability kind per outcome). A new value of
+    a persisted tagged enum changes names and meaning: a new format version of the plan, which
+    carries no version key of its own today, so the envelope gains one or `ess-target-failure/1`
+    moves on, with an old-reader compatibility test. It also replaces the `undetermined` reason the
+    behaviour has, or makes the count 2.
+  - C: an obligation only in the Rust output, plan unchanged. Breaks the plan-to-stub bijection
+    `rust/obligation.rs` holds; refused.
+  What the Go and web plans carry: under A, the same plan with the same contract clause, embedded
+  in their unchanged refusal documents until their story lands; under B, the new class in the same
+  places.
+
+## Order
+
+- `depends_on story:the-rust-dispatch-selects-a-binding-failure-policy-per-refusal-of-the-invoked-command-and-counts-attempts`:
+  both change `crates/generate/ess-synth/src/failure.rs`, `src/plan.rs` and `src/lib.rs`
+  (`emit` calls both refusals, `lib.rs:490` and `:494`), and `src/rust/mod.rs` (`:195`, `:201`).
 
 ## Scope
 
 - cited: crates/generate/ess-synth/src/failure.rs
+- cited: crates/generate/ess-synth/src/lib.rs
+- cited: crates/generate/ess-synth/src/rust/mod.rs
+- cited: crates/generate/ess-synth/src/plan.rs
 - cited: crates/generate/ess-synth/tests/one_time_response.rs
-- inferred: crates/generate/ess-synth/src/rust/obligation.rs
-- inferred: crates/generate/ess-synth/src/rust/mod.rs
-- inferred: crates/generate/ess-synth/src/plan.rs
 - inferred: docs/design/one-time-response-values.md
 - inferred: CHANGELOG.md
