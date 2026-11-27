@@ -36,7 +36,7 @@ scope:
   path: crates/generate/ess-synth/tests/generated_view_queries.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T21:10:59Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T21:11:00Z", actor: "human:timo", revision: 6}
@@ -436,6 +436,8 @@ numbers above with CI's, and the acceptance below holds each of them:
   the committed file instead.
 - `generated_view_queries` builds with cargo once, in a Taskfile task, and the test reads its path
   (the accepted form named in Need); `no_test_builds.rs` covers the file it names.
+
+CI, 2026-11-26 (runs of that day, times as the runner printed them): `explore_concurrent` 170 s; `external_request_binding::no_use_and_owed_only_models_compile_without_an_external_port` 160 s; `explore_concurrent_reads_adversary_2` 107 s; the cases of `coverage_producers`, `one_row_instance_bound`, `emit_swap_served` and the `go` cases of `http_binding_rust` each over 60 s. The slow-lane test `every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs` ran 96.6 s and was not killed by the `slow` profile. Locally, 57 `ess-cli` tests ran over 60 s. None of these is classified yet: the first step for each is its cause (a product built or synthesized inside the test, a process per test, or a missing kill) against the bound, and for the slow-lane test the `slow` profile's `terminate-after` is the check.
 
 ## Decisions taken
 
