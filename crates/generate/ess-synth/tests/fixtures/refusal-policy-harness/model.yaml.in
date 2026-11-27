@@ -1,0 +1,169 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.ledger
+summary: A ledger refuses a record for several reasons, and the binding that records each placed order answers each refusal its own way; the binding that archives each closed order retries a bounded number of times; the binding that notes each audited order reads its input through an owed transformation.
+types:
+  - {name: demo.ledger.OrderId, kind: newtype, of: String}
+  - {name: demo.ledger.EntryRef, kind: newtype, of: Integer}
+conversions:
+  - from: demo.ledger.OrderId
+    to: demo.ledger.EntryRef
+    because: a ledger entry is found by the order it records.
+errors:
+  - name: demo.ledger.Unavailable
+    summary: The ledger could not answer this time.
+    fields: []
+  - name: demo.ledger.Unknown
+    summary: The ledger does not know the order.
+    fields: []
+  - name: demo.ledger.AtLimit
+    summary: The ledger holds as many open records as it may.
+    fields: []
+  - name: demo.ledger.WrongState
+    summary: The order is already recorded.
+    fields: []
+events:
+  - name: demo.ledger.OrderPlaced
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.Recorded
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.RecordEscalated
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.OrderClosed
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.Archived
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.OrderAudited
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.Noted
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+actors:
+  - {name: demo.ledger.Clerk, may: [demo.ledger.Place, demo.ledger.Record, demo.ledger.Close, demo.ledger.Archive, demo.ledger.Audit, demo.ledger.Note]}
+commands:
+  - name: demo.ledger.Place
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: placed
+        emits: [demo.ledger.OrderPlaced]
+        payload:
+          demo.ledger.OrderPlaced: {order_id: input.order_id}
+  - name: demo.ledger.Record
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: recorded
+        emits: [demo.ledger.Recorded]
+        payload:
+          demo.ledger.Recorded: {order_id: input.order_id}
+      - name: unavailable
+        external: the ledger answers a server error
+        error: demo.ledger.Unavailable
+      - name: busy
+        external: the ledger is overloaded
+        error: demo.ledger.Unavailable
+      - name: rejected
+        external: the ledger answers a client error
+        error: demo.ledger.Unknown
+      - name: at-limit
+        external: the ledger holds too many open records
+        error: demo.ledger.AtLimit
+      - name: wrong-state
+        external: the order is already recorded
+        error: demo.ledger.WrongState
+  - name: demo.ledger.Close
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: closed
+        emits: [demo.ledger.OrderClosed]
+        payload:
+          demo.ledger.OrderClosed: {order_id: input.order_id}
+  - name: demo.ledger.Archive
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: archived
+        emits: [demo.ledger.Archived]
+        payload:
+          demo.ledger.Archived: {order_id: input.order_id}
+      - name: unavailable
+        external: the archive answers a server error
+        error: demo.ledger.Unavailable
+      - name: rejected
+        external: the archive answers a client error
+        error: demo.ledger.Unknown
+  - name: demo.ledger.Audit
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: audited
+        emits: [demo.ledger.OrderAudited]
+        payload:
+          demo.ledger.OrderAudited: {order_id: input.order_id}
+  - name: demo.ledger.Note
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+      - {name: entry, type: demo.ledger.EntryRef}
+    outcomes:
+      - name: noted
+        emits: [demo.ledger.Noted]
+        payload:
+          demo.ledger.Noted: {order_id: input.order_id}
+      - name: unavailable
+        external: the ledger answers a server error
+        error: demo.ledger.Unavailable
+bindings:
+  - id: notify-ledger
+    when:
+      event: demo.ledger.OrderPlaced
+    invoke:
+      command: demo.ledger.Record
+    mapping:
+      order_id: event.order_id
+    delivery: at_least_once
+    on_failure:
+      drop: [wrong-state]
+      retry: {outcomes: [demo.ledger.Unavailable, rejected], attempts: 3, final: [rejected]}
+      escalate:
+        emits: demo.ledger.RecordEscalated
+        except: [wrong-state, demo.ledger.Unavailable, rejected]
+  - id: archive-order
+    when:
+      event: demo.ledger.OrderClosed
+    invoke:
+      command: demo.ledger.Archive
+    mapping:
+      order_id: event.order_id
+    delivery: at_least_once
+    on_failure:
+      retry: {attempts: 2, final: [demo.ledger.Unknown]}
+  - id: note-order
+    when:
+      event: demo.ledger.OrderAudited
+    invoke:
+      command: demo.ledger.Note
+    mapping:
+      order_id: event.order_id
+      entry: event.order_id
+    delivery: at_least_once
+    on_failure:
+      retry: {attempts: 2}
+components:
+  - component: ledger-service
+    summary: Places, records, closes, archives, audits and notes orders.
+    owns:
+      domains: [demo.ledger]
+    accepts:
+      commands: [demo.ledger.Place, demo.ledger.Record, demo.ledger.Close, demo.ledger.Archive, demo.ledger.Audit, demo.ledger.Note]
+    publishes:
+      events: [demo.ledger.OrderPlaced, demo.ledger.Recorded, demo.ledger.OrderClosed, demo.ledger.Archived, demo.ledger.OrderAudited, demo.ledger.Noted]
+    reached_by: network
