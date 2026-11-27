@@ -39,10 +39,34 @@ Source syntax is coordinated ess/22; ess/21 remains the one-time-response alloca
   table, keyed by outcome, and fallback on each side (a reorder of the command's refusals is no
   change); a delta holding one is written as /14, classified, even when nobody asked, because /14
   is classified by definition. Docs, AsyncAPI and graph render the table.
-- **Not done:** generated Rust, Go and web dispatch refuse a refusal-selected policy by name
-  (`MissingRepresentation`, `bindings.<name>.on_failure`), as they refuse a bounded retry, so the
-  named controls run against the binding-running native fixture and in-memory senders only, not
-  against generated runtimes. A refusal-selected policy on an event an external channel
+- **Generated Rust dispatch.** `ess generate synthesize --target rust` emits a refusal-selected
+  policy and a plain bounded retry (`rust::system`, `per_refusal_match`): one outcome match arm per
+  answer, refusals with the same answer sharing an arm. A bounded retry compares the occurrence's
+  attempts — `made` before this one, held in memory beside the event, and this one — with
+  `attempts`, whichever refusal selected it; a `final:` refusal drops at once and is never
+  rerouted; an escalation is built from the attempt's input and published once, and a builder
+  that fails is reported out of `pump` and not held, so the command is not invoked again for that
+  occurrence. The generated command port has no untyped failure: it returns
+  `Result<Outcome, UnmetObligation>`, every declared refusal is an `Outcome` variant, and an
+  `UnmetObligation` it answers selects no policy and propagates out of `pump`, so the fallback
+  answers only the declared refusals it selects. A transport whose port can fail untyped reopens
+  that choice. That invocation still counts against `attempts`, also where every refusal of a
+  bounded retry is `final:`: an `at_least_once` binding holds the occurrence for the next pump
+  while it is below the bound, and at the bound holds nothing. A failure before the port is
+  invoked (an owed transformation, an absent proved member, a failed selection, an Unknown
+  condition) makes no attempt, selects no policy and is not held: no automatic retry. Only two
+  things are held: a retry the policy selects, and an unmet obligation of the port below the
+  bound. Every other failure of an attempt, the first or a held one, is reported out of `pump`,
+  never dropped, and the binding's later occurrences are still delivered. The held list lives in
+  the process only: a restart loses every held occurrence with its count, and a host's
+  `redeliver` delivers the occurrence afresh, its count starting at 0.
+  `crates/generate/ess-synth/tests/refusal_policy_runtime.rs` runs the generated dispatch through
+  a scripted port (`task refusal-policy-harness`).
+- **Not done:** generated Go and web dispatch refuse a refusal-selected policy by name
+  (`MissingRepresentation`, `bindings.<name>.on_failure`), as they refuse a bounded retry, and no
+  generated-Rust conformance runner exists, so the named controls run against the binding-running
+  native fixture, in-memory senders and the Rust harness above, not against generated Go or web
+  runtimes. A refusal-selected policy on an event an external channel
   delivers gets no refusal scenarios; each is refused by name. Browser composition is not
   implemented: the scenario player refuses such a model by name
   (`$model.bindings.<name>.on_failure`) rather than show the fallback's word. Generated-runtime

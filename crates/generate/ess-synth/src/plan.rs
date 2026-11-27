@@ -1412,9 +1412,20 @@ fn failure_text(binding: &ResolvedBinding) -> &'static str {
 }
 
 /// Whether the generated system keeps a held-back list for this binding: it attempts again after
-/// an unmet obligation ([`attempts_again`]), or its declared refusal is answered with `retry`.
+/// an unmet obligation ([`attempts_again`]), or a declared refusal may be answered with `retry` —
+/// universal, bounded (ess/16), or selected per refusal (ess/22).
 pub(crate) fn holds_back(binding: &ResolvedBinding) -> bool {
-    attempts_again(binding) || matches!(binding.on_failure(), ResolvedFailure::Retry)
+    attempts_again(binding)
+        || match binding.on_failure() {
+            ResolvedFailure::Retry | ResolvedFailure::BoundedRetry { .. } => true,
+            ResolvedFailure::ByRefusal { policy } => policy.actions().any(|action| {
+                matches!(
+                    action,
+                    ess_compiler::ir::ResolvedRefusalAction::Retry { .. }
+                )
+            }),
+            ResolvedFailure::Drop | ResolvedFailure::Escalate { .. } => false,
+        }
 }
 
 /// The delivery: the one transport this scope holds, generated onto the one declared acceptor.
