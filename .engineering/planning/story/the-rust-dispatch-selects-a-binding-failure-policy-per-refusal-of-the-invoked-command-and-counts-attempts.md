@@ -37,7 +37,7 @@ scope:
   path: crates/generate/ess-synth/tests/refusal_policy_runtime.rs
 - confidence: inferred
   path: docs/design/conditional-binding-failure-policies.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-27T09:01:53Z", actor: "human:operator", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-27T09:01:53Z", actor: "human:operator", revision: 7}
@@ -246,3 +246,19 @@ CHANGELOG: checked 2026-11-27 on `main` (`e29c029fab`), sections 0.99.3 to 0.99.
 - inferred: crates/generate/ess-synth/tests/fixtures/refusal-policy-harness
 - inferred: docs/design/conditional-binding-failure-policies.md
 - inferred: CHANGELOG.md
+
+## Corrections, 2026-11-27
+
+Corrections to the text above, from the unit's two adversary passes (`review-result:adversary-e2-pass-1`,
+`review-result:adversary-e2-pass-2`) and the decision of the operator session. The sections above stay as written.
+
+- **An `UnmetObligation` answer from the port counts as an attempt.** The test row above and RP-D4 A say it propagates
+  out of the pump before any policy. That is corrected: the design page governs, and by it every invocation of the port
+  counts against the policy's bound, an answer `UnmetObligation` included. The operator session decided it.
+- **A failure the code does not hold is reported out of `pump`, never dropped.** Pass 2 found two cases that are still
+  dropped without a report, a failure of the escalation builder on a retried attempt and a port `UnmetObligation` at
+  the bound; that pass has no recorded outcome and its findings are open.
+- **A binding named `made` with a counted retry is refused by name.** The counted dispatch has a parameter `made` that
+  shadows the generated transformation function of a binding with that name, so the generated code did not compile
+  (found by pass 1). Synthesis now refuses such a binding, naming it; the name is reserved only for a binding with a
+  counted retry.

@@ -22,7 +22,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/binding_optional_wrap_go.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:46:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:46:01Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -111,3 +111,18 @@ Acceptance, added:
 Evidence of weight: with this binding dropped from its model, and the two other kinds removed, the
 reporter's model synthesizes with exit 0 in 15 s (3019 capabilities, 2735 generated, 284
 obligations, 0 refused, 7 crates).
+
+## Corrections, 2026-11-27
+
+Two corrections to the text above, from the unit's two adversary passes (`review-result:adversary-e3-pass-1`,
+`review-result:adversary-e3-pass-2`). The sections above stay as written.
+
+- **A newtype into an `Optional` of another newtype is refused as `type_mismatch`, not `BindingAssignment`.** The
+  acceptance line "A newtype source into an `Optional` of a different newtype is still refused as `BindingAssignment`"
+  cannot hold: validation refuses the binding first, as `type_mismatch`, so the Rust target never reaches its own
+  refusal. The test in `binding_optional_wrap_go.rs` pins `type_mismatch`. The line stands corrected to that refusal.
+- **The enum selection compares the variant's name.** In the base, the Rust selection over an enum member printed the
+  domain variant with its debug form, so a binding the plan reported generated did not compile. The first correction
+  compiled but answered the wire spelling while the predicate compares the variant's name, so a variant with a declared
+  wire spelling was never selected; the Go arm had the same defect. Rust and Go now compare the variant's name. These
+  are two defects fixed in the unit: the first was in the base, the second came in with the first correction.
