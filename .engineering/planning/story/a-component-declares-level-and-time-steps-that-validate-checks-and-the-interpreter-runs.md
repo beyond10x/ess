@@ -13,7 +13,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:periodic-binding-trigger-contract
 - informed_by: story:system-issued-command-is-awaited-not-driven
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -47,6 +47,9 @@ Open, lettered. The form is open. Recommended: C.
   - C: the component lists its steps in the reporter's spelling (`form`, `view`, `command`, `every`), and the actor is the one actor the command is granted to as a system actor, not named a second time; the compiler lowers a time step to the existing periodic cause (reusing `Period` and its validation) and a level step to a new level cause, so there is one meaning and one projection set; a command granted to several actors needs the actor named, and then validate checks it is among the grants. Cost: a format step and the lowering; the checks the reporter asked for hold (view and command exist, the actor may run the command and read the view).
 - D2, what a level step passes to its command. A: one run per answered row, each command input filled from the row's field of the same name and type, with the identity input the row's identity; refused at validate where an input has no such field. B: one run per evaluation, no inputs from the row, every input of the command supplied or `Optional`. Recommended: A.
 - D3, how the interpreter runs steps. Steps run after each command of a scenario, in the declaration order, until no level step's view answers rows, or until a bound named in the format is reached, which is a named refusal and never a silent stop; a time step runs once per elapsed period of the scenario's clock (`story:elapsed-time-claims`), not on wall time. Recommended as written.
+
+- D161 = C/yes/yes (the operator session, 2026-11-26): D1 = C, the component lists its steps in the reporter's spelling and the actor is the one actor the command is granted to as a system actor; the two further answers are "yes", read as D2 = A and D3 as written, the recommended options. Built on pull request 842 (open).
+- D162 = A (the owner, 2026-11-26 15:5x, relayed by the operator session): the steps unit, its dependents and batch 10's units are delivered as one pull request from `weft/steps-2026-11-26`, which is pull request 842; open, not released.
 
 ## Acceptance
 

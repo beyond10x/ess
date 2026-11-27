@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:an-absent-optional-under-false-and-unknown-is-arranged
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -39,6 +39,8 @@ Open, lettered. Recommended: B.
 - A: a comparison with an observed absence reads False. Cost: a change of meaning, so a new source format (the next open one) and no change below it; `!=` and `not (f == x)` over an absent field become True where they are Unknown today, which contradicts the page above; every target reads it (Rust, Go, TypeScript, the interpreter, synthesis, `ess verify diff`); an unobserved absence stays Unknown, so the interpreter must tell the two apart (the `observed_presence` seam of `generated-history-values.md`). Fails open: a row holding an absence is silently not selected.
 - B: `validate` names such a guard. A comparison over an `Optional` field in a row-set selector, a related predicate, a subject predicate or an `affects:` filter, with no presence test of the same path in the same conjunction, is refused (a warning below the format that admits the refusal), and the refusal's hint names the idiom `defined(f) and f == x` (the conjunction is False where `f` is absent and the comparison Unknown, by the Kleene rule the evaluator already applies: to be shown by a test). Cost: refuses documents that validate today, so it is format-gated; it over-refuses where every writer sets the field, unless the finite prover is used to waive it. Fails closed.
 - C: both. A decides the semantics, B names the guard below the format that carries A.
+
+- D160 = B (the operator session, 2026-11-26): `validate` names a guard whose comparison over an `Optional` field can meet an absent value without a `defined()` guard, and prints the `defined(f) and f == x` form; the three-valued meaning is unchanged. A refusal from `ess/38`, a warning below it; on the formats of `main` a warning. Built on pull request 842 (open).
 
 ## Acceptance
 
