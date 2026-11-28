@@ -12,7 +12,7 @@ relations:
 - derived_from: story:create-beside-a-move-on-the-same-key
 - depends_on: story:create-beside-a-move-on-the-same-key
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -190,3 +190,7 @@ decision over two commands or keeps the change outside the model. On `main` at `
 as `ESS-COMMAND-009`. The report is a further instance of this story, not a new one; it also blocks
 a creating command from keeping a counter on the row it files the new row under, which the draft
 story on an aggregate test of a row-set guard names as the idiom it replaces.
+
+## A second consumer, 2026-11-28
+
+A second consumer reported this on 2026-11-28, on 0.99.2, and 0.99.9 refuses it the same way: an outcome that creates its subject and declares `affects:` is refused `ESS-COMMAND-009` ("creates its subject and declares `affects:`"). A specification of reusable building blocks hit it on one creating outcome that also had to change rows that existed before it. Nothing in the story changes; the second consumer is a reason to keep its order.

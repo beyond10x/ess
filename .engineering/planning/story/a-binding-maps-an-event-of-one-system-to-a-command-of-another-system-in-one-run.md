@@ -31,7 +31,7 @@ scope:
   path: docs/design/composition-type-conformance.md
 - confidence: inferred
   path: docs/design/system-issued-commands.md
-revision: 5
+revision: 7
 ---
 ## Outcome
 
@@ -237,3 +237,7 @@ above and replace none of it:
   of the target's command is in the IR's actor grants, and the cross-system binding counts as that actor.
 - The IR delta (the binding, the actor grant, the prefixed names) is written as a draft and shown to
   the runtime that will read it before the design page is final; the story records its answer.
+
+## A second consumer, 2026-11-28
+
+The report of 2026-11-28 that cites the story above (references across systems, on 0.99.2) is a second consumer of this one too: its specification of reusable building blocks names the other system's records and has no binding across systems in one run. The second consumer is a reason to keep this story in the queue.
