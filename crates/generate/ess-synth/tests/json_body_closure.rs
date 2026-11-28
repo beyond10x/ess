@@ -4,7 +4,8 @@
 //! The model is the issue's toy shelf, widened to every position a `Timestamp` and a closed
 //! object reach: a top-level `Timestamp`, an `Optional` one, a `List` of them, one inside a struct
 //! that is a list element, one as a map key; a closed struct in a list, an open struct
-//! (`undeclared_fields: ignored`) and a `Json` field, whose content the document leaves open. The
+//! (`undeclared_fields: ignored`) and a `Json` field, whose content the document leaves open, and a
+//! struct with a shorthand (`ess/27`), sent as its field's value alone and as its object. The
 //! binding states `unknown: refuse` on one JSON route and leaves the other at its default, which is
 //! `refuse` too, and overrides no refusal, so a malformed body is answered `400` with its detail.
 //!
@@ -144,6 +145,26 @@ const REQUESTS: &[Sent] = &[
         "/stamps",
         r#"{"stamp_id":"r11","stamped_at":"2026-10-29T13:00:00Z","marks":{},"extra":1}"#,
         Some("body.extra"),
+    ),
+    // A struct with a shorthand (`ess/27`): its field's value alone and the object are one
+    // value; a value that is neither is refused by the field's own decoder at the value's path.
+    (
+        "item-tag-short",
+        "/items",
+        r#"{"item_id":"i3","created_at":"2026-10-29T12:00:00Z","stamps":[],"labels":[],"tag":"red"}"#,
+        None,
+    ),
+    (
+        "item-tag-object",
+        "/items",
+        r#"{"item_id":"i4","created_at":"2026-10-29T12:00:00Z","stamps":[],"labels":[],"tag":{"name":"red"}}"#,
+        None,
+    ),
+    (
+        "item-tag-list",
+        "/items",
+        r#"{"item_id":"r12","created_at":"2026-10-29T12:00:00Z","stamps":[],"labels":[],"tag":["red"]}"#,
+        Some("body.tag"),
     ),
 ];
 
@@ -333,7 +354,7 @@ fn an_admitted_body_reads_back_unchanged_and_a_refused_one_is_never_stored() {
     let stamps = rows("stamps", "stamp_id");
     assert_eq!(
         items.keys().chain(stamps.keys()).collect::<Vec<_>>(),
-        ["i1", "i2", "s1"],
+        ["i1", "i2", "i3", "i4", "s1"],
         "only the admitted bodies were stored"
     );
     let sent = |label: &str| -> Value {
@@ -351,6 +372,12 @@ fn an_admitted_body_reads_back_unchanged_and_a_refused_one_is_never_stored() {
         .remove("colour");
     assert_eq!(items["i2"], wide);
     assert_eq!(stamps["s1"], sent("stamp-valid"));
+
+    // Both spellings of the shorthand struct are one value, which the encoder writes as the object.
+    assert_eq!(items["i4"], sent("item-tag-object"));
+    let mut short = sent("item-tag-short");
+    short["tag"] = json!({"name": "red"});
+    assert_eq!(items["i3"], short);
 }
 
 /// The validator the agreement test holds the server to.
@@ -418,7 +445,7 @@ fn the_server_refuses_exactly_what_its_served_openapi_refuses() {
         }
     }
     assert!(failures.is_empty(), "{failures}");
-    assert_eq!((admitted, refused), (3, 11), "every body was compared");
+    assert_eq!((admitted, refused), (5, 12), "every body was compared");
     assert_eq!(
         document["components"]["schemas"]["shelf.items.Label"]["additionalProperties"],
         json!(false),

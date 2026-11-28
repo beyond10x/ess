@@ -112,6 +112,19 @@ pub struct SynthesisScope {
     /// shaped one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
+    /// The crate's package name, when the consumer named it (`--package`, the crate layout only).
+    ///
+    /// Absent when the crate is named for the system, as [`Self::layout`] is absent for the
+    /// default, so a tree generated without the option keeps its bytes. Here, like the layout, so
+    /// the regenerate command rewrites the crate under the name it was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// `true` when the crate's manifest leaves out its `[workspace]` table, so the crate is a
+    /// member of the consumer's workspace (`--no-workspace-table`, the crate layout only).
+    ///
+    /// Absent when `false`, for the reason [`Self::package`] is.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_workspace_table: bool,
 }
 
 impl SynthesisScope {
@@ -121,6 +134,8 @@ impl SynthesisScope {
         Self {
             profile: "component-skeletons".to_owned(),
             layout: None,
+            package: None,
+            no_workspace_table: false,
         }
     }
 }
@@ -483,12 +498,19 @@ impl SynthesisPlan {
     }
 
     /// The command that rewrites the tree this plan sits in: [`REGENERATE`], plus the layout when
-    /// it is not the default.
+    /// it is not the default and the crate's manifest options when they were given.
     pub fn regenerate(&self) -> String {
-        match &self.scope.layout {
-            Some(layout) => format!("{REGENERATE} --layout {layout}"),
-            None => REGENERATE.to_owned(),
+        let mut command = REGENERATE.to_owned();
+        if let Some(layout) = &self.scope.layout {
+            let _ = write!(command, " --layout {layout}");
         }
+        if let Some(package) = &self.scope.package {
+            let _ = write!(command, " --package {package}");
+        }
+        if self.scope.no_workspace_table {
+            command.push_str(" --no-workspace-table");
+        }
+        command
     }
 
     /// The plan as Markdown, for the person deciding whether to trust the generated half.

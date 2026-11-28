@@ -253,8 +253,10 @@ append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task bina
 `ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`), `task ui-http-servers`
 (`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`),
 `task body-cap-rust-server` (`ess-synth`'s `body_cap_rust` cases, through
-`ESS_BODY_CAP_RUST_SERVER`) and `task body-cap-go-server` (`ess-synth`'s `body_cap_go` cases,
-through `ESS_BODY_CAP_GO_SERVER`).
+`ESS_BODY_CAP_RUST_SERVER`), `task body-cap-go-server` (`ess-synth`'s `body_cap_go` cases,
+through `ESS_BODY_CAP_GO_SERVER`) and `task library-crate-harness` (`ess-synth`'s
+`single_crate_layout` round trip through a crate with no server, through
+`ESS_LIBRARY_CRATE_HARNESS`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
 change to either needs the task run again.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
