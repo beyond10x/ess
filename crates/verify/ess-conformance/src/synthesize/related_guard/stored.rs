@@ -512,11 +512,38 @@ pub(super) fn arranged_through(
     (distinction, goal): (Distinction, Option<&Goal>),
     (field, entity): (&str, &EntityHandle),
 ) -> Result<(Setup, BTreeMap<String, Node>, bool), RefusalCause> {
+    arranged_through_on(
+        models,
+        command,
+        outcome,
+        actors,
+        (distinction, goal),
+        (field, entity),
+        None,
+    )
+    .map(|(found, _)| found)
+}
+
+/// [`arranged_through`], the addressed row arranged as `steer` arranged it where one is given
+/// ([`super::steered_subject`]), and what the arrangement left in that row.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arrangement, read in the order the precedence plan answers its branches"
+)]
+pub(super) fn arranged_through_on(
+    models: &super::super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal): (Distinction, Option<&Goal>),
+    (field, entity): (&str, &EntityHandle),
+    steer: Option<&super::Steer<'_>>,
+) -> Result<super::Arranged, RefusalCause> {
     let ir = models.arrangement;
     if goal.is_some() && is_absent(outcome) {
         return Err(unarranged());
     }
-    let mut setup = own_arrangement(
+    let (mut setup, addressed) = super::own_arrangement_on(
         ir,
         command,
         outcome,
@@ -524,6 +551,7 @@ pub(super) fn arranged_through(
         distinction,
         (field, entity),
         &[],
+        steer,
     )?;
     let subject = subject_of(command, &setup).ok_or_else(unarranged)?;
     // The subject's own arrangement must not have run this command on it: those runs read the
@@ -575,7 +603,13 @@ pub(super) fn arranged_through(
         let mut input = unrefused(ir, command, distinction)?;
         let link = (ir, command, outcome, field);
         compared_named(link, linked.as_ref(), (&mut input, &mut setup))?;
-        input
+        super::steered_past(
+            ir,
+            (command, outcome, entity),
+            (steer, addressed.as_ref()),
+            None,
+            (input, distinction),
+        )?
     } else {
         let (row, first, input) = reachable_row(
             ir,
@@ -583,6 +617,13 @@ pub(super) fn arranged_through(
             (entity, &subject, field),
             &setup,
             (distinction, goal),
+        )?;
+        let input = super::steered_past(
+            ir,
+            (command, outcome, entity),
+            (steer, addressed.as_ref()),
+            None,
+            (input, distinction),
         )?;
         relink(
             ir,
@@ -619,7 +660,7 @@ pub(super) fn arranged_through(
     setup.steps.append(&mut steps);
     setup.steps.append(&mut after);
     setup.source.insert(entity_ref(entity));
-    Ok((setup, input, false))
+    Ok(((setup, input, false), addressed))
 }
 
 /// Rows of the `entity` beside the block at `first`, each carrying an identity other than the one
