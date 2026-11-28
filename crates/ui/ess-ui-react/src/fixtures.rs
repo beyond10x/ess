@@ -264,7 +264,11 @@ fn view_literal(body: &Value) -> String {
         parts.push(format!("by_params: {}", ts::literal(by_params)));
     }
     let rows: Vec<String> = rows.iter().map(ts::literal).collect();
-    parts.push(format!("rows: [\n      {},\n    ]", rows.join(",\n      ")));
+    if rows.is_empty() {
+        parts.push("rows: []".to_owned());
+    } else {
+        parts.push(format!("rows: [\n      {},\n    ]", rows.join(",\n      ")));
+    }
     format!("{{ {} }}", parts.join(", "))
 }
 

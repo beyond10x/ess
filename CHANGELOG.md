@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [0.99.10] — 2026-11-28
+
+### Fixed
+
+- `ess generate ui --target react` writes a fixture view with no rows as `rows: []` in `src/fixtures.ts`. It wrote `rows: [ , ]`, an array of one `undefined` that `tsc` refused with TS2322 once for each such view, so the generated project did not type-check.
+
+The fix changes no format key.
+
+## [0.99.9] — 2026-11-27
+
+### Fixed
+
+- `ess verify conform synthesize` writes the suites 0.99.8 writes with less than half its work and a third of its memory where it drives a creating branch beside a row-set refusal, as 0.99.8 began to do. A specification of 565 scenarios took 158–245 s and 17.2 GB with 0.99.8 and takes 59 s and 6.0 GB on the same machine. Synthesis keeps each answer under a key naming everything the answer reads, and wrote that key out in full for every question it asked: the actor of every granted command, every row held for the runs advancing it and every step of every arrangement the key named. A key is now a 128-bit digest of that text, and each of those parts is rendered once and named by its own digest after that. The arrangements synthesis keeps share their steps until one of them is changed, the rows a search reached are shared with its memory rather than copied after each depth, and the commands that change an entity are read from an index kept per model. Every suite is byte for byte the one 0.99.8 writes.
+
+The fix changes no format key.
+
+## [0.99.8] — 2026-11-26
+
+### Fixed
+
+- `ess verify conform synthesize` sends an identity no row carries in the `unknown_instance:` scenario of a command whose `when_related:` guards read the row its own input addresses, such as `when_related: {via: input.item_id, predicate: owner_id != input.owner_id}` beside `moves:` with `instance: item_id`. The scenario sent the row arranged for the predicate refusal and expected the unknown-instance answer, so `ess verify conform run --target interpreted` failed it with that refusal and `ess verify conform mutate` refused with `ESS-MUTATE-001`; every release from 0.63.0 to 0.99.7 carries it. The second send naming a missing related row is left out for such a command, here and in the held-state refusal's scenario, since that row is the addressed record, whose absence `unknown_instance:` answers. Where such a command also reads a row of another entity through its input, a related-guard branch's scenario set up the addressed row twice, once as the subject and once as the related row, and sent the related one, so a refusal over the other row (`when_related: {via: input.owner_id, predicate: active == false}`) was answered by the predicate over the addressed row; a branch arranged around the other row below a predicate over the addressed row is now refused `ESS-SYNTH-008`, as it is where the command reads the addressed row alone, and a branch arranged around the addressed row, or with no such predicate declared before it, keeps its scenario. A pinned suite of such a model moves when it is synthesized again. Validation still requires an `exists: false` branch over that row, which `unknown_instance:` answers first; this release does not change that.
+- `ess verify conform run --target process` ends by the first of two ending signals sent in quick succession, as it documents. A SIGINT followed at once by a SIGTERM while `ess` waited for the target's handshake could end it by SIGTERM: every thread of `ess` took those signals, so their handlers could run on two threads at once, and the SIGTERM's recorded first when the SIGINT's thread was preempted. Only the thread that watches for SIGINT, SIGTERM and SIGHUP takes them, so they are handled one at a time in the order the kernel delivers them. `ess-cli` depends on the `nix` crate for that, which offers the thread's signal mask without `unsafe`.
+
+The fix changes no format key.
+
+The entries below shipped in 0.99.8 through its merge of `main` and were listed here on 2026-11-28; until then they stood under `[Unreleased]`.
+
 ### Added
 
 - An `ess-http/1` binding declares how a caller authenticates: `authentication: {schemes: {<name>: {kind: bearer | basic | api_key | mutual_tls, …}}, required: [<name>, …]}`, a `basic` scheme with its `realm` and an `api_key` with `in` (`header`, `query` or `cookie`) and `name`, and a route's own `authentication: [<name>, …]` in place of `required`, any one scheme sufficing, `[]` for an open route. `refusals:` takes `unauthenticated` with a `4xx`, a `401` with its `WWW-Authenticate` challenge. `ess specify http compile` writes `authentication` after `servers` and a route's after its `operation_id`, and a binding without them keeps its compiled bytes. The new code `ESS-HTTP-037` refuses an unknown kind (`oauth2` and `open_id_connect` not yet admitted), a key the kind does not take or one it requires missing, a scheme name that is not a token, a list naming an undeclared scheme, a scheme no route requires, `authentication` over a specification without an actor, and a route whose schemes have no challenge without a `refusals.unauthenticated`; a refinement that changes what a route requires is `ESS-HTTP-012`. In the `ess-http` library `RefusalKey` has a variant `Unauthenticated`, `HttpSpec` and `RouteSpec` a field `authentication`, and `Authentication`, `Scheme`, `HttpIr::authentication` and `HttpIr::required_schemes` are new (beyond10x/ess#681).
@@ -35,23 +62,6 @@
 - `ess verify conform synthesize` arranges a row through a creating command that refuses both a missing related row its input names (`when_related: {via: input.<field>, exists: false}`) and a row set over the rows it creates, such as a name already taken (`when_related: {entity: <created>, where: name == input.name, exists: true}`). The row-set refusal was counted as answering every input, so the creating branch was never sent to arrange a row: the row-set refusal was refused `ESS-SYNTH-001`, and every later command acting on such a row `ESS-SYNTH-004` ("which no input reaches"). On a three-command model 4 scenarios and 4 refusals become 8 scenarios and none. A row-set refusal that holds where its selector selects no row (`exists: false`) still answers such a run.
 - `ess verify conform synthesize` no longer writes three kinds of scenario that `ess verify conform run --target interpreted` fails. From `ess/27`, a missing row the command addresses is answered by that row's existence before any related row is read: such a row is no longer sent missing beside another missing related row, and an `exists: false` branch over it (`when_related: {via: input.<id>}` on the identity the command updates or moves) is refused as never reached, with its own help line, where it was refused `ESS-SYNTH-008` or, beside a row set, written and failed. The one-time disclosure scenarios are held to the row sets their sends read, as every other scenario is; one that a row set answers otherwise is no longer written. No repository model's suite moves.
 - `ess verify conform synthesize` arranges a command whose `when:` guards hold a scope to which Optional references it is sent (`{all: [scope == Account, {formation_id: {defined: true}}]}`) before `when_related: {via: input.<reference>}` guards over the same references. A send an earlier `when:` refusal answers is no longer written into an `exists: false` scenario expecting the missing row, and a branch no arrangement with a row for every reference reaches is sent with every Optional reference left out, which reads no row, as the interpreter reads an absent Optional reference; it was refused `ESS-SYNTH-003`.
-
-## [0.99.9] — 2026-11-27
-
-### Fixed
-
-- `ess verify conform synthesize` writes the suites 0.99.8 writes with less than half its work and a third of its memory where it drives a creating branch beside a row-set refusal, as 0.99.8 began to do. A specification of 565 scenarios took 158–245 s and 17.2 GB with 0.99.8 and takes 59 s and 6.0 GB on the same machine. Synthesis keeps each answer under a key naming everything the answer reads, and wrote that key out in full for every question it asked: the actor of every granted command, every row held for the runs advancing it and every step of every arrangement the key named. A key is now a 128-bit digest of that text, and each of those parts is rendered once and named by its own digest after that. The arrangements synthesis keeps share their steps until one of them is changed, the rows a search reached are shared with its memory rather than copied after each depth, and the commands that change an entity are read from an index kept per model. Every suite is byte for byte the one 0.99.8 writes.
-
-The fix changes no format key.
-
-## [0.99.8] — 2026-11-26
-
-### Fixed
-
-- `ess verify conform synthesize` sends an identity no row carries in the `unknown_instance:` scenario of a command whose `when_related:` guards read the row its own input addresses, such as `when_related: {via: input.item_id, predicate: owner_id != input.owner_id}` beside `moves:` with `instance: item_id`. The scenario sent the row arranged for the predicate refusal and expected the unknown-instance answer, so `ess verify conform run --target interpreted` failed it with that refusal and `ess verify conform mutate` refused with `ESS-MUTATE-001`; every release from 0.63.0 to 0.99.7 carries it. The second send naming a missing related row is left out for such a command, here and in the held-state refusal's scenario, since that row is the addressed record, whose absence `unknown_instance:` answers. Where such a command also reads a row of another entity through its input, a related-guard branch's scenario set up the addressed row twice, once as the subject and once as the related row, and sent the related one, so a refusal over the other row (`when_related: {via: input.owner_id, predicate: active == false}`) was answered by the predicate over the addressed row; a branch arranged around the other row below a predicate over the addressed row is now refused `ESS-SYNTH-008`, as it is where the command reads the addressed row alone, and a branch arranged around the addressed row, or with no such predicate declared before it, keeps its scenario. A pinned suite of such a model moves when it is synthesized again. Validation still requires an `exists: false` branch over that row, which `unknown_instance:` answers first; this release does not change that.
-- `ess verify conform run --target process` ends by the first of two ending signals sent in quick succession, as it documents. A SIGINT followed at once by a SIGTERM while `ess` waited for the target's handshake could end it by SIGTERM: every thread of `ess` took those signals, so their handlers could run on two threads at once, and the SIGTERM's recorded first when the SIGINT's thread was preempted. Only the thread that watches for SIGINT, SIGTERM and SIGHUP takes them, so they are handled one at a time in the order the kernel delivers them. `ess-cli` depends on the `nix` crate for that, which offers the thread's signal mask without `unsafe`.
-
-The fix changes no format key.
 
 
 ## [0.99.7] — 2026-11-26
