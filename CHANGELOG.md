@@ -7,6 +7,7 @@
 ### Fixed
 
 - `ess verify conform synthesize` arranges a creation that reads two related rows, such as a grant and the action class it names, once for the inputs a search tries that differ only in fields the creating command copies into the row and reads nowhere. Each such input was arranged afresh as the creator's own scenario, and a reduced model where other commands decide on fields of the created row took 585 s to synthesize (beyond 600 s on 0.99.11); it takes 378 s, and writes the same suite. Those fields are left out of what the arrangement is remembered by and sent as chosen.
+- `ess verify conform synthesize` decides once per synthesis whether a row arranged beside a creating command leaves the branch under test to answer an input, and arranges such a creator once for choices differing only in the identities of the rows it reads, which it names itself. Since 0.99.8 a creator reading four rows beside a row-set refusal was arranged again for every run needing one of its rows, and every row beside it was checked again for every input tried: a model set of 1,074 scenarios took 263 s to synthesize (47 s on 0.99.7); it takes 93 s, and writes the same suite.
 
 The fix changes no format key.
 

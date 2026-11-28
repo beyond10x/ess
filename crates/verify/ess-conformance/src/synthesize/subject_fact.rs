@@ -6401,7 +6401,7 @@ type Picks = Vec<(BTreeMap<String, Node>, Pick)>;
 
 /// A hash of an input a command is sent. Inputs of one hash are told apart by comparing them, so
 /// two equal inputs hashing apart cost a second decision, never a wrong one.
-fn input_key(input: &BTreeMap<String, Node>) -> u64 {
+pub(super) fn input_key(input: &BTreeMap<String, Node>) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::hash::DefaultHasher::new();
     for (name, value) in input {
