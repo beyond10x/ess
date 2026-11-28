@@ -211,10 +211,12 @@ impl App {
     /// per row with trailing blanks trimmed.
     pub fn render_text(&self, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("a test terminal");
-        terminal
+        // The frame's own buffer: the backend is written from the frame's diff, whose `u16` cell
+        // positions wrap past 65,535 cells.
+        let frame = terminal
             .draw(|frame| self.draw(frame))
             .expect("a test terminal draws");
-        let buffer = terminal.backend().buffer();
+        let buffer = frame.buffer;
         let mut text = String::new();
         for y in 0..buffer.area.height {
             let mut line = String::new();

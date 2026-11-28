@@ -256,3 +256,98 @@ fn the_playwright_spec_marks_a_text_check_at_a_slot_fixme() {
     );
     assert!(spec.contains(&wanted), "{wanted}\n\n{spec}");
 }
+
+// ── a slot label wider than the screen ──────────────────────────────────────────────────────
+
+/// Six collections and a record below them; the first collection's rows carry a field slot whose
+/// reason runs to thousands of characters.
+fn wide_label_document() -> PathBuf {
+    let reason = "the host draws it with its own dialer, call list and status; ".repeat(60);
+    let sections: Vec<String> = (1..=6)
+        .map(|list| {
+            let slot = if list == 1 {
+                format!(
+                    ", {{field: phone, host: Phone, reason: \"{reason}\", stands_in_for: input}}"
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                "      - name: c{list}\n        component: collection\n        reads: {{view: t.List}}\n        columns: [id, summary{slot}]\n"
+            )
+        })
+        .collect();
+    let sections = sections.concat();
+    let document = format!(
+        "format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {{views: {{t.List: views.yaml, t.Next: views.yaml}}}}
+shells:
+  app:
+    regions:
+      main: {{kind: page_outlet}}
+navigation: {{home: p, sections: [{{name: all, pages: [p]}}]}}
+pages:
+  p:
+    kind: list_page
+    shell: app
+    title: P
+    sections:
+{sections}      - name: next
+        component: record
+        reads: {{view: t.Next}}
+        fields: [id, summary]
+"
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("ess-ui-test-host-slots")
+        .join("wide_label");
+    std::fs::create_dir_all(&dir).expect("the dir is made");
+    std::fs::write(dir.join("ui.yaml"), document).expect("the document is written");
+    std::fs::write(
+        dir.join("views.yaml"),
+        "views:
+  t.List:
+    rows:
+      - {id: r1, summary: first row}
+      - {id: r2, summary: second row}
+      - {id: r3, summary: third row}
+      - {id: r4, summary: fourth row ROWEND}
+  t.Next:
+    rows:
+      - {id: n1, summary: the record below NEXTEND}
+",
+    )
+    .expect("the fixture is written");
+    dir.join("ui.yaml")
+}
+
+/// A row holding a slot's long label widens the headless screen past 273 columns, more than
+/// 65,535 cells at its 240 lines. Every section is still drawn where it stands: the screen was
+/// read from the terminal backend, written through `u16` cell positions that wrapped there, so the
+/// lower lines were drawn over the upper ones and no section was found (0.99.8 to 0.99.11).
+#[test]
+fn a_slot_label_wider_than_the_screen_leaves_every_section_drawn() {
+    let document = wide_label_document();
+    let mut text = format!(
+        "format: ess-ui-test/1\ndocument: {}\ntests:\n- name: wide\n  steps:\n  - open: p\n",
+        document.display()
+    );
+    let expects: Vec<String> = (1..=6)
+        .map(|list| format!("  - expect: {{at: pages/p/sections/c{list}, text: ROWEND}}\n"))
+        .collect();
+    text.push_str(&expects.concat());
+    text.push_str(
+        "  - expect: {at: pages/p/sections/c1/rows/r1, text: \"Phone: the host draws it\"}\n",
+    );
+    text.push_str("  - expect: {at: pages/p/sections/next, text: NEXTEND}\n");
+    text.push_str("  - select: pages/p/sections/next\n");
+    text.push_str("  - expect: {at: pages/p/sections/c1, text: ROWEND}\n");
+    let file = ess_ui_test::parse_str(&text, Path::new("host_slots.yaml"))
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let report = ess_ui_test::execute(&document, &[file]).unwrap_or_else(|error| panic!("{error}"));
+    let outcome = report.tests.into_iter().next().expect("one outcome");
+    assert_eq!(outcome.status, Status::Passed, "{outcome:?}");
+}

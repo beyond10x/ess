@@ -37,6 +37,10 @@ pub struct PagerParams {
     pub size: Option<String>,
 }
 
+/// Rows of a server read's page while no size is sent (the pager names no size param, or its
+/// state holds none): 25, the size the generated React project's fixture adapter answers with.
+pub const SERVER_PAGE_SIZE: usize = 25;
+
 impl ReadRequest {
     /// The cache key: the view and its params, in order.
     pub fn key(&self) -> String {
@@ -581,14 +585,17 @@ impl DataAdapter for FixtureAdapter {
             data.total
         };
         // A server pager's read is answered with the page its params name, counted from 1, of
-        // the size its size param names (beyond10x/ess#722 item 24).
+        // the size its size param names, or of `SERVER_PAGE_SIZE` without one (beyond10x/ess#722
+        // item 24).
         let number = |name: Option<&String>| {
             name.and_then(|name| request.params.get(name))
                 .and_then(|value| display(value).parse::<usize>().ok())
         };
-        if let Some(size) = pager.and_then(|pager| number(pager.size.as_ref())) {
-            let size = size.max(1);
-            let page = number(pager.map(|pager| &pager.page)).unwrap_or(1).max(1);
+        if let Some(pager) = pager {
+            let size = number(pager.size.as_ref())
+                .unwrap_or(SERVER_PAGE_SIZE)
+                .max(1);
+            let page = number(Some(&pager.page)).unwrap_or(1).max(1);
             total = total.or(Some(rows.len() as u64));
             rows = rows
                 .into_iter()

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.99.12] — 2026-11-28
+
+### Fixed
+
+- `ess ui test` finds every section of a page in the terminal when a row holds text wider than 273 columns, such as a host slot's `<host>: <reason>` label with a long `reason`. Since 0.99.8 the headless screen widens until no row is cut, up to 2,000 columns at 240 lines, and it was read from the test backend, which places cells by positions that wrap past 65,535 cells: its lower lines were drawn over its upper ones, and a test failed with "section X is not drawn" or read another section's text. The screen is read from the frame it was drawn into, and so is the one frame a generated terminal app prints at a given size.
+- `ess ui test` answers a collection whose read has `paging: server` and a `pager` naming no `size` param, or a `size` param whose state holds nothing, with pages of 25 rows, the size the generated React project's fixture adapter answers with, and counts its pages at 25. Since 0.99.8 the terminal drew every row the fixture holds while its footer counted pages of 10, so the sections below could fall off the headless screen.
+
+The fix changes no format key.
+
 ## [0.99.11] — 2026-11-28
 
 ### Fixed
