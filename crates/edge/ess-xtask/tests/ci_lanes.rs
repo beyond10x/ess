@@ -2015,6 +2015,47 @@ fn release_preparation_retains_an_exact_tag_and_commit_artifact() {
     assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
 }
 
+/// A tag push's release run refuses a tagged tree whose `CHANGELOG.md` lists an entry under
+/// `[Unreleased]` before it retains anything, and no pull-request or queue workflow runs that
+/// check, because `main` lists unreleased entries between releases. 0.99.8 merged `main` and
+/// shipped 25 entries its tree still listed there.
+#[test]
+fn a_tag_push_refuses_a_changelog_with_an_unreleased_entry_and_no_pull_request_gate_does() {
+    const COMMAND: &str = "cargo xtask release unreleased";
+    let release = yaml(".github/workflows/release.yml");
+    let steps = release["jobs"]["release"]["steps"]
+        .as_sequence()
+        .expect("release preparation steps");
+    let guard = steps
+        .iter()
+        .position(|step| text(&step["run"]).trim() == COMMAND)
+        .unwrap_or_else(|| panic!("release preparation does not run `{COMMAND}`"));
+    assert_eq!(
+        text(&steps[guard]["if"]),
+        "${{ github.event_name == 'push' }}",
+        "the guard must run on every tag push"
+    );
+    let retain = steps
+        .iter()
+        .position(|step| text(&step["uses"]).starts_with("actions/upload-artifact@"))
+        .expect("release preparation retains an artifact");
+    assert!(
+        guard < retain,
+        "the guard runs after the release artifact is retained"
+    );
+    for file in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/package.yml",
+        "Taskfile.yml",
+    ] {
+        let source = fs::read_to_string(workspace_root().join(file)).unwrap();
+        assert!(
+            !source.contains(COMMAND),
+            "{file} runs `{COMMAND}`, but `main` lists unreleased entries between releases"
+        );
+    }
+}
+
 /// What a GitHub Actions expression evaluates to, as far as the readers in this suite need.
 #[derive(Clone, Debug, PartialEq)]
 enum ExpressionValue {
