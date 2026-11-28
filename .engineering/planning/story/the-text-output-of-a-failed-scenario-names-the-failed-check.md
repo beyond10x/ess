@@ -14,7 +14,8 @@ tags:
 relations:
 - serves: vision:O2
 - informed_by: story:the-swapped-caller-run-expects-the-error-field-it-redrew
-revision: 1
+- informed_by: story:the-swapped-half-of-a-wrapped-value-scenario-at-a-view-selects-its-witness-row-by-the-identity-field-s-own-name
+revision: 2
 ---
 ## Need
 
@@ -93,3 +94,35 @@ the command's help says so.
 Owed. This draft records the need and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the acceptance is fixed there.
+
+## Second report (2026-11-25, 0.99.4)
+
+A downstream application's suite held two failed scenarios (see
+`story:the-swapped-half-of-a-wrapped-value-scenario-at-a-view-selects-its-witness-row-by-the-identity-field-s-own-name`).
+The text run printed their ids and nothing else, and the cause was found only through `--format json`.
+The text run prints a check's diagnostic only for the statuses `error` and `unsupported`
+(`crates/verify/ess-conformance/src/report.rs`, the loop that continues unless the status is
+`Status::Error` or `Status::Unsupported`, lines 741 to 757), so a scenario with a
+`failed` check prints its id alone. A report written with `--report-out` and `--report-format 2`
+holds ids only (`outcomes.failed`). The reason is in `--format json` under
+`checks[].diagnostic.observed`.
+
+This is the same gap as the first report, met again on a second suite: the first report's example is
+also a scenario with a `failed` check whose diagnostic the text run does not print.
+
+## Outcome
+
+A failed scenario's reason is printed by the text run and held by the written report.
+
+## Acceptance (second report)
+
+- A failed scenario's line in the text run names the failing step and what was observed, in the
+  words of the check's `diagnostic`.
+- The test is written first and is red on the 0.99.4 tree: a scenario with a failed check prints
+  its id alone there.
+- A passing run's text output keeps its bytes.
+
+## Decisions
+
+- RG-D1 (open, the coordinator's): whether the written report/2 gains the reason is a format
+  question of `ess-conformance-report/2`; the text line is not.

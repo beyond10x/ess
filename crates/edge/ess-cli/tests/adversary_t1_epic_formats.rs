@@ -50,6 +50,23 @@ fn validate(path: &Path) -> Output {
     ess(&["specify", "validate", "--path", path.to_str().unwrap()])
 }
 
+/// What `ess specify validate` says of `path`, apart from the directory and the format it names.
+fn judged(path: &Path) -> (Option<i32>, String) {
+    let output = validate(path);
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (
+        output.status.code(),
+        text.replace(path.to_str().unwrap(), "<billing>")
+            .replace("ess/36", "ess/N")
+            .replace("ess/37", "ess/N")
+            .replace("ess/38", "ess/N"),
+    )
+}
+
 /// What the acceptance means: billing at `ess/37` is judged exactly as at `ess/36`, refusal for
 /// refusal, apart from the directory and the format it names.
 #[test]
@@ -57,19 +74,15 @@ fn examples_billing_at_ess_37_is_judged_exactly_as_at_ess_36() {
     let directory = TemporaryDirectory::create("adv-t1-billing-36-37").unwrap();
     let older = billing_at(&directory, "ess/36");
     let newer = billing_at(&directory, "ess/37");
-    let said = |path: &Path| {
-        let output = validate(path);
-        let text = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        (
-            output.status.code(),
-            text.replace(path.to_str().unwrap(), "<billing>")
-                .replace("ess/36", "ess/N")
-                .replace("ess/37", "ess/N"),
-        )
-    };
-    assert_eq!(said(&older), said(&newer));
+    assert_eq!(judged(&older), judged(&newer));
+}
+
+/// `ess/38`, opened with no construct, judges billing exactly as `ess/37` does.
+#[test]
+fn examples_billing_at_ess_38_is_judged_exactly_as_at_ess_37() {
+    let directory = TemporaryDirectory::create("adv-t1-billing-37-38").unwrap();
+    let older = billing_at(&directory, "ess/37");
+    let newer = billing_at(&directory, "ess/38");
+    let (older, newer) = (judged(&older), judged(&newer));
+    assert_eq!(older, newer, "ess/37: {older:?}\ness/38: {newer:?}");
 }

@@ -1,0 +1,88 @@
+format: ess/37
+system: notes
+version: v1
+domain: notes.pages
+summary: A snapshot copies the title of the page it is taken from, and can be sealed.
+types:
+  - {name: notes.pages.PageId, kind: newtype, of: Uuid}
+  - {name: notes.pages.SnapshotId, kind: newtype, of: Uuid}
+entities:
+  - name: notes.pages.Page
+    identity: {name: page_id, type: notes.pages.PageId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: notes.pages.Snapshot
+    identity: {name: snapshot_id, type: notes.pages.SnapshotId}
+    fields:
+      - {name: page_id, type: notes.pages.PageId}
+      - {name: title, type: String}
+    relations:
+      - {name: page, kind: references, target: notes.pages.Page, cardinality: one, via: page_id}
+    lifecycle:
+      initial: Fresh
+      states: [Fresh, Sealed]
+      terminal: [Sealed]
+      transitions:
+        - {name: seal, from: [Fresh], to: Sealed}
+errors:
+  - {name: notes.pages.PageNotFound, summary: No page carries the identity., fields: []}
+  - {name: notes.pages.SnapshotNotFound, summary: No snapshot carries the identity., fields: []}
+  - {name: notes.pages.SnapshotState, summary: The snapshot is not fresh., fields: []}
+events:
+  - name: notes.pages.PageAdded
+    fields: [{name: page_id, type: notes.pages.PageId}]
+  - name: notes.pages.Snapped
+    fields: [{name: snapshot_id, type: notes.pages.SnapshotId}]
+  - name: notes.pages.Sealed
+    fields: [{name: snapshot_id, type: notes.pages.SnapshotId}]
+actors:
+  - name: notes.pages.Editor
+    may: [notes.pages.AddPage, notes.pages.Snap, notes.pages.Seal]
+commands:
+  - name: notes.pages.AddPage
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: notes.pages.Page
+        instance: page_id
+        sets: {title: input.title}
+        emits: [notes.pages.PageAdded]
+        payload: {notes.pages.PageAdded: {page_id: {generated: true}}}
+  - name: notes.pages.Snap
+    input:
+      - {name: page_id, type: notes.pages.PageId}
+    outcomes:
+      - name: unknown-page
+        when_related: {via: input.page_id, exists: false}
+        error: notes.pages.PageNotFound
+      - name: snapped
+        creates: notes.pages.Snapshot
+        instance: snapshot_id
+        sets:
+          page_id: input.page_id
+          title: {related: {via: input.page_id, field: title}}
+        emits: [notes.pages.Snapped]
+        payload: {notes.pages.Snapped: {snapshot_id: {generated: true}}}
+  - name: notes.pages.Seal
+    input:
+      - {name: snapshot_id, type: notes.pages.SnapshotId}
+    outcomes:
+      - name: unknown-snapshot
+        unknown_instance: true
+        error: notes.pages.SnapshotNotFound
+      - {name: wrong-state, wrong_state: true, error: notes.pages.SnapshotState}
+      - name: sealed
+        moves: notes.pages.Snapshot.seal
+        instance: snapshot_id
+        emits: [notes.pages.Sealed]
+        payload: {notes.pages.Sealed: {snapshot_id: input.snapshot_id}}
+views:
+  - name: notes.pages.Snapshots
+    source: notes.pages.Snapshot
+    consistency: read_your_writes
+    fields:
+      - {name: snapshot_id, type: notes.pages.SnapshotId}
+      - {name: page_id, type: notes.pages.PageId}
+      - {name: title, type: String}

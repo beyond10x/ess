@@ -35,7 +35,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 6
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:43:02Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:43:03Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -134,6 +134,14 @@ that declares `loads`, not by a general "stored value" expression. No new format
 `docs/design/ui-read-filter.md` gains a section on the shared grammar and the `loads` root before
 code.
 
+- D110 (2026-11-25, the coordinator): step 39 C17 `loads.<field>`: each renderer reads `loads` through its read cache when it draws the action; the action is disabled and `loads.<field>` absent until the first row answers; the action's command re-reads it.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
+
 ## Source
 
 `github:beyond10x/ess#723`
+
+## Delivery
+
+D110 (`loads.<field>`) is built as option (a) in commit `86eeb60f0c` on the branch `issues/part-2-2026-11-24`, merged with `main` 0.99.2 as `f93dcf8514`; pull request 830 is open. Each renderer reads `Action.loads` through its read cache when it draws the action (React `useRead` in the action control, the terminal `App::loaded_row`); `loads.<field>` is absent and the action drawn disabled until the first row answers; a command the action sends reads it again. `ess ui check` refuses `loads.` outside an action's `bind`, `checked` and `visible` and holds the field to the view. Tests, each red before the source change: ess-ui `toggle_state`, ess-ui-check `expression_paths` and `section_row`, ess-ui-react and ess-ui-tui `toggle_state`. The `live_binding` pins moved with their cause (the action's read).

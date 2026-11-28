@@ -35,7 +35,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:34Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:35Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -120,6 +120,8 @@ story was first drafted from.
 `icon` on an action reuses the primitive's key; the icon names become a closed list with a warning
 outside it. The glyph chosen by a row value (B9) is declined with the idiom above. No new format
 version; `docs/design/ui-style-tokens.md` gains the icon vocabulary before code.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

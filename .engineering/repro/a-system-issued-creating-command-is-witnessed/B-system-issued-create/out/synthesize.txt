@@ -1,0 +1,6 @@
+refused: refusal[ESS-SYNTH-023]: outcome repro.desk.RecordItem/recorded has no scenario `repro.desk.RecordItem/outcome/recorded`
+  `repro.desk.RecordItem` is issued by the system itself, and its outcome `recorded` creates the record it addresses, so no record exists before the step; a scenario awaits a system-issued step on an existing record and never drives one
+  help: a step the system takes to create a record, or over rows with no subject, is not awaited in this release; grant the command to a caller as well to keep it driven, or move the step onto an existing record that its outcomes name with `instance:`
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
+0 scenario(s) (0 authored), 1 refusal(s), written to out/suite.json
+exit 0

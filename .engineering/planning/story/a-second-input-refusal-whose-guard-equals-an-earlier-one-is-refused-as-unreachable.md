@@ -12,7 +12,7 @@ refs:
   reference: beyond10x/ess#816
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:24:43Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:24:45Z", actor: "human:timo", revision: 3}
@@ -114,3 +114,5 @@ as `unreachable_branch`, where the finite prover cannot read the guard, such as 
 ## Decisions
 
 - Decision: accept as proposed. Built as `3214e53c6`.
+
+- D151 (the coordinator, 2026-11-26): from `ess/38` on, a second input refusal whose guard equals an earlier one is refused as unreachable; below `ess/38` it validates as before, so the tests the revert `1a76b8830c` names stay green; a mutant that copies a guard is scored stillborn.

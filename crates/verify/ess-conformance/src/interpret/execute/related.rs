@@ -70,10 +70,11 @@ pub(super) fn missing(
             let ResolvedRelatedVia::Input { field, type_ref } = via else {
                 return false;
             };
-            !absent_optional(type_ref, input.get(field))
-                && input
-                    .get(field)
-                    .is_some_and(|value| names_missing(ir, store, (via, entity), value))
+            // From ess/38 (beyond10x/ess#640) `field` may name a member of a struct input; an
+            // absent `Optional` on its route reads as an absent reference.
+            let value = ess_compiler::ir::read_input(input, field);
+            !absent_optional(type_ref, value)
+                && value.is_some_and(|value| names_missing(ir, store, (via, entity), value))
         })
 }
 
@@ -214,12 +215,12 @@ fn held_row<'a>(
     };
     // An absent Optional reference holds no row, so its related branches are never selected; a
     // list of references (ess/28) is tested for a missing row only, and holds no row either.
-    if absent_optional(type_ref, input.get(field)) || lists(via) {
+    // From ess/38 (beyond10x/ess#640) `field` may name a member of a struct input.
+    if absent_optional(type_ref, ess_compiler::ir::read_input(input, field)) || lists(via) {
         return Ok(None);
     }
-    let identity = input
-        .get(field)
-        .ok_or_else(|| Undetermined::NotInterpreted {
+    let identity =
+        ess_compiler::ir::read_input(input, field).ok_or_else(|| Undetermined::NotInterpreted {
             construct: format!("a related guard with no identity in `{field}`"),
         })?;
     let entity = ir.entity(entity);

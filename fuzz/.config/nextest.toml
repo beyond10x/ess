@@ -1,0 +1,9 @@
+# The `ci` profile of the fuzz workspace, which `task fuzz-check` runs: a test over 60 s is killed
+# and fails, as in the repository's own `.config/nextest.toml`, and no test has an exception.
+# `crates/edge/ess-xtask/tests/ci_lanes.rs` holds this file to that.
+[profile.ci]
+slow-timeout = { period = "60s", terminate-after = 1 }
+final-status-level = "slow"
+
+[profile.ci.junit]
+path = "junit.xml"

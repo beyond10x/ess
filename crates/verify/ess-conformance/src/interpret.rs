@@ -77,6 +77,7 @@ mod protected;
 mod provided;
 mod response;
 mod setup;
+pub mod steps;
 pub mod values;
 mod views;
 pub(crate) use views::compare as rank_compare;
@@ -145,6 +146,11 @@ struct Scenario {
     invocations: Vec<(ess_primitives::ids::CorrelationId, ObservedInvocation)>,
     pending_bindings: std::collections::VecDeque<bindings::Delivery>,
     dispatching: bool,
+    /// The instant of the scenario's first command decision, from which its time steps count
+    /// periods ([`steps`]).
+    step_origin: Option<ess_primitives::time::Rfc3339Instant>,
+    /// How many periods each time step, by its index among the model's steps, has run.
+    time_runs: std::collections::BTreeMap<usize, u64>,
     facts: facts::Facts,
     /// The answers a scenario scripted for its bindings' invocations of one command, consumed one
     /// per attempt ([`Interpreted::script_binding_port`]).
@@ -217,7 +223,10 @@ impl Interpreted {
     /// included, carries the one reading.
     fn command(&self, request: &SemanticCommandRequest) -> RecordedCommandCompletion {
         let mut decision_time = None;
-        let answer = self.decide(request, &mut decision_time);
+        let answer = self.decide(request, &mut decision_time).and_then(|result| {
+            self.run_steps(decision_time, &request.correlation)
+                .map(|()| result)
+        });
         RecordedCommandCompletion {
             answer,
             decision_time,

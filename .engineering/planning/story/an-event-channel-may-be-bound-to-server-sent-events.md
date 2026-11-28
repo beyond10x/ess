@@ -36,7 +36,7 @@ scope:
   path: crates/specify/ess-http/tests/stream.rs
 - confidence: cited
   path: docs/design/http-presentation-binding.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:12Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
@@ -269,6 +269,8 @@ unless it names its time with `slot --timeout` (at most 30 minutes).
 - PR-D1, PR-D2 and PR-D3 (architecture). PR-D7 (default A).
 - `replay` stays dropped. The exchange-opened form is a follow-up.
 - AC-D3, AC-D4 and AC-D5 are untouched and still open.
+
+- PR-D4: stays the owner's; the SSE story stays undispatched.
 
 ## Source
 

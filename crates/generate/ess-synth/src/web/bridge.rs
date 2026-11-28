@@ -280,7 +280,7 @@ fn bound_impl(out: &mut String, bridge: &Bridge<'_>, deliveries: &[Delivery<'_>]
         ) {
             owed.push(format!("{system}::obligations::{pascal}Transformation"));
         }
-        if let ResolvedFailure::Escalate { .. } = delivery.binding.on_failure() {
+        if rust_system::calls_escalation(ir, delivery.binding) {
             owed.push(format!("{system}::obligations::{pascal}Escalation"));
         }
     }

@@ -21,7 +21,7 @@ scope:
   path: crates/specify/ess-domain/src/command/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_i_create_or_update.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:40Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:42Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -188,3 +188,45 @@ Adversary pass 1, unit I of the 0.70.0 wave (`review-result:unit-i-pass-1`), fin
 `ess/30` enforced-reference proof counting an `unknown_instance` creator as refusing a missing row
 first) belong to `story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present`, not
 to this story. No adopter shape yet.
+
+## An adopter shape on 0.99.9, 2026-11-28: subject guards beside two related rows
+
+An adopter shape, reported 2026-11-28 on 0.99.2 and reproduced on 0.99.9 (the "Origin" below said
+there was none). The story's cause holds for it unchanged, and the shape is wider than the
+create-or-update command above: no create-or-update, no held-state branch with `preserves:`.
+
+A command that addresses its row (`instance:` from input), declares `unknown_instance:` and plain
+`when_subject:` guards over the row (a state, a comparison with an input), and then two
+`when_related:` rows over two different inputs (one `exists: false` refusal each, one of them with a
+predicate over its row too), is refused by `ess specify validate`:
+
+```text
+[conflicting_declaration] command.ledger.orders.Settle.outcomes: related [input.payer_id present; input.account_id: state = Active] and input [] select 3 branches: no-order, not-open, total-changed
+error[ESS-COMMAND-004]
+```
+
+Neutral model, `system.yaml` in
+`.engineering/repro/two-input-named-related-refusals-beside-a-held-state-branch-validate/`
+(`ess/37`); its sibling `one-related-row.yaml` drops the payer row and validates (`ledger v1 — 1
+file(s), valid`). Probes on 0.99.9 of the same model: without the `unknown_instance:` branch the
+refusal names the 2 subject branches (`select 2 branches: not-open, total-changed`), so each kind
+counts on its own. The downstream's refusal named 6 branches: its unknown-instance branch and 5
+subject guards.
+
+Reading (code, not run): in `ess-domain/src/command/related_guard.rs` the several-rows check
+(`partitioned`, `several_selected`) counts the `unknown_instance:` and `when_subject:` branches as
+selected by the related and input cases, though the one precedence rule (`ess/27`) answers them
+at its steps 2 and 3, before any related row is read. The one-row path (`validate_partition`,
+`selected_count`) excludes them, which is why one related row beside the same guards validates.
+This is the same miscount the story names for the held-state and creator pair, widened to every
+branch the precedence answers earlier.
+
+Acceptance, added: `ess specify validate --path system.yaml` on the model above exits 0, and the
+same model synthesizes and passes on the interpreter, as the story's own acceptance asks of its
+model; a joint partition whose selected branches can both hold still refuses
+`ESS-COMMAND-004`. The fix excludes in the several-rows check the branches the one-row check
+excludes; its test is the neutral model, both ways.
+
+The downstream works around it by dropping one related refusal, so one existence check is not
+declared. Whether lifting the refusal needs a format key (a document that older releases refuse
+would validate) is open; it belongs to the fix's design and is not decided here.

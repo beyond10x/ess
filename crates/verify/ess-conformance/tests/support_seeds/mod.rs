@@ -604,9 +604,10 @@ pub fn forgeries(good: &Value, authored: &Value, authored_id: &str) -> Vec<Forge
     // and /55 a view read through a reference (beyond10x/ess#564) and /56 and /57 one-time read
     // cells that read as their actor (beyond10x/ess#614), /58 and /59 a `Decimal` in an exact
     // observer, /60 and /61 a row the deployment provides, /62 and /63 a response member path and
-    // /64 and /65 the pair opened for the epic's constructs, each admitting seeds cumulatively, so
-    // the first unimplemented pair is /66 and /67.
-    for major in [66, 67, 99] {
+    // /64 and /65 the pair opened for the epic's constructs and /66 and /67 the pair opened for the
+    // open issues' suite vocabulary, each admitting seeds cumulatively, so
+    // the first unimplemented pair is /68 and /69.
+    for major in [68, 69, 99] {
         add(
             &format!("unimplemented-major-{major}"),
             "execution readers admit suite majors",

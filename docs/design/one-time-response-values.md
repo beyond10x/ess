@@ -223,6 +223,16 @@ structural type library alone cannot enforce temporal disclosure: it must not
 claim to. Generated server/library code must not silently present a policy-free
 implementation as complete.
 
+The synthesized Rust workspace (`ess generate synthesize --target rust`) takes
+the obligation branch. A command with a marked outcome has a typed `response:`,
+so its behaviour is an implementation obligation of the synthesis plan; that
+obligation's contract carries one clause on each marked outcome's branch, naming
+the fields it discloses once and the atomic durable consumption, fresh issuance
+and no replay the implementation owns. The generated stub returns
+`UnmetObligation`, never the value. Every other capability of the model is
+planned as it is for a model without the key. The synthesized Go, web and
+command-line targets still refuse the policy by name.
+
 The operator requires complete runtime parity in this delivery. Rust/native,
 generated Go, generated TypeScript and every applicable browser/WASM/reference
 execution path execute the complete admitted one-time vocabulary and its

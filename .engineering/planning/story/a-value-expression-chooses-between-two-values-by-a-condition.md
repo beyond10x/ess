@@ -36,7 +36,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/guides/specify/values-and-views.md
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:42:24Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":3}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:42:25Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":3}}}
@@ -91,6 +91,8 @@ Format (D77, 2026-11-24): this story's construct lands in `ess/38`, opened by st
 - `cargo test -p ess-entity-runtime --locked --test expression_values` passes a case asserting that
   Entity Runtime lowering refuses the mask's model with the existing expression-value reason
   (`an expression value (`{expr: …}`, ess/27)`).
+
+- Amendment A3 (thirteenth gap report, 2026-11-24, decision FM-D7 A): a condition may compare an enum fact with a variant and an arm may be an enum variant of the value position's enum (`if exit == Zero then Succeeded else Failed`); arms of two different enums are refused as `type_mismatch` naming both; the expression `Kind` gains the enum as an operand type for equality only, never for arithmetic.
 
 ## Scope
 
@@ -147,6 +149,8 @@ redaction alternative is not taken, for the reason in question 7 (c).
   that is what both already do for every expression value (`ess-synth` `determined.rs`
   `ResolvedPayloadValue::Expression`, `ess-entity-runtime` `subset.rs` `EXPRESSION`), and this
   story adds no generated evaluation.
+
+FM-D7 of the thirteenth report, an enum to enum map. A: this story admits an enum fact in its condition and an enum variant as an arm, no new declaration (amendment A3). B: a declared map from the variants of one enum to another, checked total at validation. C: nothing, the one-outcome-per-value idiom stays. Decided: A, 2026-11-24 16:36 CET (the coordinator, under the owner's delegation); a declared enum-to-enum map is not built.
 
 ## Source
 

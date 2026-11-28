@@ -12,7 +12,8 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 2
+- informed_by: story:a-view-selects-rows-by-a-caller-attribute
+revision: 3
 ---
 ## Need
 
@@ -41,3 +42,12 @@ transport question: the rule is the same over every binding.
 ## Schedule
 
 Gap; tagged `ess-0.69.0` as filed from a2a wave 1. Likely a new format version.
+
+## Related (2026-11-25)
+
+The same need was reported again on 0.99.0 from the HTTP side (a view parameter the service takes from
+the bearer token, twentieth gap report, shape 1a), and is drafted with its acceptance in
+`story:a-view-selects-rows-by-a-caller-attribute`. The security-marked decisions are on
+`decision-blocker:the-caller-reaches-a-view-or-a-route-only-through-declared-attributes` (HC-D1 to
+HC-D3, with the owner). This story is not changed; when the owner has picked under HC-D1, one of the two
+is archived into the other.

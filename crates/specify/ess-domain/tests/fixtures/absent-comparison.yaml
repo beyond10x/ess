@@ -1,0 +1,52 @@
+format: ess/38
+system: tree
+version: v1
+domain: tree.nodes
+summary: A node is unique by name under its parent; a root has no parent.
+types:
+  - {name: tree.nodes.NodeId, kind: newtype, of: Uuid}
+entities:
+  - name: tree.nodes.Node
+    identity: {name: node_id, type: tree.nodes.NodeId}
+    fields:
+      - {name: parent, type: Optional<tree.nodes.NodeId>}
+      - {name: name, type: String}
+    relations:
+      - {name: parent, kind: references, target: tree.nodes.Node, cardinality: one, via: parent}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: tree.nodes.NameTaken, summary: A node of that name is under the parent., fields: []}
+events:
+  - name: tree.nodes.NodeAdded
+    fields: [{name: node_id, type: tree.nodes.NodeId}]
+actors:
+  - name: tree.nodes.Editor
+    may: [tree.nodes.AddRoot, tree.nodes.AddChild]
+commands:
+  - name: tree.nodes.AddRoot
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: added
+        creates: tree.nodes.Node
+        instance: node_id
+        emits: [tree.nodes.NodeAdded]
+        payload: {tree.nodes.NodeAdded: {node_id: {generated: true}}}
+        sets: {name: input.name}
+  - name: tree.nodes.AddChild
+    input:
+      - {name: parent, type: tree.nodes.NodeId}
+      - {name: name, type: String}
+    outcomes:
+      - name: name-taken
+        when_related:
+          entity: tree.nodes.Node
+          where: {all: [parent == input.parent, name == input.name, state == Open]}
+          exists: true
+        error: tree.nodes.NameTaken
+      - name: added
+        creates: tree.nodes.Node
+        instance: node_id
+        emits: [tree.nodes.NodeAdded]
+        payload: {tree.nodes.NodeAdded: {node_id: {generated: true}}}
+        sets: {parent: input.parent, name: input.name}

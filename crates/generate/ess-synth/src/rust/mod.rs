@@ -193,7 +193,6 @@ fn emitted(
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
     crate::failure::one_time_response(ir, plan, crate::Target::Rust)?;
-    crate::failure::shorthand(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::view_query::refuse_unqueryable(ir, plan, crate::Target::Rust)?;
@@ -214,17 +213,7 @@ fn emitted(
         lib_module(ir, &layout, provenance, obligation_module.is_some()),
         primitives_module(ir, &layout, provenance),
     ];
-    // See `json`'s module docs for why the types crate carries it only when `Json` is used.
-    if json::used(ir) {
-        artifacts.push(Artifact::new(
-            format!("crates/{}/src/json.rs", layout.package()),
-            format!(
-                "{}{}",
-                provenance.commented_for("//", REGENERATE),
-                json::types_module()
-            ),
-        ));
-    }
+    artifacts.extend(codec_modules(ir, plan, &layout, provenance));
     artifacts.extend(obligation_module);
     artifacts.extend(actor::module(ir, &layout, provenance));
     artifacts.extend(behaviour::module(
@@ -280,6 +269,113 @@ fn emitted(
          twice — in the plan, and as a typed refusal in the workspace"
     );
     Ok((layout, artifacts))
+}
+
+/// The types crate's `json` and `wire` modules.
+///
+/// See `json`'s module docs for why the types crate of the workspace carries `json` only when
+/// `Json` is used. The single crate carries it, and the `wire` module beside it, whether or not a
+/// server is generated: its own types are read and written without the `server` feature.
+fn codec_modules(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    layout: &Layout,
+    provenance: &Provenance,
+) -> Vec<Artifact> {
+    let mut artifacts = Vec::new();
+    if json::used(ir) || layout.single_crate() {
+        artifacts.push(Artifact::new(
+            format!("crates/{}/src/json.rs", layout.package()),
+            format!(
+                "{}{}",
+                provenance.commented_for("//", REGENERATE),
+                if json::used(ir) {
+                    json::types_module()
+                } else {
+                    json::JSON.to_owned()
+                }
+            ),
+        ));
+    }
+    if layout.single_crate() {
+        let library = Library {
+            ir,
+            plan,
+            layout,
+            served: !http::served(ir).is_empty(),
+        };
+        artifacts.push(Artifact::new(
+            format!("crates/{}/src/wire.rs", layout.package()),
+            format!(
+                "{}{}",
+                provenance.commented_for("//", REGENERATE),
+                wire::module(&library)
+            ),
+        ));
+    }
+    artifacts
+}
+
+/// The single crate's own wire seam: what the crate root's `wire` module reads and writes.
+///
+/// Every declared type, event payload and error the plan generates, as the server presents them,
+/// and every entity's snapshot, which only this module reads and writes. Command and view codecs stay with a server, as they always were: with one, this module is the
+/// server's whole wire module, moved to the root and re-exported where the server named it, so a
+/// served crate keeps one module and not two.
+struct Library<'a> {
+    ir: &'a EssIr,
+    plan: &'a SynthesisPlan,
+    layout: &'a Layout,
+    /// Whether any component is reached over a network, so a server is generated.
+    served: bool,
+}
+
+impl wire::Surface for Library<'_> {
+    fn ir(&self) -> &EssIr {
+        self.ir
+    }
+
+    fn layout(&self) -> &Layout {
+        self.layout
+    }
+
+    fn types(&self) -> &'static str {
+        "crate"
+    }
+
+    fn presents_type(&self, declared: &QualifiedName) -> bool {
+        self.plan
+            .is_generated(CapabilityKind::DomainType, &declared.to_string())
+    }
+
+    fn presents_event(&self, declared: &QualifiedName) -> bool {
+        self.plan
+            .is_generated(CapabilityKind::EventType, &declared.to_string())
+    }
+
+    fn presents_error(&self, declared: &QualifiedName) -> bool {
+        self.plan
+            .is_generated(CapabilityKind::ErrorType, &declared.to_string())
+    }
+
+    fn presents_view(&self, declared: &QualifiedName) -> bool {
+        self.served
+            && self
+                .plan
+                .is_generated(CapabilityKind::ViewType, &declared.to_string())
+    }
+
+    fn presents_command(&self, declared: &QualifiedName) -> bool {
+        self.served
+            && self
+                .plan
+                .is_generated(CapabilityKind::CommandContract, &declared.to_string())
+    }
+
+    fn presents_entity(&self, declared: &QualifiedName) -> bool {
+        self.plan
+            .is_generated(CapabilityKind::EntityLifecycle, &declared.to_string())
+    }
 }
 
 /// One enum variant name per event of a set, collision-free by rule rather than by luck.
@@ -400,8 +496,11 @@ fn lib_module(
         .map(|(_, module)| module.to_owned())
         .collect();
     modules.push("primitives".to_owned());
-    if json::used(ir) {
+    if json::used(ir) || layout.single_crate() {
         modules.push("json".to_owned());
+    }
+    if layout.single_crate() {
+        modules.push("wire".to_owned());
     }
     if with_obligation_module {
         modules.push("obligation".to_owned());

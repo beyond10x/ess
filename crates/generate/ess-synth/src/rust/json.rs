@@ -1224,6 +1224,17 @@ pub(crate) fn types_module() -> String {
     format!("{JSON}{VALUE}")
 }
 
+/// The server's `json` module in the single crate (`--layout crate`), whose root carries the module
+/// whatever the model uses: a re-export, so the server's paths keep naming the one `json` module.
+pub(crate) fn root_reexport(types: &str) -> String {
+    format!(
+        "\n//! JSON at this system's boundary: the crate root's own module, re-exported.\n//!\n//! \
+         The crate reads and writes its types as JSON without the `server` feature, so the \
+         reader\n//! and writer live at its root; the server names them here.\n\npub use \
+         {types}::json::*;\n"
+    )
+}
+
 /// The server crate's `json` module when the types crate carries one: a re-export, so the value
 /// decoded off the wire is the value a semantic type holds.
 pub(crate) fn reexport(types: &str) -> String {

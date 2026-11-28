@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -213,3 +213,65 @@ report, item 7 (`g07-session-script`) as siblings of one feature, without changi
 - None hard. Lands after `g07-session-script` and `sp2-live-event-fields` (same `CHECKS` list and
   schema check list), or before them with those rebasing.
 - `sx15-test-fixture-types` depends on this.
+
+## A second report of the same gap (downstream report, finding G4; reproduced on 0.99.9)
+
+A downstream specification of reusable building blocks (ess 0.99.2, finding G4 of one collected
+report) found the same hole from its own fixtures: `ess ui check` does not check fixture rows against the
+model; a row with an unknown enum value and an extra field gives 0 findings. It is not fixed in 0.99.9:
+the table above is still what passes, and the report's two cases are rows of that table (an enum value
+outside the enum, an unknown member).
+
+Reproduction with a neutral model (a `shop.channel.Items` view with fields `item_id`, `label` and
+`kind`, an enum `Kind` of `Tool` and `Toy`) and a document that reads it, in
+`.engineering/repro/fixture-rows-are-checked-against-the-model/` (`run.sh`, `transcript.txt`):
+
+- `{item_id: it-01, label: Hammer, kind: Gadget, colour: red}`: `Gadget` is no variant, `colour` is no
+  field of the view. `ess ui check --model`: 0 findings, exit 0.
+- `{item_id: it-03, label: 5}`: a number for a String, `kind` absent. 0 findings.
+
+What the first report does not say: `ess ui test --model` accepts both as well, including rows a test
+puts under its own `fixtures:` (`transcript.txt`, last command: 2 passed). The check of this story reads
+the document's fixture index, so the rows a test file replaces are not reached by it.
+
+## Acceptance (downstream report G4)
+
+- **G4.** On the repro's document, `ess ui check --model` reports `fixture_types` for `kind: Gadget`
+  (naming the row, the member and the enum's variants), for `colour` (an unknown member), for `label: 5`
+  and for the absent `kind`, and exits 1; the correct rows of the same file report nothing. Red today: 0
+  findings, exit 0.
+- **A test's own fixtures.** `ess ui test --model` refuses a test whose `fixtures:` hold the same rows,
+  with the same finding text, and the test does not run (decision FR-D1). Red today: 2 passed.
+- The other acceptance points of this story stand as written.
+
+## Fit review (downstream report G4)
+
+Written with `.agents/skills/assessing-external-requests/SKILL.md`. The consumer is a downstream
+specification of reusable building blocks.
+
+1. **Need, apart from the syntax.** The same as above: fixtures stand for what a view answers, and
+   one that no view can answer makes a check and a test pass on an impossible screen. The reporter
+   proposed no syntax.
+2. **Class.** Gap, as above. The report adds no case the table lacks; it confirms the two commonest
+   ones on 0.99.9.
+3. **Already expressible?** No (`transcript.txt`).
+4. **Fit.** The feature of this story, "fixtures and live declarations are typed against the bound
+   model", with its siblings, and with the declaration-level names of
+   `story:a-type-name-written-in-a-widget-or-a-state-resolves-in-the-model-as-a-page-parameter-s-does`:
+   every name and value a document writes is held to the model by `ess ui check --model`. What the
+   report adds is the test runner as a second place the rows enter (decision FR-D1). Targets: unchanged
+   from the text above.
+5. **Second adopter.** As above.
+6. **Cost.** As above; a test file whose own fixtures contradict the model exits 1 under `ess ui test
+   --model` where it passed.
+7. **Considered.** (a) Change nothing. (b) Check the document's fixtures only: leaves a test's own
+   rows unchecked, the part a journey reads. (c) Chosen: one walk for both, as the sibling plan
+   `sx15-test-fixture-types` in this story says.
+
+## Decisions (downstream report G4)
+
+- **FR-D1, the rows of a test's own `fixtures:`.** A: `ess ui test --model` types them with the
+  walk of `ess ui check` and refuses the test. B: only `ess ui check`, on the document's fixtures.
+  Recommended: A. The rows a journey reads are the ones a test writes; leaving them out keeps the hole
+  where the report found it. Fails closed.
+- **SX-D1 and SX-D2** stand open as written above, with the recommendations given there.

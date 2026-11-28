@@ -1,0 +1,104 @@
+format: ess/37
+system: shelves
+version: v1
+domain: shelves.rack
+summary: A tag is put on a shelf in one of the shelf's own slots, and moved to another of the same shelf's slots.
+types:
+  - {name: shelves.rack.ShelfId, kind: newtype, of: Uuid}
+  - {name: shelves.rack.TagId, kind: newtype, of: Uuid}
+entities:
+  - name: shelves.rack.Shelf
+    identity: {name: shelf_id, type: shelves.rack.ShelfId}
+    fields:
+      - {name: slots, type: List<String>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: shelves.rack.Tag
+    identity: {name: tag_id, type: shelves.rack.TagId}
+    fields:
+      - {name: shelf_id, type: shelves.rack.ShelfId}
+      - {name: slot, type: String}
+    relations:
+      - {name: shelf, kind: references, target: shelves.rack.Shelf, cardinality: one, via: shelf_id}
+    lifecycle: {initial: Placed, states: [Placed], terminal: [Placed]}
+errors:
+  - {name: shelves.rack.ShelfNotFound, summary: No shelf carries this identity., fields: []}
+  - {name: shelves.rack.TagNotFound, summary: No tag carries this identity., fields: []}
+  - {name: shelves.rack.UnknownSlot, summary: The shelf has no such slot., fields: []}
+events:
+  - name: shelves.rack.ShelfBuilt
+    fields: [{name: shelf_id, type: shelves.rack.ShelfId}]
+  - name: shelves.rack.TagPlaced
+    fields: [{name: tag_id, type: shelves.rack.TagId}]
+  - name: shelves.rack.TagMoved
+    fields: [{name: tag_id, type: shelves.rack.TagId}]
+actors:
+  - name: shelves.rack.Keeper
+    may: [shelves.rack.BuildShelf, shelves.rack.PlaceTag, shelves.rack.MoveTag]
+commands:
+  - name: shelves.rack.BuildShelf
+    input:
+      - {name: slots, type: List<String>}
+    outcomes:
+      - name: built
+        creates: shelves.rack.Shelf
+        instance: shelf_id
+        emits: [shelves.rack.ShelfBuilt]
+        payload: {shelves.rack.ShelfBuilt: {shelf_id: {generated: true}}}
+        sets: {slots: input.slots}
+  - name: shelves.rack.PlaceTag
+    input:
+      - {name: shelf_id, type: shelves.rack.ShelfId}
+      - {name: slot, type: String}
+    outcomes:
+      - name: no-shelf
+        when_related: {via: input.shelf_id, exists: false}
+        error: shelves.rack.ShelfNotFound
+      - name: unknown-slot
+        when_related:
+          via: input.shelf_id
+          predicate:
+            not:
+              exists: {in: slots, as: s, that: s == input.slot}
+        error: shelves.rack.UnknownSlot
+      - name: placed
+        creates: shelves.rack.Tag
+        instance: tag_id
+        emits: [shelves.rack.TagPlaced]
+        payload: {shelves.rack.TagPlaced: {tag_id: {generated: true}}}
+        sets: {shelf_id: input.shelf_id, slot: input.slot}
+  - name: shelves.rack.MoveTag
+    input:
+      - {name: tag_id, type: shelves.rack.TagId}
+      - {name: slot, type: String}
+    outcomes:
+      - name: no-tag
+        unknown_instance: true
+        error: shelves.rack.TagNotFound
+      - name: unknown-slot
+        when_related:
+          via: shelf_id
+          predicate:
+            not:
+              exists: {in: slots, as: s, that: s == input.slot}
+        error: shelves.rack.UnknownSlot
+      - name: moved
+        updates: shelves.rack.Tag
+        instance: tag_id
+        emits: [shelves.rack.TagMoved]
+        payload: {shelves.rack.TagMoved: {tag_id: input.tag_id}}
+        sets: {slot: input.slot}
+views:
+  - name: shelves.rack.Shelves
+    source: shelves.rack.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: shelves.rack.ShelfId}
+      - {name: slots, type: List<String>}
+      - {name: state, type: shelves.rack.Shelf.State}
+  - name: shelves.rack.Tags
+    source: shelves.rack.Tag
+    consistency: read_your_writes
+    fields:
+      - {name: tag_id, type: shelves.rack.TagId}
+      - {name: shelf_id, type: shelves.rack.ShelfId}
+      - {name: slot, type: String}

@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-04T15:00:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-10-04T15:00:14Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
@@ -62,3 +62,13 @@ The first independent review required three corrections, now specified in docs/d
 Final independent design pass2of2 returned needs-revision with one compatibility blocker: generated runners produce five-category report2, while report --results admits four-category results1. The three earlier findings were verified closed. The exact final report is retained in review-result:mutation-audit-design-20261003-r2; its finding is not rewritten as an approval.
 
 Coordinator correction binds a separate accounting-only report mode taking original report2, execution1, exact suite and declaration. It invokes the existing CountReport original-byte reader, preserves GoV2 Skipped and every original status/count/coverage field, writes only accounting1, and refuses conflicting caller provenance/output flags. The existing external results1 path retains its original profile and meaning. This changes the design because of that finding; no third full design pass is requested. The normal implementation review must independently prove the reported seam using actual generated Go/TypeScript Failed/Skipped/Unsupported output. No accounting implementation or source acceptance is claimed by this correction.
+
+## A second consumer, 2026-11-28: the declaration beside authored scenarios
+
+A downstream meta-model specification (ess 0.99.9) holds one synthesized scenario that fails on the
+interpreted target and authored scenarios that kill mutants. `mutate --known-failing` is refused
+beside `--scenarios`, and a declaration written from the gate's suite is refused by `mutate`'s own
+suite digest. Both are reproduced on 0.99.9 with a neutral model and are the subject of
+`story:the-mutation-audit-scores-the-suite-the-gate-runs-with-its-authored-scenarios-and-its-known-failures`
+(draft, decision MG1). This story's decision stands: a declaration never makes conformance pass and
+binds to one suite's bytes.

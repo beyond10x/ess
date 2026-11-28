@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:ess-specify-reads-prints-every-entity-each-command-s-decisions-read-by-kind-and-site-from-one-read-analysis
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 7
 ---
 ## Need
 
@@ -145,6 +145,14 @@ Tree `bcfc51555`. Received 2026-11-24 from a downstream application, report item
   later story adds a non-interference pair per command outside the list: two arranged stores that
   differ only in the entity's rows give the same outcome. (b) In this cut. **Recommended: (a).**
   The static check covers the model, and the pair is a synthesis design of its own.
+
+- AQ2a: a, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- AQ2b: a, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- AQ2c: a, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Scope
 

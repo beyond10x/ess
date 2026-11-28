@@ -443,7 +443,7 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 65;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 67;
 
 /// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
 /// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, the
@@ -457,7 +457,8 @@ pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 65;
 /// cells read as the actor they name (beyond10x/ess#614), the pair `/58` and `/59`, whose exact
 /// observers compare a `Decimal` by value, the pair `/60` and `/61`, whose entity fixtures name a
 /// row the deployment provides, and the pair `/62` and `/63`, whose response observations name a
-/// member by its path, and the pair `/64` and `/65`, opened with no vocabulary of its own.
+/// member by its path, and the pairs `/64` and `/65` and `/66` and `/67`, each opened with no
+/// vocabulary of its own.
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
         || crate::conditional_measures::ADMITTED.contains(&major)
@@ -475,12 +476,13 @@ pub(crate) fn admitted_major(major: u32) -> bool {
         || crate::entity_fixtures::ADMITTED.contains(&major)
         || crate::member_paths::ADMITTED.contains(&major)
         || crate::suite_pair_64::ADMITTED.contains(&major)
+        || crate::suite_pair_66::ADMITTED.contains(&major)
 }
 
 /// The refusal both emitters write for a suite major their runtime does not admit.
 pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
     format!(
-        "the generated {target} runner admits suite versions up to `ess-conformance/65`, and \
+        "the generated {target} runner admits suite versions up to `ess-conformance/67`, and \
          would refuse `{version}`; regenerate using a supported suite version"
     )
 }

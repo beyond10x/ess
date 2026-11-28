@@ -1,0 +1,21 @@
+refused: refusal[ESS-SYNTH-001]: outcome repro.catalog.Install/no-such-variant has no scenario `repro.catalog.Install/outcome/no-such-variant`
+  no witness: `repro.catalog.Install/no-such-variant: the rows of `repro.catalog.Kind` related to a candidate are not arranged: no creating command writes `kind_id` from its input` is `row set`, which the related rows of a selector's test are not arranged; only this branch is refused
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: outcome repro.catalog.Install/kind-withdrawn has no scenario `repro.catalog.Install/outcome/kind-withdrawn`
+  no witness: `repro.catalog.Install/kind-withdrawn: the rows of `repro.catalog.Kind` related to a candidate are not arranged: no creating command writes `kind_id` from its input` is `row set`, which the related rows of a selector's test are not arranged; only this branch is refused
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: outcome repro.catalog.Install/enabled has no scenario `repro.catalog.Install/outcome/enabled`
+  no witness: `repro.catalog.Install/enabled: the rows of `repro.catalog.Kind` related to a candidate are not arranged: no creating command writes `kind_id` from its input` is `row set`, which the related rows of a selector's test are not arranged; only this branch is refused
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: outcome repro.catalog.Configure/configured has no scenario `repro.catalog.Configure/outcome/configured`
+  no witness: ``repro.catalog.Install/enabled` `kind-withdrawn` is not decidedly passed over: its row set is Unknown` is `row set`, which sends a row-set command whose required branch the rows the scenario arranges do not decide
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: entity repro.catalog.Instance has no scenario `repro.catalog.Instance/state/Ready/refuses/repro.catalog.Configure`
+  no witness: ``repro.catalog.Install/enabled` `kind-withdrawn` is not decidedly passed over: its row set is Unknown` is `row set`, which sends a row-set command whose required branch the rows the scenario arranges do not decide
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: transition repro.catalog.Instance/configured has no scenario `repro.catalog.Instance/transition/configured/by/repro.catalog.Configure/configured`
+  no witness: ``repro.catalog.Install/enabled` `kind-withdrawn` is not decidedly passed over: its row set is Unknown` is `row set`, which sends a row-set command whose required branch the rows the scenario arranges do not decide
+  help: give the field a type that has a finite value, or drop it from the command's input
+note: the specification declares actors and serves no component, so enforcing a grant is the caller's, against the generated grant table, and no `<command>/grant/denied` scenario is owed
+9 scenario(s) (0 authored), 6 refusal(s), written to out/suite.json
+exit 0

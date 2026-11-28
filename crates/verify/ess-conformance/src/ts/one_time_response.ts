@@ -694,6 +694,9 @@ const READER_VERSIONS = [
   // Cumulative: the pair opened for the epic's constructs.
   'ess-conformance/64',
   'ess-conformance/65',
+  // Cumulative: the pair opened for the open issues' suite vocabulary.
+  'ess-conformance/66',
+  'ess-conformance/67',
 ];
 
 export function admitDisclosureId(

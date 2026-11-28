@@ -46,7 +46,7 @@ scope:
   path: docs/design/pre-execution-fixture-values.md
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 22
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T11:37:41Z", actor: "human:timo", revision: 20}
 - {from: "proposed", to: "active", at: "2026-10-31T11:37:42Z", actor: "human:timo", revision: 21}
@@ -166,3 +166,64 @@ Lines on `main` f692aab (0.77.0), read by the scoper on 2026-10-31.
 - End to end, `crates/edge/ess-cli/tests/interpreted_target.rs`:
   `a_provided_related_row_synthesizes_and_passes_on_the_interpreted_target` on a brand-free fixture
   (before: 1 refusal; after: 0 refusals, 2 passed, 0 unsupported on the interpreted target).
+
+## A second consumer, 2026-11-28: a guard over a provided row's fields, and an invariant over two of its fields
+
+A downstream meta-model specification (ess 0.99.9) reported two limits at provided rows. Its
+specification is private; the neutral models are under
+`.engineering/repro/a-fixture-may-be-a-row-the-deployment-already-holds/` and
+`.engineering/repro/a-guard-over-the-fields-of-a-provided-row-is-steered-by-its-fixture-not-refused-ess-synth-004/`.
+
+- **A guard that reads fields of a provided row: reproduced on 0.99.9.** `validate` accepts it,
+  synthesis refuses the guarded branch `ESS-SYNTH-004` and the sibling success outcome with it.
+  This is the open point the decision above left ("a guard over a provided row's fields cannot be
+  steered; refused by name"). It is filed as
+  `story:a-guard-over-the-fields-of-a-provided-row-is-steered-by-its-fixture-not-refused-ess-synth-004`
+  (draft, decision FD1); the consumer turned eight such guards into `external:` causes meanwhile.
+- **An invariant `a implies b` over two fields of a provided entity, the interpreted target unable
+  to build a row of it (15 scenarios `unsupported`, `ESS-CF-TARGET`): not reproduced on 0.99.9.**
+  Five neutral models, each a provided entity with an invariant over two of its fields written
+  `any: [{not: "<a>"}, "<b>"]`, a command that reads a row of it through `when_related`, and (in
+  the last) a view over it: two Boolean fields (`implies-boolean.yaml`,
+  `implies-boolean-with-a-view.yaml`), an enum and an `Optional<Integer>`
+  (`implies-enum-and-optional.yaml`), two `Optional<String>` (`implies-optional-pair.yaml`), two
+  Integer fields (`implies-integer.yaml`). Each validates, synthesizes 2 scenarios with 0 refusals
+  and `ess verify conform run --target interpreted --report-format 2` passes both.
+  What a neutral model lacks is the rest of the reporter's entity. A candidate cause, inferred and
+  not run: a required field of the provided entity that the invariant does not mention and the
+  fixture does not set, which is the case of
+  `story:an-unfillable-required-field-is-named-by-validate-and-the-view`. Next step for whoever
+  takes it: vary the types of the whole entity (a required `List`, a struct, an id) beside the
+  invariant, not the invariant.
+
+## A second consumer, 2026-11-28: an authored scenario needing two provided rows, in a mutation audit
+
+The same downstream meta-model specification (ess 0.99.9) audits itself with `ess verify conform
+mutate --target interpreted` (173 mutants, 137 of 138 scored killed) and reports that an authored
+scenario of `ess-scenario/6` cannot reach the one survivor: its fixtures are type-only, and the
+interpreted target answers `unsupported` when a scenario needs rows of a provided entity ("the
+interpreted target provides only rows of an entity the deployment provides"), here two of them.
+
+**Reproduced on 0.99.9, and an idiom answers it for the audit.** The model and both forms of the
+authored scenario are in
+`.engineering/repro/a-fixture-may-be-a-row-the-deployment-already-holds/authored-two-provided-rows/`
+(`ess/37`; a provided `App`, a command `Pair(first_id, second_id)` that refuses an unknown row of
+either input and creates a `Pairing`):
+
+- `type-only/` declares `fixtures: {first-app: AppId, second-app: AppId}` (`ess-scenario/3`, the
+  version that admits fixtures). `run --target interpreted --scenarios type-only` reports 4
+  scenarios, 3 passed, 1 `unsupported`, `ESS-CF-TARGET: fixture `first-app` is type-only ...`; in
+  `mutate --scenarios type-only` the authored scenario is listed "not scored" (the baseline run
+  reported it unsupported), so it kills nothing. This is the decision above ("a type-only fixture stays
+  unsupported" on the interpreted target; no authored format changes), working as decided.
+- `arranged/` writes the same scenario with `arrange:` and an entity `setup:` for each row
+  (`ess-scenario/2`: `identity`, `fields`, `state`). `run` reports 4 scenarios, 4 passed;
+  `mutate --scenarios arranged` scores the authored scenario in the baseline.
+
+The `arrange:` form is the idiom the story's own Need lists as passing on the interpreted target
+and unusable against a deployment that only reads the rows, because the runner writes them. A
+mutation audit runs on the interpreted target only, so for it the idiom keeps the figure the
+suite checks (question 3 of `.agents/skills/assessing-external-requests/SKILL.md`): the
+declaration of the decision above holds, and no authored entity fixture is proposed here. What
+stays open is documentation: nothing in the `unsupported` line names the `arrange:` form, which
+the reporter did not find. A help line on that refusal is a convenience, not a story of its own.

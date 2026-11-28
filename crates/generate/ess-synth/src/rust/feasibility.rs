@@ -277,8 +277,11 @@ pub(crate) fn checked_shaped(
     conversions(&mut inventory, ir, plan, &layout);
     size_cycles(&mut inventory, ir);
     bindings(&mut inventory, ir, plan);
-    if !super::http::served(ir).is_empty() {
-        wire(&mut inventory, ir, plan, &layout, |_| true);
+    // The single crate carries the wire module whether or not a server is generated; its command
+    // and view codecs only with one.
+    let served = !super::http::served(ir).is_empty();
+    if served || layout.single_crate() {
+        wire(&mut inventory, ir, plan, &layout, |_| served);
     }
     if target == Target::Web {
         web_dependencies(&mut inventory, ir, &layout);
@@ -340,9 +343,13 @@ fn paths_and_packages(
         format!("crates/{}/src/primitives.rs", layout.package()),
         &system,
     );
-    if super::json::used(ir) {
+    if super::json::used(ir) || layout.single_crate() {
         inventory.symbol("types root", "json", &system, "fixed module");
         inventory.path(format!("crates/{}/src/json.rs", layout.package()), &system);
+    }
+    if layout.single_crate() {
+        inventory.symbol("types root", "wire", &system, "fixed module");
+        inventory.path(format!("crates/{}/src/wire.rs", layout.package()), &system);
     }
     if plan.obligations().next().is_some()
         || !ir.components().is_empty()
@@ -657,6 +664,7 @@ fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &
 
 fn delivery_initializers(
     inventory: &mut Inventory,
+    ir: &EssIr,
     plan: &SynthesisPlan,
     delivered: &[&ResolvedBinding],
 ) {
@@ -683,6 +691,11 @@ fn delivery_initializers(
                     .expect("generated event capability")
                     .to_string(),
             );
+            // A dispatch that counts attempts takes the occurrence's count as the parameter
+            // `made` of `deliver_…`, which the transformation's call would otherwise name.
+            if super::system::counts_attempts(ir, binding) {
+                inventory.helper(&scope, "made", &source);
+            }
             if let Some(prior) = prior_inputs.get(
                 binding
                     .cause
@@ -719,13 +732,9 @@ fn components_and_system(
             plan.is_generated(CapabilityKind::BindingDelivery, &binding.name.to_string())
         })
         .collect::<Vec<_>>();
-    delivery_initializers(inventory, plan, &delivered);
-    let has_obligations = delivered.iter().any(|binding| {
-        !plan.is_generated(
-            CapabilityKind::BindingTransformation,
-            &binding.name.to_string(),
-        ) || binding.escalation.is_some()
-    });
+    delivery_initializers(inventory, ir, plan, &delivered);
+    // The `obligations` field and `Obligations` parameter exist exactly where `System` takes them.
+    let has_obligations = super::system::takes_obligations(ir, plan);
     // Every binding the pump may attempt again keeps its own held-back list, taken with
     // `core::mem::take` at the start of each pump.
     let holding: Vec<_> = delivered
@@ -933,7 +942,14 @@ fn bindings(inventory: &mut Inventory, ir: &EssIr, plan: &SynthesisPlan) {
                         &crate::plan::DeterminedInput::Copy { field },
                         &mapping.target_type,
                     ) > 0;
-                if mapping.conversion.is_none() && type_ref != &mapping.target_type && !proved {
+                // A plain value copied into an Optional of its own type is passed as `Some(..)`:
+                // `system::wraps_once`. The wrap changes presence, not representation.
+                let wrapped = super::system::wraps_once(type_ref, &mapping.target_type);
+                if mapping.conversion.is_none()
+                    && type_ref != &mapping.target_type
+                    && !proved
+                    && !wrapped
+                {
                     inventory.cause(Code::BindingAssignment, vec![binding.name.to_string(), format!("{}.{}", binding.cause.event().expect("generated event capability"), field), format!("{}.{}", binding.command, mapping.target)], format!("binding `{}` emits a plain clone of `{type_ref}` for `{}` of type `{}`; this assignment needs an explicit target representation", binding.name, mapping.target, mapping.target_type));
                 }
             }
@@ -1108,6 +1124,25 @@ fn wire(
             &event.name.to_string(),
             "event decoder",
         );
+    }
+    // Only the single crate's own `wire` module carries entity snapshot codecs.
+    if layout.single_crate() {
+        for entity in ir.entities().values() {
+            if !plan.is_generated(CapabilityKind::EntityLifecycle, &entity.name.to_string()) {
+                continue;
+            }
+            for function in [
+                super::wire::entity_encoder_name(layout, &entity.name),
+                super::wire::entity_decoder_name(layout, &entity.name),
+            ] {
+                inventory.symbol(
+                    "wire functions",
+                    &function,
+                    &entity.name.to_string(),
+                    "entity snapshot codec",
+                );
+            }
+        }
     }
     for command in ir
         .commands()

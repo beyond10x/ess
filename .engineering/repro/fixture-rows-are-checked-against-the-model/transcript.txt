@@ -1,0 +1,32 @@
+$ ess --version
+ess 0.99.9
+
+$ cat ui/fixtures-bad/items.yaml   (kind: Gadget is no variant of shop.channel.Kind, colour is no field of the view, label is a number, kind is absent)
+views:
+  shop.channel.Items:
+    rows:
+      - {item_id: it-01, label: Hammer, kind: Gadget, colour: red}
+      - {item_id: it-02, label: Robot, kind: Toy}
+      - {item_id: it-03, label: 5}
+
+$ ess ui check --path ui/bad-fixtures.ui.yaml --model spec
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/bad-fixtures.ui.yaml: 0 error(s), 0 warning(s)
+exit 0
+
+$ ess ui check --path ui/bad-fixtures.ui.yaml --model spec --format json
+{
+  "format": "ess-ui-check/1",
+  "document": "ui/bad-fixtures.ui.yaml",
+  "findings": [],
+  "coverage": {
+    "covered": 1,
+    "host_covered": 0,
+    "uncovered": 1
+  }
+}
+
+$ ess ui test --path ui/bad-fixtures.ui.yaml --model spec tests/bad.yaml   (the document's fixtures, and a test's own, hold the same rows)
+passed  the document's fixtures hold an unknown enum value and an extra field
+passed  a test's own fixtures hold the same
+2 passed, 0 failed

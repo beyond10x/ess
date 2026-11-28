@@ -30,7 +30,7 @@ scope:
   path: docs/design/composition-type-conformance.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:41:50Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:41:51Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
@@ -174,6 +174,8 @@ command area, and `--from` takes the owner's key in the same `KEY=PATH` form:
 - Consequence for `source_digest`: the consumer's entry is pinned to the consumer with `vendored.yaml`
   in it, so the verb compiles the consumer and the new declarations together in memory; the digest
   is the one `compose` computes once the file is dropped in.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

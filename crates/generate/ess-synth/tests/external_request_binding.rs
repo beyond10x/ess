@@ -847,7 +847,14 @@ fn served_flattening_codecs_are_allocated_distinct_names() {
         let wire = generated
             .artifacts
             .iter()
-            .find(|(path, _)| path.ends_with("wire.rs"))
+            // The crate layout's codecs are its root `src/wire.rs`, which its server re-exports.
+            .find(|(path, _)| *path == "src/wire.rs")
+            .or_else(|| {
+                generated
+                    .artifacts
+                    .iter()
+                    .find(|(path, _)| path.ends_with("wire.rs"))
+            })
             .expect("a served wire module")
             .1;
         for (canonical, stem) in [

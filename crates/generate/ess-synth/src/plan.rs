@@ -112,6 +112,19 @@ pub struct SynthesisScope {
     /// shaped one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
+    /// The crate's package name, when the consumer named it (`--package`, the crate layout only).
+    ///
+    /// Absent when the crate is named for the system, as [`Self::layout`] is absent for the
+    /// default, so a tree generated without the option keeps its bytes. Here, like the layout, so
+    /// the regenerate command rewrites the crate under the name it was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// `true` when the crate's manifest leaves out its `[workspace]` table, so the crate is a
+    /// member of the consumer's workspace (`--no-workspace-table`, the crate layout only).
+    ///
+    /// Absent when `false`, for the reason [`Self::package`] is.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_workspace_table: bool,
 }
 
 impl SynthesisScope {
@@ -121,6 +134,8 @@ impl SynthesisScope {
         Self {
             profile: "component-skeletons".to_owned(),
             layout: None,
+            package: None,
+            no_workspace_table: false,
         }
     }
 }
@@ -192,6 +207,9 @@ pub enum CapabilityKind {
     ComponentTransport,
     /// A component's runtime requirements.
     Workload,
+    /// A step a component starts itself (ess/38): a command run per row a view answers, or every
+    /// period.
+    ComponentStep,
 }
 
 impl CapabilityKind {
@@ -214,6 +232,7 @@ impl CapabilityKind {
             Self::ComponentPort => "component port",
             Self::ComponentTransport => "component transport",
             Self::Workload => "workload",
+            Self::ComponentStep => "component step",
         }
     }
 }
@@ -329,6 +348,8 @@ pub enum RefusalReason {
     TopologyDeferred,
     /// Periodic execution requires the declared authenticated host and controlled-time seam.
     PeriodicHostRequired,
+    /// A component's step needs a loop that runs it, which no emitter generates yet.
+    StepLoopDeferred,
 }
 
 impl RefusalReason {
@@ -346,6 +367,9 @@ impl RefusalReason {
                 "periodic execution requires the declared host authority and lifetime integration"
             }
             Self::TopologyDeferred => "topology synthesis is deferred with its design",
+            Self::StepLoopDeferred => {
+                "a component step needs a loop that runs it, which this synthesis does not emit"
+            }
         }
     }
 }
@@ -381,6 +405,7 @@ impl SynthesisPlan {
         plan_bindings(ir, &mut capabilities);
         plan_components(ir, &mut capabilities);
         plan_workloads(ir, &mut capabilities);
+        plan_component_steps(ir, &mut capabilities);
 
         let mut seen = BTreeSet::new();
         for planned in &capabilities {
@@ -483,12 +508,19 @@ impl SynthesisPlan {
     }
 
     /// The command that rewrites the tree this plan sits in: [`REGENERATE`], plus the layout when
-    /// it is not the default.
+    /// it is not the default and the crate's manifest options when they were given.
     pub fn regenerate(&self) -> String {
-        match &self.scope.layout {
-            Some(layout) => format!("{REGENERATE} --layout {layout}"),
-            None => REGENERATE.to_owned(),
+        let mut command = REGENERATE.to_owned();
+        if let Some(layout) = &self.scope.layout {
+            let _ = write!(command, " --layout {layout}");
         }
+        if let Some(package) = &self.scope.package {
+            let _ = write!(command, " --package {package}");
+        }
+        if self.scope.no_workspace_table {
+            command.push_str(" --no-workspace-table");
+        }
+        command
     }
 
     /// The plan as Markdown, for the person deciding whether to trust the generated half.
@@ -696,6 +728,7 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         if let Some(replay) = &outcome.replays {
             let _ = write!(branch, ", returns the exact retained result of `{}` without errors, events, or subject changes", replay.origin);
         }
+        branch.push_str(&one_time_clause(&outcome.one_time_response));
         for event in &outcome.emits {
             let _ = write!(branch, ", emits `{event}`");
         }
@@ -712,6 +745,28 @@ pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String
         "given `{}` input, decide and enact exactly one outcome.{precedence} Declared outcomes (declaration order, not selection precedence): {}",
         command.name,
         branches.join("; ")
+    )
+}
+
+/// The one-time disclosure duty of an outcome that declares `one_time_response:`
+/// (`docs/design/one-time-response-values.md`), written into that outcome's branch of the
+/// behaviour's contract; empty for an outcome without the key, so its contract keeps its bytes.
+///
+/// A generated behaviour cannot hold the duty: the command's typed `response:` keeps it owed
+/// ([`crate::determined::command`]), and the clause is how its implementor learns what it owes.
+fn one_time_clause(fields: &[String]) -> String {
+    if fields.is_empty() {
+        return String::new();
+    }
+    let fields = fields
+        .iter()
+        .map(|field| format!("`{field}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        ", discloses {fields} once (one_time_response): the implementation owns atomic durable \
+         consumption of each disclosure, fresh issuance of a value never originated before, and no \
+         replay of it in a retry, another response, an event, an error, a view or a stored field"
     )
 }
 
@@ -1412,9 +1467,20 @@ fn failure_text(binding: &ResolvedBinding) -> &'static str {
 }
 
 /// Whether the generated system keeps a held-back list for this binding: it attempts again after
-/// an unmet obligation ([`attempts_again`]), or its declared refusal is answered with `retry`.
+/// an unmet obligation ([`attempts_again`]), or a declared refusal may be answered with `retry` —
+/// universal, bounded (ess/16), or selected per refusal (ess/22).
 pub(crate) fn holds_back(binding: &ResolvedBinding) -> bool {
-    attempts_again(binding) || matches!(binding.on_failure(), ResolvedFailure::Retry)
+    attempts_again(binding)
+        || match binding.on_failure() {
+            ResolvedFailure::Retry | ResolvedFailure::BoundedRetry { .. } => true,
+            ResolvedFailure::ByRefusal { policy } => policy.actions().any(|action| {
+                matches!(
+                    action,
+                    ess_compiler::ir::ResolvedRefusalAction::Retry { .. }
+                )
+            }),
+            ResolvedFailure::Drop | ResolvedFailure::Escalate { .. } => false,
+        }
 }
 
 /// The delivery: the one transport this scope holds, generated onto the one declared acceptor.
@@ -1806,6 +1872,33 @@ fn plan_components(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: SynthesisDisposition::Generated,
         });
+    }
+}
+
+/// A component's step (ess/38) is run by a loop, and this synthesis emits none: each step is
+/// refused by name, for every target.
+fn plan_component_steps(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
+    for component in ir.components().values() {
+        for (index, step) in component.steps.iter().enumerate() {
+            capabilities.push(PlannedCapability {
+                capability: Capability {
+                    kind: CapabilityKind::ComponentStep,
+                    source: format!("{}.steps[{index}]", component.name),
+                },
+                disposition: SynthesisDisposition::Refused(SynthesisRefusal {
+                    reason: RefusalReason::StepLoopDeferred,
+                    stage: RefusalStage::Planning,
+                    detail: format!(
+                        "the {} step of `{}` runs `{}` as `{}`; {}",
+                        step.form.as_str(),
+                        component.name,
+                        step.command.name(),
+                        step.actor.name(),
+                        RefusalReason::StepLoopDeferred.describes()
+                    ),
+                }),
+            });
+        }
     }
 }
 

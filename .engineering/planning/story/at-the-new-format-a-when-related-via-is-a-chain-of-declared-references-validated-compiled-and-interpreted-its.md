@@ -12,7 +12,7 @@ relations:
 - derived_from: story:navigation-reaches-any-depth-in-guards
 - depends_on: story:at-ess-38-instance-and-each-in-name-a-member-of-a-struct-input-and-the-documents-list-every-addressing
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 6
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:24:57Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-24T03:24:58Z", actor: "human:timo", revision: 6}
@@ -159,3 +159,51 @@ these two units.
 
 A downstream application, 2026-11-24, report item 13 (its G8); github:beyond10x/ess#564
 (downstream finding 10), the parent's source.
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (gap 4 of a report of ten) that a guard cannot reach a
+second row through a first (a child, then its parent), so its callers send both identities and each
+row is read through an input of its own. On `main` at `c0b5f560cb` a `when_related:` `via:` reads
+one row an input names, or one row a stored field of the addressed subject names
+(`website/docs/reference/predicates.md` § "A stored reference", `ess/22`), and a stored-field `via`
+stays the command's only related row (§ "Several related rows"). The chain this story opens covers
+the report, `via: [input.<child>, <parent reference>]`. The report adds one case to the
+acceptance: a command whose input names only the child, with a guard reading the held state of
+that child's parent.
+
+## Downstream report 2026-11-26 (2)
+
+A second downstream report (2026-11-26, 0.99.2, the same application, gap 4 again) adds the case of a command that creates its subject and must check its parent.
+
+Fact: the stored-field form does not reach the parent there. `via: <parent>_id` on a branch that `creates:` its subject is refused with `ESS-COMMAND-004` (`conflicting_declaration`): the command "creates its subject: no row holds that field before it" (`crates/specify/ess-domain/src/command/related_guard.rs:1517-1525`). The documentation says the same (`website/docs/reference/predicates.md` § "A stored reference": the guard "is refused on a command that creates its subject, since no row holds the field before the branch").
+
+Checked on `origin/main` at `c0b5f560cb`, read-only (not run here): a creating command can read the parent through the input that names it. `when_related: {via: input.<parent>, exists: false}` and `when_related: {via: input.<parent>, predicate: …}` compose with a `creates:` subject. `predicates.md` § "A guard over another entity's row" says the guard composes "with any subject a branch names, a `creates:` included"; the refusal's own hint names that form ("or read the identity from the input: `via: input.<field>`", `related_guard.rs:1507`); and the repository holds tests of a creating branch beside a related guard (`crates/specify/ess-domain/tests/adversary_related_guard_pass1.rs:91`, `adversary_related_pass2.rs:127`, where the hint's remedy validates). So the supported form for a creating command that checks its parent is `via: input.<parent>`: one hop, with the parent's identity in the input.
+
+What stays open is the second hop: a creating command whose input names only a child and whose guard reads that child's parent. The chain this story opens, `via: [input.<child>, <parent reference>]`, starts from an input and not from a stored field of the new subject, so it would not meet the creation refusal; that is this story's design intent, not a built behaviour.
+
+## A second consumer, 2026-11-28: "the given revision belongs to a draft of the given document"
+
+A downstream meta-model specification (ess 0.99.9) refuses a command unless the revision the input
+names belongs to a draft of the document the input also names: two hops, revision to draft to
+document, compared with an input. It turned the guard into an `external:` cause. **Reproduced on
+0.99.9**: the neutral model
+`.engineering/repro/at-the-new-format-a-when-related-via-is-a-chain-of-declared-references-validated-compiled-and-interpreted-its/system.yaml`
+(`ess/37`; `Revision` references `Draft`, `Draft` references `Document`; `Approve(document_id,
+revision_id)` with `when_related: {via: [input.revision_id, draft_id], predicate: document_id !=
+input.document_id}`) is refused at `validate` by the parser, before any synthesis:
+
+```text
+system.yaml: invalid type: sequence, expected a string
+```
+
+That is this story's reproduction, the chain `via:` that a release at `ess/38` is to read. The
+consumer's shape adds a predicate that compares the far row's field with an input (here
+`document_id != input.document_id`), where the story's examples test the far row's state. The
+acceptance should hold both: a chain whose last step is tested against an input, with the same
+witnesses (a far row of the input's document, a far row of another document as a decoy, a missing
+middle row answering the `exists: false` branch).
+
+Without the chain the rule has no typed form: one hop reaches the revision and not its draft's
+document, and an extra `document_id` input on the revision's creator would let the revision carry
+its document, which moves the rule into a copy the model does not check.

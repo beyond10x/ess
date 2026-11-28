@@ -1,0 +1,212 @@
+domain: repro.catalog
+
+types:
+  - {name: repro.catalog.KindId, kind: newtype, of: Uuid}
+  - {name: repro.catalog.VariantId, kind: newtype, of: Uuid}
+  - {name: repro.catalog.InstanceId, kind: newtype, of: Uuid}
+
+entities:
+  - name: repro.catalog.Kind
+    identity: {name: kind_id, type: repro.catalog.KindId}
+    fields:
+      - {name: name, type: String}
+    relations:
+      - {name: variants, kind: owns, target: repro.catalog.Variant, cardinality: many, via: kind_id}
+    lifecycle:
+      initial: Available
+      states: [Available, Withdrawn]
+      terminal: [Withdrawn]
+      transitions:
+        - {name: withdraw, from: [Available], to: Withdrawn}
+
+  - name: repro.catalog.Variant
+    identity: {name: variant_id, type: repro.catalog.VariantId}
+    fields:
+      - {name: kind_id, type: repro.catalog.KindId}
+      - {name: name, type: String}
+    lifecycle:
+      initial: Offered
+      states: [Offered]
+      terminal: [Offered]
+
+  - name: repro.catalog.Instance
+    identity: {name: instance_id, type: repro.catalog.InstanceId}
+    fields:
+      - {name: kind_id, type: repro.catalog.KindId}
+      - {name: variant_id, type: repro.catalog.VariantId}
+    relations:
+      - {name: kind, kind: references, target: repro.catalog.Kind, cardinality: one, via: kind_id}
+      - {name: variant, kind: references, target: repro.catalog.Variant, cardinality: one, via: variant_id}
+    lifecycle:
+      initial: Configuring
+      states: [Configuring, Ready]
+      terminal: [Ready]
+      transitions:
+        - {name: configured, from: [Configuring], to: Ready}
+
+errors:
+  - {name: repro.catalog.KindNotFound, fields: []}
+  - {name: repro.catalog.KindNotAvailable, fields: []}
+  - {name: repro.catalog.VariantNotFound, fields: []}
+  - {name: repro.catalog.InstanceNotFound, fields: []}
+  - {name: repro.catalog.InstanceStateConflict, fields: []}
+
+events:
+  - name: repro.catalog.KindRegistered
+    fields:
+      - {name: kind_id, type: repro.catalog.KindId}
+  - name: repro.catalog.KindWithdrawn
+    fields:
+      - {name: kind_id, type: repro.catalog.KindId}
+  - name: repro.catalog.VariantAdded
+    fields:
+      - {name: variant_id, type: repro.catalog.VariantId}
+      - {name: kind_id, type: repro.catalog.KindId}
+  - name: repro.catalog.Configured
+    fields:
+      - {name: instance_id, type: repro.catalog.InstanceId}
+  - name: repro.catalog.Installed
+    fields:
+      - {name: instance_id, type: repro.catalog.InstanceId}
+      - {name: variant_id, type: repro.catalog.VariantId}
+
+commands:
+  - name: repro.catalog.RegisterKind
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: registered
+        creates: repro.catalog.Kind
+        instance: kind_id
+        sets:
+          name: input.name
+        emits: [repro.catalog.KindRegistered]
+        payload:
+          repro.catalog.KindRegistered:
+            kind_id: {generated: true}
+
+  - name: repro.catalog.WithdrawKind
+    input:
+      - {name: kind_id, type: repro.catalog.KindId}
+    outcomes:
+      - name: no-such-kind
+        unknown_instance: true
+        error: repro.catalog.KindNotFound
+      - name: withdrawn
+        moves: repro.catalog.Kind.withdraw
+        instance: kind_id
+        emits: [repro.catalog.KindWithdrawn]
+        payload:
+          repro.catalog.KindWithdrawn:
+            kind_id: input.kind_id
+      - name: wrong-state
+        wrong_state: true
+        error: repro.catalog.KindNotAvailable
+
+  - name: repro.catalog.AddVariant
+    input:
+      - {name: kind_id, type: repro.catalog.KindId}
+      - {name: name, type: String}
+    outcomes:
+      - name: no-such-kind
+        when_related: {via: input.kind_id, exists: false}
+        error: repro.catalog.KindNotFound
+      - name: kind-withdrawn
+        when_related: {via: input.kind_id, predicate: state == Withdrawn}
+        error: repro.catalog.KindNotAvailable
+      - name: added
+        creates: repro.catalog.Variant
+        instance: variant_id
+        sets:
+          kind_id: input.kind_id
+          name: input.name
+        emits: [repro.catalog.VariantAdded]
+        payload:
+          repro.catalog.VariantAdded:
+            variant_id: {generated: true}
+            kind_id: input.kind_id
+
+  # Shaped like a component install command: the kind-withdrawn row set is over Kind and is
+  # selected by no equality with an input; the input is reached only through the quantifier.
+  - name: repro.catalog.Install
+    input:
+      - {name: variant_id, type: repro.catalog.VariantId}
+    outcomes:
+      - name: no-such-variant
+        when_related: {via: input.variant_id, exists: false}
+        error: repro.catalog.VariantNotFound
+      - name: kind-withdrawn
+        when_related:
+          entity: repro.catalog.Kind
+          where:
+            all:
+              - state == Withdrawn
+              - exists:
+                  in: {entity: repro.catalog.Variant}
+                  as: variant
+                  that: {all: [variant.kind_id == kind_id, variant.variant_id == input.variant_id]}
+          exists: true
+        error: repro.catalog.KindNotAvailable
+      - name: enabled
+        creates: repro.catalog.Instance
+        instance: instance_id
+        sets:
+          kind_id: {related: {via: input.variant_id, field: kind_id}}
+          variant_id: input.variant_id
+        emits: [repro.catalog.Installed]
+        payload:
+          repro.catalog.Installed:
+            instance_id: {generated: true}
+            variant_id: input.variant_id
+
+  - name: repro.catalog.Configure
+    input:
+      - {name: instance_id, type: repro.catalog.InstanceId}
+    outcomes:
+      - name: no-such-instance
+        unknown_instance: true
+        error: repro.catalog.InstanceNotFound
+      - name: configured
+        moves: repro.catalog.Instance.configured
+        instance: instance_id
+        emits: [repro.catalog.Configured]
+        payload:
+          repro.catalog.Configured:
+            instance_id: input.instance_id
+      - name: wrong-state
+        wrong_state: true
+        error: repro.catalog.InstanceStateConflict
+
+views:
+  - name: repro.catalog.Kinds
+    source: repro.catalog.Kind
+    consistency: read_your_writes
+    fields:
+      - {name: kind_id, type: repro.catalog.KindId}
+      - {name: name, type: String}
+      - {name: state, type: repro.catalog.Kind.State}
+  - name: repro.catalog.Variants
+    source: repro.catalog.Variant
+    consistency: read_your_writes
+    fields:
+      - {name: variant_id, type: repro.catalog.VariantId}
+      - {name: kind_id, type: repro.catalog.KindId}
+      - {name: name, type: String}
+      - {name: state, type: repro.catalog.Variant.State}
+  - name: repro.catalog.Instances
+    source: repro.catalog.Instance
+    consistency: read_your_writes
+    fields:
+      - {name: instance_id, type: repro.catalog.InstanceId}
+      - {name: kind_id, type: repro.catalog.KindId}
+      - {name: variant_id, type: repro.catalog.VariantId}
+      - {name: state, type: repro.catalog.Instance.State}
+
+actors:
+  - name: repro.catalog.Operator
+    may:
+      - repro.catalog.RegisterKind
+      - repro.catalog.WithdrawKind
+      - repro.catalog.AddVariant
+      - repro.catalog.Install
+      - repro.catalog.Configure

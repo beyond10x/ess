@@ -1,0 +1,108 @@
+format: ess/37
+system: catalog
+version: v1
+domain: catalog.shelf
+summary: A catalog publishes the items a caller lists, and an archived catalog needs a published one.
+types:
+  - {name: catalog.shelf.ItemId, kind: newtype, of: Uuid}
+  - {name: catalog.shelf.CatalogId, kind: newtype, of: Uuid}
+  - name: catalog.shelf.ItemRef
+    kind: struct
+    fields:
+      - {name: item_id, type: catalog.shelf.ItemId}
+entities:
+  - name: catalog.shelf.Catalog
+    identity: {name: catalog_id, type: catalog.shelf.CatalogId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Draft
+      states: [Draft, Published, Archived]
+      terminal: [Archived]
+      transitions:
+        - {name: publish, from: [Draft], to: Published}
+        - {name: archive, from: [Published], to: Archived}
+  - name: catalog.shelf.Item
+    identity: {name: item_id, type: catalog.shelf.ItemId}
+    fields:
+      - {name: catalog_id, type: catalog.shelf.CatalogId}
+    lifecycle:
+      initial: Hidden
+      states: [Hidden, Listed]
+      terminal: [Listed]
+      transitions:
+        - {name: list, from: [Hidden], to: Listed}
+errors:
+  - {name: catalog.shelf.WrongState, summary: The catalog is not in the state the command needs., fields: []}
+events:
+  - name: catalog.shelf.CatalogOpened
+    fields: [{name: catalog_id, type: catalog.shelf.CatalogId}]
+  - name: catalog.shelf.ItemAdded
+    fields: [{name: item_id, type: catalog.shelf.ItemId}]
+  - name: catalog.shelf.CatalogPublished
+    fields: [{name: catalog_id, type: catalog.shelf.CatalogId}]
+  - name: catalog.shelf.CatalogArchived
+    fields: [{name: catalog_id, type: catalog.shelf.CatalogId}]
+actors:
+  - name: catalog.shelf.Editor
+    may: [catalog.shelf.Open, catalog.shelf.Add, catalog.shelf.Publish, catalog.shelf.Archive]
+commands:
+  - name: catalog.shelf.Open
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: catalog.shelf.Catalog
+        instance: catalog_id
+        emits: [catalog.shelf.CatalogOpened]
+        payload: {catalog.shelf.CatalogOpened: {catalog_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: catalog.shelf.Add
+    input:
+      - {name: catalog_id, type: catalog.shelf.CatalogId}
+    outcomes:
+      - name: added
+        creates: catalog.shelf.Item
+        instance: item_id
+        emits: [catalog.shelf.ItemAdded]
+        payload: {catalog.shelf.ItemAdded: {item_id: {generated: true}}}
+        sets: {catalog_id: input.catalog_id}
+  - name: catalog.shelf.Publish
+    input:
+      - {name: catalog_id, type: catalog.shelf.CatalogId}
+      - {name: items, type: List<catalog.shelf.ItemRef>}
+    outcomes:
+      - name: published
+        moves: catalog.shelf.Catalog.publish
+        instance: catalog_id
+        emits: [catalog.shelf.CatalogPublished]
+        payload: {catalog.shelf.CatalogPublished: {catalog_id: input.catalog_id}}
+        affects:
+          - entity: catalog.shelf.Item
+            each: {in: input.items, as: i, repeated: last_wins}
+            instance: i.item_id
+            moves: catalog.shelf.Item.list
+      - {name: wrong-state, wrong_state: true, error: catalog.shelf.WrongState}
+  - name: catalog.shelf.Archive
+    input:
+      - {name: catalog_id, type: catalog.shelf.CatalogId}
+    outcomes:
+      - name: archived
+        moves: catalog.shelf.Catalog.archive
+        instance: catalog_id
+        emits: [catalog.shelf.CatalogArchived]
+        payload: {catalog.shelf.CatalogArchived: {catalog_id: input.catalog_id}}
+      - {name: wrong-state, wrong_state: true, error: catalog.shelf.WrongState}
+views:
+  - name: catalog.shelf.Items
+    source: catalog.shelf.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: catalog.shelf.ItemId}
+      - {name: state, type: catalog.shelf.Item.State}
+  - name: catalog.shelf.Catalogs
+    source: catalog.shelf.Catalog
+    consistency: read_your_writes
+    fields:
+      - {name: catalog_id, type: catalog.shelf.CatalogId}
+      - {name: state, type: catalog.shelf.Catalog.State}

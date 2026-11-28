@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives
-revision: 3
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T03:30:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-24T03:30:51Z", actor: "human:timo", revision: 3}
@@ -372,3 +372,67 @@ Under `Fixed` (it moves to `Changed`, naming the rows, if a committed pin row mo
   for an open set of identifiers a leaf must differ in. (A) default, taken: not in this story; left out and deferred to the next source-format decision, as a
   `decision-blocker` for the next source-format decision, naming this story's evidence. (B) in this
   story, with its format step.
+
+- D153 (the coordinator, 2026-11-26): N90B and N95 ship in 0.99.6, N93 in 0.99.7, each a patch release from the previous tag.
+
+## Reported after 0.99.0
+
+Reported 2026-11-25 on 0.99.0 and later: a further instance still sent a placeholder at a leaf that
+only presence reads touch. The leaf is read through `defined(…)` in the creating command's own
+guard and through `defined(…)` in another command's guard on the stored row.
+
+Cause. `decided_by` in `crates/verify/ess-conformance/src/synthesize.rs` counted a stored-row
+guard's `defined()`-only read as a read of the value, so the leaf was told apart and the further
+instance kept the search's witness there instead of the example. 0.99.0 narrowed the own-guard
+read only and left this one. Wrong since 0.99.0; a pinned suite of such a model moves when it is
+synthesized again.
+
+Red test `f103c32ea9`:
+`a_further_create_keeps_the_example_at_a_leaf_a_stored_row_guard_reads_only_for_presence`
+(`suffixed_instance_inputs.rs`).
+
+In the reported model every placeholder send sat in a setup step, none in the refusing step (the
+reporter, 2026-11-25).
+
+## Delivery
+
+Red test `f103c32ea9`, fix `0951bf9362864fce743a82adaf4db67cc5b44d36` on the branch
+`fix/n90-a-presence-read-keeps-the-example-at-a-further-instance`, pushed. `decided_by` now splits
+by-value reads from `defined()`-only reads; `told_apart` returns the presence-only copies apart;
+`exampled` keeps such a leaf only where the example and the further witness disagree on its
+presence. The red test is green (18 tests in the target).
+
+Gate of the branch, third run: every step exit 0 (stamp, `task fmt-check`, clippy,
+`suffixed_instance_inputs`, the bytes table and its slow models and components lanes, `cli_read`,
+`adversary_related_values_all_bytes`, `external_beside_held_guard`, `adversary_461_pass1`,
+`subject_fact_complete_refusal`, `declared_behaviour`, `synthesis`); no committed byte row moved.
+No pull request yet. A pinned suite of a model with this shape moves when it is synthesized
+again.
+
+Tagged 0.99.4 on `daae8ebd1d` (branch `hotfix/0.99.4`, release commit `78c4ba842c`); the tag's
+release run 45621137834 takes the full gate and was in progress when this was written.
+
+0.99.4 is released (2026-11-25): the tag's release run 45621137834 took the full gate and ended in
+success; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.4 with four
+archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
+`hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
+written.
+
+0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
+
+Second finding: branch `fix/n90b-a-further-instance-in-an-update-setup-keeps-the-example`, from tag 0.99.5, pushed. Red test `5cd1402f01`
+(`suffixed_instance_inputs::a_further_witness_of_an_update_setup_keeps_the_example_at_a_leaf_read_only_for_presence`), fix `3d3402acb5`. The red test is green; `suffixed_instance_inputs` 19 tests. The gate ran every step with exit 0 (stamp, `task fmt-check`, clippy, `suffixed_instance_inputs`, `subject_fact_complete_refusal`, `stored_map_entries`, `adversary_464_pass1`, the bytes table with its slow lanes, `cli_read`, `adversary_related_values_all_bytes`, `external_beside_held_guard`, `tutorial_page`); no committed byte row moved; the longest test was 48.8 s. A pinned suite of a model with this shape moves when it is synthesized again. Planned for 0.99.6.
+
+N90B: 0.99.6 tagged 2026-11-26 05:32 CET on `2c6fceb874` (tag object `d041a3f0b2`), release run 45755826965; release pending when written.
+
+## Second finding
+
+Reported 2026-11-25 on 0.99.4 by a downstream application: in a model whose saving command updates a row, four steps send a placeholder at a leaf that only presence reads touch, where the example holds the leaf.
+
+Verdict, per step. Two steps are a defect: the setup steps, the committing command's two scenarios. Two are expected: the steps under test, the saving command's stale-row and other-account scenarios, where rule `ess/23` (the complete refusal, `refused_writes_apart` in `crates/verify/ess-conformance/src/synthesize/subject_fact.rs`) moves a leaf that an accepting sibling copies into a stored field the row already holds, a text to its placeholder. In those two the stored copy of the leaf holds the example, so the refusal must move that leaf to show a wrong write.
+
+Cause of the defect, since 0.37.0 (`bcd7b19318`; the 0.99.0 example rule never reached it). The setup is an update arranged on an existing row by the stored-row search. The saving command compares a row field with an input, so `inputs_for` (`subject_fact.rs`, lines 2447 to 2451 at 0.99.5) appends the further witnesses after the plain ones, and the plain ones cannot give the member that a by-value read leaves out the example, so the whole further witness is sent, placeholder included. The 0.99.0 rule runs only in `exampled` (`synthesize.rs`), which is called for a further creation (`created_by`); no condition of it fails, because this path never reaches it. The suffix, the nesting and the stored copy are not the cause.
+
+Reduction, on the 0.99.5 binary: a generic model whose saving command compares a row field with an input and reads one text leaf only through `not defined(...)` sends that leaf as its placeholder in the setup; the same model without the row-input comparison sends the example.
+
+Fix: `exampled_witness` (new, beside `exampled` in `synthesize.rs`) builds, for each further witness `inputs_for` appends, a variant with the example back at every example leaf that no decision tells apart (input guards by value, the row comparisons' input paths, `told_apart` over the command's branches on the entity, `decision_inputs`), and `inputs_for` tries it before the raw witness; `admitted()` still filters it.

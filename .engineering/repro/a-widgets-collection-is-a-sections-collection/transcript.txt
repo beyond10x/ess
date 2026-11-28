@@ -1,0 +1,34 @@
+$ ess --version
+ess 0.99.9
+
+$ ess ui check --path ui/states.ui.yaml --model spec   (states on the collection in a widget body, and on a section's own collection)
+error document_loads widgets/item_list/body/rows: `collection`: unknown field `states`, expected one of `reads`, `columns`, `sort`, `style`, `selection`, `row_actions`, `bulk_actions`, `actions`, `expand`, `item`, `reorder`, `group_by`, `group_order`, `show_empty_groups`
+ui/states.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess ui check --path ui/section-states.ui.yaml --model spec   (states on the section that draws the widget)
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/section-states.ui.yaml: 0 error(s), 0 warning(s)
+
+$ ess ui test --path ui/section-states.ui.yaml --model spec tests/empty.yaml   (the widget reads no row)
+failed  a widget that reads no row shows the empty message its section declares (step 2)
+        expect at pages/home/sections/items: expected pages/home/sections/items to be empty; it is ready:
+        ┌ items ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+          label  kind page 1/1 · 0 rows
+0 passed, 1 failed
+
+$ ess ui test --path ui/widget.ui.yaml --model spec tests/addressing.yaml
+passed  the collection of a section is addressed with its rows
+failed  the collection nested in a widget is addressed (step 2)
+        expect at pages/home/sections/items/body/rows: pages/home/sections/items/body/rows: the terminal draws a collection nested inside a record, a tab or a node without addressing it or its rows; address a section's or an overlay's own collection instead
+failed  a row of the collection nested in a widget is addressed (step 2)
+        expect at pages/home/sections/items/body/rows/rows/it-02: pages/home/sections/items/body/rows/rows/it-02: the terminal draws a collection nested inside a record, a tab or a node without addressing it or its rows; address a section's or an overlay's own collection instead
+passed  the section of the widget shows a row
+2 passed, 2 failed
+
+$ ess ui test --path ui/widget.ui.yaml --model spec tests/width.yaml   (a label longer than the screen)
+passed  a long label is read whole at a row of a section's own collection
+failed  the same label is read at the section that draws the widget (step 2)
+        expect at pages/home/sections/items: expected "zebra" at pages/home/sections/items; it shows:
+        ┌ items ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+          label                                                                                     kind   A label that runs far past the width of any terminal screen
+1 passed, 1 failed

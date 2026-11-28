@@ -42,7 +42,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:34:09Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:34:10Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":1}}}
@@ -154,3 +154,10 @@ source format, after `story:navigation-reaches-any-depth-in-guards`.
 
 github:beyond10x/ess#564 (downstream finding 11)
 
+## A second consumer, 2026-11-28: a comparison of two related rows, kept as an `external:` cause
+
+A downstream meta-model specification (ess 0.99.9) compares a field of one row the input names
+with a field of another and keeps the rule as an `external:` cause, which the suite does not
+check. The neutral model, the refusal on 0.99.9 and the workaround's cost are in
+`story:a-related-predicate-compares-its-row-with-another-related-row`; the spelling of the second
+row is the open point between these two stories.

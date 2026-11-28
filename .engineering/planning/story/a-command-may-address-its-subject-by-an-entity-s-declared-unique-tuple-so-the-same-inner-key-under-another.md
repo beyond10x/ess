@@ -14,7 +14,7 @@ relations:
 - depends_on: story:an-identity-may-be-a-composite-of-fields
 - informed_by: architecture-decision-record:a-compound-key-is-a-uniqueness-constraint-first
 - informed_by: story:an-update-addresses-its-record-by-an-optional-identity-or-a-unique-field
-revision: 2
+revision: 4
 ---
 ## Need
 
@@ -132,3 +132,7 @@ in (`ess/38` while it is open and unreleased); below it every new key is refused
 AC9-D1 (ARCHITECTURE): how a command addresses a row by a tuple. A: by the declared `unique` group. B: record-typed identity (ADR option B). C: composite identity (ADR option A). D: decline, with the synthetic-key idiom. Open, with the owner (decided by nobody yet, 2026-11-24): the default A is not taken, and the story stays a draft until the owner answers.
 
 AC9-D2: the HTTP route of a tuple-addressed command. A: both members as path segments or inputs, as the binding declares. B: a binding may carry one member in the path and one in the query. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation). It applies to the route of a tuple-addressed command, which exists only once AC9-D1 is answered.
+
+- AC9-D1: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.

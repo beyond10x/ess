@@ -107,10 +107,18 @@ pub(super) fn send_as_first(ir: &EssIr, scenario: &mut ConformanceScenario) {
 /// model can choose for it: the caller is no value there. The ordinary suite reaches it under an
 /// assignment ([`synthesize`]), and so does a cell, sending every command as `first`, and then
 /// arranging as `first` and acting as `second`, the refusal for a caller who is not the row's.
+///
+/// The two models keep what their searches find for as long as the readings live, and each use
+/// holds that memory ([`super::held`]): every cell asks them again. Held by none, a model with one
+/// caller-reading command searched and arranged every row again for every cell, where the same
+/// model without the read answered from the memory of the model itself.
 pub(super) struct Readings {
     callers: Callers,
-    first: EssIr,
-    second: EssIr,
+    first: std::sync::Arc<EssIr>,
+    second: std::sync::Arc<EssIr>,
+    /// The memory of `first` and `second` between two of their uses. Not `Send`: it pops the stack
+    /// of the thread that opened it.
+    _kept: readings::Kept,
 }
 
 impl Readings {
@@ -127,12 +135,14 @@ impl Readings {
                 written(ir, command, &callers.for_command(ir, who, &command.name))
             })
         };
-        let first = read_as(Who::First);
-        let second = read_as(Who::Second);
+        let first = std::sync::Arc::new(read_as(Who::First));
+        let second = std::sync::Arc::new(read_as(Who::Second));
+        let kept = readings::Kept::open(&[&first, &second]);
         Some(Self {
             callers,
             first,
             second,
+            _kept: kept,
         })
     }
 
@@ -3990,5 +4000,108 @@ views:
         let expected = "a test panic in the reading of `demo.notes.CloseNote`";
         assert_eq!(message(one).as_deref(), Some(expected));
         assert_eq!(message(four).as_deref(), Some(expected));
+    }
+
+    /// A chain of `n` item kinds, each made only beside the one before it, all sent by one actor
+    /// that declares an attribute, beside a command whose response is disclosed once: so every
+    /// branch of every command is a follow-up cell. Each `Close<i>` has a branch no row reaches;
+    /// the first `k` also refuse a caller who is not the item's owner, reading the caller.
+    fn chain(n: usize, k: usize) -> String {
+        use std::fmt::Write as _;
+        let mut text = String::from(
+            "format: ess/21\nsystem: demo\nversion: v1\nsummary: A generated chain.\n\
+             domain: demo.chain\ntypes:\n  - {name: demo.chain.AccountId, kind: newtype, of: Uuid}\n",
+        );
+        let (mut entities, mut commands, mut events, mut granted) =
+            (String::new(), String::new(), String::new(), Vec::new());
+        for i in 0..n {
+            let _ = writeln!(
+                text,
+                "  - {{name: demo.chain.Item{i}Id, kind: newtype, of: Uuid}}"
+            );
+            let _ = write!(
+                entities,
+                "  - name: demo.chain.Item{i}\n    identity: {{name: item_id, type: demo.chain.Item{i}Id}}\n    fields:\n      - {{name: owner, type: demo.chain.AccountId}}\n      - {{name: note, type: Optional<String>}}\n    lifecycle:\n      initial: Open\n      states: [Open, Closed]\n      terminal: [Closed]\n      transitions:\n        - {{name: close, from: [Open], to: Closed}}\n"
+            );
+            let (parent, orphan) = if i == 0 {
+                (String::new(), String::new())
+            } else {
+                (
+                    format!("      - {{name: parent, type: demo.chain.Item{}Id}}\n", i - 1),
+                    "      - name: orphan\n        when_related: {via: input.parent, exists: false}\n        error: demo.chain.Refused\n".to_owned(),
+                )
+            };
+            let owner = if i < k {
+                "      - name: forbidden\n        when_subject: {predicate: owner != caller.account_id}\n        error: demo.chain.Refused\n"
+            } else {
+                ""
+            };
+            let _ = write!(
+                commands,
+                "  - name: demo.chain.Create{i}\n    input:\n      - {{name: owner, type: demo.chain.AccountId}}\n{parent}    outcomes:\n{orphan}      - name: created\n        creates: demo.chain.Item{i}\n        instance: item_id\n        sets: {{owner: input.owner}}\n        emits: [demo.chain.Item{i}Created]\n        payload:\n          demo.chain.Item{i}Created: {{item_id: {{generated: true}}, owner: input.owner}}\n  - name: demo.chain.Close{i}\n    input:\n      - {{name: item_id, type: demo.chain.Item{i}Id}}\n    outcomes:\n      - name: noted\n        when_subject: {{predicate: defined(note)}}\n        error: demo.chain.Refused\n{owner}      - name: closed\n        moves: demo.chain.Item{i}.close\n        instance: item_id\n        emits: [demo.chain.Item{i}Closed]\n        payload:\n          demo.chain.Item{i}Closed: {{item_id: input.item_id}}\n"
+            );
+            let _ = write!(
+                events,
+                "  - name: demo.chain.Item{i}Created\n    fields:\n      - {{name: item_id, type: demo.chain.Item{i}Id}}\n      - {{name: owner, type: demo.chain.AccountId}}\n  - name: demo.chain.Item{i}Closed\n    fields:\n      - {{name: item_id, type: demo.chain.Item{i}Id}}\n"
+            );
+            granted.push(format!("demo.chain.Create{i}"));
+            granted.push(format!("demo.chain.Close{i}"));
+        }
+        text.push_str("entities:\n");
+        text.push_str(&entities);
+        let _ = write!(
+            text,
+            "actors:\n  - name: demo.chain.User\n    attributes:\n      - {{name: account_id, type: demo.chain.AccountId}}\n    may: [demo.chain.Issue, {}]\n  - name: demo.chain.Viewer\n    may: [demo.chain.Issue]\n",
+            granted.join(", ")
+        );
+        text.push_str(
+            "commands:\n  - name: demo.chain.Issue\n    response: [{name: secret, type: String}]\n    outcomes: [{name: issued, returns: true, one_time_response: [secret]}]\n",
+        );
+        text.push_str(&commands);
+        text.push_str("errors:\n  - name: demo.chain.Refused\n    summary: Refused.\nevents:\n");
+        text.push_str(&events);
+        text
+    }
+
+    /// The witness searches a synthesis of [`chain`] runs, on one thread, and how many of them asked
+    /// a question already answered about the same model.
+    fn searches(n: usize, k: usize) -> (usize, usize) {
+        let ir = compiled(&chain(n, k));
+        let (synthesis, executed, repeated) =
+            crate::witness_memo::counted(|| super::super::synthesize(&ir));
+        assert!(!synthesis.suite.scenarios.is_empty());
+        (executed, repeated)
+    }
+
+    /// One command reading the caller turns the one-time follow-up cells to the two caller
+    /// readings (`disclosure`), which every cell asks again. The work of the read is the questions
+    /// it changes: none is asked twice, the whole stays a constant factor of the same model without
+    /// the read, and each further read adds no more than the first did.
+    #[test]
+    fn one_command_that_reads_the_caller_costs_a_constant_factor_of_the_model_without_the_read() {
+        let mut one = (0, 0);
+        for n in [4, 8] {
+            let (without, again) = searches(n, 0);
+            assert_eq!(again, 0, "n = {n}, no read: no question asked twice");
+            let (with, again) = searches(n, 1);
+            assert_eq!(
+                again, 0,
+                "n = {n}, one read: {again} of {with} searches asked a question answered before \
+                 ({without} without the read)"
+            );
+            assert!(
+                with <= 2 * without,
+                "n = {n}: one read runs {with} searches, the model without it {without}"
+            );
+            one = (with, with - without);
+        }
+        let (four, again) = searches(8, 4);
+        assert_eq!(again, 0, "n = 8, four reads: no question asked twice");
+        assert!(
+            four - one.0 <= 3 * one.1,
+            "three more reads add {} searches, the first added {}",
+            four - one.0,
+            one.1
+        );
     }
 }

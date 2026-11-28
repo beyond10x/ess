@@ -61,7 +61,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | one command over several entities | `CommandSpansEntities` | No form: an operation belongs to one entity definition |
 | a creation beside an update in one command | `MixedEntrypointUnsupported` | No form: creation and operation are separate entity-core entrypoints |
 | a second command creating one entity | `MultipleCreationCommands` | No form: an entity definition has one unnamed creation entrypoint |
-| an instance binding with no single source | `AmbiguousInstanceBinding` | No form: the host loads one instance, from one input field, before a branch is chosen |
+| an instance binding with no single source | `AmbiguousInstanceBinding` | No form: the host loads one instance, from one top-level input field, before a branch is chosen; an `instance:` that names a member of a struct input has no single source |
 | an accepting outcome with no subject | `AcceptingOutcomeWithoutSubject` | No form: entity-core would create or revise the instance where ESS changes nothing |
 | `Optional` below a list or a map | `NullableElementUnsupported` | entity-core: a JSON `null` element; `required` says only whether a member is present |
 | a recursive type | `RecursiveTypeUnsupported` | entity-core: a typed definition reference; field definitions nest by value |
@@ -109,7 +109,7 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `CommandSpansEntities` | one command over several entities | The command's outcomes act on more than one entity. |
 | `MixedEntrypointUnsupported` | a creation beside an update in one command | The command both creates its entity and changes an existing instance. |
 | `MultipleCreationCommands` | a second command creating one entity | Two commands of the component create the same entity. |
-| `AmbiguousInstanceBinding` | an instance binding with no single source | The instance a command acts on is not named by one input field, or a creation does not observe its identity in an emitted event. |
+| `AmbiguousInstanceBinding` | an instance binding with no single source | The instance a command acts on is not named by one top-level input field (a member of a struct input is not one), or a creation does not observe its identity in an emitted event. |
 | `AcceptingOutcomeWithoutSubject` | an accepting outcome with no subject | An accepting outcome of an entity command names no subject. |
 | `NullableElementUnsupported` | `Optional` below a list or a map | A list item or a map value is `Optional`. |
 | `RecursiveTypeUnsupported` | a recursive type | A lowered field's type reaches itself. |
