@@ -49,7 +49,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/stored_rows_decided_once_work.rs
-revision: 25
+revision: 26
 ---
 ## Outcome
 
@@ -233,3 +233,31 @@ model alone and wants building once; a step list wants sharing, not cloning, whe
 The hotfix is delivered as a tag, not yet as a release. 0.99.9 tagged 2026-11-27 18:00 CET on `88d3d695df` (`hotfix/0.99.9`); release run [46038774492](https://github.com/beyond10x/ess/actions/runs/46038774492) ("Release preparation") queued, and release 0.99.9 not found, at 18:10 CET. "Shared source gates" on the tag passed (run [46038774677](https://github.com/beyond10x/ess/actions/runs/46038774677)). A release that carries the fix names this story in its pull-request line. Not "published" until the release exists with its four archives and `SHA256SUMS`.
 
 [0.99.9](https://github.com/beyond10x/ess/releases/tag/0.99.9) published 2026-11-27 21:28 CET (bot; four archives and `SHA256SUMS`). An adopter measured 223 s on a host at load 20-22 against 343 s on 0.99.8, same suite bytes.
+
+## A second adopter after 0.99.9, 2026-11-28
+
+A second adopter measured a slowdown from 0.99.2 to 0.99.9 on 2026-11-28, on a specification of
+reusable building blocks (32 files: a core and four packs), with
+`ess verify conform synthesize --compact --strict-requires --jobs 4`, one run each on a shared
+host under load, no other change between the runs:
+
+| release | wall time | peak resident memory | scenarios | refusals |
+|---|---|---|---|---|
+| 0.99.2 | 70 s | not measured | 913 | 293 |
+| 0.99.9 | 319 s | 9.4 GB | 920 | 287 |
+
+That is 77 ms per scenario on 0.99.2 and 347 ms on 0.99.9 (4.5 times), for 7 more scenarios. A
+repeat on 0.99.9 on a copy of the specification with one invariant added took 337 s. The figures
+are one sample each on a loaded host, as the earlier ones of this story, and the suite bytes of the
+two releases were not compared.
+
+They are over the bounds of the 0.99.8 section's acceptance above: at most twice 0.99.7's 57 ms per
+scenario, and under 4 GB. 0.99.9 carries the fix for that section, so on this specification the
+slowdown the fix targeted is still there after it. The first adopter's own run on 0.99.9 (223 s
+against 343 s on 0.99.8, same suite bytes) also stays over the 300 s wanted.
+
+No neutral reproduction yet: the specification is private. The acceptance of the 0.99.8 section (a
+work-bound test on a generic model with long step lists, and a before and after on
+`examples/billing`) applies to this adopter too, and the adopter's own run is the check that the
+figure comes down. A bisect between 0.99.2 and 0.99.9 with the timing as the test is the first
+step, as `AGENTS.md` asks of a step that got slower.
