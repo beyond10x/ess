@@ -34,6 +34,14 @@
 - `ess generate synthesize --target rust` and `--target web` emit a binding whose mapping copies a required event member into a command input of type `Optional` of the same type (a `String`, a scalar, a newtype identifier or a struct) and passes it as `Some(event.<member>.clone())`, as the Go target wraps it; both refused the whole workspace with "emits a plain clone of `<T>` for `<input>` of type `Optional<T>`". A newtype copied into an `Optional` of another newtype is still refused by validation as `type_mismatch`, and a copy that adds more than one `Optional` level by both targets.
 - `ess generate synthesize --target rust` and `--target go` select by an enum member the way the predicate compares it, by the variant's name: Rust printed the variant's internal record and the generated crate failed to build while the plan said generated, and Go compared the variant's wire spelling, so a variant declaring a wire spelling was never selected.
 
+## [0.99.10] — 2026-11-28
+
+### Fixed
+
+- `ess generate ui --target react` writes a fixture view with no rows as `rows: []` in `src/fixtures.ts`. It wrote `rows: [ , ]`, an array of one `undefined` that `tsc` refused with TS2322 once for each such view, so the generated project did not type-check.
+
+The fix changes no format key.
+
 ## [0.99.9] — 2026-11-27
 
 ### Fixed

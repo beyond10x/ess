@@ -92,3 +92,58 @@ fn without_a_fixtures_dir_a_placeholder_fixture_is_relative_to_the_document() {
         assert!(ts.contains("from-the-fixture-dir"), "{fixtures:?}: {ts}");
     }
 }
+
+/// One view, answered by a fixture file with no rows.
+const EMPTY_VIEW: &str = "format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {views: {t.Quarters: quarters.json}}
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: plan
+  sections: [{name: all, pages: [plan]}]
+pages:
+  plan:
+    kind: list_page
+    title: Plan
+    sections:
+      - name: quarters
+        component: collection
+        reads: {view: t.Quarters}
+        columns: [quarter]
+";
+
+/// A fixture view with no rows is written as `rows: []`, never as `rows: [ , ]`, and the
+/// generated project type-checks.
+#[test]
+fn a_fixture_view_with_no_rows_is_written_as_an_empty_array() {
+    let dir = scratch("empty-rows");
+    std::fs::write(
+        dir.join("quarters.json"),
+        r#"{"view": "t.Quarters", "rows": []}"#,
+    )
+    .expect("the fixture is written");
+    let document = ess_ui::load_str(EMPTY_VIEW).unwrap_or_else(|error| panic!("{error}"));
+    let project = dir.join("app");
+    let files = ess_ui_react::generate(&document, &dir, &project)
+        .unwrap_or_else(|error| panic!("the document generates: {error}"));
+    let ts = files
+        .files
+        .get("src/fixtures.ts")
+        .expect("the project has src/fixtures.ts");
+    assert!(ts.contains(r#""t.Quarters": { rows: [] },"#), "{ts}");
+
+    let output = std::process::Command::new("tsc")
+        .args(["-p", "tsconfig.offline.json", "--noEmit"])
+        .current_dir(&project)
+        .output()
+        .expect("tsc is on PATH");
+    assert!(
+        output.status.success(),
+        "the generated project type-checks:\n{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
