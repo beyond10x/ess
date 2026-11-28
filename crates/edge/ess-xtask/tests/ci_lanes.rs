@@ -6905,12 +6905,6 @@ ess-synth::union_unit_variants_adversary the_go_target_vets_an_optional_union_wi
 ess-synth::view_params_served a_param_bound_by_the_ui_binding_reaches_the_port_through_both_servers 87
 ess-synth::view_params_served a_request_head_past_the_shared_bound_is_a_431_from_both_servers 71
 ess-ui-test::adversary_pass2 a_move_of_exactly_the_limit_is_played 63
-schema-contract::binary64_adversary native_rust_composition_preserves_identity_in_both_number_feature_modes 72
-schema-contract::normalization_binary64_targets native_rust_executes_finite_binary64_and_retained_documents 75
-schema-contract::normalization_positional_targets native_rust_executes_position_and_binary64_contracts 86
-schema-contract::normalization_raw_adversary generated_rust_runs_adversarial_lexical_cases 63
-schema-contract::normalization_raw_targets native_rust_captures_and_decodes_retained_documents 78
-schema-contract::normalization_rust standalone_rust_target_executes_model_owned_wire_records 70
 ";
 
 /// The tests the nextest profile `slow` gives more than 60 s, in the form of [`CI_EXCEPTIONS`].

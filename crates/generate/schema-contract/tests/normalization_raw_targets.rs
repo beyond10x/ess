@@ -1,13 +1,22 @@
 //! Native format-4 adapters execute the same independent lexical corpus, serially.
+//!
+//! No test builds an adapter: `task schema-contract-native-crates` builds the crate of
+//! [`native_crates`] once, before the tests (`support/native_crate.rs`).
 
 #[path = "fixtures/normalization_raw.rs"]
 mod fixture;
 
+#[path = "support/native_crate.rs"]
+mod native_crate;
+use native_crate::NativeCrate;
+
 use serde_json::json;
 #[cfg(feature = "go-typecheck")]
 use serde_json::Value;
+#[cfg(feature = "go-typecheck")]
 use std::{fs, path::Path, process::Command};
 
+#[cfg(feature = "go-typecheck")]
 fn write_target(root: &Path, files: std::collections::BTreeMap<String, String>) {
     for (path, source) in files {
         let path = root.join(path);
@@ -16,50 +25,38 @@ fn write_target(root: &Path, files: std::collections::BTreeMap<String, String>) 
     }
 }
 
+fn adapter() -> NativeCrate {
+    let target = fixture::plan().rust("normalization_adapter").unwrap();
+    assert_eq!(json!(target.report)["format"], "ess-normalization-target/3");
+    let mut files = target.files;
+    files.insert(
+        "tests/cases.json".to_owned(),
+        json!(fixture::cases()).to_string(),
+    );
+    files.insert(
+        "tests/behavior.rs".to_owned(),
+        include_str!("fixtures/normalization_raw_rust_tests.rs.txt").to_owned(),
+    );
+    NativeCrate::new("normalization_raw_targets", files)
+}
+
+/// Every adapter a test of this binary runs.
+fn native_crates() -> Vec<NativeCrate> {
+    vec![adapter()]
+}
+
+/// Writes the sources of every crate of [`native_crates`] for `task
+/// schema-contract-native-crates` to build. A step of that task, never a test of the suite.
+#[test]
+#[ignore = "generator: `task schema-contract-native-crates` runs it before the tests"]
+fn write_the_sources_of_every_native_crate() {
+    native_crate::write_sources(native_crates());
+}
+
 #[test]
 fn native_rust_captures_and_decodes_retained_documents() {
-    let plan = fixture::plan();
-    let target = plan.rust("normalization_adapter").unwrap();
-    assert_eq!(json!(target.report)["format"], "ess-normalization-target/3");
-    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("normalization-raw-rust-{}", std::process::id()));
-    write_target(&root, target.files);
-    fs::create_dir_all(root.join("tests")).unwrap();
-    fs::write(
-        root.join("tests/cases.json"),
-        json!(fixture::cases()).to_string(),
-    )
-    .unwrap();
-    fs::write(
-        root.join("tests/behavior.rs"),
-        include_str!("fixtures/normalization_raw_rust_tests.rs.txt"),
-    )
-    .unwrap();
-    for features in [None, Some("serde_json/arbitrary_precision")] {
-        let mut command = Command::new(env!("CARGO"));
-        command
-            .args(["test", "--offline", "--quiet", "--manifest-path"])
-            .arg(root.join("Cargo.toml"))
-            .env(
-                "CARGO_TARGET_DIR",
-                Path::new(env!("CARGO_TARGET_TMPDIR")).join("normalization-rust-target"),
-            );
-        if let Some(features) = features {
-            command.args(["--features", features]);
-        }
-        let output = command.output().unwrap();
-        assert!(
-            output.status.success(),
-            "{features:?}: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        eprintln!(
-            "native Rust {features:?}: {} cases, exit {}",
-            fixture::cases().len(),
-            output.status
-        );
-    }
+    adapter().run(&[]);
+    eprintln!("native Rust: {} cases", fixture::cases().len());
 }
 
 #[cfg(feature = "go-typecheck")]

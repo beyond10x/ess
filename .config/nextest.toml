@@ -550,36 +550,6 @@ slow-timeout = { period = "71s", terminate-after = 1 }
 filter = "binary_id(ess-ui-test::adversary_pass2) & test(=a_move_of_exactly_the_limit_is_played)"
 slow-timeout = { period = "63s", terminate-after = 1 }
 
-# 59.352 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
-[[profile.ci.overrides]]
-filter = "binary_id(schema-contract::binary64_adversary) & test(=native_rust_composition_preserves_identity_in_both_number_feature_modes)"
-slow-timeout = { period = "72s", terminate-after = 1 }
-
-# 62.225 s on CI, run 45879426222 (over 60 s in 2 of 14 runs)
-[[profile.ci.overrides]]
-filter = "binary_id(schema-contract::normalization_binary64_targets) & test(=native_rust_executes_finite_binary64_and_retained_documents)"
-slow-timeout = { period = "75s", terminate-after = 1 }
-
-# 71.217 s on CI, run 45996485809 (over 60 s in 6 of 14 runs)
-[[profile.ci.overrides]]
-filter = "binary_id(schema-contract::normalization_positional_targets) & test(=native_rust_executes_position_and_binary64_contracts)"
-slow-timeout = { period = "86s", terminate-after = 1 }
-
-# 52.246 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
-[[profile.ci.overrides]]
-filter = "binary_id(schema-contract::normalization_raw_adversary) & test(=generated_rust_runs_adversarial_lexical_cases)"
-slow-timeout = { period = "63s", terminate-after = 1 }
-
-# 64.773 s on CI, run 45879426222 (over 60 s in 2 of 14 runs)
-[[profile.ci.overrides]]
-filter = "binary_id(schema-contract::normalization_raw_targets) & test(=native_rust_captures_and_decodes_retained_documents)"
-slow-timeout = { period = "78s", terminate-after = 1 }
-
-# 58.046 s on CI at most, under 60 s in all 14 runs; held at 1.2 times it, at most 72 s
-[[profile.ci.overrides]]
-filter = "binary_id(schema-contract::normalization_rust) & test(=standalone_rust_target_executes_model_owned_wire_records)"
-slow-timeout = { period = "70s", terminate-after = 1 }
-
 # The slow lane is held to the same 60 s, with its own exceptions from 12 runs of its job.
 [profile.slow]
 slow-timeout = { period = "60s", terminate-after = 1 }

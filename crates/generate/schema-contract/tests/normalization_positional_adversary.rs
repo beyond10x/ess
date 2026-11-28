@@ -4,6 +4,10 @@ use schema_contract::bundle::{import, Bundle, Dialect};
 use schema_contract::realize::normalize::{Plan, Root};
 use serde_json::{json, Value};
 
+#[path = "support/native_crate.rs"]
+mod native_crate;
+use native_crate::NativeCrate;
+
 fn tuple() -> Value {
     json!({"type":"array","prefixItems":[{"type":"string"},{"type":"string"}],"items":false,"minItems":2,"maxItems":2})
 }
@@ -288,6 +292,7 @@ fn source_refinements_and_stage_identity_remain_checked() {
     );
 }
 
+#[cfg(feature = "go-typecheck")]
 fn write_generated(root: &std::path::Path, files: std::collections::BTreeMap<String, String>) {
     for (name, source) in files {
         let path = root.join(name);
@@ -296,6 +301,7 @@ fn write_generated(root: &std::path::Path, files: std::collections::BTreeMap<Str
     }
 }
 
+#[cfg(feature = "go-typecheck")]
 fn command_output(root: &std::path::Path, label: &str, command: &mut std::process::Command) {
     let output = command.output().unwrap();
     let log = format!(
@@ -309,53 +315,42 @@ fn command_output(root: &std::path::Path, label: &str, command: &mut std::proces
     eprintln!("{log}");
 }
 
-#[test]
-fn native_rust_preserves_independent_token_cases_and_checked_metadata() {
-    use std::{fs, path::Path, process::Command};
-    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("positional-adversary-rust-{}", std::process::id()));
+/// The adapter [`adversarial_plan`] generates, with the independent cases and their tests.
+fn adversarial_adapter() -> NativeCrate {
     let target = adversarial_plan().rust("positional_adversary").unwrap();
     assert_eq!(json!(target.report)["format"], "ess-normalization-target/3");
-    write_generated(&root, target.files);
-    fs::write(
-        root.join("cases.json"),
+    let mut files = target.files;
+    files.insert(
+        "cases.json".to_owned(),
         json!(independent_cases()).to_string(),
-    )
-    .unwrap();
-    let path = root.join("src/lib.rs");
-    let mut source = fs::read_to_string(&path).unwrap();
-    source.push_str(include_str!("fixtures/positional_adversary_rust.rs.txt"));
-    fs::write(path, source).unwrap();
-    command_output(
-        &root,
-        "lock",
-        Command::new(env!("CARGO"))
-            .args(["generate-lockfile", "--offline", "--manifest-path"])
-            .arg(root.join("Cargo.toml")),
     );
-    for feature in [None, Some("serde_json/arbitrary_precision")] {
-        let mut command = Command::new(env!("CARGO"));
-        command
-            .args(["test", "--offline", "--locked", "--manifest-path"])
-            .arg(root.join("Cargo.toml"))
-            .env(
-                "CARGO_TARGET_DIR",
-                Path::new(env!("CARGO_TARGET_TMPDIR")).join("normalization-rust-target"),
-            );
-        if let Some(feature) = feature {
-            command.args(["--features", feature]);
-        }
-        command.args(["--", "--nocapture", "--test-threads=1"]);
-        command_output(
-            &root,
-            if feature.is_some() {
-                "arbitrary"
-            } else {
-                "default"
-            },
-            &mut command,
-        );
-    }
+    files
+        .get_mut("src/lib.rs")
+        .expect("a generated src/lib.rs")
+        .push_str(include_str!("fixtures/positional_adversary_rust.rs.txt"));
+    NativeCrate::new("normalization_positional_adversary", files)
+}
+
+/// Every adapter a test of this binary runs. `task schema-contract-native-crates` builds each
+/// once, before the tests (`support/native_crate.rs`).
+fn native_crates() -> Vec<NativeCrate> {
+    vec![adversarial_adapter()]
+}
+
+/// Writes the sources of every crate of [`native_crates`] for `task
+/// schema-contract-native-crates` to build. A step of that task, never a test of the suite.
+#[test]
+#[ignore = "generator: `task schema-contract-native-crates` runs it before the tests"]
+fn write_the_sources_of_every_native_crate() {
+    native_crate::write_sources(native_crates());
+}
+
+#[test]
+fn native_rust_preserves_independent_token_cases_and_checked_metadata() {
+    eprintln!(
+        "{}",
+        adversarial_adapter().run(&["--nocapture", "--test-threads=1"])
+    );
 }
 
 #[cfg(feature = "go-typecheck")]

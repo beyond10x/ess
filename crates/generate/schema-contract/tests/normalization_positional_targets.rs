@@ -1,13 +1,21 @@
 //! Actual format-6 targets execute positional and inherited Binary64 corpora serially.
+//!
+//! No test builds an adapter: `task schema-contract-native-crates` builds every crate of
+//! [`native_crates`] once, before the tests (`support/native_crate.rs`).
 
 use fixture::binary64;
 #[path = "fixtures/normalization_positional.rs"]
 mod fixture;
 
+#[path = "support/native_crate.rs"]
+mod native_crate;
+use native_crate::NativeCrate;
+
 use schema_contract::realize::normalize::Plan;
 use serde_json::json;
 #[cfg(feature = "go-typecheck")]
 use serde_json::Value;
+#[cfg(feature = "go-typecheck")]
 use std::{fs, path::Path, process::Command};
 
 fn binary64_plan() -> Plan {
@@ -16,6 +24,7 @@ fn binary64_plan() -> Plan {
     Plan::check_with_models(serde_json::from_value(recipe).unwrap(), &[], &[model]).unwrap()
 }
 
+#[cfg(feature = "go-typecheck")]
 fn write_target(root: &Path, files: std::collections::BTreeMap<String, String>) {
     for (path, source) in files {
         let path = root.join(path);
@@ -24,9 +33,9 @@ fn write_target(root: &Path, files: std::collections::BTreeMap<String, String>) 
     }
 }
 
-#[test]
-fn native_rust_executes_position_and_binary64_contracts() {
-    for (name, plan, cases, tests, internal) in [
+/// Every adapter a test of this binary runs, with the number of its corpus vectors.
+fn native_crates() -> Vec<(NativeCrate, usize)> {
+    [
         (
             "positional",
             fixture::plan(),
@@ -48,83 +57,48 @@ fn native_rust_executes_position_and_binary64_contracts() {
             include_str!("fixtures/normalization_binary64_rust_tests.rs.txt"),
             false,
         ),
-    ] {
-        let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("normalization-{name}-rust-{}", std::process::id()));
+    ]
+    .into_iter()
+    .map(|(name, plan, cases, tests, internal)| {
         let target = plan.rust("normalization_adapter").unwrap();
         assert_eq!(json!(target.report)["format"], "ess-normalization-target/3");
-        write_target(&root, target.files);
-        fs::write(root.join("cases.json"), json!(cases).to_string()).unwrap();
+        let mut files = target.files;
+        files.insert("cases.json".to_owned(), json!(cases).to_string());
         if internal {
-            let path = root.join("src/lib.rs");
-            let mut source = fs::read_to_string(&path).unwrap();
-            source.push_str(tests);
-            fs::write(path, source).unwrap();
+            files
+                .get_mut("src/lib.rs")
+                .expect("a generated src/lib.rs")
+                .push_str(tests);
         } else {
-            fs::create_dir_all(root.join("tests")).unwrap();
-            fs::write(root.join("tests/cases.json"), json!(cases).to_string()).unwrap();
-            fs::write(root.join("tests/behavior.rs"), tests).unwrap();
+            files.insert("tests/cases.json".to_owned(), json!(cases).to_string());
+            files.insert("tests/behavior.rs".to_owned(), tests.to_owned());
         }
-        let lock = Command::new(env!("CARGO"))
-            .args(["generate-lockfile", "--offline", "--manifest-path"])
-            .arg(root.join("Cargo.toml"))
-            .output()
-            .unwrap();
-        fs::write(
-            root.join("native-lock.log"),
-            format!(
-                "{}\n{}",
-                String::from_utf8_lossy(&lock.stdout),
-                String::from_utf8_lossy(&lock.stderr)
-            ),
+        (
+            NativeCrate::new(&format!("normalization_positional_targets/{name}"), files),
+            cases.len(),
         )
-        .unwrap();
-        assert!(
-            lock.status.success(),
-            "{}",
-            String::from_utf8_lossy(&lock.stderr)
-        );
-        for features in [None, Some("serde_json/arbitrary_precision")] {
-            let mut command = Command::new(env!("CARGO"));
-            command
-                .args([
-                    "test",
-                    "--offline",
-                    "--locked",
-                    "--quiet",
-                    "--manifest-path",
-                ])
-                .arg(root.join("Cargo.toml"))
-                .env(
-                    "CARGO_TARGET_DIR",
-                    Path::new(env!("CARGO_TARGET_TMPDIR")).join("normalization-rust-target"),
-                );
-            if let Some(features) = features {
-                command.args(["--features", features]);
-            }
-            command.args(["--", "--nocapture", "--test-threads=1"]);
-            let output = command.output().unwrap();
-            let log = format!(
-                "{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            fs::write(
-                root.join(if features.is_some() {
-                    "native-arbitrary.log"
-                } else {
-                    "native-default.log"
-                }),
-                &log,
-            )
-            .unwrap();
-            assert!(output.status.success(), "{name} {features:?}: {log}");
-            eprintln!(
-                "native Rust {name} {features:?}: {} corpus vectors, exit {}\n{log}",
-                cases.len(),
-                output.status
-            );
-        }
+    })
+    .collect()
+}
+
+/// Writes the sources of every crate of [`native_crates`] for `task
+/// schema-contract-native-crates` to build. A step of that task, never a test of the suite.
+#[test]
+#[ignore = "generator: `task schema-contract-native-crates` runs it before the tests"]
+fn write_the_sources_of_every_native_crate() {
+    native_crate::write_sources(
+        native_crates()
+            .into_iter()
+            .map(|(native, _)| native)
+            .collect(),
+    );
+}
+
+#[test]
+fn native_rust_executes_position_and_binary64_contracts() {
+    for (native, cases) in native_crates() {
+        let log = native.run(&["--nocapture", "--test-threads=1"]);
+        eprintln!("native Rust: {cases} corpus vectors\n{log}");
     }
 }
 
