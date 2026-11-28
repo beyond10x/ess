@@ -18,7 +18,7 @@ use super::{ActorRef, EssIr, QualifiedName, RefusalCause, ResolvedCommand, Resol
 /// The runs kept for one model.
 struct Kept {
     ir: *const EssIr,
-    runs: BTreeMap<String, Entry>,
+    runs: BTreeMap<super::memo_key::Key, Entry>,
 }
 
 /// One run's result, and how many searches for a row beside it cut.
@@ -134,15 +134,16 @@ pub(super) fn run(
         MADE.with(|count| count.set(count.get() + 1));
         return super::run(ir, command, outcome, actors);
     };
-    let key = format!(
-        "{}|{position}|{actors:?}|{}|{:?}|{}|{}|{}",
+    let key = super::memo_key::of(format_args!(
+        "{}|{position}|{actors}|{}|{:?}|{}|{}|{}",
         command.name,
         super::subject_fact::held_key(ir),
         super::earlier_runs::captured(),
         crate::witness::under_test_key(),
         super::related_guard::open_key(),
         super::dropped_key(),
-    );
+        actors = super::memo_key::Actors(actors),
+    ));
     let known = KEPT.with(|kept| {
         kept.borrow()
             .last()

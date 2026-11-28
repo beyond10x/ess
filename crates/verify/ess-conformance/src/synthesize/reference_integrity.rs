@@ -391,7 +391,7 @@ fn pointed_at(
             return Some(Pointed::Own(Arrangement {
                 instance: instance.clone(),
                 state: state.clone(),
-                steps: Vec::new(),
+                steps: super::Steps::default(),
                 source: BTreeSet::new(),
                 settled: run.before_settled.clone(),
                 unwritten: BTreeSet::new(),

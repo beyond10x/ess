@@ -44,6 +44,14 @@
 - `ess generate synthesize --target rust` and `--target go` select by an enum member the way the predicate compares it, by the variant's name: Rust printed the variant's internal record and the generated crate failed to build while the plan said generated, and Go compared the variant's wire spelling, so a variant declaring a wire spelling was never selected.
 - `ess verify conform synthesize` arranges a command whose `when:` guards hold a scope to which Optional references it is sent (`{all: [scope == Account, {formation_id: {defined: true}}]}`) before `when_related: {via: input.<reference>}` guards over the same references. A send an earlier `when:` refusal answers is no longer written into an `exists: false` scenario expecting the missing row, and a branch no arrangement with a row for every reference reaches is sent with every Optional reference left out, which reads no row, as the interpreter reads an absent Optional reference; it was refused `ESS-SYNTH-003`.
 
+## [0.99.9] — 2026-11-27
+
+### Fixed
+
+- `ess verify conform synthesize` writes the suites 0.99.8 writes with less than half its work and a third of its memory where it drives a creating branch beside a row-set refusal, as 0.99.8 began to do. A specification of 565 scenarios took 158–245 s and 17.2 GB with 0.99.8 and takes 59 s and 6.0 GB on the same machine. Synthesis keeps each answer under a key naming everything the answer reads, and wrote that key out in full for every question it asked: the actor of every granted command, every row held for the runs advancing it and every step of every arrangement the key named. A key is now a 128-bit digest of that text, and each of those parts is rendered once and named by its own digest after that. The arrangements synthesis keeps share their steps until one of them is changed, the rows a search reached are shared with its memory rather than copied after each depth, and the commands that change an entity are read from an index kept per model. Every suite is byte for byte the one 0.99.8 writes.
+
+The fix changes no format key.
+
 ## [0.99.8] — 2026-11-26
 
 ### Fixed

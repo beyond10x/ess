@@ -344,7 +344,7 @@ fn after_referenced(
         }
     }
     steps.append(&mut start.steps);
-    start.steps = steps;
+    start.steps = steps.into();
     start
 }
 
@@ -476,7 +476,7 @@ fn referenced_held<'c>(
                 Arrangement {
                     instance: instance.clone(),
                     state: state.clone(),
-                    steps: Vec::new(),
+                    steps: super::super::Steps::default(),
                     source: BTreeSet::new(),
                     settled: rows.get(instance).cloned().unwrap_or_default(),
                     unwritten: BTreeSet::new(),
@@ -648,7 +648,7 @@ pub(in super::super) fn steered_held(
                 start.source.extend(row.source.iter().cloned());
             }
             steps.append(&mut start.steps);
-            start.steps = steps;
+            start.steps = steps.into();
             let start = after_referenced(ir, &copies, &referenced, start);
             let best = states
                 .iter()
