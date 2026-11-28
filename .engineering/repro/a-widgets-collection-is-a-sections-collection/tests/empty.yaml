@@ -1,0 +1,12 @@
+format: ess-ui-test/1
+document: ../ui/section-states.ui.yaml
+tests:
+  - name: a widget that reads no row shows the empty message its section declares
+    fixtures:
+      views:
+        shop.channel.Items:
+          rows: []
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/items, state: empty}
+      - expect: {at: pages/home/sections/items, text: No items yet}

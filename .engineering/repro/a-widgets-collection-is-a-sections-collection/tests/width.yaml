@@ -1,0 +1,21 @@
+format: ess-ui-test/1
+document: ../ui/widget.ui.yaml
+tests:
+  - name: a long label is read whole at a row of a section's own collection
+    fixtures:
+      views:
+        shop.channel.Items:
+          rows:
+            - {item_id: it-09, label: "A label that runs far past the width of any terminal screen and ends with the word zebra", kind: Toy}
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/direct/rows/it-09, text: zebra}
+  - name: the same label is read at the section that draws the widget
+    fixtures:
+      views:
+        shop.channel.Items:
+          rows:
+            - {item_id: it-09, label: "A label that runs far past the width of any terminal screen and ends with the word zebra", kind: Toy}
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/items, text: zebra}

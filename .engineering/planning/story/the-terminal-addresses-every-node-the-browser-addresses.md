@@ -26,7 +26,7 @@ scope:
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: inferred
   path: website/docs/reference/ess-ui-test.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:48:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:48:17Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -200,3 +200,15 @@ React project addresses, or the terminal does not offer a key for an action no t
 ## Delivery
 
 D111 (the collection nested in a record's `item`) is built as option (a) in commit `614a86ff4d` on the branch `issues/part-2-2026-11-24`, merged with `main` 0.99.2 as `f93dcf8514`; pull request 830 is open. The terminal draws the first named collection in a section record's `item` with a cursor, row actions and row regions at the paths the React target uses (`.../sections/<s>/item/<name>/rows/<key>`), `ess ui test` expects its rows, selects and acts there in both renderers, and the parity rule stops refusing those steps. The commit also refuses `mark`, `move` and `page` on those rows in both renderers, with one reason (`parity::item_rows`): a second collection in the same `item`, a record in an overlay, a tab's collection and a node's collection stay refused as before. Tests: ess-ui-test `nested` `a_collection_in_a_records_item_is_driven_in_both_renderers` (red at the old refusal, green after), ess-ui-react `live_composites` `a_collection_in_a_records_item_draws_its_rows_at_the_items_path`. No pin moved.
+
+## A collection nested in a widget's body (downstream report, finding G3)
+
+The same refusal holds for a collection that a widget's body draws: `expect`
+at `…/sections/<s>/body/<name>` and at its rows fails with "the terminal draws a collection nested
+inside a record, a tab or a node without addressing it or its rows", on 0.99.9. It is the same
+parity rule as the collection in a record's `item` (D111), reported by a downstream specification of
+reusable building blocks (ess 0.99.2, finding G3), together with the text of the section box being cut at
+the screen width, which a row read whole avoids. The feature, with its reproduction, fit review and
+decisions, is `story:a-collection-a-widget-draws-takes-states-and-is-addressed-by-a-test-like-a-sections-collection`
+(decision WC-D2 for the path, WC-D3 for the width); this story's D111 and that story's WC-D2 are
+one rule, and whichever lands first carries the other's cases.

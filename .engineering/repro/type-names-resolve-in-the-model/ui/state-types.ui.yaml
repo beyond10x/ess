@@ -1,0 +1,19 @@
+format: ess-ui/1
+app: shop
+title: Shop
+model: shop
+placement_profile: fat
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: home, sections: [{name: all, pages: [home]}]}
+types:
+  Wrapped: {record: {inner: NoSuchType}}
+pages:
+  home:
+    kind: detail_page
+    title: Home
+    state:
+      picked: {type: NoSuchId, class: selection}
+      many: {type: {list: NoSuchId, unique: true}, class: selection}
+    sections:
+      - {name: rows, component: collection, reads: {view: shop.channel.Items, key: item_id}, columns: [label, kind]}
