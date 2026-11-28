@@ -3621,6 +3621,15 @@ pub fn fixed_input_work<R>(run: impl FnOnce() -> R) -> (R, (u64, u64)) {
     related_guard::fixed_input_work(run)
 }
 
+/// What `run` returns, and how many times a row arranged beside the one a branch is arranged
+/// around was checked on this thread for whether it leaves that branch to answer an input,
+/// rather than answered from what the synthesis checked before: the work a test bounds where a
+/// wall-clock bound would depend on the machine. Not part of the suite.
+#[doc(hidden)]
+pub fn beside_rows_checked<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    related_guard::beside_checks(run)
+}
+
 /// What `run` returns, how many rows of creating branches it asked for on this thread, and how
 /// many of them were made rather than answered from what the synthesis made before: the work a
 /// test bounds. Not part of the suite.

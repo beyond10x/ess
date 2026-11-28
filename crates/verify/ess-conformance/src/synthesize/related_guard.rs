@@ -2062,6 +2062,9 @@ struct Around<'a> {
     /// The field values a caller chose for the row this arrangement is the creating branch of:
     /// entered as `fixed` input of the focus row's search ([`arranged_at`]).
     chosen: Option<&'a BTreeMap<String, Node>>,
+    /// For each row of `rows`, what it answered for the inputs asked before, kept for the model
+    /// ([`BesideAnswers`]); `None` where nothing is kept.
+    answers: &'a [Option<std::rc::Rc<BesideAnswers>>],
 }
 
 impl Around<'_> {
@@ -2084,17 +2087,98 @@ impl Around<'_> {
 
     /// Whether, sent with `input`, every row beside leaves the branch under test to answer.
     fn admits(&self, ir: &EssIr, input: &BTreeMap<String, Node>) -> bool {
-        self.rows.iter().all(|row| {
-            (self.relaxed && row.reads_input(ir, self.command))
-                || leaves_to(
+        self.rows.iter().enumerate().all(|(at, row)| {
+            if self.relaxed && row.reads_input(ir, self.command) {
+                return true;
+            }
+            let decide = || {
+                BESIDE_CHECKS.with(|count| count.set(count.get() + 1));
+                leaves_to(
                     ir,
                     (self.command, self.outcome),
                     (row.via.field(), row.entity, &row.row),
                     Some(input),
                 )
                 .is_ok_and(|truth| truth == Truth::True)
+            };
+            match self.answers.get(at).and_then(Option::as_ref) {
+                Some(answers) => answers.answer(input, decide),
+                None => decide(),
+            }
         })
     }
+}
+
+/// Whether one row beside leaves the branch under test to answer, for each input asked so far
+/// ([`Around::admits`]), kept for the model remembered innermost ([`beside_answers`]).
+///
+/// [`leaves_to`] reads only the model, the command, the branch, the field the row is read through,
+/// the row's entity, state, stored and unwritten fields, and the input. Every arrangement of a
+/// branch around one row asks it of the same rows beside, arranged the same way, for every input
+/// it tries on every row it reaches: a creator beside a row-set refusal on a command reading four
+/// rows asked it again for each of thousands of searches, which held most of a synthesis.
+#[derive(Default)]
+pub(super) struct BesideAnswers {
+    /// The answer for each input asked so far, under a hash of the input: an input is compared
+    /// whole only with the inputs of its hash.
+    answered: RefCell<std::collections::HashMap<u64, Answered>>,
+}
+
+/// The inputs of one hash a [`BesideAnswers`] keeps, each with its answer.
+type Answered = Vec<(BTreeMap<String, Node>, bool)>;
+
+impl BesideAnswers {
+    /// The answer kept for `input`, else `decide`'s, kept for the next ask.
+    fn answer(&self, input: &BTreeMap<String, Node>, decide: impl FnOnce() -> bool) -> bool {
+        let key = subject_fact::input_key(input);
+        let known = self.answered.borrow().get(&key).and_then(|kept| {
+            kept.iter()
+                .find(|(asked, _)| asked == input)
+                .map(|(_, answer)| *answer)
+        });
+        if let Some(known) = known {
+            return known;
+        }
+        let fresh = decide();
+        self.answered
+            .borrow_mut()
+            .entry(key)
+            .or_default()
+            .push((input.clone(), fresh));
+        fresh
+    }
+}
+
+/// The [`BesideAnswers`] of `row` beside the row `outcome` of `command` is arranged around, kept
+/// for the model remembered innermost; `None` for a command the model does not declare as such
+/// (one projected onto fewer rows, or with references left out), or a model not remembered.
+fn beside_answers(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    row: &Beside<'_>,
+) -> Option<std::rc::Rc<BesideAnswers>> {
+    let declared = ir
+        .commands()
+        .get(&command.name)
+        .is_some_and(|declared| std::ptr::eq(declared, command))
+        && command
+            .outcomes
+            .iter()
+            .any(|branch| std::ptr::eq(branch, outcome));
+    if !declared || !super::made::remembers(ir) {
+        return None;
+    }
+    let key = super::memo_key::of(format_args!(
+        "\u{0}beside|{}|{}|{}|{:?}|{:?}|{:?}|{:?}",
+        command.name,
+        outcome.name,
+        row.via.field(),
+        row.entity,
+        row.row.state,
+        row.row.settled,
+        row.row.unwritten
+    ));
+    super::made::kept(ir, &format!("beside answers|{key}"), BesideAnswers::default)
 }
 
 /// Whether, sent with `input`, the row `beside` names leaves `outcome` to answer.
@@ -3012,6 +3096,27 @@ thread_local! {
     /// How many input lists a row search whose input fields the arrangement fixed built for a
     /// row, and how many inputs of them it tried there ([`fixed_input_work`]).
     static FIXED_TRIED: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+    /// How many times a row beside was checked on this thread for whether it leaves the branch
+    /// under test to answer an input, rather than answered from memory ([`beside_checks`]).
+    static BESIDE_CHECKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many times a row beside was checked on this thread while it ran
+/// for whether it leaves the branch under test to answer an input ([`BESIDE_CHECKS`]).
+pub(super) fn beside_checks<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = BESIDE_CHECKS.with(std::cell::Cell::get);
+    let out = run();
+    (out, BESIDE_CHECKS.with(std::cell::Cell::get) - before)
+}
+
+/// The count of [`BESIDE_CHECKS`] on this thread.
+pub(super) fn taken_beside_checks() -> u64 {
+    BESIDE_CHECKS.with(std::cell::Cell::get)
+}
+
+/// Adds `more` to the count of [`BESIDE_CHECKS`] on this thread.
+pub(super) fn add_beside_checks(more: u64) {
+    BESIDE_CHECKS.with(|count| count.set(count.get() + more));
 }
 
 /// What `run` returns, how many input lists row searches whose input fields the arrangement fixed
@@ -3240,12 +3345,33 @@ fn as_own_scenario(
     if carries {
         overlay_worked(0, 0, 1);
     }
+    let chosen = chosen.map(|chosen| arranged_chosen(driver.command, chosen));
+    let chosen = chosen.as_ref();
     super::created_memo::own_arranged(ir, driver, actors, distinction, (bound, chosen), || {
         if carries {
             overlay_worked(1, 0, 0);
         }
         own_built(ir, driver, actors, distinction, (bound, chosen))
     })
+}
+
+/// Of the values a caller chose for the run of `command` arranged as its own scenario, the ones
+/// the arrangement reads: every one but those of a field naming a row the command's guards read.
+/// The arrangement names those rows itself and sends their identities there, whatever was chosen
+/// ([`arranged_at_on`]); a single row is arranged without the chosen values at all
+/// ([`arranged_choosing`]). A creator reading four rows, searched for by every run that needs one
+/// of its rows, was asked with hundreds of choices differing only in those identities, and each
+/// built the same arrangement again ([`super::created_memo::own_arranged`]).
+fn arranged_chosen(
+    command: &ResolvedCommand,
+    chosen: &BTreeMap<String, Node>,
+) -> BTreeMap<String, Node> {
+    let named = vias(command);
+    chosen
+        .iter()
+        .filter(|(field, _)| !named.iter().any(|(via, _)| via == field))
+        .map(|(field, value)| (field.clone(), value.clone()))
+        .collect()
 }
 
 /// The run of `driver` arranged as its own scenario, built ([`as_own_scenario`]).
@@ -4285,12 +4411,17 @@ fn arranged_beside(
     // ess/28: a branch over several rows at once is decided on the rows arranged beside.
     let projected = decided_beside(ir, projected, outcome, others);
     let own = kept(&projected, own)?;
+    let answers: Vec<_> = others
+        .iter()
+        .map(|other| beside_answers(ir, (command, outcome), other))
+        .collect();
     let around = Around {
         command,
         outcome,
         rows: others,
         relaxed,
         chosen,
+        answers: &answers,
     };
     let (setup, input, lonely) = arranged_at(
         models,

@@ -126,6 +126,11 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ("synthesize/prepare_memo.rs", "UNKEPT", Handling::Context),
     (
         "synthesize/related_guard.rs",
+        "BESIDE_CHECKS",
+        Handling::Counter,
+    ),
+    (
+        "synthesize/related_guard.rs",
         "BESIDE_OPEN",
         Handling::Scope,
     ),
@@ -504,6 +509,7 @@ work! {
     steering_checks: u64 = super::ordered_head::taken_steering_work().1;
     prepare_asked: u64 = prepare_memo::taken_asked();
     prepare_made: u64 = prepare_memo::taken_made();
+    beside_checks: u64 = related_guard::taken_beside_checks();
     companion_asked: u64 = related_guard::taken_companion_work().0;
     companion_searched: u64 = related_guard::taken_companion_work().1;
     fixed_searched: u64 = related_guard::taken_fixed_tried().0;
@@ -562,6 +568,7 @@ impl Work {
         "synthesize/ordered_head.rs:STEERING_WORK",
         "synthesize/prepare_memo.rs:ASKED",
         "synthesize/prepare_memo.rs:MADE",
+        "synthesize/related_guard.rs:BESIDE_CHECKS",
         "synthesize/related_guard.rs:COMPANION_WORK",
         "synthesize/related_guard.rs:FIXED_TRIED",
         "synthesize/related_guard.rs:OWN_OVERLAY_WORK",
@@ -612,6 +619,7 @@ impl Work {
         super::ordered_head::add_steering_work((self.steering_maps, self.steering_checks));
         prepare_memo::add_asked(self.prepare_asked);
         prepare_memo::add_made(self.prepare_made);
+        related_guard::add_beside_checks(self.beside_checks);
         related_guard::add_companion_work((self.companion_asked, self.companion_searched));
         related_guard::add_fixed_tried((self.fixed_searched, self.fixed_tried));
         related_guard::add_own_overlay_work((
