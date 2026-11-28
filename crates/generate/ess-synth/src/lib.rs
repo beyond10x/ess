@@ -190,6 +190,140 @@ impl std::fmt::Display for LayoutRefusal {
 
 impl std::error::Error for LayoutRefusal {}
 
+/// What a consumer asks of the crate layout's manifest (`--package`, `--no-workspace-table`).
+///
+/// The default asks nothing: the package is named for the system and the manifest is a
+/// workspace root of its own, byte for byte as without these options.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CrateManifest {
+    /// The package name, in place of the system's (`--package <name>`).
+    pub package: Option<String>,
+    /// Leave out the `[workspace]` table, so the crate can be a member of the consumer's
+    /// workspace (`--no-workspace-table`).
+    pub no_workspace_table: bool,
+}
+
+impl CrateManifest {
+    /// The first option given, by the flag that spells it, if any.
+    fn option(&self) -> Option<&'static str> {
+        if self.package.is_some() {
+            Some("--package")
+        } else if self.no_workspace_table {
+            Some("--no-workspace-table")
+        } else {
+            None
+        }
+    }
+}
+
+/// A manifest option the synthesis cannot honour.
+///
+/// A usage error, like [`LayoutRefusal`]: decided before anything is planned, and it carries no
+/// plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManifestRefusal {
+    /// The option names the one crate's manifest, and the output is laid out as a workspace.
+    Layout(&'static str),
+    /// The name is not one Cargo and the generated code can take as the crate's package and
+    /// library name.
+    PackageName(String),
+}
+
+impl std::fmt::Display for ManifestRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Layout(option) => write!(
+                formatter,
+                "`{option}` is an option of the one crate the `rust` target writes with \
+                 `--layout crate`; the workspace layout names and lays out its own crates"
+            ),
+            Self::PackageName(name) => write!(
+                formatter,
+                "`{name}` cannot be the crate's `--package`: a package name is 1 to 64 lowercase \
+                 ASCII letters, digits, `-` and `_`, starts with a letter, and is no Rust keyword, \
+                 no built-in crate (`std`, `core`, `alloc`, `proc_macro`, `test`) and no crate \
+                 the generated code names (`clap`, `uuid`, `time`)"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ManifestRefusal {}
+
+/// `true` when `name` can be the crate layout's package name: Cargo takes it, and its library
+/// name (`-` read as `_`) is no keyword and no crate the generated code names.
+fn package_name(name: &str) -> bool {
+    const TAKEN: &[&str] = &[
+        "as",
+        "async",
+        "await",
+        "break",
+        "const",
+        "continue",
+        "crate",
+        "dyn",
+        "else",
+        "enum",
+        "extern",
+        "false",
+        "fn",
+        "for",
+        "if",
+        "impl",
+        "in",
+        "let",
+        "loop",
+        "match",
+        "mod",
+        "move",
+        "mut",
+        "pub",
+        "ref",
+        "return",
+        "self",
+        "static",
+        "struct",
+        "super",
+        "trait",
+        "true",
+        "type",
+        "unsafe",
+        "use",
+        "where",
+        "while",
+        "abstract",
+        "become",
+        "box",
+        "do",
+        "final",
+        "macro",
+        "override",
+        "priv",
+        "typeof",
+        "unsized",
+        "virtual",
+        "yield",
+        "try",
+        "gen",
+        "std",
+        "core",
+        "alloc",
+        "proc_macro",
+        "test",
+        "clap",
+        "uuid",
+        "time",
+    ];
+    let library = name.replace('-', "_");
+    !name.is_empty()
+        && name.len() <= 64
+        && name.as_bytes()[0].is_ascii_lowercase()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
+        })
+        && !TAKEN.contains(&library.as_str())
+}
+
 /// An `ess-http/1` binding the synthesis cannot serve (`docs/design/http-presentation-binding.md`,
 /// "Stage 2: keys, precedence and the units that build them").
 ///
@@ -228,6 +362,9 @@ pub enum SynthesisFailure {
     Target(TargetFailure),
     /// The target cannot serve the `ess-http/1` binding it was given; nothing was planned.
     Binding(BindingRefusal),
+    /// A manifest option the layout does not take, or a package name the crate cannot take;
+    /// nothing was planned.
+    Manifest(ManifestRefusal),
 }
 
 impl From<TargetFailure> for SynthesisFailure {
@@ -242,6 +379,7 @@ impl std::fmt::Display for SynthesisFailure {
             Self::Layout(refusal) => refusal.fmt(formatter),
             Self::Target(failure) => failure.fmt(formatter),
             Self::Binding(refusal) => refusal.fmt(formatter),
+            Self::Manifest(refusal) => refusal.fmt(formatter),
         }
     }
 }
@@ -413,7 +551,13 @@ pub fn synthesize(ir: &EssIr) -> Result<Synthesis, TargetFailure> {
 /// that target refused. That is a defect in this crate, not in any specification, and shipping it
 /// would make `PLAN.md` a lie about the tree beside it.
 pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFailure> {
-    emit(ir, target, OutputLayout::Workspace, None)
+    emit(
+        ir,
+        target,
+        OutputLayout::Workspace,
+        &CrateManifest::default(),
+        None,
+    )
 }
 
 /// [`synthesize_for`], with the Rust target's output laid out as chosen.
@@ -455,11 +599,45 @@ pub fn synthesize_bound(
     layout: OutputLayout,
     http: Option<&ess_gen::http::Binding>,
 ) -> Result<Synthesis, SynthesisFailure> {
+    synthesize_crate(ir, target, layout, &CrateManifest::default(), http)
+}
+
+/// [`synthesize_bound`], with the crate layout's manifest named and placed as the consumer asks
+/// (`ess generate synthesize --package <name> --no-workspace-table`).
+///
+/// With [`CrateManifest::default`] it is [`synthesize_bound`], byte for byte. A package name
+/// names the crate's `[package]` and the library its server binaries use; leaving the
+/// `[workspace]` table out makes the crate a member of an enclosing workspace. The plan's scope
+/// records both, and its regenerate command names both flags.
+///
+/// # Errors
+///
+/// [`SynthesisFailure::Manifest`] when an option is given outside the crate layout or the
+/// package name is not one the crate can take; otherwise as [`synthesize_bound`].
+pub fn synthesize_crate(
+    ir: &EssIr,
+    target: Target,
+    layout: OutputLayout,
+    manifest: &CrateManifest,
+    http: Option<&ess_gen::http::Binding>,
+) -> Result<Synthesis, SynthesisFailure> {
     if layout != OutputLayout::Workspace && target != Target::Rust {
         return Err(SynthesisFailure::Layout(LayoutRefusal {
             target: target.name(),
             layout: layout.name(),
         }));
+    }
+    if layout != OutputLayout::Crate {
+        if let Some(option) = manifest.option() {
+            return Err(SynthesisFailure::Manifest(ManifestRefusal::Layout(option)));
+        }
+    }
+    if let Some(package) = &manifest.package {
+        if !package_name(package) {
+            return Err(SynthesisFailure::Manifest(ManifestRefusal::PackageName(
+                package.clone(),
+            )));
+        }
     }
     if let Some(binding) = http {
         if !matches!(target, Target::Rust | Target::Go) {
@@ -471,7 +649,7 @@ pub fn synthesize_bound(
             .servable()
             .map_err(|refused| SynthesisFailure::Binding(BindingRefusal::Unservable(refused)))?;
     }
-    Ok(emit(ir, target, layout, http)?)
+    Ok(emit(ir, target, layout, manifest, http)?)
 }
 
 /// Both stages, for a target and a layout the target emits.
@@ -479,12 +657,15 @@ fn emit(
     ir: &EssIr,
     target: Target,
     layout: OutputLayout,
+    manifest: &CrateManifest,
     http: Option<&ess_gen::http::Binding>,
 ) -> Result<Synthesis, TargetFailure> {
     let mut plan = SynthesisPlan::of(ir);
     if layout != OutputLayout::Workspace {
         plan.scope.layout = Some(layout.name().to_owned());
     }
+    plan.scope.package.clone_from(&manifest.package);
+    plan.scope.no_workspace_table = manifest.no_workspace_table;
     failure::binary64(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
     failure::one_time_response(ir, &plan, target)?;

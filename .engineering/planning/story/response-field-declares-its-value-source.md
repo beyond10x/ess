@@ -12,7 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-wire-and-answers
-revision: 3
+revision: 5
 ---
 ## Outcome
 
@@ -71,3 +71,38 @@ This widens the outcome beyond an input or a stored field.
 - This is the same construct as the A2A M7 row binding above. One design should cover the input
   echo, the stored field, the whole matched row and the literal.
 - The design decision about the converse `{response: <field>}` form is unchanged.
+
+## Related (2026-11-25)
+
+A second adopter asks (twentieth gap report, shape 4) whether `ess-http` can answer the stored row of a
+command's subject without a declared response, for a PUT or POST that answers the saved resource.
+Read at tag 0.99.1:
+
+- It cannot. A command route answers `body: response` only for a `returns: true` outcome without an
+  error, naming the command's declared response object; without `returns: true` the form is refused
+  `ESS-HTTP-024` ("`response` without `returns: true`", `CHANGELOG.md`, 0.60.0, the `outcomes` entry;
+  `docs/design/http-presentation-binding.md`, "Response body per outcome", the row `response`). The
+  default `envelope` answer carries a `response` member only when one is declared.
+- A declared response is a modelling task, and its values have no source in the model today: the
+  members of a response are typed, and only a value an outcome generated and stores is tied to the
+  response (`story:stored-field-equals-returned-response-value`, `{response: <field>}`). This story is
+  the other direction, which the report needs: a response member whose value is the stored field of
+  the subject, or the whole stored row (the M7 case of this story).
+
+Decision HB-D5 (shape 4): where "answer the saved row" lives.
+
+- A. In the model: this story's value source for a response member (an input, a stored field, the
+  whole matched row, a literal), after which `body: response` of the existing binding answers it. One
+  statement for every target; the suite checks the echoed row.
+- B. In the binding: a body word `subject` that answers the stored row of the command's subject. Cost:
+  the answer depends on a stored fact the specification of the command does not state, so the suite
+  cannot check it, and each protocol binding would grow the same word.
+- C. Decline: the consumer declares a response, a view answers the row, and the client issues the read.
+- Recommended A: the row a command answers is semantics, which the binding only presents. This story
+  already designs it; the report is a third adopter.
+
+## Decisions
+
+- HB-D5: A (the model sources the response members, story #506, and `body: response` answers it), taken by the coordinator on 2026-11-25 (D118); reversible until the release that carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.

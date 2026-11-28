@@ -28,7 +28,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:37:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:37:51Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}}
@@ -101,6 +101,8 @@ Tree `995e29579d`, binary ess 0.92.0. Covers #723 item G5.
 **Accept, redesigned.** The axis takes the existing Field shape instead of new chart keys; tick
 formats are the `as` words of `story:a-declared-field-format-renders-or-is-refused`, which this
 story depends on for `timestamp` and the duration units. No new format version.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

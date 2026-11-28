@@ -8357,13 +8357,15 @@ pub(super) fn absent(
                 "the command has no witness input",
             )
         })?;
-    let identity = input.get(&field.name).cloned().ok_or_else(|| {
-        missing(
-            &subject.entity,
-            &field.name,
-            "the witness names no identity",
-        )
-    })?;
+    let identity = ess_compiler::ir::read_input(&input, &field.name)
+        .cloned()
+        .ok_or_else(|| {
+            missing(
+                &subject.entity,
+                &field.name,
+                "the witness names no identity",
+            )
+        })?;
     let view = observer(ir, &subject.entity, &BTreeSet::new(), Reading::Immediate);
     let command_ref = CommandRef::new(command.name.clone());
     let mut steps = vec![ScenarioStep::ExecuteCommand {
@@ -8444,7 +8446,7 @@ fn unknown_identity_refusal(
     let branch = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     let forbidden = not_emitted(ir, &[]);
     for mut input in inputs {
-        input.insert(field.name.clone(), identity.clone());
+        super::set_at(&mut input, &field.name, Some(identity.clone()));
         let answers = flatten(ir, command, &input).is_ok_and(|facts| {
             decides(&facts, &[own], true).unwrap_or(false)
                 && decides(&facts, &earlier, false).unwrap_or(false)

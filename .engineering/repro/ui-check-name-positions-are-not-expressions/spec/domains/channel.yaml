@@ -1,0 +1,84 @@
+domain: shop.channel
+
+summary: Items sold through a channel.
+
+naming:
+  wire: channel
+  display: Channel
+
+types:
+  - name: shop.channel.ItemId
+    kind: newtype
+    of: Uuid
+  - name: shop.channel.Kind
+    kind: enum
+    variants: [Tool, Toy]
+
+entities:
+  - name: shop.channel.Item
+    identity:
+      name: item_id
+      type: shop.channel.ItemId
+    fields:
+      - name: label
+        type: String
+      - name: kind
+        type: shop.channel.Kind
+    lifecycle:
+      initial: Listed
+      states: [Listed]
+      terminal: [Listed]
+
+actors:
+  - name: shop.channel.Clerk
+    may:
+      - shop.channel.AddItem
+    naming:
+      display: Clerk
+
+commands:
+  - name: shop.channel.AddItem
+    naming:
+      wire: add-item
+      display: Add an item
+    input:
+      - name: label
+        type: String
+      - name: kind
+        type: shop.channel.Kind
+    outcomes:
+      - name: added
+        creates: shop.channel.Item
+        instance: item_id
+        emits:
+          - shop.channel.ItemAdded
+        payload:
+          shop.channel.ItemAdded:
+            label: input.label
+            kind: input.kind
+        summary: The item is listed.
+
+events:
+  - name: shop.channel.ItemAdded
+    fields:
+      - name: item_id
+        type: shop.channel.ItemId
+      - name: label
+        type: String
+      - name: kind
+        type: shop.channel.Kind
+
+views:
+  - name: shop.channel.Items
+    source: shop.channel.Item
+    consistency: read_your_writes
+    fields:
+      - name: item_id
+        type: shop.channel.ItemId
+      - name: label
+        type: String
+      - name: kind
+        type: shop.channel.Kind
+    naming:
+      wire: items
+      display: Items

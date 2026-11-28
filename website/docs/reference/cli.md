@@ -963,6 +963,8 @@ ess generate synthesize [OPTIONS]
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--target` | `<TARGET>` | no | `rust` | One of `rust`, `go`, `web`, `clap`. |
 | `--layout` | `<LAYOUT>` | no | `workspace` | How the `rust` target lays its output out: a workspace of crates, or one crate at `--out` with its HTTP surface behind a `server` Cargo feature. Other targets refuse `crate`. One of `workspace`, `crate`. |
+| `--package` | `<NAME>` | no |  | The package name of the one crate `--layout crate` writes; without it the crate is named for the system. Only with `--layout crate` |
+| `--no-workspace-table` |  | no |  | Leave the `[workspace]` table out of the one crate's `Cargo.toml`, so the crate can be a member of an enclosing workspace. Only with `--layout crate` |
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 | `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods, paths and answers; only with `--target rust` or `go`. Compiled as `ess specify http compile` compiles it, and refused when a route has no path or claims `/openapi.json` or `/docs` |

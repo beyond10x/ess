@@ -1,0 +1,119 @@
+format: ess/37
+system: papers
+version: v1
+domain: papers.review
+summary: A revision belongs to a draft and a draft to a document; approving names a document and a revision, and the revision must belong to a draft of that document.
+types:
+  - {name: papers.review.DocumentId, kind: newtype, of: Uuid}
+  - {name: papers.review.DraftId, kind: newtype, of: Uuid}
+  - {name: papers.review.RevisionId, kind: newtype, of: Uuid}
+  - {name: papers.review.ApprovalId, kind: newtype, of: Uuid}
+entities:
+  - name: papers.review.Document
+    identity: {name: document_id, type: papers.review.DocumentId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: papers.review.Draft
+    identity: {name: draft_id, type: papers.review.DraftId}
+    fields:
+      - {name: document_id, type: papers.review.DocumentId}
+    relations:
+      - {name: document, kind: references, target: papers.review.Document, cardinality: one, via: document_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: papers.review.Revision
+    identity: {name: revision_id, type: papers.review.RevisionId}
+    fields:
+      - {name: draft_id, type: papers.review.DraftId}
+    relations:
+      - {name: draft, kind: references, target: papers.review.Draft, cardinality: one, via: draft_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: papers.review.Approval
+    identity: {name: approval_id, type: papers.review.ApprovalId}
+    fields:
+      - {name: document_id, type: papers.review.DocumentId}
+      - {name: revision_id, type: papers.review.RevisionId}
+    relations:
+      - {name: document, kind: references, target: papers.review.Document, cardinality: one, via: document_id}
+      - {name: revision, kind: references, target: papers.review.Revision, cardinality: one, via: revision_id}
+    lifecycle: {initial: Given, states: [Given], terminal: [Given]}
+errors:
+  - {name: papers.review.NotFound, summary: No row carries the identity., fields: []}
+  - {name: papers.review.WrongDocument, summary: The revision belongs to a draft of another document., fields: []}
+events:
+  - name: papers.review.DocumentAdded
+    fields: [{name: document_id, type: papers.review.DocumentId}]
+  - name: papers.review.DraftStarted
+    fields: [{name: draft_id, type: papers.review.DraftId}]
+  - name: papers.review.RevisionAdded
+    fields: [{name: revision_id, type: papers.review.RevisionId}]
+  - name: papers.review.Approved
+    fields: [{name: approval_id, type: papers.review.ApprovalId}]
+actors:
+  - name: papers.review.Editor
+    may: [papers.review.AddDocument, papers.review.StartDraft, papers.review.AddRevision, papers.review.Approve]
+commands:
+  - name: papers.review.AddDocument
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: papers.review.Document
+        instance: document_id
+        sets: {title: input.title}
+        emits: [papers.review.DocumentAdded]
+        payload: {papers.review.DocumentAdded: {document_id: {generated: true}}}
+  - name: papers.review.StartDraft
+    input:
+      - {name: document_id, type: papers.review.DocumentId}
+    outcomes:
+      - name: unknown-document
+        when_related: {via: input.document_id, exists: false}
+        error: papers.review.NotFound
+      - name: started
+        creates: papers.review.Draft
+        instance: draft_id
+        sets: {document_id: input.document_id}
+        emits: [papers.review.DraftStarted]
+        payload: {papers.review.DraftStarted: {draft_id: {generated: true}}}
+  - name: papers.review.AddRevision
+    input:
+      - {name: draft_id, type: papers.review.DraftId}
+    outcomes:
+      - name: unknown-draft
+        when_related: {via: input.draft_id, exists: false}
+        error: papers.review.NotFound
+      - name: added
+        creates: papers.review.Revision
+        instance: revision_id
+        sets: {draft_id: input.draft_id}
+        emits: [papers.review.RevisionAdded]
+        payload: {papers.review.RevisionAdded: {revision_id: {generated: true}}}
+  - name: papers.review.Approve
+    input:
+      - {name: document_id, type: papers.review.DocumentId}
+      - {name: revision_id, type: papers.review.RevisionId}
+    outcomes:
+      - name: unknown-document
+        when_related: {via: input.document_id, exists: false}
+        error: papers.review.NotFound
+      - name: unknown-revision
+        when_related: {via: input.revision_id, exists: false}
+        error: papers.review.NotFound
+      - name: wrong-document
+        when_related: {via: [input.revision_id, draft_id], predicate: document_id != input.document_id}
+        error: papers.review.WrongDocument
+      - name: approved
+        creates: papers.review.Approval
+        instance: approval_id
+        sets: {document_id: input.document_id, revision_id: input.revision_id}
+        emits: [papers.review.Approved]
+        payload: {papers.review.Approved: {approval_id: {generated: true}}}
+views:
+  - name: papers.review.Approvals
+    source: papers.review.Approval
+    consistency: read_your_writes
+    fields:
+      - {name: approval_id, type: papers.review.ApprovalId}
+      - {name: document_id, type: papers.review.DocumentId}
+      - {name: revision_id, type: papers.review.RevisionId}

@@ -122,6 +122,64 @@ once, as `plan` and `tested` at the top of the `plan-only` step. `ci_lanes.rs` r
 and `Gate`'s step against canned inputs, and fails when an archived test reads the plan store
 outside `.engineering/repro/`.
 
+**Every test-running step has a limit, and so has every test** (the organization rule `Tests stay
+fast`; story:the-test-step-meets-the-test-budget). Each task that runs tests in a lane runs its
+test command as `{{.TEST_STEP}} <task> <seconds> <command>` (`TEST_STEP` in `Taskfile.yml`), locally
+and on CI: the command is killed at its limit and the step fails with `test step <task> ran <n> s,
+over its limit of <m> s`; within it the step prints `test step <task> ran <n> s of its <m> s`.
+
+The nextest profiles `ci` and `slow` kill a test at 60 s (`terminate-after = 1`) and count it
+failed; before, `slow` killed at 1,200 s (`period = "120s", terminate-after = 10`). The nextest
+steps are `test-shard`, `test-feature-off`, `test-packages`, `test-xtask` and `fuzz-check` (under
+`fuzz/.config/nextest.toml`, the same 60 s with no exception: `fuzz/` is a workspace of its own,
+and nextest refuses an override naming a binary the workspace lacks). Doc-tests cannot
+run under nextest, so `test-doc` and `test-feature-off-doc` have a step limit of 60 s instead (CI
+measured about 22 s and 7 s): a doc-test of 61 s fails its step.
+
+Each test seen over 60 s in 14 CI runs of 2026-11-26 and 2026-11-27 (13 successful, and run
+46063361909, the first under these limits, red on one test killed at its override) has an override
+in `.config/nextest.toml` at 1.2 times its longest time there, and so has each test whose longest
+time there was 50 to 60 s (1.2 times it, at most 72 s), since tests that close cross 60 s on some
+runs: 174 under `ci` (the longest `adversary_u22_pass3`'s wide-inputs case, 366 s, 33 of them the
+tests of 50 to 60 s) and 15 under `slow` (`adv_e_u6_byte_identity_probe`, 337 s; 2 of them the
+tests of 50 to 60 s, from the slow job's 12 runs). `ci_lanes.rs` pins both lists (`CI_EXCEPTIONS`,
+`SLOW_EXCEPTIONS`), so an override may only be dropped or lowered, and refuses any spelling of
+`.config/nextest.toml` but the one its reader understands: the workspace has no TOML parser.
+
+The steps' limits: `test-xtask` and `fuzz-check` 120 s, `test-doc` and `test-feature-off-doc` 60 s.
+Three steps are known to be over 120 s and have a ceiling of 1.2 times the longest time seen in
+the 13 successful runs; a ceiling may only fall (`STEP_CEILINGS` in `ci_lanes.rs`). In run
+46063361909 every step stayed under its ceiling (`test-shard` 919 s, `test-feature-off` 250 s):
+
+- `test-shard`: 1,235 s (run 45879426222, shard 16/20; 977 s at most in the other twelve), ceiling
+  1483 s;
+- `test-feature-off`: 556.9 s (run 45965268982, shard 3/20: 546.2 s of tests and 10.7 s of
+  listing; the listing took up to 11.9 s), ceiling 669 s; it extracts its archive (up to 345 s)
+  before the step, in `test-feature-off-extract`;
+- `test-packages` (a patch tag's targeted gate): not measured, no patch tag has run it; estimated
+  at 837 s from the 3,346 test-seconds of every crate it may select over 4 threads, ceiling 1004 s.
+
+What a step builds runs before it, outside the limit (`cargo nextest run --no-run`, `cargo test
+--no-run`, an archive extraction), except in the doc-test steps: `cargo test --doc` refuses
+`--no-run`, so they build the libraries first (`cargo build --lib`), and the dev-dependencies and
+the crates whose features those change still compile inside the step (16 crates for `test-doc`,
+6 for `test-feature-off-doc`, about 12 s on the shared host).
+
+Every test-running step prints its ten slowest tests through `test-slowest` from a JUnit report,
+also when it fails, and removes the report it prints before it runs, so a run that writes none
+prints `test-slowest: no JUnit report at <path>` and never an earlier step's. One exception: stable
+libtest prints no time per test, so the doc-test steps print their ten slowest crates, read from
+the `finished in` line of each crate's doc-tests (`DOC_TEST_TIMES`); a crate still running when
+its step was killed is listed with the step's time. `test-packages` prints its
+own before it runs `test-xtask`, which prints its own.
+
+`ci_lanes.rs` fails when a test-running task runs outside `TEST_STEP` or over its ceiling, when a
+step prints no ten slowest or does not remove its report first, and when an override is added or
+raised. Outside the test step: local `test`, `test-slow` (its tests are held by the `slow`
+profile), `test-browser-product` and `typescript-check` (in no lane), `test-transport-network` and
+the macOS witness job. Tests run slower on the shared host than on CI, so there a test under 60 s
+on CI can be killed.
+
 Test builds carry line tables only (`[profile.dev] debug`), and `sha2`, `flate2` and `tar` are
 optimised in them. CI's Linux jobs link with lld through
 `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` in `ci.yml`, not `.cargo/config.toml`, so local
@@ -253,8 +311,10 @@ append-set-harness` (`append_set`, through `ESS_APPEND_SET_HARNESS`), `task bina
 `ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`), `task ui-http-servers`
 (`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`),
 `task body-cap-rust-server` (`ess-synth`'s `body_cap_rust` cases, through
-`ESS_BODY_CAP_RUST_SERVER`) and `task body-cap-go-server` (`ess-synth`'s `body_cap_go` cases,
-through `ESS_BODY_CAP_GO_SERVER`).
+`ESS_BODY_CAP_RUST_SERVER`), `task body-cap-go-server` (`ess-synth`'s `body_cap_go` cases,
+through `ESS_BODY_CAP_GO_SERVER`) and `task library-crate-harness` (`ess-synth`'s
+`single_crate_layout` round trip through a crate with no server, through
+`ESS_LIBRARY_CRATE_HARNESS`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
 change to either needs the task run again.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
@@ -484,6 +544,8 @@ within one hour of the reproduction.
 1. Branch from the latest release tag, or from the newest release head not yet released.
 2. Write the failing regression test first, then the fix.
 3. Bump the patch version and add its `CHANGELOG.md` section and its `release-notes/<version>.md`.
+   A hotfix that merges `main` moves `main`'s `[Unreleased]` bullets into its own section, since
+   the tag's release run refuses a tree that lists one there (`cargo xtask release unreleased`).
 4. Before the tag, run only the regression test and the touched crates' tests and Clippy: no local
    full gate.
 5. Commit with `b10x-gates bot`, create an annotated tag with `b10x-gates bot -- tag -a`, and push

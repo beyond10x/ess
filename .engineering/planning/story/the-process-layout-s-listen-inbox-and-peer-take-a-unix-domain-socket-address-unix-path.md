@@ -13,7 +13,7 @@ refs:
 relations:
 - serves: vision:O2
 - depends_on: story:each-component-runs-in-a-process-of-its-own
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -32,6 +32,8 @@ take a TCP address today.
   and with what file permissions, is the open point D16-3 of step 16 (a carried invocation runs as
   the system acting, with no grant check). This story is not accepted and not built until S14 is
   answered.
+
+- S14: C, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
 
 ## Open
 

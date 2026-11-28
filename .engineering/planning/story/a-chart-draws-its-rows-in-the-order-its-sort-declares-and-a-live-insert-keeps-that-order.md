@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-chart-names-its-axes-and-formats-its-ticks
 - depends_on: story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T00:39:06Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T00:39:08Z", actor: "human:timo", revision: 4}
@@ -169,6 +169,18 @@ both halves of the split: this story (the key) and `g06b-chart-rows` (the test s
      "declared `sort`" and "every renderer" are kept. Their default is changed to "rows as
      read". Their test step is answered by the existing `rows` check rather than a new key.
 
+**Covered finding: requirement 2, third item, of a downstream page generator's report of
+2026-11-25.** Where `insert_or_patch` puts a key the section does not hold, and what a declared
+`sort` does with it, is left open by the reference for a collection as for a chart: the reference
+does not say where (`website/docs/reference/ess-ui.md:2303-2337`), and both renderers put the row
+first (tree `2e055bcd0c`, read-only). The last bullet of this story's Acceptance, the reference's
+`Live` text, already states it for every section. That statement is the whole of the finding.
+Not covered here: this story's tests are for charts; a collection's position is not pinned by an
+`ess-ui-test/1` case. That case is part of the corpus of
+`story:a-page-contract-and-a-release-corpus-hold-a-page-another-generator-writes-to-the-ess-ui-test-1-files`
+(its fourth acceptance names the live effects). The other two items of requirement 2 are in
+`story:the-reference-states-what-a-refetching-resume-keeps-in-fixture-mode-and-what-a-by-id-from-view-answers-without-a-match`.
+
 ## Decisions
 
 **Accept, redesigned.** The chart takes the collection's `sort: {by, dir}`. When it is absent,
@@ -189,6 +201,8 @@ existing `expect.rows` (in `g06b-chart-rows`). Open questions, each with the rec
   **Recommended: (a).** (b) changes the meaning of existing documents (`ess-ui/2`) and reorders
   categorical bars.
 - D4 (how a test asserts the order) moved to `g06b-chart-rows`.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Scope
 

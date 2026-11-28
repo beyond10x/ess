@@ -1571,8 +1571,8 @@ fn called_instance(
             command: called,
             input,
             ..
-        } if *called == command => match input.get(field.name.as_str()) {
-            Some(ScenarioValue::Instance { instance }) => Some(instance.clone()),
+        } if *called == command => match super::supplied_at(input, &field.name) {
+            Some(ScenarioValue::Instance { instance }) => Some(instance),
             _ => None,
         },
         _ => None,

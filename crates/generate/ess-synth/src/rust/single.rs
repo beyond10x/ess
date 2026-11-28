@@ -13,6 +13,12 @@
 //! | `crates/<system>-server/src/lib.rs` | `src/server.rs`, behind the `server` feature |
 //! | `crates/<system>-server/src/<file>` | `src/server/<file>` |
 //!
+//! The types crate this layout is folded from carries the `wire` and `json` modules whether or not
+//! a server is generated, so a crate with no served component still reads and writes every
+//! declared type, event payload, error and entity snapshot as JSON, without the `server` feature.
+//! A served crate's `src/server/wire.rs` and `src/server/json.rs` re-export them, beside the
+//! system event codecs that need the `system` module, so the server's paths keep their names.
+//!
 //! Nothing is deeper than `src/<module>/<file>`. The types crate's modules keep their paths — they
 //! were already `crate::`-rooted — so only the three kinds of dependent crate are rewritten: a path
 //! into another generated crate (`gatepass_types::visit::Visit`) becomes the module it now is
@@ -37,7 +43,7 @@ use super::EDITION;
 
 /// The modules the single crate adds at its root, beside the bounded contexts; a bounded context
 /// spelled like one of them is renamed by [`Layout::shaped`].
-pub(crate) const ROOT_MODULES: [&str; 3] = ["ports", "server", "system"];
+pub(crate) const ROOT_MODULES: [&str; 5] = ["json", "ports", "server", "system", "wire"];
 
 /// Where one workspace crate lands in the single crate.
 enum Destination {
@@ -175,7 +181,7 @@ pub(crate) fn relayout(
             }
             Destination::Server if file.starts_with("bin/") => {
                 // A binary is a separate crate even in the one-package layout.
-                let library = Layout::crate_ident(&ir.system().segments().join("-"));
+                let library = Layout::crate_ident(&package_name(ir, plan));
                 let binary_paths = paths
                     .iter()
                     .map(|(name, path)| (name.clone(), path.replacen("crate", &library, 1)))
@@ -238,15 +244,16 @@ fn ports_module(
     Artifact::new("src/ports.rs", out)
 }
 
-/// The crate's manifest: its own workspace root, with executable dependencies gated behind
-/// `server` when there is an HTTP surface.
+/// The crate's manifest: its own workspace root unless the consumer leaves the table out
+/// (`--no-workspace-table`), with executable dependencies gated behind `server` when there is an
+/// HTTP surface.
 fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
     let mut out = plan.provenance.commented_for("#", &plan.regenerate());
     let _ = write!(
         out,
         "\n[package]\nname = \"{}\"\ndescription = \"The `{}` specification, {}, synthesised as \
          one crate{}.\"\nversion = \"{}.0.0\"\nedition = \"{EDITION}\"\n",
-        ir.system().segments().join("-"),
+        package_name(ir, plan),
         ir.system(),
         ir.version(),
         if server {
@@ -266,8 +273,18 @@ fn manifest(ir: &EssIr, plan: &SynthesisPlan, server: bool) -> Artifact {
             let _ = writeln!(out, "\n[[bin]]\nname = \"{}-server\"\npath = \"src/bin/{}-server.rs\"\nrequired-features = [\"server\"]", component.name, component.name);
         }
     }
-    out.push_str("\n[workspace]\n");
+    if !plan.scope.no_workspace_table {
+        out.push_str("\n[workspace]\n");
+    }
     Artifact::new("Cargo.toml", out)
+}
+
+/// The crate's package name: the consumer's (`--package`), or the system's.
+fn package_name(ir: &EssIr, plan: &SynthesisPlan) -> String {
+    plan.scope
+        .package
+        .clone()
+        .unwrap_or_else(|| ir.system().segments().join("-"))
 }
 
 /// Rewrites every path that begins with a generated crate's name, or with `crate`, to where that

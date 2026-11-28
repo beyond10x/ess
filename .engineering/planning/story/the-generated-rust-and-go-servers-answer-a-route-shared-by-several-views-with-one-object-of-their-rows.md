@@ -12,7 +12,7 @@ relations:
 - depends_on: story:a-view-route-answers-its-rows-under-a-named-member-and-views-of-one-component-may-share-a-route-by-their
 - derived_from: story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member
 - depends_on: story:openapi-and-generated-servers-write-an-answer-wrapped-in-a-named-member
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -65,6 +65,8 @@ shared route or refuses it by name.
 ## Decisions
 
 None beyond SL-D7.
+
+- S13: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
 
 ## Scope
 

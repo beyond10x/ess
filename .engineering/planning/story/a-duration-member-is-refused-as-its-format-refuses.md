@@ -34,7 +34,9 @@ scope:
   path: crates/verify/ess-conformance/assets/coverage-admission.js
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
-revision: 11
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/runtime.ts
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:02Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:03Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
@@ -163,3 +165,16 @@ Shared surfaces moved: re-pins the generated-code rows of the byte-pin targets (
 Backlog (D398): not waved; considered only after approval and after every predefined wave is released.
 Related: story:an-admitted-timestamp-is-an-instant-the-server-can-order (the same decoder/grammar
 question for `Timestamp`).
+
+## Related (2026-11-25)
+
+A second report found the same disagreement from the other side: the TypeScript conformance runner
+(`crates/verify/ess-conformance/src/ts/runtime.ts:6616-6623`) also admits any string for a `Duration`,
+beside the Go runner and the browser adapter this story names, and a path segment or query value of a
+`Duration` reaches the same decoder as a body member (`crates/generate/ess-gen/src/http.rs:833-840`).
+`story:the-interpreter-the-runners-and-the-generated-servers-admit-one-text-for-a-timestamp-and-for-a-duration`
+carries the cross-lane agreement check for both primitives and the `Timestamp` half; the admission
+grammar for a `Duration` stays decided here. Two lines are added to this story's scope and acceptance:
+`crates/verify/ess-conformance/src/ts/runtime.ts` joins the scope, and the acceptance reads
+`primitive('duration', ...)` of the TypeScript runner beside the Go runtime's. Whether the evaluator
+(`ess-primitives` `expr.rs` `parse_elapsed`) moves with the admission grammar is TS-D2 of the other story.

@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -44,3 +44,26 @@ views.
   by name.
 - `ess-http/1` routes such a view without a parameter for the attribute; OpenAPI lists none.
 - A model without a caller read in a view keeps its IR bytes and its suite bytes.
+
+## Related (2026-11-25)
+
+A second adopter reports the same need from the HTTP binding (twentieth gap report, shape 1a): a view
+parameter such as `account_id` that the real service takes from the bearer token becomes a query
+parameter the service ignores and any caller can set. The binding binds a model parameter only from the
+path, the query or the body, and no mapping from a caller attribute exists or is proposed
+(`decision-blocker:the-caller-reaches-a-view-or-a-route-only-through-declared-attributes`, HC-D1,
+security-marked, with the owner, fail-closed A: the caller stays a declared attribute, read in the
+view filter, and the binding adds no source). This story is the model half of HC-D1 A. For a
+command the same need is expressible since 0.38.0: the account is not an input, and the stored field is
+set `{caller: account_id}` (`docs/design/caller-values.md:29`, `:44`).
+
+Two additions follow from the report and wait for the decision:
+
+- The one-row answer of such a view (`body: single`) needs `selects_identity` to count an identity
+  compared with `caller.<attribute>` as a selection by identity, as it counts `param.<name>`
+  (`crates/specify/ess-http/src/lib.rs:8807-8824`; the same widening for a literal is
+  `story:a-single-view-may-select-its-row-by-a-literal-identity-and-a-literal-route-serves-it`, HB-D2).
+- The "who am I" read (shape 1b) is `story:a-view-may-answer-the-row-that-describes-the-reading-actor`.
+
+`story:a-view-may-scope-rows-to-the-reading-actor` (draft) is an older statement of this need (a protocol specification's
+gap); the two are one feature, and the owner's pick under HC-D1 decides which survives.

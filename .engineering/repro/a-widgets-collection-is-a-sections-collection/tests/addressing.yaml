@@ -1,0 +1,20 @@
+format: ess-ui-test/1
+document: ../ui/widget.ui.yaml
+tests:
+  - name: the collection of a section is addressed with its rows
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/direct, rows: [it-01, it-02]}
+      - expect: {at: pages/home/sections/direct/rows/it-02, text: Robot}
+  - name: the collection nested in a widget is addressed
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/items/body/rows, rows: [it-01, it-02]}
+  - name: a row of the collection nested in a widget is addressed
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/items/body/rows/rows/it-02, text: Robot}
+  - name: the section of the widget shows a row
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/items, text: Robot}

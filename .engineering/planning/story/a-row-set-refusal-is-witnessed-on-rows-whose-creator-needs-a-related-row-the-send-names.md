@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/tests/a_row_set_branch_arranges_rows_past_the_creators_guard.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T13:42:33Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-22T13:42:35Z", actor: "human:timo", revision: 8}
@@ -100,3 +100,26 @@ Considered and rejected: an authored-scenario-only answer (the help already prom
 
 - D1: (a) fold this into the active story's part A as two further acceptance rows (recommended:
   same arrangement path, one implementor); (b) a separate story.
+
+## A second consumer, 2026-11-28: "no row for this pair of keys yet"
+
+A downstream meta-model specification (ess 0.99.9) reported that a guard "no row for this pair of
+keys yet" (a uniqueness over two inputs, written as a row-set refusal) cost two scenarios of a
+sibling command with `ESS-SYNTH-001`, and turned the guard into an `external:` cause. **Not
+reproduced on 0.99.9** in the forms tried; its specification is private.
+
+Neutral model, `.engineering/repro/a-row-set-refusal-is-witnessed-on-rows-whose-creator-needs-a-related-row-the-send-names/system.yaml`
+(`ess/37`): `Member` rows reference a `Person` and a `Group`; `Join(person_id, group_id)` refuses
+`unknown-person` and `unknown-group` (`when_related: {via, exists: false}`), then
+`already-member` (`when_related: {entity: Member, where: {all: [person_id == input.person_id,
+group_id == input.group_id]}, exists: true}`), then creates the `Member`; a sibling `Promote`
+addresses a `Member` (`unknown_instance:`, `wrong_state:`, a move). `validate` says valid;
+`synthesize` writes 10 scenarios and 0 refusals, and `ess verify conform run --target interpreted
+--report-format 2` passes all 10, including `Promote/outcome/promoted`, whose row `Join` creates
+under the guard.
+
+What the neutral model lacks is the reporter's pair: a pair whose keys the creator copies or
+derives (not sends), or a pair in which one key is a reference whose row only a provided entity
+holds. The next reproduction should vary where the keys come from, not the guard. Until then the
+story's own cause (the creator needs a related row the send names) is the only one known for
+`ESS-SYNTH-001` beside a row set, and the model above passes it.

@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 6
 ---
 ## Need
 
@@ -152,6 +152,23 @@ ignored).
 
 Accept, redesigned. **AE-D4**, default A.
 
+- S5: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
+
+- Stricter than drafted (found by the implementor, 2026-11-25): both keys are refused beside
+  `multipart` and on `get`; a selected member above or inside a field's member is refused; a
+  refinement restates both keys (`ESS-HTTP-012`); a catch-all on a shared path whose body is not a
+  `json` input object is `ESS-HTTP-010`.
+
+- The owner's read of the four `ess-http/1` keys of pull request 833 (`request.members`, `select`, `cors`, `lists`), relayed by the operator session, 2026-11-26 about 05:55 CET: "why would we not include them ?". Pull request 833 merges when green and its keys go out in 0.100.0.
+
 ## Size
 
 M, about 420 lines with tests.
+
+## Delivery
+
+Commits `d4082cd47a` (`request.members`, decision S5 = A) and `29f00aff50` (`select` per route,
+decision S4 = A) on the branch `feat/http-nested-members-and-shared-routes`, pushed. The whole
+check ran 8 lines, each exit 0. No pull request yet.

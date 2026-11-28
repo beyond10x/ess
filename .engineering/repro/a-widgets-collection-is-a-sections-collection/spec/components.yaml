@@ -1,0 +1,13 @@
+components:
+  - component: shop-service
+    summary: Holds the items.
+    owns:
+      domains:
+        - shop.channel
+    accepts:
+      commands:
+        - shop.channel.AddItem
+    publishes:
+      events:
+        - shop.channel.ItemAdded
+    reached_by: network

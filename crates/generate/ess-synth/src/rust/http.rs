@@ -163,8 +163,11 @@ pub(super) fn server_crate(
             format!(
                 "{}{}",
                 provenance.commented_for("//", REGENERATE),
-                // A model that uses `Json` keeps one `json::Value`, in the types crate.
-                if super::json::used(ir) {
+                // A model that uses `Json` keeps one `json::Value`, in the types crate; the single
+                // crate keeps one `json` module, at its root, whatever the model uses.
+                if layout.single_crate() {
+                    super::json::root_reexport(&server.types)
+                } else if super::json::used(ir) {
                     super::json::reexport(&server.types)
                 } else {
                     super::json::JSON.to_owned()
@@ -176,7 +179,12 @@ pub(super) fn server_crate(
             format!(
                 "{}{}{}{}",
                 provenance.commented_for("//", REGENERATE),
-                wire::module(&server),
+                // The single crate keeps one `wire` module, at its root; the server re-exports it.
+                if layout.single_crate() {
+                    wire::reexport(&server.types)
+                } else {
+                    wire::module(&server)
+                },
                 system_event_encoder(&server),
                 system_event_decoder(&server)
             ),
@@ -928,7 +936,7 @@ const SERVE_BODY: &str = r"{
 /// The generic parameter list `System` carries, as this crate has to spell it.
 fn generic_list(server: &Server<'_>) -> String {
     let mut generics = system::components_generics(server.ir);
-    if system::has_obligations(server.ir, server.plan) {
+    if system::takes_obligations(server.ir, server.plan) {
         generics.push("Obligations".to_owned());
     }
     if generics.is_empty() {

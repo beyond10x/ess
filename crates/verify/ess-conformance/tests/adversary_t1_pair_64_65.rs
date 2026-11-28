@@ -10,7 +10,8 @@ use std::process::Command;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::coverage::AdmittedInput;
-use ess_conformance::{AdmittedSuite, ConformanceSuite};
+use ess_conformance::interpret::Interpreted;
+use ess_conformance::{AdmittedSuite, ConformanceSuite, Runner};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use serde_json::Value;
 
@@ -193,9 +194,13 @@ fn typescript_admission(package: &Path) -> String {
         ("suite-65.json", relabelled(&coverage, 65)),
         ("wrong-64-with-coverage.json", relabelled(&coverage, 64)),
         ("wrong-65-without-coverage.json", relabelled(&ordinary, 65)),
-        ("wrong-66.json", relabelled(&ordinary, 66)),
+        ("suite-66.json", relabelled(&ordinary, 66)),
+        ("suite-67.json", relabelled(&coverage, 67)),
+        ("wrong-66-with-coverage.json", relabelled(&coverage, 66)),
+        ("wrong-68.json", relabelled(&ordinary, 68)),
         ("input-63.json", selected_carrier(63).unwrap()),
         ("input-65.json", selected_carrier(65).unwrap()),
+        ("input-67.json", selected_carrier(67).unwrap()),
     ];
     for (name, contents) in &documents {
         std::fs::write(folder.join(name), contents).unwrap();
@@ -228,16 +233,20 @@ fn verdicts(log: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
-const EXPECTED: [(&str, bool); 9] = [
+const EXPECTED: [(&str, bool); 13] = [
     ("input-63.json", true),
     ("input-65.json", true),
+    ("input-67.json", true),
     ("suite-62.json", true),
     ("suite-63.json", true),
     ("suite-64.json", true),
     ("suite-65.json", true),
+    ("suite-66.json", true),
+    ("suite-67.json", true),
     ("wrong-64-with-coverage.json", false),
     ("wrong-65-without-coverage.json", false),
-    ("wrong-66.json", false),
+    ("wrong-66-with-coverage.json", false),
+    ("wrong-68.json", false),
 ];
 
 fn expected() -> Vec<(String, bool)> {
@@ -261,11 +270,90 @@ fn the_typescript_runtime_reads_64_and_65_where_it_reads_62_and_63() {
 #[test]
 fn probe_the_case_above_fails_when_65_leaves_the_typescript_coverage_table() {
     let package = typescript_package("mutant-coverage-65", |runtime| {
-        let mutated = runtime.replacen("61, 63, 65,\n]);", "61, 63,\n]);", 1);
+        let mutated = runtime.replacen("63, 65, 67,\n]);", "63, 67,\n]);", 1);
         assert_ne!(mutated, runtime, "the coverage table line moved");
         mutated
     });
     let log = typescript_admission(&package);
     let _ = std::fs::remove_dir_all(package.parent().unwrap());
     assert_ne!(verdicts(&log), expected(), "{log}");
+}
+
+/// Each scenario's verdict when the Rust runner admits `document` and runs it on the interpreted
+/// target, or the refusal of its admission.
+fn rust_verdicts(document: &str) -> Result<Vec<String>, String> {
+    let admitted = AdmittedSuite::from_json(document).map_err(|error| error.to_string())?;
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir()))
+        .into_report();
+    Ok(report
+        .scenarios
+        .iter()
+        .map(|scenario| format!("{} {:?}", scenario.scenario, scenario.status))
+        .collect())
+}
+
+/// Suite pair `/66` and `/67` (story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet):
+/// an ordinary suite relabelled `/66` is admitted and run exactly as at `/64`.
+#[test]
+fn a_suite_relabelled_66_is_admitted_as_one_at_64() {
+    let ordinary = ordinary().to_canonical_json().unwrap();
+    let at_64 = rust_verdicts(&relabelled(&ordinary, 64)).expect("suite/64 is admitted");
+    let at_66 = rust_verdicts(&relabelled(&ordinary, 66))
+        .unwrap_or_else(|error| panic!("suite/66 refused: {error}"));
+    assert!(!at_64.is_empty());
+    assert_eq!(at_66, at_64);
+    if let Err(error) = ess_conformance::go::emit(&ordinary_suite_at(66)) {
+        panic!("the Go emitter refuses suite/66: {error}");
+    }
+}
+
+/// A coverage suite relabelled `/67` is admitted and run exactly as at `/65`, and an explicit
+/// selection of it is read back.
+#[test]
+fn a_coverage_suite_relabelled_67_is_admitted_as_one_at_65() {
+    let coverage = coverage();
+    let at_65 = rust_verdicts(&relabelled(&coverage, 65)).expect("suite/65 is admitted");
+    let at_67 = rust_verdicts(&relabelled(&coverage, 67))
+        .unwrap_or_else(|error| panic!("suite/67 refused: {error}"));
+    assert!(!at_65.is_empty());
+    assert_eq!(at_67, at_65);
+    let carrier = selected_carrier(67)
+        .unwrap_or_else(|error| panic!("suite/67 explicit selection refused: {error}"));
+    let read = AdmittedInput::from_json(&carrier)
+        .unwrap_or_else(|error| panic!("suite/67 carrier refused on read: {error}"));
+    assert_eq!(read.parents().len(), 1);
+}
+
+/// `/68` is refused by the Rust reader and the Go emitter, each naming `/67` as the newest it
+/// admits, and by the TypeScript runtime.
+#[test]
+fn suite_68_is_refused_by_every_reader() {
+    let ordinary = ordinary().to_canonical_json().unwrap();
+    let rust = rust_verdicts(&relabelled(&ordinary, 68)).expect_err("suite/68 is admitted");
+    assert!(rust.contains("1–67"), "{rust}");
+    let mut suite = ordinary_suite_at(64);
+    suite.provenance.suite_version =
+        ess_conformance::scenario::SuiteFormat::parse("ess-conformance/68").unwrap();
+    let go = ess_conformance::go::emit(&suite)
+        .expect_err("the Go emitter writes suite/68")
+        .to_string();
+    assert!(go.contains("`ess-conformance/67`"), "{go}");
+    let package = typescript_package("refuses-68", str::to_owned);
+    let log = typescript_admission(&package);
+    let _ = std::fs::remove_dir_all(package.parent().unwrap());
+    let refused = log
+        .lines()
+        .find(|line| line.starts_with("REFUSED wrong-68.json"))
+        .unwrap_or_else(|| panic!("TypeScript admits suite/68: {log}"));
+    assert!(refused.contains("ess-conformance/68"), "{refused}");
+}
+
+/// The ordinary suite, admitted at `major`.
+fn ordinary_suite_at(major: u32) -> ConformanceSuite {
+    let document = relabelled(&ordinary().to_canonical_json().unwrap(), major);
+    AdmittedSuite::from_json(&document)
+        .unwrap_or_else(|error| panic!("suite/{major} refused: {error}"))
+        .suite()
+        .clone()
 }

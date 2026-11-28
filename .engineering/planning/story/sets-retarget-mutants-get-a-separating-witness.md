@@ -9,7 +9,7 @@ refs:
   reference: beyond10x/ess#202
 relations:
 - serves: vision:O2
-revision: 5
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 3}
@@ -56,3 +56,129 @@ Paths:
 - crates/verify/ess-conformance/tests/mutation_audit.rs (counts, inferred)
 
 Verdict: open
+
+## Sibling inputs that carry one literal (downstream report, 2026-11-27)
+
+## Sibling inputs that carry one literal (downstream report, 2026-11-27)
+
+A downstream hardening pass found that a swap of two sibling inputs passes its whole suite. The rule above separates
+same-typed siblings that a `sets:` entry reads (`distinguished`, `source_pairs`, beyond10x/ess#161 and #202); the report
+shows shapes it did not reach.
+
+### Need
+
+On 0.99.2, and on `main` at 0.99.8 (`CHANGELOG.md` 0.99.3 to 0.99.8 name no change to how synthesis chooses the
+literals of sibling inputs; the 0.99.x `example:` entries decide which leaf keeps an authored example, not whether two
+inputs differ), the downstream measured, on the part of its specification that validates alone:
+
+- Inputs of one type carry one literal in a scenario: two `Integer` inputs of one command both `2`, two `Boolean`
+  inputs both `false`, a minimum and a maximum size both `1`.
+- An update writes the value the row already stores (a policy set to the value it holds).
+- 6 `sets-retarget` mutants and 1 `sets-drop` mutant of those commands are `unwitnessed` for it (the mutant's suite
+  equals the baseline's), and `value: input.grace_seconds` written in place of `value: input.<own input>` in one of the
+  commands passes the baseline suite, 266 of 266, exit 0. The rule is not pinned by any scenario.
+
+What is established on 0.99.2 here: for a command with two `Integer` inputs each read by its own `sets:` entry into a
+stored field, with a view that reads both fields, the baseline suite sends different values (1 and 2) and both
+`sets-retarget` mutants are killed. So the plain shape is already separated, and the report's cases differ from it. The
+cause is not found; readings, each inferred and none checked: the two inputs have different declared type names over one
+representation (`type_ref` differs, so `source_pairs` does not pair them); one of them is read only by a guard, a
+payload, an invariant or a response and not by a `sets:` entry; a type invariant ties the two (a minimum no larger than
+a maximum) and the search settled on equal values; or a two-valued type (`Boolean`) leaves no room for three inputs, the
+case #202 accepted. The first step of the story is the minimal pair for each, red on the released binary, and the
+shape that does not reproduce is dropped from the acceptance.
+
+### Fit review
+
+1. **Need.** A suite in which a swap of two inputs of one command, read into stored fields or payloads, fails a
+   scenario. The consumer is "a downstream control plane".
+2. **Class.** Gap in value selection: equal literals cannot tell two fields apart, and a suite that cannot is
+   weaker than the model it was synthesized from.
+3. **Already expressible?** An authored scenario with distinct values pins one command (`--scenarios`); that is a
+   scenario to write by hand for every command with two siblings, which is the work synthesis does for the shapes it
+   covers. An input's `example:` sets a literal per input and does not relate two inputs.
+4. **Fit.** Extends the separation rule of #161 and #202 to the pairs it leaves out; no new construct, no format
+   change. Synthesis output of an existing model moves.
+5. **Second adopter.** Any command with two inputs of one type read into different fields, which is common (a minimum
+   and a maximum, a source and a target, a start and an end).
+6. **Cost.** A pinned suite of an affected model moves when it is synthesized again, like the 0.99.x `example:`
+   entries; `synthesis_suite_bytes_table` and the byte-pin targets of `AGENTS.md` move, and the time of a synthesis is
+   timed before and after.
+7. **Alternatives.** (a) Change nothing; the downstream authors a scenario per command. (b) Separate more pairs
+   (chosen, D1). (c) Vary every input of every scenario: larger suites for pairs no output reads.
+8. **Generic, not per finding.** One rule over "two inputs of one command that an outcome reads into the row, a payload
+   or a response" covers the integer, boolean, bounds and already-stored shapes; it is not one fix per command.
+
+### Decisions
+
+- **D1. Which pairs of inputs are sent apart?** (a) Every pair of inputs of one command with one wire type. (b) The pairs
+  an outcome reads into a stored field, a payload or a response, whether or not a `sets:` entry reads them, in the
+  priority order `source_pairs` already uses. **Recommended: (b).** A pair no output reads cannot be told apart by any
+  observer, so (a) grows the suite for nothing; the pair a guard reads alone is the one most worth checking in the
+  first reproduction.
+- **D2. Where one witness cannot separate every pair (three `Boolean` inputs, or a type invariant that orders two
+  inputs)?** (a) Keep #202's priority order and leave the rest joined. (b) Add a further scenario for the pairs the
+  first leaves joined. **Recommended: (b),** because a scenario for the pairs left over is the only way a swap among
+  them fails a test; it adds scenarios only for commands with such pairs, and the suite size is measured.
+- **D3. Two inputs whose declared types differ over one representation?** (a) Pair them like same-typed siblings: a
+  swap type-checks on the wire. (b) Do not pair them. **Recommended: (a);** a target that reads one into the other's
+  field passes the same way.
+- **D4. An update that writes the stored value?** Recommended: covered by the same story where the reproduction shows
+  `freshened` leaving it, and not before.
+
+### Acceptance
+
+Each runs in a test that synthesizes a small model once and not per case, under the 60 s bound; each is red on 0.99.2.
+
+- A command with two inputs of one declared type, each read into its own stored field, passes the baseline suite and
+  fails it when `sets:` reads the other input, for the shape that reproduces first.
+- The same for an input a guard alone reads beside an input a `sets:` entry reads, and for a payload or response read.
+- A minimum and a maximum under an invariant that orders them are sent with different values, or the suite says why one
+  scenario cannot.
+- A `sets-retarget` and a `sets-drop` mutant of those commands are `killed` by `mutate --target interpreted`, not
+  `unwitnessed`.
+- An update that writes the value a row already stores is sent a different value where the type has one.
+- A suite of a model with no such pair is byte-identical to the previous release; a moved pin names its cause.
+
+## A reproduction in 55 lines, 2026-11-27
+
+One of the shapes above is reproduced on ess 0.99.2 in a specification of 55 lines
+(`.engineering/repro/sets-retarget-mutants-get-a-separating-witness/`). One command has an `Integer` input `a`, an
+`Integer` input `b` and a `String` identity input; its creating outcome sets stored field `a` from `input.a` and `b`
+from `input.b`; a view reads both fields.
+
+- **Trigger.** A first outcome that refuses with an `exists` row refusal on the command's own entity
+  (`when_related` with `exists: true`, matched on the identity). With it, synthesis gives every sibling `Integer` of the
+  command one value in each scenario (1 and 1, 2 and 2, 3 and 3, 4 and 4).
+- **Red.** `ess verify conform mutate --path . --target interpreted --class sets-retarget` from the repro directory
+  answers 2 mutants, 2 unwitnessed (`ESS-MUTATE-004`, the mutant's suite equals the baseline), exit 3.
+- **Without the trigger.** With the `exists` outcome removed the same command is sent 1 and 2, and both mutants are
+  killed. This is the plain shape the section above found already separated.
+- **Not needed for it.** `Integer` constraints, `Boolean` inputs, a second command, lifecycle transitions, a newtype
+  identity. A model of one command, one entity and one view is enough.
+
+This narrows the readings above: none of the type, the guard-only read or the invariant is needed, and the one thing
+the reproduction adds is the refusal on the command's own entity. The cause is still not found. The first step of the
+story is a test on this model, red on 0.99.2 (checked there) and green when the two `Integer` inputs differ in every
+scenario the command is sent, with both mutants killed; a check on `main` at 0.99.8 is still to be run.
+
+## A second consumer, 2026-11-28: an update field whose retarget and drop mutants are unwitnessed
+
+The same downstream meta-model specification (ess 0.99.9) reports that `sets-retarget` and
+`sets-drop` mutants on an update field are unwitnessed when synthesis re-sends the same literal the
+create step wrote, so the mutant's suite is unchanged (`ESS-MUTATE-004`). **Not reproduced for an
+update on 0.99.9**: `update-field/` in
+`.engineering/repro/sets-retarget-mutants-get-a-separating-witness/` adds an `Adjust` command
+(`updates:` with two `Integer` inputs read into two stored fields) to this story's 55-line model;
+its 4 `sets-retarget` and `sets-drop` mutants are killed.
+
+What the run does show on 0.99.9 is that the create shape of this story is still red: the 2
+`sets-retarget` mutants of `Define`, behind the `exists` refusal on its own entity, are
+`unwitnessed`. (The repro directory's `ess-inputs.yaml` pins 0.99.2, so a bare run there delegates
+to 0.99.2; `ESS_TOOLCHAIN=0.99.9` runs the release.) D4 of this story names an update that writes the
+stored value; whether the reporter's update does is not known.
+
+What a neutral model lacks is the reporter's update: one whose inputs are constrained so that one
+value is the only witness (an enum with one admitted variant, a bounded integer, a fixed-length
+text), or one beside the same trigger as the create shape (an `exists` refusal). The next
+reproduction should vary the update's input types and refusals, not the mutation class.

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 5
+revision: 6
 ---
 ## Need
 
@@ -167,6 +167,8 @@ entity stays, the list is walked in its filter through the row the parameter nam
   application keeps the list unmapped. **Recommended: (A).**
 
 - FMT-B (decided: A, 2026-11-24): this story moves to `ess/38` with the rest of the pull request (D77: no `ess/39`); the Acceptance line on the format says so.
+
+- AQ5: stays the owner's.
 
 ## Scope
 

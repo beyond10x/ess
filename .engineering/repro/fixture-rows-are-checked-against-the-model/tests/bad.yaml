@@ -1,0 +1,16 @@
+format: ess-ui-test/1
+document: ../ui/bad-fixtures.ui.yaml
+tests:
+  - name: the document's fixtures hold an unknown enum value and an extra field
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/direct, rows: [it-01, it-02, it-03]}
+  - name: a test's own fixtures hold the same
+    fixtures:
+      views:
+        shop.channel.Items:
+          rows:
+            - {item_id: it-01, label: Hammer, kind: Gadget, colour: red}
+    steps:
+      - open: home
+      - expect: {at: pages/home/sections/direct/rows/it-01, text: Hammer}

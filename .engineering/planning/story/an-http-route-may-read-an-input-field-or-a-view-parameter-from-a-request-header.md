@@ -13,7 +13,7 @@ relations:
 - depends_on: story:an-ess-protospec-1-message-declares-header-fields-absent-fields-fixed-values-and-an-application-body
 - depends_on: story:an-ess-protospec-1-reply-answers-on-the-exchange-of-the-message-it-received-and-a-credential-header-is-named
 - depends_on: story:an-ess-http-1-binding-names-the-protocol-document-its-routes-read-by-its-compiled-digest
-revision: 3
+revision: 6
 ---
 **Revised on 2026-11-24 after the owner's note.** A header is a protocol concept. The protocol
 document declares the request header (name, type, presence). The binding only says which input
@@ -236,6 +236,12 @@ unless it names its time with `slot --timeout` (at most 30 minutes).
 - PR-D1, PR-D2 and PR-D3 (architecture).
 - AC-D3 (credential headers are never inputs, default A) is unchanged and still open. AC-D4 and
   AC-D5 are untouched and still open.
+
+- S1: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- PR-D5: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
 
 ## Source
 

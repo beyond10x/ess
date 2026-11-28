@@ -25,7 +25,7 @@ scope:
   path: crates/generate/ess-gen/tests/openapi_http_presentation.rs
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:39:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:39:40Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
@@ -102,6 +102,8 @@ confidence: medium
 Accept, redesigned: the projection follows from the binding's `authentication` key (ADR option B),
 not from a projection-only key. Issue #681 closes when this story merges, after
 `story:an-http-binding-declares-how-a-caller-authenticates` and the two server stories.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 

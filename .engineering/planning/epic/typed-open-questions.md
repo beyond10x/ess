@@ -7,7 +7,7 @@ title: Open questions are typed declarations, refused by default
 summary: An authored specification declares what is unsettled as a typed open entry; validate refuses it unless drafting is switched on.
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -61,3 +61,14 @@ Inferring open questions from free text, or treating any comment as meaningful.
 Operator instruction, 2026-10-04 (session planning the Governed Autonomy north star; Atlas
 ADR 0066). Interim enforcement in commission, loom and canon is a Rust test per repository that
 fails on any `UNMAPPED:` string under `ess/`; it is removed when this epic ships.
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (gap 10 of a report of ten) that an `UNMAPPED:` marker
+can only be a YAML comment, while a rule of its own forbids comments in configuration files, so an
+open question has no place in its specification at all. This epic is that field form: a typed open
+entry that ESS reads and refuses by default. On `main` at `c0b5f560cb` the completeness report of
+`ess specify validate --format json` lists synthesis gaps and `unanswered` notes but no authored
+open question (`website/docs/guides/specify/layout-and-validation.md` § "How complete is it"), and
+beyond10x/ess#434 declined counting comments. The report is a second reason for the epic beside
+comments being invisible to ESS: a project that bans comments cannot record the question.

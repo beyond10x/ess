@@ -185,10 +185,27 @@ row. **(a) is chosen**, and (b)'s arrangement follows from it anyway:
 - **Optional fields.** May be read. `evaluate_compare` answers `Unknown` when an operand does not
   resolve (`predicate.rs`), and an unknown fact selects no branch and never the default
   (`observed-subject-history.md`). An author who wants `None` to select something writes
-  `not defined(field)`. No new refusal; the finite prover already declines `Optional` paths.
+  `not defined(field)`. The finite prover declines `Optional` paths; a comparison over a field a
+  row may hold absent with no presence test beside it is named by `validate` (see *A comparison
+  over an absent field* below).
 - **Absent subject.** Satisfies no predicate and reaches no declared outcome, as today; it is not
   created and not read as an initial-state row. This is a witness requirement below, because it is
   exactly what the unarranged refusal witness gets wrong today.
+
+#### A comparison over an absent field
+
+A comparison over an `Optional` stored field is Unknown against a row that holds the field absent,
+and the meaning stays so. `validate` names it where a row-set selector (`where:` and `forall:`), a
+related predicate, a `when_subject:` predicate or an `affects:` filter compares such a field with no
+presence test beside it (`crates/specify/ess-domain/src/command/absent_comparison.rs`). A presence
+test is `defined(f)` in a conjunction around the comparison, or `not defined(f)` (`missing(f)`) in a
+disjunction around it. `defined(f) and f == x` is False where `f` is absent, by the Kleene rule the
+evaluator already applies, so the guard decides; the hint prints that form.
+
+A field is named only where a row may hold it absent: a branch that creates the entity leaves it
+unset, a branch sets it `{cleared: true}` or from an `Optional` input, or nothing in the model
+creates the entity. From `ess/38` the finding is refused as `missing_declaration`; below it, it is a
+warning and documents that validate today keep their answers and IR bytes.
 
 ### What it refuses
 

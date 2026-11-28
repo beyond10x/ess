@@ -250,6 +250,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // The pair opened for the constructs of one release, with no vocabulary of its own yet.
     ("ess-conformance", 64, Some("0.93.0")),
     ("ess-conformance", 65, Some("0.93.0")),
+    // The pair opened for the open issues' suite vocabulary, with none of its own yet.
+    ("ess-conformance", 66, None),
+    ("ess-conformance", 67, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

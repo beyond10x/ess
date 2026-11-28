@@ -1,4 +1,4 @@
-#	models=495	lines=678
+#	models=497	lines=685
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	definition=6994335e6a9e9266f5f0ce33a640350814ba12cce3c4ce7439fe61643a3a9cdb:5797
 crates/edge/ess-cli/tests/fixtures/adversary-shorthand-binary64/spec.yaml	tracker-service	tracker.ops.Sample	create	recorded
@@ -95,7 +95,14 @@ crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	A
 crates/specify/ess-composition/tests/fixtures/payload-conformance/demo/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/payload-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/absent-comparison.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	components=0
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	components=1
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Job	definition=e09d0bb38050b9ab5b84bf5a04a39cfe394dd6369d153b63401f6fd7de38496d:2897
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Job	create	submitted
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Job	demo.jobs.Lease	leased, not-pending
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Sweep	definition=9caa95e8f3500e3c8eef7c7b9df2a18eca141d05ca1f38fe8d76b677cb566203:1358
+crates/specify/ess-domain/tests/fixtures/component-steps.yaml	worker	demo.jobs.Sweep	create	swept
 crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml	components=0
 crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/list-input-example.yaml	components=0
@@ -672,7 +679,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=287c2c0eff273e69863678b031b1dfbddcb197138db64cdd11ac8334541ca0b0:7586
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=607c2fd5dcf4daa99736417a6d5dc58d673a93235d13cff5bdec477fd03d056c:7604
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

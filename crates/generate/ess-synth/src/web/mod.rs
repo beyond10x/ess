@@ -210,27 +210,13 @@ impl<'a> Bridge<'a> {
     }
 
     /// `true` when the system crate carries obligations of its own — a transformation nobody
-    /// determined, or an escalation to build.
+    /// determined, or an escalation its pump calls.
     ///
-    /// The same question the Rust target asks to decide whether `System` takes a third type
-    /// parameter, asked here because this bridge has to spell the same type.
+    /// The question the Rust target asks to decide whether `System` takes a third type parameter
+    /// (`rust::system::takes_obligations`), asked through it because this bridge has to spell the
+    /// same type.
     pub fn has_system_obligations(&self) -> bool {
-        self.ir.bindings().values().any(|binding| {
-            let source = binding.name.to_string();
-            if !self
-                .plan
-                .is_generated(CapabilityKind::BindingDelivery, &source)
-            {
-                return false;
-            }
-            !self
-                .plan
-                .is_generated(CapabilityKind::BindingTransformation, &source)
-                || matches!(
-                    binding.on_failure(),
-                    ess_compiler::ir::ResolvedFailure::Escalate { .. }
-                )
-        })
+        crate::rust::system::takes_obligations(self.ir, self.plan)
     }
 
     /// The system crate, which every dispatching artifact needs.

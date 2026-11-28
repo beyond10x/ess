@@ -18,7 +18,7 @@ scope:
   path: crates/edge/ess-xtask/src/docs.rs
 - confidence: cited
   path: crates/edge/ess-xtask/tests/ci_lanes.rs
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T06:02:42Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":4}}}
 - {from: "proposed", to: "active", at: "2026-11-23T06:02:44Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":4}}}
@@ -117,3 +117,18 @@ slot task ci-lint
 `### Changed`:
 
 - CI: `task test-xtask` builds through the host's compile cache and job pool instead of an emptied `RUSTC_WRAPPER` and `CARGO_BUILD_JOBS=2`, and compiles and runs in two commands.
+
+## Amendment of 2026-11-25: the whole step is over 120 s with its compile
+
+The release gates of 0.99.0 and 0.99.1 ran `task test-xtask` in 172 s and 187 s (the gate logs of
+both releases). The 0.99.1 log shows the compile as `Finished test profile target(s) in 1m 00s`
+and the test binaries each finishing in under 1 s; the ten slowest tests are 25.0 s
+(`no_test_builds::no_test_spawns_cargo_outside_the_shrinking_allowlist`) down to 3.8 s. The step
+budget counts the step's wall time, so acceptance 4 (the run phase alone within 120 s) leaves the
+step over budget on a cold or loaded build.
+
+Acceptance to add:
+
+- `task test-xtask` as a whole, compile and run, ends within 120 s at a 1-minute load of 16 or
+  less on the build node, or it is split into steps that each do; the report names both phases'
+  times from the two commands this story already separates.

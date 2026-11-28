@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-number-with-no-declared-number-format-is-drawn-as-written-in-every-renderer
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T00:39:15Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T00:39:17Z", actor: "human:timo", revision: 4}
@@ -148,3 +148,20 @@ only the schema and the regenerated reference. It lands before `sl04-list-separa
 ## Source
 
 A downstream application, 2026-11-24, second report, G5 (object half).
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (received 2026-11-26) that a list of records is drawn by the two renderers in two different ways, and that a path through a list means two things.
+
+Facts, read on `main` at `c0b5f560cb`:
+
+- `ess ui check --model` accepts a dotted field path through a list, `{field: lines.title}` over a view row whose `lines` is a list of records, with 0 errors (reported; not rerun here).
+- React reads the member of every entry: `getPath` maps a segment over an array, so `lines.title` is the list of the titles (`crates/ui/ess-ui-react/templates/runtime/json.ts.tmpl:31-43`). The cell then goes through `formatValue`, which joins a list with `, ` and writes an object as JSON (`crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl:822-831`).
+- The terminal prints nothing: `walk` asks a sequence for a member by name, finds none and returns an absent value (`crates/ui/ess-ui-tui/src/expr.rs:215-224`, `field_path` 229-237).
+- The reference defines `field` as a name (`website/docs/reference/ess-ui.md:1511`) and says nothing of a path that crosses a list.
+
+So one document gives a column of titles in the browser and an empty column in the terminal, and the checker accepts both.
+
+The need, stated apart from any spelling: one rendering of a list of records shared by both renderers (a row per record, a member per column, a tone per member), or a path through a list that both renderers resolve alike. A second adopter: an order list whose rows hold their lines, or an inventory whose shelves hold their bins, each shown as a small table under the row.
+
+This story draws an object as one line of its members and a list member inside brackets. It does not cover this need: a list of records read as a path, or drawn as rows with members as columns, stays outside its Outcome (a record in a list is one line of pairs inside the brackets). The divergence of the path through a list is a second defect-shaped fact beside the object drawing: both renderers must resolve a path alike or the checker must refuse it. The row-and-column rendering belongs to `story:a-form-field-edits-a-list-of-records` (`as: list` with `fields:`), which carries decision LR-D1 for the path.

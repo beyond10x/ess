@@ -1050,3 +1050,100 @@ fn incident_ledger_guard_combinations_validate() {
         }
     )));
 }
+
+/// Two related rows, each answered by an `exists: false` branch of its own (`ess/22`).
+const MULTIPLE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml");
+
+/// Each `when_related:` form the hints of `ESS-COMMAND-005` in `errors` name, as written.
+fn hinted_forms(errors: &ValidationErrors) -> Vec<String> {
+    errors
+        .as_slice()
+        .iter()
+        .filter(|error| error.code == ValidationCode::NonExhaustiveBranches)
+        .filter_map(|error| error.hint.as_deref())
+        .filter_map(|hint| {
+            let form = &hint[hint.find("`when_related: ")? + 1..];
+            Some(form[..form.find('`')?].to_owned())
+        })
+        .collect()
+}
+
+/// `text` with a branch guarded by each form the missing-row hint of its refusal names, placed
+/// before `before`: every one validates, so an author who follows a hint is not refused for it.
+fn every_hinted_form_validates(text: &str, before: &str, error: &str) -> usize {
+    let forms = hinted_forms(&refused(text));
+    for form in &forms {
+        let branch = format!("      - name: hinted\n        {form}\n        error: {error}\n");
+        let followed = replaced(text, before, &format!("{branch}{before}"));
+        if let Err(errors) = assemble(&followed) {
+            panic!("the hint names `{form}`, which is refused:\n{errors}");
+        }
+    }
+    forms.len()
+}
+
+#[test]
+fn a_hint_of_the_missing_row_refusal_names_only_a_form_validation_accepts() {
+    // One related row, named by a top-level input: the hint names its `exists: false` branch.
+    let one = replaced(
+        SIGN_IN,
+        "      - name: no-configuration\n        when_related: {via: input.tenant, exists: false}\n        error: demo.signin.NoConfiguration\n",
+        "",
+    );
+    let named = every_hinted_form_validates(
+        &one,
+        "      - name: no-redirect-entry\n",
+        "demo.signin.NoConfiguration",
+    );
+    assert_eq!(named, 1, "the hint names the branch for the one row");
+
+    // A second row read by a predicate with no `exists: false` branch of its own.
+    let second = replaced(
+        MULTIPLE,
+        "      - name: no-such-capability\n        when_related: {via: input.capability, exists: false}\n        error: demo.run.NoSuchCapability\n",
+        "",
+    );
+    let named = every_hinted_form_validates(
+        &second,
+        "      - name: capability-revoked\n",
+        "demo.run.NoSuchCapability",
+    );
+    assert_eq!(named, 1, "the hint names the branch for the second row");
+
+    // The row named by a member of a struct input, which no `via:` admits: the hint names the
+    // command's inputs, as the refusal of the path does, and not the path it would refuse.
+    let member = replaced(
+        &replaced(
+            &replaced(
+                &replaced(
+                    &at(&one, "ess/22"),
+                    "  - {name: demo.signin.SignInId, kind: newtype, of: Uuid}\n",
+                    "  - {name: demo.signin.SignInId, kind: newtype, of: Uuid}\n  - name: demo.signin.Request\n    kind: struct\n    fields:\n      - {name: tenant, type: demo.signin.TenantId}\n      - {name: client, type: demo.signin.ClientId}\n",
+                ),
+                "      - {name: tenant, type: demo.signin.TenantId}\n      - {name: client, type: demo.signin.ClientId}\n    outcomes:\n",
+                "      - {name: request, type: demo.signin.Request}\n    outcomes:\n",
+            ),
+            "when_related: {via: input.tenant, predicate: redirect_client != input.client}",
+            "when_related: {via: input.request.tenant, predicate: redirect_client != input.request.client}",
+        ),
+        "          tenant: input.tenant\n          client: input.client\n",
+        "          tenant: input.request.tenant\n          client: input.request.client\n",
+    );
+    let errors = refused(&member);
+    every_hinted_form_validates(
+        &member,
+        "      - name: no-redirect-entry\n",
+        "demo.signin.NoConfiguration",
+    );
+    let hint = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.code == ValidationCode::NonExhaustiveBranches)
+        .and_then(|error| error.hint.clone())
+        .unwrap_or_else(|| panic!("the missing row is refused with a hint: {errors}"));
+    assert!(
+        !hint.contains("input.request.tenant") && hint.contains("request"),
+        "the hint names the declared input, not the member path: {hint}"
+    );
+}

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-time-date-or-timestamp-field-declares-whether-it-is-drawn-in-utc-or-the-reader-s-local-zone
-revision: 1
+revision: 4
 ---
 ## Need
 
@@ -86,6 +86,23 @@ Tree `bcfc51555`, read-only. Second report, G10.
    `now()`. (c) The requester's `between: [a, b], unset: now`: it names a list and a mode where one
    key and the existing `field` say the same. (d) Chosen: `since`.
 
+**Covered finding: requirement 4 of a downstream page generator's report of 2026-11-25.** The same
+need in its plain form: a column shows how long ago a row's instant was (an evaluation finished
+20 s ago), growing each second, pinned on the virtual clock, with no row field that is always
+absent. Read against this story (tree `2e055bcd0c`, read-only):
+
+- Covered: the clock standing in for an absent end, the growth each second, the redraw, and the
+  test on the virtual clock (Acceptance above). The requester says the plain case may be filed as an
+  amendment of this story, and it is.
+- Not covered: this story's start and end are two fields. `Field.field` is required
+  (`crates/ui/ess-ui/src/model.rs:2506`), so time since one instant has no end field to leave
+  absent: the row would need a field it never holds. That is the open decision EL-D1 below.
+- Not adopted from the request: the example's wording ("20 s ago") is how a duration reads, which
+  is looks. `ess-ui` is not extended for styling. The value is drawn by the duration rule
+  (`h:mm:ss`, `website/docs/reference/ess-ui.md:1505`), and any other wording is not part of this
+  story.
+- Second adopter: a job list that shows the time since each job last reported.
+
 ## Decisions
 
 **Accept, redesigned.** `field` is the end and `since` the start. Only an absent end reads the
@@ -95,6 +112,20 @@ clock.
   `as: duration` field. An absent `field` reads the clock. (B) UI expression arithmetic with a
   `now()` form, in every `expr` position. (C) Decline: the application keeps a host slot per column.
   **Recommended: A.**
+
+- **EL-D1. How is the time since one instant spelled, with no second field?** (A) `since: <field>`
+  on an `as: duration` field that writes no `field`: the clock is the end, as for an absent end.
+  `field` is then optional only beside `since`, `sortable` is refused on such a field, and the
+  column that must sort by the instant keeps a second column. (B) A second `as` value that reads
+  `field` as the instant and shows the time to the clock. It sorts by the instant, and it is a
+  second spelling of a duration whose end is the clock, which the review's question 4 refuses.
+  (C) UI expression arithmetic with a clock form, in every `expr` position. It conflicts with the
+  reference's Expressions section (`website/docs/reference/ess-ui.md`, "Expressions": paths and a
+  few operators, no computation) and with the fourth answer of this fit review. (D) Decline: the
+  application keeps a host slot per column. **Recommended: A.** Open, the coordinator's. Would add to
+  `ess-ui/1` under A: `field` optional beside `since` (waits for the owner's read before a release).
+
+Would add to `ess-ui/1`: `since` on an `as: duration` `Field` (waits for the owner's read before a release).
 
 ## Scope
 

@@ -48,6 +48,7 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/61"
             | "ess-conformance/63"
             | "ess-conformance/65"
+            | "ess-conformance/67"
     )
 }
 /// The first coverage suite major whose refusal record may carry `covered_by`.

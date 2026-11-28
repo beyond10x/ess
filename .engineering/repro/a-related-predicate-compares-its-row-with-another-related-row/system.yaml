@@ -1,0 +1,73 @@
+format: ess/37
+system: ops
+version: v1
+domain: ops.merge
+summary: Two incidents merge only within one environment; the rule compares a field of each of the two rows the input names.
+types:
+  - {name: ops.merge.IncidentId, kind: newtype, of: Uuid}
+  - {name: ops.merge.MergeId, kind: newtype, of: Uuid}
+entities:
+  - name: ops.merge.Incident
+    identity: {name: incident_id, type: ops.merge.IncidentId}
+    fields:
+      - {name: environment, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: ops.merge.Merge
+    identity: {name: merge_id, type: ops.merge.MergeId}
+    fields:
+      - {name: first, type: ops.merge.IncidentId}
+      - {name: second, type: ops.merge.IncidentId}
+    relations:
+      - {name: first_incident, kind: references, target: ops.merge.Incident, cardinality: one, via: first}
+      - {name: second_incident, kind: references, target: ops.merge.Incident, cardinality: one, via: second}
+    lifecycle: {initial: Done, states: [Done], terminal: [Done]}
+errors:
+  - {name: ops.merge.NotFound, summary: No incident carries the identity., fields: []}
+  - {name: ops.merge.OtherEnvironment, summary: The incidents are in different environments., fields: []}
+events:
+  - name: ops.merge.IncidentOpened
+    fields: [{name: incident_id, type: ops.merge.IncidentId}]
+  - name: ops.merge.Merged
+    fields: [{name: merge_id, type: ops.merge.MergeId}]
+actors:
+  - name: ops.merge.Responder
+    may: [ops.merge.OpenIncident, ops.merge.MergeIncidents]
+commands:
+  - name: ops.merge.OpenIncident
+    input:
+      - {name: environment, type: String}
+    outcomes:
+      - name: opened
+        creates: ops.merge.Incident
+        instance: incident_id
+        sets: {environment: input.environment}
+        emits: [ops.merge.IncidentOpened]
+        payload: {ops.merge.IncidentOpened: {incident_id: {generated: true}}}
+  - name: ops.merge.MergeIncidents
+    input:
+      - {name: first, type: ops.merge.IncidentId}
+      - {name: second, type: ops.merge.IncidentId}
+    outcomes:
+      - name: no-first
+        when_related: {via: input.first, exists: false}
+        error: ops.merge.NotFound
+      - name: no-second
+        when_related: {via: input.second, exists: false}
+        error: ops.merge.NotFound
+      - name: other-environment
+        when_related: {via: input.first, predicate: "environment != second.environment"}
+        error: ops.merge.OtherEnvironment
+      - name: merged
+        creates: ops.merge.Merge
+        instance: merge_id
+        sets: {first: input.first, second: input.second}
+        emits: [ops.merge.Merged]
+        payload: {ops.merge.Merged: {merge_id: {generated: true}}}
+views:
+  - name: ops.merge.Merges
+    source: ops.merge.Merge
+    consistency: read_your_writes
+    fields:
+      - {name: merge_id, type: ops.merge.MergeId}
+      - {name: first, type: ops.merge.IncidentId}
+      - {name: second, type: ops.merge.IncidentId}

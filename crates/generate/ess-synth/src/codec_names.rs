@@ -33,17 +33,20 @@ pub(crate) struct CodecNames {
 }
 
 impl CodecNames {
-    /// Allocates the stem of every declared type, event, error, command and view of `ir`, from the
-    /// target's own flattening of a qualified name.
+    /// Allocates the stem of every declared type, event, error, command, view and entity of `ir`,
+    /// from the target's own flattening of a qualified name.
     pub(crate) fn of(ir: &EssIr, flatten: impl Fn(&QualifiedName) -> String) -> Self {
         let mut stems = BTreeMap::new();
         // Commands and views are one family: both are served, and their handlers share the
         // `serve`/`run` prefixes in the module that routes to them.
-        let families: [Vec<&QualifiedName>; 4] = [
+        // Entities are their own family: only the single crate's `wire` module names a codec after
+        // one (its snapshot's), so adding them moves no other stem.
+        let families: [Vec<&QualifiedName>; 5] = [
             ir.types().keys().collect(),
             ir.events().keys().collect(),
             ir.errors().keys().collect(),
             ir.commands().keys().chain(ir.views().keys()).collect(),
+            ir.entities().keys().collect(),
         ];
         for family in families {
             stems.extend(allocate(family, &flatten));
@@ -53,8 +56,8 @@ impl CodecNames {
 
     /// The stem of a declaration's codecs.
     ///
-    /// Total for this IR's types, events, errors, commands and views, like the layouts' owner
-    /// lookups: a miss is a name from a different compilation.
+    /// Total for this IR's types, events, errors, commands, views and entities, like the layouts'
+    /// owner lookups: a miss is a name from a different compilation.
     pub(crate) fn stem(&self, declared: &QualifiedName) -> &str {
         self.stems.get(declared).map_or_else(
             || panic!("`{declared}` has no codec stem: it was derived from a different IR"),

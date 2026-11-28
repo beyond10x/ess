@@ -51,7 +51,9 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use ess_compiler::ir::{EssIr, EventHandle, ResolvedBinding, ResolvedComponent, ResolvedFailure};
+use ess_compiler::ir::{
+    EssIr, EventHandle, ResolvedBinding, ResolvedComponent, ResolvedFailure, ResolvedRefusalAction,
+};
 use ess_gen::{Artifact, Provenance};
 
 use crate::plan::{
@@ -111,6 +113,157 @@ struct Delivery<'a> {
     /// Whether the transformation is generated (a call to the emitted function) or owed (a call
     /// through the transformation obligation's trait).
     transformation_generated: bool,
+    /// Whether its dispatch counts the attempts of each occurrence against a retry bound
+    /// ([`counts_attempts`]): then every attempt carries the number of attempts the occurrence
+    /// made before it, and its held-back list holds that number beside the event.
+    counted: bool,
+    /// Whether its dispatch answers each refusal on its own ([`refusal_answers`]) and its command
+    /// declares one: then the delivery itself holds what it holds — a retry its policy selects,
+    /// and the port's unmet obligation below a declared bound — and `pump` reports every other
+    /// failure; no `attempt_…` holds anything for it.
+    per_refusal: bool,
+}
+
+/// What a dispatch that answers each refusal on its own does with one declared refusal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Answer<'a> {
+    /// Give up silently.
+    Drop,
+    /// A retry's `final:` refusal: given up at once, never rerouted to an escalation.
+    Final,
+    /// Hold the occurrence for the next pump: up to this many attempts in all, or without a bound.
+    Retry(Option<u32>),
+    /// Build the declared event through the escalation obligation and publish it once.
+    Escalate(&'a EventHandle),
+}
+
+/// Each outcome variant that refuses `binding`'s command, with what the dispatch answers it with,
+/// for a policy that a single arm cannot answer: a bounded retry (ess/16), which ends at once on a
+/// `final:` refusal and counts attempts, and a policy selected per refusal (ess/22). `None` for a
+/// universal `retry`, `drop` or `escalate`, whose dispatch answers every refusal with one arm.
+///
+/// The variants are the command's error-carrying outcomes in declaration order, then the second
+/// spelling of its `wrong_state` refusal where one exists, answered as that outcome is.
+fn refusal_answers<'a>(
+    ir: &'a EssIr,
+    binding: &'a ResolvedBinding,
+) -> Option<Vec<(String, Answer<'a>)>> {
+    let answer = |outcome: &ess_domain::command::OutcomeName| -> Answer<'a> {
+        match binding.on_failure() {
+            ResolvedFailure::BoundedRetry { bound } => {
+                if bound.is_final(outcome) {
+                    Answer::Final
+                } else {
+                    Answer::Retry(Some(bound.attempts))
+                }
+            }
+            ResolvedFailure::ByRefusal { policy } => match policy.select(Some(outcome)) {
+                ResolvedRefusalAction::Drop => Answer::Drop,
+                ResolvedRefusalAction::Retry { bound: None } => Answer::Retry(None),
+                ResolvedRefusalAction::Retry { bound: Some(bound) } => {
+                    if bound.is_final(outcome) {
+                        Answer::Final
+                    } else {
+                        Answer::Retry(Some(bound.attempts))
+                    }
+                }
+                ResolvedRefusalAction::Escalate { emits } => Answer::Escalate(emits),
+            },
+            ResolvedFailure::Retry | ResolvedFailure::Drop | ResolvedFailure::Escalate { .. } => {
+                unreachable!("a universal policy answers every refusal with one arm")
+            }
+        }
+    };
+    if !matches!(
+        binding.on_failure(),
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. }
+    ) {
+        return None;
+    }
+    let command = ir.command(&binding.command);
+    let mut answers: Vec<(String, Answer<'a>)> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_some())
+        .map(|outcome| (name::pascal(outcome.name.as_str()), answer(&outcome.name)))
+        .collect();
+    answers.extend(
+        ess_gen::unknown_instance::unknown_instance_answer(ir, command).map(|declared| {
+            (
+                super::items::unknown_instance_variant(declared),
+                answer(&declared.name),
+            )
+        }),
+    );
+    Some(answers)
+}
+
+/// The `attempts:` bound of `binding`'s failure policy, where it states one: a bounded retry's, or
+/// the bounded retry of a policy selected per refusal — whether or not a refusal it selects is
+/// left to retry once its `final:` refusals are taken out.
+fn attempt_bound(binding: &ResolvedBinding) -> Option<u32> {
+    match binding.on_failure() {
+        ResolvedFailure::BoundedRetry { bound } => Some(bound.attempts),
+        ResolvedFailure::ByRefusal { policy } => policy.bound().map(|bound| bound.attempts),
+        ResolvedFailure::Retry | ResolvedFailure::Drop | ResolvedFailure::Escalate { .. } => None,
+    }
+}
+
+/// Whether `binding`'s dispatch counts the attempts of each occurrence: its policy states a bound
+/// and the count is read — by a refusal answered with that bounded retry, or by the port's unmet
+/// obligation, which an `at_least_once` binding holds while the occurrence is below the bound.
+pub(super) fn counts_attempts(ir: &EssIr, binding: &ResolvedBinding) -> bool {
+    let Some(answers) = refusal_answers(ir, binding) else {
+        return false;
+    };
+    attempt_bound(binding).is_some()
+        && !answers.is_empty()
+        && (crate::plan::attempts_again(binding)
+            || answers
+                .iter()
+                .any(|(_, answer)| matches!(answer, Answer::Retry(Some(_)))))
+}
+
+/// Whether the generated pump calls `binding`'s escalation obligation: a universal `escalate` on a
+/// command that declares a refusal or behind a selection that can fail ([`delivery_arm`],
+/// [`selection_failure_policy`]), or a policy selected per refusal where some refusal of the
+/// command selects `escalate` ([`per_refusal_match`]).
+///
+/// Only then does `System` hold the escalation among its obligations: a field the pump never
+/// reads is refused by `-D warnings` in the generated crate. The plan still owes the escalation,
+/// so its trait and stub stay in the `obligations` module ([`system_obligations`]).
+pub(crate) fn calls_escalation(ir: &EssIr, binding: &ResolvedBinding) -> bool {
+    match binding.on_failure() {
+        ResolvedFailure::Escalate { .. } => {
+            let command = ir.command(&binding.command);
+            binding.selection.is_some()
+                || command
+                    .outcomes
+                    .iter()
+                    .any(|outcome| outcome.error.is_some())
+                || ess_gen::unknown_instance::unknown_instance_answer(ir, command).is_some()
+        }
+        ResolvedFailure::ByRefusal { .. } | ResolvedFailure::BoundedRetry { .. } => {
+            refusal_answers(ir, binding).is_some_and(|answers| {
+                answers
+                    .iter()
+                    .any(|(_, answer)| matches!(answer, Answer::Escalate(_)))
+            })
+        }
+        ResolvedFailure::Retry | ResolvedFailure::Drop => false,
+    }
+}
+
+/// The event `binding`'s failure policy publishes, where it publishes one: the universal
+/// `escalate`'s, or the escalation a policy selected per refusal names.
+fn escalation_of(binding: &ResolvedBinding) -> Option<&EventHandle> {
+    match binding.on_failure() {
+        ResolvedFailure::Escalate { emits } => Some(emits),
+        ResolvedFailure::ByRefusal { policy } => policy.escalation(),
+        ResolvedFailure::Retry | ResolvedFailure::Drop | ResolvedFailure::BoundedRetry { .. } => {
+            None
+        }
+    }
 }
 
 /// The system crate's one module.
@@ -145,6 +298,8 @@ fn lib_module(
             acceptor: acceptors[0],
             transformation_generated: plan
                 .is_generated(CapabilityKind::BindingTransformation, &source),
+            counted: counts_attempts(ir, binding),
+            per_refusal: refusal_answers(ir, binding).is_some_and(|answers| !answers.is_empty()),
         });
     }
 
@@ -236,7 +391,7 @@ pub(super) fn system_event_variants<'a>(
             continue;
         }
         events.insert(binding.cause.event().expect("generated event capability"));
-        if let ResolvedFailure::Escalate { emits } = binding.on_failure() {
+        if let Some(emits) = escalation_of(binding) {
             events.insert(emits);
         }
     }
@@ -514,8 +669,46 @@ fn field_expression(
         };
         proved_expression(determined, (proved, absent), ir, layout, types)
     } else {
-        mapping_expression(determined, ir, layout, types)
+        let wraps = copy_wraps(binding, field, &determined);
+        let expression = mapping_expression(determined, ir, layout, types);
+        if wraps {
+            format!("Some({expression})")
+        } else {
+            expression
+        }
     }
+}
+
+/// Whether `field` is filled by a plain copy of an event member into an Optional of that member's
+/// own type, which the transformation passes as `Some(..)`.
+fn copy_wraps(
+    binding: &ResolvedBinding,
+    field: &ess_compiler::ir::ResolvedField,
+    determined: &DeterminedInput<'_>,
+) -> bool {
+    matches!(determined, DeterminedInput::Copy { .. })
+        && binding
+            .mapping
+            .iter()
+            .find(|mapping| mapping.target == field.name && mapping.conversion.is_none())
+            .is_some_and(|mapping| match &mapping.value {
+                ess_compiler::ir::ResolvedMappingValue::EventField { type_ref, .. } => {
+                    wraps_once(type_ref, &mapping.target_type)
+                }
+                _ => false,
+            })
+}
+
+/// Whether `target` is `Optional` of exactly the plain `source`: a `T` that a copy passes as
+/// `Some(..)` into an `Optional<T>`. The wrap changes presence, not representation, so a newtype
+/// never wraps into an Optional of another newtype, and an Optional source never into a nested
+/// Optional.
+pub(super) fn wraps_once(
+    source: &ess_compiler::ir::ResolvedTypeRef,
+    target: &ess_compiler::ir::ResolvedTypeRef,
+) -> bool {
+    !source.is_optional()
+        && matches!(target, ess_compiler::ir::ResolvedTypeRef::Optional { of } if of.as_ref() == source)
 }
 
 /// The type a mapping assigns into: the mapping's own target where one maps the input, the
@@ -704,7 +897,7 @@ fn system_obligations(
             });
         }
         if let Some(obligation) = plan.obligation_of(CapabilityKind::BindingEscalation, &source) {
-            let ResolvedFailure::Escalate { emits } = binding.on_failure() else {
+            let Some(emits) = escalation_of(binding) else {
                 panic!(
                     "the plan owes an escalation for `{source}`, whose failure policy does not \
                      escalate; that is a defect in ess-synth"
@@ -779,8 +972,11 @@ fn obligations_module(
          refusing in the type system.\npub mod obligations {\n",
     );
     for spec in &owed {
+        // A selection refusal is escalated only by a universal `escalate`: under a policy
+        // selected per refusal it is a failure before the command's input exists, which selects
+        // no policy (`selection_failure_policy`).
         let extra = if spec.kind == CapabilityKind::BindingEscalation {
-            ir.bindings().values().find(|binding| binding.name.to_string() == spec.source && binding.selection.is_some()).map(|binding| format!("        /// Builds the escalation from a selection refusal before an Input exists.\n        fn {}_selection_escalation(&self, _event: &{}, _failure: &super::SelectionFailure) -> Result<{}, {types}::obligation::UnmetObligation> {{ Err({types}::obligation::UnmetObligation {{ capability: \"binding-escalation\", source: {:?} }}) }}\n", name::value_ident(&spec.source), types_path(layout, types, binding.cause.event().expect("selection event").name()), spec.answer, spec.source)).unwrap_or_default()
+            ir.bindings().values().find(|binding| binding.name.to_string() == spec.source && binding.selection.is_some() && matches!(binding.on_failure(), ResolvedFailure::Escalate { .. })).map(|binding| format!("        /// Builds the escalation from a selection refusal before an Input exists.\n        fn {}_selection_escalation(&self, _event: &{}, _failure: &super::SelectionFailure) -> Result<{}, {types}::obligation::UnmetObligation> {{ Err({types}::obligation::UnmetObligation {{ capability: \"binding-escalation\", source: {:?} }}) }}\n", name::value_ident(&spec.source), types_path(layout, types, binding.cause.event().expect("selection event").name()), spec.answer, spec.source)).unwrap_or_default()
         } else {
             String::new()
         };
@@ -852,27 +1048,24 @@ fn system_struct(
         if !delivery.transformation_generated {
             used_traits.push(format!("obligations::{pascal}Transformation"));
         }
-        match delivery.binding.on_failure() {
-            ResolvedFailure::Escalate { .. } => {
-                used_traits.push(format!("obligations::{pascal}Escalation"));
-            }
-            ResolvedFailure::BoundedRetry { .. } => {
-                unreachable!("refused by `failure::retry_bound`")
-            }
-            ResolvedFailure::ByRefusal { .. } => {
-                unreachable!("refused by `failure::refusal_policy`")
-            }
-            ResolvedFailure::Retry | ResolvedFailure::Drop => {}
+        if calls_escalation(ir, delivery.binding) {
+            used_traits.push(format!("obligations::{pascal}Escalation"));
         }
     }
-    // One held-back list per binding that can be attempted again, typed as the event it reacts to.
+    // One held-back list per binding that can be attempted again, typed as the event it reacts to;
+    // where the dispatch counts attempts, each held event carries the attempts its occurrence made.
     let held: Vec<(String, String)> = deliveries
         .iter()
         .filter(|delivery| crate::plan::holds_back(delivery.binding))
         .map(|delivery| {
+            let event = types_path(layout, types, trigger(delivery).name());
             (
                 held_field(delivery),
-                types_path(layout, types, trigger(delivery).name()),
+                if delivery.counted {
+                    format!("({event}, u32)")
+                } else {
+                    event
+                },
             )
         })
         .collect();
@@ -966,13 +1159,25 @@ fn held_field(delivery: &Delivery<'_>) -> String {
 }
 
 /// The method that makes one binding's attempt at one occurrence: `attempt_…` where a stopped
-/// attempt is held back for the next pump, the bare delivery where it is not.
+/// attempt is held back for the next pump, the bare delivery where it is not — and where the
+/// dispatch answers each refusal on its own, which holds only what its policy retries and reports
+/// every other failure.
 fn attempt_call(delivery: &Delivery<'_>) -> String {
     let ident = name::value_ident(&delivery.binding.name.to_string());
-    if crate::plan::attempts_again(delivery.binding) {
+    if crate::plan::attempts_again(delivery.binding) && !delivery.per_refusal {
         format!("attempt_{ident}")
     } else {
         format!("deliver_{ident}")
+    }
+}
+
+/// The arguments after the event of an occurrence's first attempt: none, or, where the dispatch
+/// counts attempts, the zero attempts the occurrence made before it.
+fn first_attempt(delivery: &Delivery<'_>) -> &'static str {
+    if delivery.counted {
+        ", 0"
+    } else {
+        ""
     }
 }
 
@@ -1071,12 +1276,9 @@ pub(crate) fn components_generics(ir: &EssIr) -> Vec<String> {
         .collect()
 }
 
-/// `true` when the system crate carries obligations of its own — a transformation nobody
-/// determined, or an escalation to build.
-///
-/// The question that decides whether `System` takes a third type parameter, asked by every
-/// artifact that has to spell the type: the system crate itself, the browser bridge and the server
-/// crate. One answer, because three would drift.
+/// `true` when a delivered binding owes a transformation or names an escalation, whether or not
+/// the pump calls it: the Go system's answer (`go::entry`), whose `NewSystem` takes every owed
+/// obligation of a delivered binding.
 pub(crate) fn has_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
     ir.bindings().values().any(|binding| {
         let source = binding.name.to_string();
@@ -1084,7 +1286,24 @@ pub(crate) fn has_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
             return false;
         }
         !plan.is_generated(CapabilityKind::BindingTransformation, &source)
-            || matches!(binding.on_failure(), ResolvedFailure::Escalate { .. })
+            || escalation_of(binding).is_some()
+    })
+}
+
+/// `true` when the Rust `System` holds obligations: a transformation nobody determined, or an
+/// escalation the pump calls ([`calls_escalation`]).
+///
+/// The question that decides whether `System` takes a third type parameter, asked by every
+/// artifact that has to spell the type: the system crate itself, the browser bridge and the server
+/// crate. One answer, because three would drift.
+pub(crate) fn takes_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
+    ir.bindings().values().any(|binding| {
+        let source = binding.name.to_string();
+        if !plan.is_generated(CapabilityKind::BindingDelivery, &source) {
+            return false;
+        }
+        !plan.is_generated(CapabilityKind::BindingTransformation, &source)
+            || calls_escalation(ir, binding)
     })
 }
 
@@ -1093,7 +1312,7 @@ pub(crate) fn has_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
 /// pump calls. `system` is the system crate's path (`gatepass_system`).
 ///
 /// The server's handlers call `pump` after every command, so they carry exactly these bounds; the
-/// pump's own `impl` block derives them from the same plan answer ([`has_obligations`]'s), and a
+/// pump's own `impl` block derives them from the same answer ([`takes_obligations`]'s), and a
 /// generated server that disagreed with it would not compile.
 pub(crate) fn pump_bounds(
     ir: &EssIr,
@@ -1120,7 +1339,7 @@ pub(crate) fn pump_bounds(
         if !plan.is_generated(CapabilityKind::BindingTransformation, &source) {
             owed.push(format!("{system}::obligations::{pascal}Transformation"));
         }
-        if matches!(binding.on_failure(), ResolvedFailure::Escalate { .. }) {
+        if calls_escalation(ir, binding) {
             owed.push(format!("{system}::obligations::{pascal}Escalation"));
         }
     }
@@ -1271,6 +1490,25 @@ fn pump_impl(
 
 /// `pump` where a binding reacts: this pump's own events first, then every held-back attempt.
 fn pump_fn(out: &mut String, deliveries: &[Delivery<'_>], unmet: &str) {
+    let holding: Vec<&Delivery<'_>> = deliveries
+        .iter()
+        .filter(|delivery| crate::plan::holds_back(delivery.binding))
+        .collect();
+    // Where a binding answers each refusal on its own, a held-back attempt whose failure is not
+    // held again is reported, never dropped; every other binding keeps the pump it had.
+    let reports = holding.iter().any(|delivery| delivery.per_refusal);
+    let held_again = if reports {
+        "A\n    /// held-back attempt that fails and is held again is not this pump's answer, so \
+         an event that\n    /// keeps failing never fails the pump for what is published after \
+         it. A held-back attempt\n    /// of a binding whose policy is selected per refusal or \
+         bounded, whose failure is not\n    /// held again — an unmet obligation at the bound, a \
+         failed escalation, a failure before the\n    /// port is invoked — is reported: it is \
+         this pump's answer where no first delivery failed.\n    /// What the held-back attempts \
+         publish is delivered for the first time too, and reported like\n    /// the rest."
+    } else {
+        "A\n    /// held-back attempt that fails again stays held and is not this pump's answer, so \
+         an event\n    /// that keeps failing never fails the pump for what is published after it."
+    };
     let _ = writeln!(
         out,
         "    /// Delivers until quiescent: collects every component's outbox onto the log, then \
@@ -1282,17 +1520,11 @@ fn pump_fn(out: &mut String, deliveries: &[Delivery<'_>], unmet: &str) {
          each held event again for\n    /// that binding alone, after the events published \
          since, and no other binding receives it\n    /// twice.\n    ///\n    /// `Err` carries \
          the first failure among the events this pump delivered for the first time:\n    /// what \
-         was published since the last pump, and what delivering it published in turn. A\n    /// \
-         held-back attempt that fails again stays held and is not this pump's answer, so an \
-         event\n    /// that keeps failing never fails the pump for what is published after it. A \
-         specification\n    /// whose bindings feed each other without end will not quiesce, and \
-         this pump will not\n    /// pretend otherwise.\n    pub fn pump(&mut self) -> \
-         Result<(), {unmet}> {{"
+         was published since the last pump, and what delivering it published in turn. \
+         {held_again} A specification\n    /// whose bindings feed each other without end will \
+         not quiesce, and this pump will not\n    /// pretend otherwise.\n    pub fn pump(&mut \
+         self) -> Result<(), {unmet}> {{"
     );
-    let holding: Vec<&Delivery<'_>> = deliveries
-        .iter()
-        .filter(|delivery| crate::plan::holds_back(delivery.binding))
-        .collect();
     if holding.is_empty() {
         out.push_str("        self.drain()\n    }\n");
         return;
@@ -1304,20 +1536,49 @@ fn pump_fn(out: &mut String, deliveries: &[Delivery<'_>], unmet: &str) {
             "        let {field} = core::mem::take(&mut self.{field});"
         );
     }
-    out.push_str(
+    out.push_str(if reports {
+        "        let mut delivered = self.drain();\n        // Each held-back event, attempted \
+         again for its own binding alone. What that publishes is\n        // delivered like \
+         anything else; an attempt that stops again is held again, or reported.\n"
+    } else {
         "        let delivered = self.drain();\n        // Each held-back event, attempted again \
          for its own binding alone. What that publishes is\n        // delivered like anything \
-         else; an attempt that stops again is held again.\n",
-    );
+         else; an attempt that stops again is held again.\n"
+    });
     for delivery in &holding {
-        let _ = writeln!(
-            out,
-            "        for event in {} {{\n            let _ = self.{}(&event);\n        }}",
-            held_field(delivery),
-            attempt_call(delivery)
-        );
+        if delivery.per_refusal {
+            let field = held_field(delivery);
+            let (pattern, made) = if delivery.counted {
+                ("(event, made)", ", made")
+            } else {
+                ("event", "")
+            };
+            let _ = writeln!(
+                out,
+                "        for {pattern} in {field} {{\n            let holding = \
+                 self.{field}.len();\n            if let Err(failure) = self.{}(&event{made}) {{\n  \
+                 \x20             // Not held again, so nothing will try it again: reported.\n  \
+                 \x20             if self.{field}.len() == holding {{\n                    \
+                 delivered = delivered.and(Err(failure));\n                }}\n            }}\n  \
+                 \x20     }}",
+                attempt_call(delivery)
+            );
+        } else {
+            let _ = writeln!(
+                out,
+                "        for event in {} {{\n            let _ = self.{}(&event);\n        }}",
+                held_field(delivery),
+                attempt_call(delivery)
+            );
+        }
     }
-    out.push_str("        let _ = self.drain();\n        delivered\n    }\n");
+    out.push_str(if reports {
+        "        // What the held-back attempts published is delivered for the first time: its \
+         failure is\n        // reported like the first drain's.\n        delivered.and(self.drain())\n    \
+         }\n"
+    } else {
+        "        let _ = self.drain();\n        delivered\n    }\n"
+    });
 }
 
 /// The caller's redelivery: every binding that may run again, without a second occurrence.
@@ -1378,9 +1639,10 @@ fn dispatch_fn(
         for delivery in reacting {
             let _ = writeln!(
                 out,
-                "                if let Err(failure) = self.{}(event) {{\n                    \
+                "                if let Err(failure) = self.{}(event{}) {{\n                    \
                  failed = failed.or(Some(failure));\n                }}",
-                attempt_call(delivery)
+                attempt_call(delivery),
+                first_attempt(delivery)
             );
         }
         out.push_str("            }\n");
@@ -1407,19 +1669,33 @@ fn binding_fns(
     let event_type = types_path(layout, types, event.name());
     let mut body = String::new();
     delivery_arm(&mut body, ir, layout, types, delivery, variants);
+    // Where the dispatch counts attempts, each attempt is told how many its occurrence made
+    // before it: 0 on the first delivery, the held count on every later one.
+    let (made_doc, made_parameter) = if delivery.counted {
+        (
+            "\n    ///\n    /// `made` is the number of attempts this occurrence made before this \
+             one; the retry's bound\n    /// counts them all, whichever refusal selected it.",
+            ", made: u32",
+        )
+    } else {
+        ("", "")
+    };
     let _ = writeln!(
         out,
         "\n    /// `{source}`'s attempt at one `{event}`: transform, record the invocation, \
          invoke the\n    /// acceptor's port, and answer a declared refusal with the declared \
-         policy.\n    fn deliver_{ident}(&mut self, event: &{event_type}) -> Result<(), {unmet}> \
-         {{"
+         policy.{made_doc}\n    fn deliver_{ident}(&mut self, event: &{event_type}{made_parameter}) \
+         -> Result<(), {unmet}> {{"
     );
     for line in body.lines() {
         out.push_str(line.strip_prefix("        ").unwrap_or(line));
         out.push('\n');
     }
     out.push_str("        Ok(())\n    }\n");
-    if !crate::plan::attempts_again(delivery.binding) {
+    // A dispatch that answers each refusal on its own holds an occurrence inside the delivery —
+    // a retry its policy selects, an unmet obligation of the port below the bound — and `pump`
+    // reports everything else.
+    if !crate::plan::attempts_again(delivery.binding) || delivery.per_refusal {
         return;
     }
     let field = held_field(delivery);
@@ -1520,6 +1796,9 @@ fn input_arm(
 /// see the [module documentation](self) — so the arm matches on the outcome enum. An unmet
 /// obligation propagates with `?` instead: it is the workspace being unfinished, not a delivery
 /// failing, and routing it into the policy would publish a domain event no domain fact caused.
+/// A bounded retry and a policy selected per refusal answer each refusal on its own
+/// ([`per_refusal_match`]).
+#[allow(clippy::too_many_lines)]
 fn delivery_arm(
     out: &mut String,
     ir: &EssIr,
@@ -1562,7 +1841,7 @@ fn delivery_arm(
         out,
         "                // `{source}`: {}, on failure {}.",
         ess_gen::graph::delivery_word(binding.delivery),
-        binding.failure.as_str()
+        failure_words(binding)
     );
     input_arm(out, ir, types, delivery, variants);
     let _ = writeln!(
@@ -1614,7 +1893,26 @@ fn delivery_arm(
                 &body,
             );
         }
-        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => refused(),
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => {
+            let answers = refusal_answers(ir, binding)
+                .expect("a bounded or selected policy answers each refusal on its own");
+            per_refusal_match(
+                out,
+                &PerRefusal {
+                    acceptor: &acceptor,
+                    method: &method,
+                    outcome_type: &outcome_type,
+                    held: &held,
+                    ident: &ident,
+                    counted: delivery.counted,
+                    again: crate::plan::attempts_again(binding),
+                    bound: attempt_bound(binding),
+                },
+                &successes,
+                &answers,
+                variants,
+            );
+        }
         ResolvedFailure::Drop => {
             let _ = writeln!(
                 out,
@@ -1666,7 +1964,15 @@ fn selection_failure_policy(
         ResolvedFailure::Retry => {
             let _ = writeln!(out, "self.{held}.push(event.clone());");
         }
-        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => refused(),
+        // A failed selection is a failure before the command's input exists: it makes no attempt,
+        // so no bound can count it, and it selects no policy, as no refusal answered.
+        ResolvedFailure::BoundedRetry { .. } | ResolvedFailure::ByRefusal { .. } => {
+            let _ = writeln!(
+                out,
+                "// No command input exists, so no attempt was made and no refusal selects a \
+                 policy."
+            );
+        }
         ResolvedFailure::Drop => {}
         ResolvedFailure::Escalate { emits } => {
             let _ = writeln!(out, "let escalation = self.obligations.{ident}_selection_escalation(event, &failure)?; self.published.push(SystemEvent::{}(escalation));", variants[emits]);
@@ -1677,8 +1983,193 @@ fn selection_failure_policy(
     out.push_str("return Err(failure.into()); } };\n");
 }
 
-/// A bounded retry or a policy selected per refusal reached emission: both are refused before it,
-/// by `failure::retry_bound` and `failure::refusal_policy`.
-fn refused() -> ! {
-    unreachable!("refused by `failure::retry_bound` and `failure::refusal_policy`")
+/// The failure policy as a delivery's comment states it: the word an author wrote, the bound of a
+/// bounded retry, or that the policy is selected per refusal — never the fallback's word alone.
+fn failure_words(binding: &ResolvedBinding) -> String {
+    match binding.on_failure() {
+        ResolvedFailure::BoundedRetry { bound } => {
+            format!("retry, {} attempts in all", bound.attempts)
+        }
+        ResolvedFailure::ByRefusal { .. } => "selected per refusal".to_owned(),
+        ResolvedFailure::Retry | ResolvedFailure::Drop | ResolvedFailure::Escalate { .. } => {
+            binding.failure.as_str().to_owned()
+        }
+    }
+}
+
+/// What the delivery does with an unmet obligation its port answered, before it propagates: where
+/// the binding may run again under a bound, hold the occurrence with that invocation counted while
+/// it is below the bound. Anything else is held by nothing, so `pump` reports it.
+fn port_unmet_hold(names: &PerRefusal<'_>) -> Vec<String> {
+    let held = names.held;
+    match (names.again, names.bound) {
+        (true, Some(attempts)) => vec![
+            "// It counts against the bound: held while the occurrence is below it; at the bound"
+                .to_owned(),
+            "// nothing is held and it is reported.".to_owned(),
+            format!("if made + 1 < {attempts} {{"),
+            format!("    self.{held}.push((event.clone(), made + 1));"),
+            "}".to_owned(),
+        ],
+        (false, _) | (true, None) => {
+            vec!["// No bound counts it, so nothing holds it: it is reported.".to_owned()]
+        }
+    }
+}
+
+/// The lines of one refusal arm: what `answer` does, unindented.
+fn answer_lines(
+    answer: Answer<'_>,
+    names: &PerRefusal<'_>,
+    variants: &std::collections::BTreeMap<&EventHandle, String>,
+) -> Vec<String> {
+    let PerRefusal {
+        held,
+        ident,
+        counted,
+        ..
+    } = names;
+    match answer {
+        Answer::Drop => vec!["// `drop`: given up silently; nothing is published.".to_owned()],
+        Answer::Final => vec![
+            "// A `final:` refusal of the retry: given up at once, and never rerouted to an"
+                .to_owned(),
+            "// escalation.".to_owned(),
+        ],
+        Answer::Retry(Some(attempts)) => vec![
+            format!(
+                "// `retry`, {attempts} attempts in all: this was attempt `made + 1`. Below the \
+                 bound the"
+            ),
+            "// event is held for this binding alone and the next pump makes the next attempt; at"
+                .to_owned(),
+            "// the bound the work is lost, as under `drop`.".to_owned(),
+            format!("if made + 1 < {attempts} {{"),
+            format!("    self.{held}.push((event.clone(), made + 1));"),
+            "}".to_owned(),
+        ],
+        Answer::Retry(None) => vec![
+            "// `retry`: hold the event for this binding alone, and the next pump makes one"
+                .to_owned(),
+            "// more attempt.".to_owned(),
+            format!(
+                "self.{held}.push({});",
+                if *counted {
+                    "(event.clone(), made.saturating_add(1))"
+                } else {
+                    "event.clone()"
+                }
+            ),
+        ],
+        Answer::Escalate(emits) => vec![
+            "// `escalate`: build the declared event from this attempt's input, and publish it \
+             once."
+                .to_owned(),
+            format!("let escalation = self.obligations.{ident}_escalation(&input)?;"),
+            format!(
+                "self.published.push(SystemEvent::{}(escalation));",
+                variants[emits]
+            ),
+        ],
+    }
+}
+
+/// What a dispatch that answers each refusal on its own names in the code it writes.
+struct PerRefusal<'a> {
+    /// The acceptor's field on `System`.
+    acceptor: &'a str,
+    /// The acceptor port's method for the command.
+    method: &'a str,
+    /// The command's outcome enum.
+    outcome_type: &'a str,
+    /// The binding's held-back list.
+    held: &'a str,
+    /// The binding's identifier, which names its escalation obligation.
+    ident: &'a str,
+    /// Whether the dispatch counts attempts ([`counts_attempts`]).
+    counted: bool,
+    /// Whether the binding may be attempted again after an unmet obligation
+    /// ([`crate::plan::attempts_again`]).
+    again: bool,
+    /// The bound on the occurrence's attempts, where the policy declares one ([`attempt_bound`]).
+    bound: Option<u32>,
+}
+
+/// The outcome match of a bounded retry or a policy selected per refusal (ess/16, ess/22).
+///
+/// An unmet obligation the port answers selects no policy and propagates, but the invocation was
+/// an attempt: where the binding may run again and the policy declares a bound, the occurrence is
+/// held with it counted while it is below the bound. Every success is inert, and each refusal is
+/// answered with its own policy, refusals with the same answer sharing one arm, arms in the order
+/// of their first refusal.
+///
+/// A bounded retry compares the occurrence's attempts — `made` before this one, and this one —
+/// with its bound, so switching between the refusals that select it never resets the count. A
+/// `final:` refusal is given up at once and never rerouted to an escalation. An escalation is built
+/// from this attempt's actual input and published once; a builder that fails is reported with `?`
+/// and held by nothing, so the command is not run again for it. Only this match holds an
+/// occurrence: whatever fails without being held is reported out of `pump`.
+fn per_refusal_match(
+    out: &mut String,
+    names: &PerRefusal<'_>,
+    successes: &[String],
+    answers: &[(String, Answer<'_>)],
+    variants: &std::collections::BTreeMap<&EventHandle, String>,
+) {
+    let PerRefusal {
+        acceptor,
+        method,
+        outcome_type,
+        ..
+    } = names;
+    let escalates = answers
+        .iter()
+        .any(|(_, answer)| matches!(answer, Answer::Escalate(_)));
+    let input = if escalates { "input.clone()" } else { "input" };
+    let hold = port_unmet_hold(names);
+    let _ = writeln!(
+        out,
+        "                // Each refusal selects its own policy. An unmet obligation of the port \
+         selects none and\n                // propagates, but the invocation was an attempt.\n  \
+         \x20             let answer = match self.{acceptor}.{method}({input}) {{\n              \
+         \x20     Ok(answer) => answer,\n                    Err(unmet) => {{"
+    );
+    for line in &hold {
+        let _ = writeln!(out, "                        {line}");
+    }
+    let _ = writeln!(
+        out,
+        "                        return Err(unmet.into());\n                    }}\n                \
+         }};\n                match answer {{"
+    );
+    for variant in successes {
+        let _ = writeln!(
+            out,
+            "                    {outcome_type}::{variant} {{ .. }} => {{}}"
+        );
+    }
+    let mut arms: Vec<(Answer<'_>, Vec<&str>)> = Vec::new();
+    for (variant, answer) in answers {
+        match arms.iter_mut().find(|(seen, _)| seen == answer) {
+            Some((_, grouped)) => grouped.push(variant),
+            None => arms.push((*answer, vec![variant])),
+        }
+    }
+    for (answer, grouped) in arms {
+        let pattern = grouped
+            .iter()
+            .map(|variant| format!("{outcome_type}::{variant} {{ .. }}"))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let lines = answer_lines(answer, names, variants);
+        let body = lines.iter().fold(String::new(), |mut body, line| {
+            let _ = writeln!(body, "                        {line}");
+            body
+        });
+        let _ = writeln!(
+            out,
+            "                    {pattern} => {{\n{body}                    }}"
+        );
+    }
+    out.push_str("                }\n");
 }

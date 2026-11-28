@@ -31,11 +31,14 @@ const BINDING: &str = include_str!("../fixtures/body-cap-rust/http.yaml.in");
 /// in path order, captured on the tree before this change: a binding that declares no limit and no
 /// `too_large` refusal writes the bytes it wrote before. Re-recorded when the served document of
 /// the shop's `form` route with `unknown: ignore` (`Order`) wrote its input with
-/// `additionalProperties: true` (beyond10x/ess#752).
+/// `additionalProperties: true` (beyond10x/ess#752). The crate row was re-recorded when the crate
+/// layout wrote its `wire` and `json` modules at the root, the server re-exporting them, and those
+/// modules gained the entity snapshot codecs
+/// (story `a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-…`).
 const SHOP_WORKSPACE_DIGEST: &str =
     "sha256:e4e1c90021f86090e3fe91b39c238be4802a00e40cae55755ac8301e09b0930b";
 const SHOP_CRATE_DIGEST: &str =
-    "sha256:2ef55cbd5cb203a19a83592e0b7d297f8d7b465d373d56341e40eb061d901a70";
+    "sha256:d07390df455dfb8f76658806a6d80f513388ce9e6282939dce6b59bb37adae24";
 
 fn fixture_ir() -> EssIr {
     let spec = Specification::assemble([(

@@ -20,7 +20,7 @@ scope:
   path: crates/generate/ess-synth/src/go/http/bound.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/served_authentication_go.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:34Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:35Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":2}}}
@@ -78,6 +78,8 @@ confidence: medium
 ## Decisions
 
 Accept, redesigned (Go target of `story:an-http-binding-declares-how-a-caller-authenticates`).
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Source
 
