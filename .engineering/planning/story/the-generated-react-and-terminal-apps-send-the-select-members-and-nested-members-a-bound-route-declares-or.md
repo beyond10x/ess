@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:several-command-routes-may-share-one-method-and-path-each-chosen-by-literal-values-of-members-of-the-json-body
 - depends_on: story:a-json-request-may-carry-an-input-field-in-a-nested-member-of-its-body-validated-compiled-and-projected
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -91,6 +91,10 @@ refuses them by name. This unit closes the app readers.
 ## Decisions
 
 Accept, redesigned. No open question.
+
+- D134: until this unit lands, every generator that does not read `request.members` or `select`
+  refuses a binding that uses them, by name; this unit lifts its refusal. Taken by the
+  coordinator on 2026-11-25.
 
 ## Size
 

@@ -1,0 +1,12 @@
+[package]
+name = "library-crate-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "harness"
+path = "src/main.rs"
+
+[dependencies]
+shop-model = { path = "../shop-model" }

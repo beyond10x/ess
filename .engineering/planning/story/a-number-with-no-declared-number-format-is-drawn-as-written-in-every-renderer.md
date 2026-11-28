@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-per-value-channel-script-that-names-no-session-is-reported
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T00:39:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T00:39:14Z", actor: "human:timo", revision: 4}
@@ -156,6 +156,8 @@ or default format, not the model type.
 
 - **SL-D1.** Which nodes keep grouping? Default A: where a number format is declared or is the
   schema default (metric), plus the header total. See `DECISIONS.md`.
+
+- D133, the owner's read of the format keys of pull request 830 (relayed by the operator session, 2026-11-26 about 05:45 CET): "A: yes, release them". These keys may go out in the next release from `main`.
 
 ## Scope
 

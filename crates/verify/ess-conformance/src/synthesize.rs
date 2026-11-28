@@ -870,6 +870,7 @@ impl fmt::Display for Refusal {
     /// The id is what a fault matrix and a stored report key on, and it is the only thing that
     /// tells two refusals about one entity apart: `Invoice/state/Paid/refuses/CancelInvoice` and
     /// `Invoice/state/Paid/refuses/IssueInvoice` share a subject and are different checks.
+    #[allow(clippy::too_many_lines)] // One arm per kind of refusal, in one exhaustive match.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.scenario {
             // The scenario exists; one absence it should witness is missing from it (ess/22,
@@ -900,6 +901,21 @@ impl fmt::Display for Refusal {
                 writeln!(
                     f,
                     "refusal[{}]: {} has a scenario `{id}` that skips its read of `{view}`",
+                    self.code(),
+                    self.subject
+                )
+            }
+            // The scenario exists; it puts too few rows in an ordered view to check the order
+            // (beyond10x/ess#795).
+            Some(id)
+                if self.stands && matches!(self.cause, RefusalCause::OrderUnwitnessed { .. }) =>
+            {
+                let RefusalCause::OrderUnwitnessed { view, .. } = &self.cause else {
+                    unreachable!("matched above")
+                };
+                writeln!(
+                    f,
+                    "refusal[{}]: {} has a scenario `{id}` without its order of `{view}`",
                     self.code(),
                     self.subject
                 )
@@ -2056,6 +2072,17 @@ impl fmt::Display for RefusalCause {
                 view,
                 entity,
                 arranged,
+                reason: Unreachable::SecondAnswered { via, outcome },
+            } => write!(
+                f,
+                "`{view}` declares an order and this scenario can put {arranged} row(s) in it: \
+                 a second `{entity}` under one `{via}` is answered by `{}` of `{}`",
+                outcome.outcome, outcome.command
+            ),
+            Self::OrderUnwitnessed {
+                view,
+                entity,
+                arranged,
                 reason,
             } => write!(
                 f,
@@ -3114,6 +3141,15 @@ pub enum Unreachable {
         /// The field that links a row to its owner.
         via: String,
     },
+    /// The rows are read by their owner, through the link `via`, and the command creating them
+    /// answers a second row under one owner with a refusal reading the rows already there
+    /// (`when_related: {entity, where: <via> == input.<field>, exists: true}`, beyond10x/ess#795).
+    SecondAnswered {
+        /// The field that links a row to its owner.
+        via: String,
+        /// The branch that answers the second creation.
+        outcome: Box<OutcomeRef>,
+    },
     /// A move on the route reads a related row through a stored field of the row being arranged
     /// (`when_related: {via: <field>}`, ess/22, beyond10x/ess#304), and no arranging run can set
     /// that field so the move's branch is selected: left out, or naming a row of the related entity
@@ -3277,6 +3313,11 @@ impl Unreachable {
                 "an owner under `cardinality: one` holds one row, so an order over one owner's \
                  rows has nothing to rank; declare `cardinality: many` if an owner holds several"
             }
+            Self::SecondAnswered { .. } => {
+                "the creating command refuses a second row under one owner, so an order over one \
+                 owner's rows has nothing to rank; drop `order_by:`, or let a command create a \
+                 second row under the owner"
+            }
             Self::StoredReference { .. } => {
                 "an arranging run sends a branch reading a stored reference with the reference \
                  left out, or naming a row of the related entity arranged one level deep; declare \
@@ -3347,6 +3388,11 @@ impl fmt::Display for Unreachable {
                 f,
                 "the rows are read by the owner `{via}` names, and the owning relation is \
                  `cardinality: one`, so an owner holds one row"
+            ),
+            Self::SecondAnswered { via, outcome } => write!(
+                f,
+                "a second row under one `{via}` is answered by `{}` of `{}`",
+                outcome.outcome, outcome.command
             ),
             Self::StoredReference { outcome, why } => write!(
                 f,
@@ -3960,16 +4006,43 @@ fn synthesize_plain(ir: &EssIr, focus: Focus<'_>) -> Synthesis {
     synthesize_invocations(&caller::InvocationModels::plain(ir), focus)
 }
 
+/// What a synthesis of one model remembers about it, held until dropped ([`held`]). The fields drop
+/// in the reverse of the order [`held`] takes them in.
+#[must_use = "the memories are held until this is dropped"]
+pub(super) struct Held<'ir> {
+    _prepared: prepare_memo::Remembered,
+    _created: created_memo::Remembered,
+    _kept: model_memo::Keeping<'ir>,
+    _orderings: crate::now_offset::Remembered,
+    _remembered: made::Remembered,
+    _memoised: crate::witness_memo::Memoised<'ir>,
+}
+
+/// Holds every memory a synthesis keeps about `ir` (its witness answers, the rows it made, its
+/// orderings, the model's derived facts, its creations and its prepared rows) until the guard
+/// drops. A caller assignment's model is another model: its answers are held apart and dropped
+/// with it, or parked where a [`caller`] keeping holds that model.
+pub(super) fn held(ir: &EssIr) -> Held<'_> {
+    let memoised = crate::witness_memo::memoise(ir);
+    let remembered = made::remember(ir);
+    let orderings = crate::now_offset::remember(ir);
+    let kept = model_memo::keep(ir);
+    let created = created_memo::remember(ir);
+    let prepared = prepare_memo::remember(ir);
+    Held {
+        _prepared: prepared,
+        _created: created,
+        _kept: kept,
+        _orderings: orderings,
+        _remembered: remembered,
+        _memoised: memoised,
+    }
+}
+
 #[allow(clippy::too_many_lines)] // Keep the ordered scenario-family dispatch together.
 fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_>) -> Synthesis {
     let ir = models.arrangement;
-    // A caller assignment's model is another model: its answers are held apart and dropped with it.
-    let _memoised = crate::witness_memo::memoise(ir);
-    let _remembered = made::remember(ir);
-    let _orderings = crate::now_offset::remember(ir);
-    let _kept = model_memo::keep(ir);
-    let _created = created_memo::remember(ir);
-    let _prepared = prepare_memo::remember(ir);
+    let _held = held(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
@@ -4085,6 +4158,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     reference_integrity::references(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
         bindings(ir, &actors, &mut suite, &mut refusals, &mut notes);
+        component_steps(ir, &mut refusals);
         // The fresh suite's `Empty` authority, established before the aggregate planner reads it
         // (`docs/design/aggregate-group-selection.md`); the final selection below still runs.
         suite.select_fresh_format();
@@ -6048,7 +6122,7 @@ fn run_as(
     );
     let mut listed_after = Vec::new();
     if let Some(list) = listed {
-        supplied.insert(list.field, list.value);
+        supply_at(&mut supplied, &list.field, list.value);
         listed_after = list.after;
     }
     // An input written into a field carrying a `references` relation names rows the scenario
@@ -9440,7 +9514,7 @@ fn with_listed(
         _ => None,
     });
     if let Some(input) = sent {
-        input.insert(field, ScenarioValue::List { items });
+        supply_at(input, &field, ScenarioValue::List { items });
         let resettled = settled(ir, driver.outcome, input, &BTreeMap::new());
         invoked.settled.extend(resettled);
     }
@@ -10452,7 +10526,7 @@ fn supply(
             _ => bound.get(field).cloned(),
         }
     };
-    input
+    let mut supplied = input
         .iter()
         .map(|(field, value)| {
             let shared = held_equal(field)
@@ -10490,15 +10564,34 @@ fn supply(
             };
             (field.clone(), supplied)
         })
-        .collect::<BTreeMap<_, _>>()
-        .into_iter()
-        // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
-        // run but the one `related_list` arranges, which names no missing row.
-        .map(|(field, supplied)| match related_list::empty(command) {
-            Some((listed, empty)) if listed == field => (field, empty),
-            _ => (field, supplied),
-        })
-        .collect()
+        .collect::<BTreeMap<_, _>>();
+    // From ess/38 (beyond10x/ess#640) a row named through a member of a struct input is keyed by
+    // its path, and sent inside the struct.
+    for (field, owner) in bound {
+        if ess_domain::command::input_path::is_path(field) {
+            supply_at(&mut supplied, field, ScenarioValue::instance(owner.clone()));
+        }
+    }
+    // The subject's `instance:` named through a member of a struct input (ess/38).
+    if let (Some(named), Some(subject)) = (named, instance) {
+        if ess_domain::command::input_path::is_path(named) {
+            supply_at(
+                &mut supplied,
+                named,
+                ScenarioValue::instance(subject.clone()),
+            );
+        }
+    }
+    // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
+    // run but the one `related_list` arranges, which names no missing row.
+    if let Some((listed, empty)) = related_list::empty(command) {
+        if ess_domain::command::input_path::is_path(listed) {
+            supply_at(&mut supplied, listed, empty);
+        } else if let Some(value) = supplied.get_mut(listed) {
+            *value = empty;
+        }
+    }
+    supplied
 }
 
 /// `true` when any branch of this command is chosen by what the subject already holds.
@@ -12780,6 +12873,23 @@ impl Beside<'_> {
     }
 }
 
+/// Why one owner's rows of `entity`, read through `via`, never hold a second row: the owning
+/// relation holds one, or every creator refuses a second row under one owner on a row set over that
+/// link alone. The rows a scenario leaves decide that refusal (`row_set::contradictions`), so a
+/// further row arranged under the subject's owner would take the scenario out with it; none is
+/// arranged, and the order is refused beside the scenario (beyond10x/ess#795).
+fn holds_one(ir: &EssIr, entity: &EntityHandle, via: &str) -> Option<Unreachable> {
+    if !shares_owner(ir, entity) {
+        return Some(Unreachable::OwnerHoldsOne {
+            via: via.to_owned(),
+        });
+    }
+    row_set::answers_second(ir, entity, via, true).map(|outcome| Unreachable::SecondAnswered {
+        via: via.to_owned(),
+        outcome: Box::new(outcome),
+    })
+}
+
 /// The further instances every ranked view among `decided` needs to hold [`RANKING_ROWS`] rows, and
 /// the ranked views that could not be given them, each refused as `OrderUnwitnessed`.
 fn arrange_ranked(
@@ -12805,17 +12915,16 @@ fn arrange_ranked(
         // may hold many. One that holds one never shows a second row, and the order is refused.
         let read_by_owner = owner_of_row(ir, beside.entity, beside.settled)
             .filter(|(via, _)| reads_root(view, via));
-        if let (Some((via, _)), false) = (read_by_owner, shares_owner(ir, beside.entity)) {
+        if let Some(reason) = read_by_owner.and_then(|(via, _)| holds_one(ir, beside.entity, via)) {
             if rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
-                refusals.push(Refusal::about(
+                // The scenario stands without the order (beyond10x/ess#795).
+                refusals.push(Refusal::beside(
                     id,
                     RefusalCause::OrderUnwitnessed {
                         view: name.clone(),
                         entity: EntityRef::from(beside.entity),
                         arranged: rows_shown(ir, view, *admits_subject, &companions, &params),
-                        reason: Unreachable::OwnerHoldsOne {
-                            via: via.to_owned(),
-                        },
+                        reason,
                     },
                 ));
                 unwitnessed.insert(name.clone());
@@ -12823,6 +12932,23 @@ fn arrange_ranked(
             }
         }
         let owner = read_by_owner.map(|(_, owner)| owner);
+        // The subject's owner is there, so a creator reading it through a related guard is decided
+        // on it while the further rows are arranged under it, as a row a run advances is
+        // ([`subject_fact::holding`]): a missing-owner refusal does not answer a second row under
+        // an owner the scenario holds (beyond10x/ess#795).
+        let _held_owner = owner.and_then(|owner| {
+            let belongs = ir.owner_of(beside.entity)?;
+            let row = Arrangement {
+                instance: owner.clone(),
+                state: ir.entity(&belongs.owner).lifecycle.initial.clone(),
+                steps: Steps::default(),
+                source: BTreeSet::new(),
+                settled: BTreeMap::new(),
+                unwritten: BTreeSet::new(),
+                unobserved: BTreeSet::new(),
+            };
+            Some(subject_fact::holding(ir, &belongs.owner, &row))
+        });
         while rows_shown(ir, view, *admits_subject, &companions, &params)
             < paging::rows_wanted(view)
         {
@@ -12845,7 +12971,20 @@ fn arrange_ranked(
                     break
                 }
                 Err(reason) => {
-                    refusals.push(Refusal::about(
+                    // A second row under the subject's owner that the creating command refuses is
+                    // named by that refusal, not by the search that found no row
+                    // (beyond10x/ess#795); the scenario stands without the order.
+                    let reason = read_by_owner
+                        .and_then(|(via, _)| {
+                            row_set::answers_second(ir, beside.entity, via, false).map(|outcome| {
+                                Unreachable::SecondAnswered {
+                                    via: via.to_owned(),
+                                    outcome: Box::new(outcome),
+                                }
+                            })
+                        })
+                        .unwrap_or(reason);
+                    refusals.push(Refusal::beside(
                         id,
                         RefusalCause::OrderUnwitnessed {
                             view: name.clone(),
@@ -13591,7 +13730,9 @@ fn expression_value_at(
 /// What a scenario sends at `input.<field>`: the input, or from ess/22 (Family F A4) the member a
 /// path reaches inside a literal struct input. `None` where nothing is sent there — a member on the
 /// way is missing, or an `Optional` before the last segment is absent — and for a path into an
-/// input that is no literal. A top-level read answers what `supplied.get(field)` does.
+/// input that is no literal. A top-level read answers what `supplied.get(field)` does. From ess/38
+/// (beyond10x/ess#640) a path also walks a [`ScenarioValue::Members`] struct holding an arranged
+/// row, and answers the member it reaches as it is sent: an instance, a list, or a literal.
 pub(crate) fn supplied_at(
     supplied: &BTreeMap<String, ScenarioValue>,
     field: &str,
@@ -13599,17 +13740,92 @@ pub(crate) fn supplied_at(
     if !ess_domain::command::input_path::is_path(field) {
         return supplied.get(field).cloned();
     }
-    let (root, rest) = field.split_once('.')?;
-    let ScenarioValue::Literal { value } = supplied.get(root)? else {
-        return None;
-    };
-    let mut value = value;
-    for segment in rest.split('.') {
-        value = value.as_map()?.get(segment)?;
+    let segments: Vec<&str> = field.split('.').collect();
+    let (root, rest) = segments.split_first()?;
+    let mut value = supplied.get(*root)?;
+    for (at, segment) in rest.iter().enumerate() {
+        match value {
+            ScenarioValue::Members { members } => value = members.get(*segment)?,
+            ScenarioValue::Literal { value } => {
+                let mut value = value;
+                for segment in &rest[at..] {
+                    value = value.as_map()?.get(*segment)?;
+                }
+                return Some(ScenarioValue::Literal {
+                    value: value.clone(),
+                });
+            }
+            _ => return None,
+        }
     }
-    Some(ScenarioValue::Literal {
-        value: value.clone(),
-    })
+    Some(value.clone())
+}
+
+/// Writes `value` at `input.<field>` of a sent input (ess/38, beyond10x/ess#640): a top-level
+/// field is inserted; for a path, every literal struct on the way to an arranged row becomes
+/// [`ScenarioValue::Members`] (each of its members a literal), the suite/32 form of a struct
+/// holding an instance, and a struct left holding literals only is the literal it was. `false`,
+/// with `supplied` unchanged, where a struct on the way is not there.
+pub(crate) fn supply_at(
+    supplied: &mut BTreeMap<String, ScenarioValue>,
+    field: &str,
+    value: ScenarioValue,
+) -> bool {
+    fn written(
+        at: ScenarioValue,
+        segments: &[&str],
+        value: ScenarioValue,
+    ) -> Option<ScenarioValue> {
+        let Some((first, rest)) = segments.split_first() else {
+            return Some(value);
+        };
+        let mut members = match at {
+            ScenarioValue::Members { members } => members,
+            ScenarioValue::Literal {
+                value: Node::Map(map),
+            } => map
+                .into_iter()
+                .map(|(name, member)| (name, ScenarioValue::literal(member)))
+                .collect(),
+            _ => return None,
+        };
+        let member = if rest.is_empty() {
+            value
+        } else {
+            written(members.remove(*first)?, rest, value)?
+        };
+        members.insert((*first).to_owned(), member);
+        // A struct holding no reference stays the literal it is.
+        let literal: Option<BTreeMap<String, Node>> = members
+            .iter()
+            .map(|(name, member)| match member {
+                ScenarioValue::Literal { value } => Some((name.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        Some(match literal {
+            Some(map) => ScenarioValue::literal(Node::Map(map)),
+            None => ScenarioValue::Members { members },
+        })
+    }
+    if !ess_domain::command::input_path::is_path(field) {
+        supplied.insert(field.to_owned(), value);
+        return true;
+    }
+    let segments: Vec<&str> = field.split('.').collect();
+    let Some((root, rest)) = segments.split_first() else {
+        return false;
+    };
+    let Some(at) = supplied.get(*root).cloned() else {
+        return false;
+    };
+    match written(at, rest, value) {
+        Some(value) => {
+            supplied.insert((*root).to_owned(), value);
+            true
+        }
+        None => false,
+    }
 }
 
 /// Whether a value source copies through an input path or falls back to another input (ess/22,
@@ -17831,7 +18047,7 @@ fn refused_here(
         models.mark(caller::InvocationPhase::Arrange, &mut rows);
         steps.extend(rows);
         listed_source = from;
-        supplied.insert(field, ScenarioValue::List { items });
+        supply_at(&mut supplied, &field, ScenarioValue::List { items });
     }
     // The refusal step is sent as the acting caller, whose reading of an input guard over a caller
     // attribute may differ from the arranging caller's: an input refusal it holds for the row
@@ -18517,7 +18733,7 @@ fn unknown_instance(
         .or_else(|| preserves_supplied(attempt))
         .unwrap_or_default();
     let fresh = fresh_identity(ir, command, field, Some(&input))?;
-    input.insert(field.to_owned(), fresh);
+    set_at(&mut input, field, Some(fresh));
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
@@ -18616,7 +18832,7 @@ fn unknown_instance(
             unreachable!("`addressed` returns a supplied instance only");
         };
         let identity = ir.entity(&subject.entity).identity.name.clone();
-        if let Some(sent) = supplied.get(&named.name) {
+        if let Some(sent) = supplied_at(&supplied, &named.name) {
             for view in views {
                 let name = ViewRef::new(view.name.clone());
                 steps.push(ScenarioStep::QueryView {
@@ -19242,7 +19458,7 @@ fn guard_ladder(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Vec<Node>
     }
     let mut ladder: Vec<Node> = Vec::new();
     for input in candidates(ir, command, &guards, Distinction::PLAIN).unwrap_or_default() {
-        if let Some(value) = input.get(field) {
+        if let Some(value) = ess_compiler::ir::read_input(&input, field) {
             if !ladder.contains(value) {
                 ladder.push(value.clone());
             }
@@ -19299,7 +19515,7 @@ pub(super) fn guided_identity(
         if let Some(value) = candidates(ir, command, &[], distinction)
             .ok()
             .and_then(|inputs| inputs.into_iter().next())
-            .and_then(|mut input| input.remove(field))
+            .and_then(|input| ess_compiler::ir::read_input(&input, field).cloned())
         {
             arranged.push(value);
         }
@@ -19352,17 +19568,14 @@ fn fresh_identity(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .find_map(|input| input.get(field).cloned())
+                    .find_map(|input| ess_compiler::ir::read_input(&input, field).cloned())
             })
     };
     let unfresh = || {
         RefusalCause::NoWitness(WitnessGap {
             path: field.to_owned(),
-            type_ref: command
-                .input
-                .iter()
-                .find(|input| input.name == field)
-                .map(|input| input.type_ref.to_string())
+            type_ref: input_type(ir, command, field)
+                .map(ToString::to_string)
                 .unwrap_or_default(),
             reason: "has too few values to name an identity no other scenario sends, so no \
                      instance is known to be unknown",
@@ -22711,6 +22924,28 @@ pub fn binding_triggers_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
         out,
         BINDING_TRIGGERS_TRIED.with(std::cell::Cell::get) - before,
     )
+}
+
+/// A component's steps (ess/38, `docs/design/component-steps.md`): the interpreter runs them
+/// after each command, and no scenario claims them yet, so each step is a refusal by name.
+fn component_steps(ir: &EssIr, refusals: &mut Vec<Refusal>) {
+    for component in ir.components().values() {
+        for step in &component.steps {
+            refusals.push(Refusal {
+                subject: ComponentRef::new(component.name.clone()).into(),
+                scenario: None,
+                stands: false,
+                caused_by: None,
+                cause: RefusalCause::NotSynthesisedYet {
+                    construct: match step.form {
+                        ess_domain::component::StepForm::Level => "a level step of a component",
+                        ess_domain::component::StepForm::Time => "a time step of a component",
+                    },
+                    sections: "docs/design/component-steps.md",
+                },
+            });
+        }
+    }
 }
 
 /// The four claims a binding makes, one scenario each (§16, §17, §18).

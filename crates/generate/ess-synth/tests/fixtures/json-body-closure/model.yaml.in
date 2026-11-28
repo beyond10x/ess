@@ -12,6 +12,12 @@ types:
       - {name: value, type: String}
       - {name: unit, type: Optional<String>}
       - {name: seen_at, type: Optional<Timestamp>}
+  - name: shelf.items.Tag
+    kind: struct
+    shorthand: name
+    fields:
+      - {name: name, type: String}
+      - {name: colour, type: Optional<String>}
   - name: shelf.items.Note
     kind: struct
     undeclared_fields: ignored
@@ -27,6 +33,7 @@ entities:
       - {name: labels, type: List<shelf.items.Label>}
       - {name: note, type: Optional<shelf.items.Note>}
       - {name: data, type: Optional<Json>}
+      - {name: tag, type: Optional<shelf.items.Tag>}
     lifecycle: {initial: Shelved, states: [Shelved], terminal: [Shelved], transitions: []}
   - name: shelf.items.Stamp
     identity: {name: stamp_id, type: shelf.items.StampId}
@@ -49,6 +56,7 @@ commands:
       - {name: labels, type: List<shelf.items.Label>}
       - {name: note, type: Optional<shelf.items.Note>}
       - {name: data, type: Optional<Json>}
+      - {name: tag, type: Optional<shelf.items.Tag>}
     outcomes:
       - name: added
         creates: shelf.items.Item
@@ -60,6 +68,7 @@ commands:
           labels: input.labels
           note: input.note
           data: input.data
+          tag: input.tag
         emits: [shelf.items.ItemAdded]
         payload:
           shelf.items.ItemAdded: {item_id: input.item_id}
@@ -88,6 +97,7 @@ views:
       - {name: labels, type: List<shelf.items.Label>}
       - {name: note, type: Optional<shelf.items.Note>}
       - {name: data, type: Optional<Json>}
+      - {name: tag, type: Optional<shelf.items.Tag>}
   - name: shelf.items.AllStamps
     source: shelf.items.Stamp
     consistency: read_your_writes

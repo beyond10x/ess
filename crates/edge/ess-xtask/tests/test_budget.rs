@@ -12,7 +12,8 @@ use ess_yaml::Value;
 const REPORT: &str = "target/nextest/ci/junit.xml";
 
 /// The tasks that run `cargo nextest run` today.
-const NEXTEST_TASKS: [&str; 5] = [
+const NEXTEST_TASKS: [&str; 6] = [
+    "fuzz-check",
     "test-feature-off",
     "test-packages",
     "test-shard",
@@ -185,12 +186,12 @@ fn the_ci_profile_writes_the_junit_report_test_slowest_reads() {
 }
 
 #[test]
-fn the_slow_profile_kills_a_test_after_twenty_minutes_and_writes_junit() {
+fn the_slow_profile_kills_a_test_at_sixty_seconds_and_writes_junit() {
     let config = nextest_config();
     assert_eq!(
         table(&config, "[profile.slow]"),
         [
-            "slow-timeout = { period = \"120s\", terminate-after = 10 }",
+            "slow-timeout = { period = \"60s\", terminate-after = 1 }",
             "final-status-level = \"slow\""
         ]
     );
@@ -229,38 +230,45 @@ fn every_nextest_run_in_the_taskfile_uses_the_ci_profile() {
 #[test]
 fn every_nextest_run_prints_its_ten_slowest_tests_even_when_it_fails() {
     let taskfile = taskfile();
+    let runs = |command: &str| {
+        command
+            .lines()
+            .any(|line| line.contains("cargo nextest run") && !line.contains("--no-run"))
+    };
     for task in nextest_tasks(&taskfile) {
         let commands = taskfile["tasks"][task.as_str()]["cmds"]
             .as_sequence()
             .expect("cmds is a sequence");
-        if task == SLOW_TASK {
-            let command = commands
-                .iter()
-                .filter_map(|entry| entry.as_str())
-                .find(|command| command.contains("cargo nextest run"))
-                .expect("the task runs nextest");
-            let run = command.find("cargo nextest run").unwrap();
-            let Some(failed) = command[run..].find("|| status=1") else {
-                panic!("`{task}` does not record a failed run with `|| status=1`")
-            };
+        let run = commands
+            .iter()
+            .position(|entry| entry.as_str().is_some_and(runs))
+            .expect("the task runs nextest");
+        let command = commands[run].as_str().unwrap();
+        // A run inside a script records its status and prints the ten slowest after it, which
+        // keeps a report written later in the task (a nested task's) out of this step's print.
+        let at = command
+            .lines()
+            .position(|line| line.contains("cargo nextest run") && !line.contains("--no-run"))
+            .unwrap();
+        let line = command.lines().nth(at).unwrap();
+        if line.contains("|| status=") {
             assert!(
-                command[run + failed..].contains("task test-slowest"),
+                command
+                    .lines()
+                    .skip(at + 1)
+                    .any(|line| line.contains("task test-slowest")),
                 "`{task}` does not run `task test-slowest` after a failed run"
             );
             continue;
         }
+        assert_ne!(
+            task, SLOW_TASK,
+            "`{task}` does not record a failed run with `|| status=`"
+        );
         let deferred = commands
             .iter()
             .position(|entry| entry["defer"]["task"].as_str() == Some("test-slowest"))
             .unwrap_or_else(|| panic!("`{task}` does not defer `test-slowest`"));
-        let run = commands
-            .iter()
-            .position(|entry| {
-                entry
-                    .as_str()
-                    .is_some_and(|command| command.contains("cargo nextest run"))
-            })
-            .expect("the task runs nextest");
         assert!(
             deferred < run,
             "`{task}` defers `test-slowest` only after nextest runs, so a failed run prints nothing"

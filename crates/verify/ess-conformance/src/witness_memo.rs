@@ -423,7 +423,7 @@ struct Work {
 }
 
 #[cfg(test)]
-fn counted<T>(run: impl FnOnce() -> T) -> (T, usize, usize) {
+pub(crate) fn counted<T>(run: impl FnOnce() -> T) -> (T, usize, usize) {
     WORK.with(|work| *work.borrow_mut() = Some(Work::default()));
     // `WORK` and `GENERATIONS` are per thread, and a key holds the model's address.
     let out = crate::synthesize::with_jobs(std::num::NonZeroUsize::MIN, run);

@@ -13,7 +13,7 @@ relations:
 - serves: vision:O2
 - informed_by: architecture-decision-record:a-deployment-may-provide-an-entitys-rows
 - informed_by: story:a-command-writes-only-rows-its-own-component-stores
-revision: 2
+revision: 4
 ---
 ## Need
 
@@ -101,3 +101,7 @@ Written for option A.
 ## Format
 
 None for A (a change of projection for existing provided entities, classified by the diff). B opens a format by policy 2.
+
+## A second consumer, 2026-11-28
+
+A second consumer reported this on 2026-11-28, on 0.99.2: its specification of reusable building blocks cannot name the rows or a type of another system inside one specification (a relation or a type names a domain of its own system). Across systems, `ess-composition/2+` with `references:` and `conformances:` exists, `ess specify vendor` (first tag 0.99.8, absent from 0.99.2) writes a checked copy of an owner's type, and for another system's rows only `provided: true` (ess/33) exists. The second consumer is a reason to keep this story in the queue.

@@ -1,0 +1,27 @@
+format: ess-ui/1
+app: shop
+title: Shop
+model: shop
+placement_profile: fat
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: home, sections: [{name: all, pages: [home]}]}
+widgets:
+  item_card:
+    summary: One item.
+    params:
+      previous: {type: {optional: NoSuchId}, note: the item before this one}
+      kind: {type: NoSuchType, note: the kind to show}
+    body:
+      - {name: caption, primitive: text, text: args.kind, style: body}
+pages:
+  home:
+    kind: detail_page
+    title: Home
+    sections:
+      - name: rows
+        component: collection
+        reads: {view: shop.channel.Items, key: item_id}
+        columns: [label, kind]
+        item:
+          - {name: card, component: item_card, args: {kind: row.kind}}

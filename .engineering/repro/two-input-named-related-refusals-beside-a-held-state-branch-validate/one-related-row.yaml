@@ -1,0 +1,131 @@
+format: ess/37
+system: ledger
+version: v1
+domain: ledger.orders
+summary: An order is settled by a payer through an account; the order's own state and total are checked first.
+types:
+  - {name: ledger.orders.OrderId, kind: newtype, of: Uuid}
+  - {name: ledger.orders.PayerId, kind: newtype, of: Uuid}
+  - {name: ledger.orders.AccountId, kind: newtype, of: Uuid}
+entities:
+  - name: ledger.orders.Payer
+    identity: {name: payer_id, type: ledger.orders.PayerId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: ledger.orders.Account
+    identity: {name: account_id, type: ledger.orders.AccountId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Frozen]
+      terminal: [Frozen]
+      transitions:
+        - {name: freeze, from: [Active], to: Frozen}
+  - name: ledger.orders.Order
+    identity: {name: order_id, type: ledger.orders.OrderId}
+    fields:
+      - {name: total, type: Integer}
+    lifecycle:
+      initial: Open
+      states: [Open, Settled]
+      terminal: [Settled]
+      transitions:
+        - {name: settle, from: [Open], to: Settled}
+errors:
+  - {name: ledger.orders.OrderNotFound, summary: No order carries this identity., fields: []}
+  - {name: ledger.orders.OrderNotOpen, summary: The order is not open., fields: []}
+  - {name: ledger.orders.TotalChanged, summary: The order total is not the one the caller saw., fields: []}
+  - {name: ledger.orders.UnknownPayer, summary: No payer carries this identity., fields: []}
+  - {name: ledger.orders.UnknownAccount, summary: No account carries this identity., fields: []}
+  - {name: ledger.orders.AccountFrozen, summary: The account is frozen., fields: []}
+events:
+  - name: ledger.orders.PayerAdded
+    fields: [{name: payer_id, type: ledger.orders.PayerId}]
+  - name: ledger.orders.AccountOpened
+    fields: [{name: account_id, type: ledger.orders.AccountId}]
+  - name: ledger.orders.AccountFrozenEvent
+    fields: [{name: account_id, type: ledger.orders.AccountId}]
+  - name: ledger.orders.OrderPlaced
+    fields: [{name: order_id, type: ledger.orders.OrderId}]
+  - name: ledger.orders.OrderSettled
+    fields: [{name: order_id, type: ledger.orders.OrderId}]
+actors:
+  - name: ledger.orders.Clerk
+    may: [ledger.orders.AddPayer, ledger.orders.OpenAccount, ledger.orders.Freeze, ledger.orders.PlaceOrder, ledger.orders.Settle]
+commands:
+  - name: ledger.orders.AddPayer
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: ledger.orders.Payer
+        instance: payer_id
+        emits: [ledger.orders.PayerAdded]
+        payload: {ledger.orders.PayerAdded: {payer_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: ledger.orders.OpenAccount
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: ledger.orders.Account
+        instance: account_id
+        emits: [ledger.orders.AccountOpened]
+        payload: {ledger.orders.AccountOpened: {account_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: ledger.orders.Freeze
+    input:
+      - {name: account_id, type: ledger.orders.AccountId}
+    outcomes:
+      - name: frozen
+        moves: ledger.orders.Account.freeze
+        instance: account_id
+        emits: [ledger.orders.AccountFrozenEvent]
+        payload: {ledger.orders.AccountFrozenEvent: {account_id: input.account_id}}
+      - {name: wrong-state, wrong_state: true, error: ledger.orders.AccountFrozen}
+  - name: ledger.orders.PlaceOrder
+    input:
+      - {name: total, type: Integer}
+    outcomes:
+      - name: placed
+        creates: ledger.orders.Order
+        instance: order_id
+        emits: [ledger.orders.OrderPlaced]
+        payload: {ledger.orders.OrderPlaced: {order_id: {generated: true}}}
+        sets: {total: input.total}
+  - name: ledger.orders.Settle
+    input:
+      - {name: order_id, type: ledger.orders.OrderId}
+      - {name: total, type: Integer}
+      - {name: account_id, type: ledger.orders.AccountId}
+    outcomes:
+      - name: no-order
+        unknown_instance: true
+        error: ledger.orders.OrderNotFound
+      - name: not-open
+        when_subject: {predicate: state != Open}
+        error: ledger.orders.OrderNotOpen
+      - name: total-changed
+        when_subject: {predicate: total != input.total}
+        error: ledger.orders.TotalChanged
+      - name: unknown-account
+        when_related: {via: input.account_id, exists: false}
+        error: ledger.orders.UnknownAccount
+      - name: account-frozen
+        when_related: {via: input.account_id, predicate: state != Active}
+        error: ledger.orders.AccountFrozen
+      - name: settled
+        moves: ledger.orders.Order.settle
+        instance: order_id
+        emits: [ledger.orders.OrderSettled]
+        payload: {ledger.orders.OrderSettled: {order_id: input.order_id}}
+views:
+  - name: ledger.orders.Orders
+    source: ledger.orders.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: ledger.orders.OrderId}
+      - {name: total, type: Integer}
+      - {name: state, type: ledger.orders.Order.State}

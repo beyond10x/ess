@@ -9,7 +9,10 @@
 //! `Decimal`, `Timestamp`, `Duration` and `Uuid` as strings, a tagged union adjacently tagged with
 //! its payload under the key [`ess_gen::schema::union_content_key`] decides, an absent optional
 //! field omitted rather than sent as `null`. Two projections of one model must not disagree about
-//! what a value looks like, so neither of them decides alone.
+//! what a value looks like, so neither of them decides alone. A struct with a shorthand (`ess/27`)
+//! is published as `oneOf` its field's value and its object, so its decoder reads both: a value
+//! that is not an object is that field alone. Its encoder writes the object, the one spelling every
+//! writer the model generates uses.
 //!
 //! # Both directions, and what each is for
 //!
@@ -23,8 +26,8 @@
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    ResolvedBody, ResolvedCommand, ResolvedError, ResolvedEvent, ResolvedField, ResolvedTypeRef,
-    ResolvedView,
+    ResolvedBody, ResolvedCommand, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
+    ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -70,6 +73,12 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
         }
         named_type(&mut out, surface, declared);
     }
+    for entity in surface.ir().entities().values() {
+        if surface.presents_entity(&entity.name) {
+            entity_encoder(&mut out, surface, entity);
+            entity_decoder(&mut out, surface, entity);
+        }
+    }
     for event in surface.ir().events().values() {
         if surface.presents_event(&event.name) {
             event_encoder(&mut out, surface, event);
@@ -101,6 +110,17 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
         out.push_str(&super::binary64::wire_helper(surface.types()));
     }
     out
+}
+
+/// The server's `wire` module in the single crate (`--layout crate`): the crate root's module,
+/// re-exported, so every codec keeps the name and the path the server gave it. The system event
+/// codecs the server appends need the `system` module, so they stay here.
+pub(crate) fn reexport(types: &str) -> String {
+    format!(
+        "//! Every generated declaration, as JSON: the crate root's `wire` module, re-exported \
+         where the\n//! server names it, beside the codecs of the system's event log.\n\npub use \
+         {types}::wire::*;\n\nuse crate::json;\n"
+    )
 }
 
 /// The `wire` module's own documentation.
@@ -332,6 +352,10 @@ fn struct_body(
     path: &str,
     fields: &[ResolvedField],
 ) {
+    let constrained = declared.body.is_constrained();
+    if let Some(shorthand) = surface.ir().shorthand(&declared.name) {
+        short_form(out, surface, path, fields, shorthand, constrained);
+    }
     if fields.is_empty() {
         // A `fields: []` struct (`ess/32`) reads no member, and a member read is what refuses a
         // value that is no object; it is held to being one here.
@@ -349,7 +373,6 @@ fn struct_body(
                 .collect::<Vec<_>>(),
         );
     }
-    let constrained = declared.body.is_constrained();
     let opening = if constrained { "let decoded = " } else { "Ok(" };
     let _ = writeln!(out, "    {opening}{path} {{");
     for (position, field) in fields.iter().enumerate() {
@@ -369,6 +392,51 @@ fn struct_body(
         );
     } else {
         out.push_str("    })\n");
+    }
+}
+
+/// The short form of a struct with a shorthand (`ess/27`): a value that is not an object is the
+/// shorthand field's value alone, read through that field's own decoder at the value's path, and
+/// every other field, `Optional` by declaration, is absent. The struct's invariants hold on it as on
+/// the object. The domain admits only a field that is a scalar on the wire, so the two forms differ
+/// by JSON type and nothing is guessed.
+fn short_form(
+    out: &mut String,
+    surface: &dyn Surface,
+    path: &str,
+    fields: &[ResolvedField],
+    shorthand: &str,
+    constrained: bool,
+) {
+    let opening = if constrained {
+        "let decoded = "
+    } else {
+        "return Ok("
+    };
+    let _ = writeln!(
+        out,
+        "    if !matches!(value, json::Value::Object(_)) {{\n        {opening}{path} {{"
+    );
+    for field in fields {
+        let read = if field.name == shorthand {
+            decode_value(surface, "value", "at", &field.type_ref, 0)
+        } else {
+            "None".to_owned()
+        };
+        let _ = writeln!(
+            out,
+            "            {}: {read},",
+            name::value_ident(&field.name)
+        );
+    }
+    if constrained {
+        out.push_str(
+            "        };\n        return match decoded.broken_constraint() {\n            \
+             Some(expected) => Err(json::DecodeError::of(at, expected, value)),\n            \
+             None => Ok(decoded),\n        };\n    }\n",
+        );
+    } else {
+        out.push_str("        });\n    }\n");
     }
 }
 
@@ -497,6 +565,149 @@ fn record_encoder(
             &format!("pub fn {function}(_value: &{path}, out: &mut String) {{"),
         );
     }
+}
+
+// ---- entity snapshots ----------------------------------------------------------------------------
+
+/// The name of one entity snapshot's encoder.
+pub(crate) fn entity_encoder_name(layout: &RustLayout, entity: &QualifiedName) -> String {
+    format!("encode_entity_{}", ident(layout, entity))
+}
+
+/// The name of one entity snapshot's decoder.
+pub(crate) fn entity_decoder_name(layout: &RustLayout, entity: &QualifiedName) -> String {
+    format!("decode_entity_{}", ident(layout, entity))
+}
+
+/// The snapshot type an entity crosses a boundary as, from inside the emitting crate.
+fn entity_snapshot_path(surface: &dyn Surface, entity: &ResolvedEntity) -> String {
+    let layout = surface.layout();
+    format!(
+        "{}::{}::{}",
+        surface.types(),
+        layout.module(layout.owner(&entity.name)),
+        layout.entity_snapshot(&entity.name)
+    )
+}
+
+/// The data an entity's snapshot holds beside its state, from inside the emitting crate.
+fn entity_data_path(surface: &dyn Surface, entity: &ResolvedEntity) -> String {
+    let layout = surface.layout();
+    format!(
+        "{}::{}::{}Data",
+        surface.types(),
+        layout.module(layout.owner(&entity.name)),
+        layout.type_name(&entity.name)
+    )
+}
+
+/// The members of an entity's document, in the order its published schema lists them: the
+/// identity, every declared field, then `state`.
+fn entity_members(entity: &ResolvedEntity) -> Vec<ResolvedField> {
+    let mut members = Vec::with_capacity(entity.fields.len() + 2);
+    members.push(entity.identity.clone());
+    members.extend(entity.fields.iter().cloned());
+    members.push(entity.state_field());
+    members
+}
+
+/// One entity snapshot's encoder: the identity and every field from its data, then its state, the
+/// document the entity's published schema fixes.
+fn entity_encoder(out: &mut String, surface: &dyn Surface, entity: &ResolvedEntity) {
+    let layout = surface.layout();
+    let snapshot = entity_snapshot_path(surface, entity);
+    let _ = write!(
+        out,
+        "\n/// Writes the entity `{}` as JSON: its identity, its fields and its `state`.\npub fn \
+         {}(value: &{snapshot}, out: &mut String) {{\n    out.push('{{');\n",
+        entity.name,
+        entity_encoder_name(layout, &entity.name)
+    );
+    let members = entity_members(entity);
+    let (state, data) = members.split_last().expect("an entity has a state");
+    for field in data {
+        encode_member(
+            out,
+            layout,
+            "    ",
+            ess_gen::schema::wire_field_name(field),
+            &format!("value.data.{}", name::value_ident(&field.name)),
+            &field.type_ref,
+            0,
+            null_when_absent(field),
+        );
+    }
+    encode_member(
+        out,
+        layout,
+        "    ",
+        ess_gen::schema::wire_field_name(state),
+        "value.state",
+        &state.type_ref,
+        0,
+        false,
+    );
+    out.push_str("    out.push('}');\n}\n");
+}
+
+/// One entity snapshot's decoder: the inverse of [`entity_encoder`], closed like the entity's
+/// published document, and holding the entity's declared invariants as a struct's decoder holds
+/// the struct's (TD-D13).
+fn entity_decoder(out: &mut String, surface: &dyn Surface, entity: &ResolvedEntity) {
+    let layout = surface.layout();
+    let snapshot = entity_snapshot_path(surface, entity);
+    let members = entity_members(entity);
+    let _ = write!(
+        out,
+        "\n/// Reads the entity `{}` from JSON, the document [`{}`] writes.\n///\n/// # \
+         Errors\n///\n/// [`json::DecodeError`] naming the path and what the declaration says \
+         belongs there,\n/// or the entity's first declared invariant the value breaks.\npub fn \
+         {}(value: &json::Value, at: &str) -> Result<{snapshot}, json::DecodeError> {{\n",
+        entity.name,
+        entity_encoder_name(layout, &entity.name),
+        entity_decoder_name(layout, &entity.name)
+    );
+    model_name_refusals(out, &members);
+    closure(
+        out,
+        &members
+            .iter()
+            .map(ess_gen::schema::wire_field_name)
+            .collect::<Vec<_>>(),
+    );
+    let (state, data) = members.split_last().expect("an entity has a state");
+    let _ = writeln!(
+        out,
+        "    let data = {} {{",
+        entity_data_path(surface, entity)
+    );
+    for (position, field) in data.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "        {}: {},",
+            name::value_ident(&field.name),
+            decode_member(surface, field, position)
+        );
+    }
+    let _ = writeln!(
+        out,
+        "    }};\n    let state = {};",
+        decode_member(surface, state, data.len())
+    );
+    if entity.invariants.is_empty() {
+        let _ = writeln!(out, "    Ok({snapshot} {{ state, data }})");
+    } else {
+        // The declared invariants are held here, as a struct's decoder holds the struct's, and a
+        // broken one is named in the struct decoder's words.
+        let _ = writeln!(
+            out,
+            "    match data.broken_invariant() {{\n        Some(broken) => \
+             Err(json::DecodeError::of(\n            at,\n            &format!(\"a value \
+             satisfying `{{broken}}`\"),\n            value,\n        )),\n        None => \
+             Ok({snapshot} {{ state, data }}),\n    }}"
+        );
+    }
+    out.push_str("}\n");
 }
 
 // ---- commands ------------------------------------------------------------------------------------
@@ -1116,4 +1327,10 @@ pub(crate) trait Surface {
     fn presents_view(&self, declared: &QualifiedName) -> bool;
     /// `true` when this command's input and outcome cross it.
     fn presents_command(&self, declared: &QualifiedName) -> bool;
+    /// `true` when this entity's snapshot crosses it: only the single crate's own `wire` module
+    /// (`--layout crate`) reads and writes entity snapshots, so every other surface keeps its
+    /// bytes.
+    fn presents_entity(&self, _declared: &QualifiedName) -> bool {
+        false
+    }
 }

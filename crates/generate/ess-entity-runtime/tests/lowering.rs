@@ -2563,3 +2563,80 @@ fn state_in_a_stored_field_predicate_lowers_to_the_held_state() {
         assert!(taken.starts_with(expected), "{state}/{channel}: {taken}");
     }
 }
+
+/// beyond10x/ess#640: the host loads one instance from one top-level input field before a branch
+/// is chosen, so an `instance:` naming a member of a struct input (`ess/38`) is refused by name,
+/// also beside a `when_related:` branch of the same command, which is refused as well.
+#[test]
+fn an_instance_named_by_a_struct_member_is_refused_by_name() {
+    const SHELF: &str = include_str!("fixtures/struct-member-instance.yaml.in");
+    let text = format!(
+        "{}\ncomponents:\n  - component: shelf\n    reached_by: network\n    owns: {{domains: \
+         [shop.shelf]}}\n    accepts: {{commands: [shop.shelf.AddSlot, shop.shelf.Note, \
+         shop.shelf.Tag]}}\n    publishes: {{events: [shop.shelf.SlotAdded, shop.shelf.SlotNoted, \
+         shop.shelf.SlotTagged]}}\n",
+        SHELF.trim_end()
+    );
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    let specification = Specification::assemble([(Source::new("model.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = ess_compiler::resolve::compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let plan = SynthesisPlan::of(&ir);
+    let diagnostics = lower(
+        &selected(&ir, &plan, "shelf"),
+        &options(&["shop.shelf.Slot"]),
+    )
+    .expect_err("a member instance is refused")
+    .into_vec();
+    let found: Vec<(LoweringCode, String, String)> = diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            matches!(
+                diagnostic.code,
+                LoweringCode::AmbiguousInstanceBinding | LoweringCode::RelatedGuardUnsupported
+            ) && (diagnostic.path.starts_with("shop.shelf.Note")
+                || diagnostic.path.starts_with("shop.shelf.Tag"))
+        })
+        .map(|diagnostic| {
+            let message = if diagnostic.code == LoweringCode::RelatedGuardUnsupported {
+                String::new()
+            } else {
+                diagnostic.message.clone()
+            };
+            (diagnostic.code, diagnostic.path.clone(), message)
+        })
+        .collect();
+    let member = |outcome: &str| {
+        format!(
+            "`instance: pick.primary` of outcome `{outcome}` names a member of a struct input; \
+             the host loads the instance from one top-level input field before a branch is chosen"
+        )
+    };
+    let mut expected = vec![
+        (
+            LoweringCode::AmbiguousInstanceBinding,
+            "shop.shelf.Note".to_owned(),
+            member("noted"),
+        ),
+        (
+            LoweringCode::AmbiguousInstanceBinding,
+            "shop.shelf.Tag".to_owned(),
+            member("tagged"),
+        ),
+        (
+            LoweringCode::RelatedGuardUnsupported,
+            "shop.shelf.Note.no-backup.when_related".to_owned(),
+            String::new(),
+        ),
+        (
+            LoweringCode::RelatedGuardUnsupported,
+            "shop.shelf.Note.closed.when_related".to_owned(),
+            String::new(),
+        ),
+    ];
+    let mut sorted = found.clone();
+    sorted.sort();
+    expected.sort();
+    assert_eq!(sorted, expected, "{diagnostics:#?}");
+}

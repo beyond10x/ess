@@ -69,14 +69,14 @@ use crate::ir::{
     related_may_be_absent, ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle,
     ErrorHandle, EssIr, EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation,
     ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCommandGroup,
-    ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedCondition,
-    ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
-    ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
-    ResolvedMapping, ResolvedMappingValue, ResolvedMeasureExpr, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedPublishedRead, ResolvedRelatedHop,
-    ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation, ResolvedRowSelection,
-    ResolvedRowSetTest, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
-    ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting, ResolvedComponentStep,
+    ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
+    ResolvedError, ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead,
+    ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedMeasureExpr, ResolvedOutcome,
+    ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue, ResolvedPublishedRead,
+    ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRelation,
+    ResolvedRowSelection, ResolvedRowSetTest, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1141,6 +1141,9 @@ pub fn advise_locating(
 ) -> Diagnostics {
     let mut advisories = ess_domain::entity::implied_relations(specification);
     advisories.extend(ess_domain::command::related_guard::implied_relations(
+        specification,
+    ));
+    advisories.extend(ess_domain::command::absent_comparison::advisories(
         specification,
     ));
     let bridged = bridge(&advisories, &Locator::new(sources, files));
@@ -3388,9 +3391,11 @@ impl<'a> Resolver<'a> {
             // The first element of a list of references naming no row (ess/28,
             // beyond10x/ess#558), at the element's type: `ess-domain` admitted it only on the
             // branch whose guard refuses that list for a missing row.
+            // From ess/38 (beyond10x/ess#640) the list may be a member of a struct input, read by
+            // its path.
             PayloadSource::MissingElement { field } => {
                 let element = input
-                    .and_then(|input| input.iter().find(|held| held.name == *field))
+                    .and_then(|input| self.input_read(command, input, field))
                     .and_then(|held| match &held.type_ref {
                         ResolvedTypeRef::List { of } => Some((**of).clone()),
                         _ => None,
@@ -3609,7 +3614,7 @@ impl<'a> Resolver<'a> {
     /// addresses, read as it was before the branch: [`ResolvedRelatedVia::Subject`], at the field's
     /// declared type, `Optional<…>` included.
     fn related_guard(
-        &self,
+        &mut self,
         command: &CommandSpec,
         outcome: &Outcome,
         input: Option<&[ResolvedField]>,
@@ -3635,7 +3640,7 @@ impl<'a> Resolver<'a> {
     /// The input field, or stored field, `via` reads and the entity whose identity it carries, by
     /// the rule `ess-domain` validated it with.
     fn related_read(
-        &self,
+        &mut self,
         command: &CommandSpec,
         via: &RelatedVia,
         input: Option<&[ResolvedField]>,
@@ -3648,10 +3653,11 @@ impl<'a> Resolver<'a> {
         };
         let read = match via {
             RelatedVia::Input(field) => {
-                let read = input?.iter().find(|held| held.name == *field)?;
+                // From ess/38 (beyond10x/ess#640) a member of a struct input, named by its path.
+                let read = self.input_read(command, input?, field)?;
                 ResolvedRelatedVia::Input {
-                    field: read.name.clone(),
-                    type_ref: read.type_ref.clone(),
+                    field: read.name,
+                    type_ref: read.type_ref,
                 }
             }
             RelatedVia::Subject(field) => {
@@ -4225,14 +4231,24 @@ impl<'a> Resolver<'a> {
         {
             InstanceSurface::CommandInput => {
                 let input = input?;
-                (
+                // From ess/38 (beyond10x/ess#640) a member of a struct input, named by its path
+                // and read as an `ess/22` path read is.
+                let candidates = if ess_domain::command::input_path::is_path(named) {
+                    self.input_read(command, input, named)
+                        .map(|field| ResolvedInstance::Supplied { field })
+                        .into_iter()
+                        .collect()
+                } else {
                     input
                         .iter()
                         .filter(|field| field.name == named)
                         .map(|field| ResolvedInstance::Supplied {
                             field: field.clone(),
                         })
-                        .collect(),
+                        .collect()
+                };
+                (
+                    candidates,
                     input.iter().map(|field| field.name.clone()).collect(),
                 )
             }
@@ -4829,6 +4845,46 @@ impl<'a> Resolver<'a> {
         handles
     }
 
+    /// A component's steps (ess/38), their command resolved and their actor settled.
+    ///
+    /// `validate_steps` refused a step whose command, view or actor does not resolve, so a miss
+    /// here is a `Specification` that did not come through `compile_locating`.
+    fn component_steps(
+        &mut self,
+        component: &ComponentSpec,
+        commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        complete: &mut bool,
+    ) -> Vec<ResolvedComponentStep> {
+        let mut steps = Vec::with_capacity(component.steps.len());
+        for step in &component.steps {
+            let command = match self.command_of(&step.command, commands) {
+                Found::Handle(handle) => handle,
+                Found::Unresolved => {
+                    *complete = false;
+                    continue;
+                }
+                Found::Missing => {
+                    *complete = false;
+                    self.off_contract = true;
+                    continue;
+                }
+            };
+            let Some(actor) = ess_domain::component::step_actor(self.spec, step) else {
+                *complete = false;
+                self.off_contract = true;
+                continue;
+            };
+            steps.push(ResolvedComponentStep {
+                form: step.form,
+                view: step.view.clone().map(ViewHandle::new),
+                command,
+                actor: ActorHandle::new(actor.clone()),
+                every: step.every,
+            });
+        }
+        steps
+    }
+
     fn components(
         &mut self,
         commands: &BTreeMap<QualifiedName, ResolvedCommand>,
@@ -4924,6 +4980,7 @@ impl<'a> Resolver<'a> {
                     summary: setting.summary.clone(),
                 });
             }
+            let steps = self.component_steps(&component, commands, &mut complete);
             if complete {
                 resolved.insert(
                     component.name.clone(),
@@ -4937,6 +4994,7 @@ impl<'a> Resolver<'a> {
                         naming: component.naming,
                         settings,
                         refs: component.refs,
+                        steps,
                     },
                 );
             }

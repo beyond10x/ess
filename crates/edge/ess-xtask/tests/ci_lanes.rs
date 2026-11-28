@@ -595,9 +595,17 @@ fn assert_workspace_shard_extracts_deletes_and_runs(taskfile: &Value) {
         "`test-shard` does not name the other group's archive"
     );
     let commands = shell_commands(taskfile, "test-shard");
-    let [drop_other, extract, drop_own, run] = commands.as_slice() else {
-        panic!("`test-shard` does not drop, extract, delete and run in four commands: {commands:?}")
+    let [drop_other, extract, drop_own, drop_report, run] = commands.as_slice() else {
+        panic!(
+            "`test-shard` does not drop, extract, delete, drop the last report and run in five \
+             commands: {commands:?}"
+        )
     };
+    assert_eq!(
+        drop_report, DROP_CI_REPORT,
+        "`test-shard` can print an earlier step's report"
+    );
+    let run = &within_test_step(run, "test-shard");
     let own = "{{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst";
     assert_eq!(
         drop_other, "rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst",
@@ -652,6 +660,72 @@ fn assert_workspace_shard_extracts_deletes_and_runs(taskfile: &Value) {
     );
 }
 
+/// The feature-off archive is extracted before the test step, by `test-feature-off-extract`, and
+/// the step runs what was extracted, as a workspace shard does.
+fn assert_feature_off_extracts_then_runs(taskfile: &Value) {
+    let commands = shell_commands(taskfile, "test-feature-off");
+    let [drop_report, run] = commands.as_slice() else {
+        panic!(
+            "`test-feature-off` runs {} commands, not a report drop and a run: {commands:?}",
+            commands.len()
+        )
+    };
+    assert_eq!(
+        drop_report, DROP_CI_REPORT,
+        "`test-feature-off` can print an earlier step's report"
+    );
+    assert_eq!(
+        direct_subtasks(taskfile, "test-feature-off"),
+        ["test-feature-off-extract"],
+        "`test-feature-off` does not extract its archive before its test step"
+    );
+    let [extract] = shell_commands(taskfile, "test-feature-off-extract")
+        .try_into()
+        .expect("`test-feature-off-extract` runs one command");
+    assert!(
+        extract.starts_with(
+            "cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst "
+        ) && extract.ends_with(" > /dev/null"),
+        "`test-feature-off-extract` does not extract the feature-off archive: {extract}"
+    );
+    for (flag, value) in [("--workspace-remap", "."), ("--extract-to", ".")] {
+        assert!(
+            passes(&extract, flag, value),
+            "`test-feature-off-extract` lacks `{flag} {value}`: {extract}"
+        );
+    }
+    assert!(
+        extract
+            .split_whitespace()
+            .any(|word| word == "--extract-overwrite"),
+        "`test-feature-off-extract` lacks `--extract-overwrite`: {extract}"
+    );
+    let run = &within_test_step(run, "test-feature-off");
+    assert!(
+        run.starts_with("cargo nextest run ") && !run.contains(".tar.zst"),
+        "`test-feature-off` runs from an archive, not from what it extracted: {run}"
+    );
+    for (flag, value) in [
+        (
+            "--binaries-metadata",
+            "target/nextest/binaries-metadata.json",
+        ),
+        ("--cargo-metadata", "target/nextest/cargo-metadata.json"),
+        ("--workspace-remap", "."),
+        ("--target-dir-remap", "target"),
+        ("--partition", "slice:{{.SHARD}}"),
+    ] {
+        assert!(
+            passes(run, flag, value),
+            "`test-feature-off` lacks `{flag} {value}`: {run}"
+        );
+    }
+    assert!(
+        run.split_whitespace().any(|word| word == "--no-fail-fast"),
+        "`test-feature-off` lacks `--no-fail-fast`: {run}"
+    );
+}
+
 #[test]
 fn the_workspace_shards_are_one_complete_partition() {
     let ci = yaml(".github/workflows/ci.yml");
@@ -683,35 +757,7 @@ fn the_workspace_shards_are_one_complete_partition() {
     // 584 / 575 / 414 / 273 test-seconds. `slice:` deals the whole sorted list out once, which
     // on that run's own timings is 407 / 520 / 432 / 489 and 147 / 154 / 148 / 125 feature-off
     // test-seconds against 185 / 202 / 124 / 64.
-    let commands = shell_commands(&taskfile, "test-feature-off");
-    let [run] = commands.as_slice() else {
-        panic!(
-            "`test-feature-off` runs {} commands, not one: {commands:?}",
-            commands.len()
-        )
-    };
-    assert!(
-        run.starts_with(
-            "cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst"
-        ),
-        "`test-feature-off` does not run the feature-off archive: {run}"
-    );
-    for (flag, value) in [
-        ("--workspace-remap", "."),
-        ("--extract-to", "."),
-        ("--partition", "slice:{{.SHARD}}"),
-    ] {
-        assert!(
-            passes(run, flag, value),
-            "`test-feature-off` lacks `{flag} {value}`: {run}"
-        );
-    }
-    for flag in ["--extract-overwrite", "--no-fail-fast"] {
-        assert!(
-            run.split_whitespace().any(|word| word == flag),
-            "`test-feature-off` lacks `{flag}`: {run}"
-        );
-    }
+    assert_feature_off_extracts_then_runs(&taskfile);
 
     // Nextest does not run doc-tests, so both selections' doc-tests run beside it — once each.
     let doc = shell_commands(&taskfile, "test-doc").join("\n");
@@ -2013,6 +2059,47 @@ fn release_preparation_retains_an_exact_tag_and_commit_artifact() {
         "the retained release artifact does not contain exactly the verified files"
     );
     assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
+}
+
+/// A tag push's release run refuses a tagged tree whose `CHANGELOG.md` lists an entry under
+/// `[Unreleased]` before it retains anything, and no pull-request or queue workflow runs that
+/// check, because `main` lists unreleased entries between releases. 0.99.8 merged `main` and
+/// shipped 25 entries its tree still listed there.
+#[test]
+fn a_tag_push_refuses_a_changelog_with_an_unreleased_entry_and_no_pull_request_gate_does() {
+    const COMMAND: &str = "cargo xtask release unreleased";
+    let release = yaml(".github/workflows/release.yml");
+    let steps = release["jobs"]["release"]["steps"]
+        .as_sequence()
+        .expect("release preparation steps");
+    let guard = steps
+        .iter()
+        .position(|step| text(&step["run"]).trim() == COMMAND)
+        .unwrap_or_else(|| panic!("release preparation does not run `{COMMAND}`"));
+    assert_eq!(
+        text(&steps[guard]["if"]),
+        "${{ github.event_name == 'push' }}",
+        "the guard must run on every tag push"
+    );
+    let retain = steps
+        .iter()
+        .position(|step| text(&step["uses"]).starts_with("actions/upload-artifact@"))
+        .expect("release preparation retains an artifact");
+    assert!(
+        guard < retain,
+        "the guard runs after the release artifact is retained"
+    );
+    for file in [
+        ".github/workflows/ci.yml",
+        ".github/workflows/package.yml",
+        "Taskfile.yml",
+    ] {
+        let source = fs::read_to_string(workspace_root().join(file)).unwrap();
+        assert!(
+            !source.contains(COMMAND),
+            "{file} runs `{COMMAND}`, but `main` lists unreleased entries between releases"
+        );
+    }
 }
 
 /// What a GitHub Actions expression evaluates to, as far as the readers in this suite need.
@@ -5494,7 +5581,17 @@ fn test_xtask_sets_no_wrapper_and_no_build_jobs() {
 #[test]
 fn test_xtask_builds_before_it_runs() {
     let taskfile = yaml("Taskfile.yml");
-    let commands = test_xtask_commands(&taskfile);
+    let mut commands = test_xtask_commands(&taskfile);
+    // The last report is removed between the builds and the run, so a run that writes none
+    // prints no earlier one.
+    assert_eq!(
+        commands
+            .iter()
+            .position(|command| command == DROP_CI_REPORT),
+        Some(2),
+        "`test-xtask` does not remove the last report right before its run: {commands:?}"
+    );
+    commands.remove(2);
     assert_eq!(
         commands.len(),
         3,
@@ -6341,4 +6438,1073 @@ fn a_patch_tag_that_selects_no_large_crate_stays_targeted() {
         scope["packages"], "ess-entity-runtime ess-service-contract",
         "{scope:?}"
     );
+}
+
+// The test budget (the organization rule `Tests stay fast`): every test-running step of the gate
+// is killed at its limit and fails naming itself and its time, and the nextest profiles `ci` and
+// `slow` kill a test at 60 s. A step or a test measured over its bound has a ceiling pinned below,
+// and a ceiling may only fall: story:the-test-step-meets-the-test-budget brings each down.
+
+/// The limit of a test-running step, in seconds.
+const STEP_LIMIT: u64 = 120;
+
+/// The command a nextest step of the `ci` profile runs before its run, so that `test-slowest`
+/// finds no earlier step's report when the run writes none.
+const DROP_CI_REPORT: &str = "rm -f target/nextest/ci/junit.xml";
+
+/// The Taskfile variable that runs a command as a test step: `{{.TEST_STEP}} <step> <seconds>
+/// <command>`.
+const TEST_STEP: &str = "{{.TEST_STEP}}";
+
+/// The steps measured over [`STEP_LIMIT`], each with the most seconds it may be given. A value
+/// here may only fall, and a step leaves the list when it fits [`STEP_LIMIT`]. `AGENTS.md` § Gate
+/// names each with its measured time.
+const STEP_CEILINGS: [(&str, u64); 3] = [
+    ("test-feature-off", 669),
+    ("test-packages", 1004),
+    ("test-shard", 1483),
+];
+
+/// The Taskfile tasks that run tests outside the test step, each with the reason. Every other task
+/// whose command runs tests runs that command as a test step.
+const OUTSIDE_THE_TEST_STEP: [(&str, &str); 5] = [
+    (
+        "test",
+        "the local whole-workspace run, which CI runs split into the test steps",
+    ),
+    (
+        "test-slow",
+        "the slow lane, whose tests the nextest profile `slow` kills",
+    ),
+    ("test-browser-product", "runs in no lane"),
+    (
+        "test-transport-network",
+        "the network lane, which CI runs directly",
+    ),
+    ("typescript-check", "runs in no lane"),
+];
+
+/// The workflow jobs that run `cargo test` in a step of their own rather than through a task, each
+/// with the reason they are outside the test step.
+const DIRECT_TEST_JOBS: [(&str, &str); 2] = [
+    ("output-ownership-macos", "the macOS witnesses"),
+    ("transport-network", "the network lane"),
+];
+
+/// Whether `line` runs tests: `cargo nextest run` or `cargo test` without `--no-run`.
+fn runs_tests(line: &str) -> bool {
+    (line.contains("cargo nextest run") || line.contains("cargo test"))
+        && !line.split_whitespace().any(|word| word == "--no-run")
+}
+
+/// The step name and the limit `line` runs its tests under, when it starts with [`TEST_STEP`].
+fn test_step_of(line: &str) -> Option<(String, u64)> {
+    let mut words = line.trim().trim_matches('\'').split_whitespace();
+    if words.next()? != TEST_STEP {
+        return None;
+    }
+    let step = words.next()?.to_owned();
+    let limit = words.next()?.parse().ok()?;
+    Some((step, limit))
+}
+
+/// The command `line` runs as the test step `task`, without `{{.TEST_STEP}} <task> <seconds> `;
+/// panics when `line` is not that test step.
+fn within_test_step(line: &str, task: &str) -> String {
+    let Some((step, limit)) = test_step_of(line) else {
+        panic!("`{task}` runs its tests outside `{TEST_STEP} {task} <seconds>`: {line}")
+    };
+    assert_eq!(step, task, "`{task}` names its test step `{step}`: {line}");
+    line.trim()
+        .strip_prefix(&format!("{TEST_STEP} {task} {limit} "))
+        .unwrap_or_else(|| panic!("`{task}` spaces its test step oddly: {line}"))
+        .to_owned()
+}
+
+/// Every task of `taskfile` with a command that runs tests, and the lines of it that do.
+fn test_running_lines(taskfile: &Value) -> BTreeMap<String, Vec<String>> {
+    let mut found = BTreeMap::new();
+    for name in taskfile["tasks"]
+        .as_mapping()
+        .expect("Taskfile.yml has tasks")
+        .keys()
+        .map(|key| text(key).to_owned())
+    {
+        let lines: Vec<String> = shell_commands(taskfile, &name)
+            .iter()
+            .flat_map(|command| command.lines().map(str::to_owned).collect::<Vec<_>>())
+            .filter(|line| runs_tests(line))
+            .collect();
+        if !lines.is_empty() {
+            found.insert(name, lines);
+        }
+    }
+    found
+}
+
+/// Each test-running line of a task outside [`OUTSIDE_THE_TEST_STEP`] runs as the test step named
+/// after its task, under [`STEP_LIMIT`] or the step's ceiling; and a ceiling is pinned only for a
+/// step whose limit is over [`STEP_LIMIT`].
+fn assert_test_steps_run_under_their_limit(taskfile: &Value) {
+    let ceilings: BTreeMap<&str, u64> = STEP_CEILINGS.into_iter().collect();
+    let outside: BTreeSet<&str> = OUTSIDE_THE_TEST_STEP
+        .iter()
+        .map(|(task, _)| *task)
+        .collect();
+    let mut over = BTreeSet::new();
+    for (task, lines) in test_running_lines(taskfile) {
+        if outside.contains(task.as_str()) {
+            continue;
+        }
+        for line in lines {
+            let Some((step, limit)) = test_step_of(&line) else {
+                panic!("`{task}` runs tests outside `{TEST_STEP} {task} <seconds>`: {line}")
+            };
+            assert_eq!(step, task, "`{task}` names its test step `{step}`: {line}");
+            let ceiling = ceilings.get(task.as_str()).copied().unwrap_or(STEP_LIMIT);
+            assert!(
+                limit <= ceiling,
+                "`{task}` gives its test step {limit} s, over its ceiling of {ceiling} s: {line}"
+            );
+            if limit > STEP_LIMIT {
+                over.insert(task.clone());
+            }
+        }
+    }
+    for (step, ceiling) in STEP_CEILINGS {
+        assert!(
+            ceiling > STEP_LIMIT,
+            "`{step}` is pinned at {ceiling} s, within {STEP_LIMIT} s: drop it from STEP_CEILINGS"
+        );
+        assert!(
+            over.contains(step),
+            "`{step}` has a ceiling of {ceiling} s but no test step over {STEP_LIMIT} s: drop it"
+        );
+    }
+}
+
+/// The text of the Taskfile variable `TEST_STEP`.
+fn test_step_function(taskfile: &Value) -> String {
+    let function = text(&taskfile["vars"]["TEST_STEP"]).to_owned();
+    assert!(
+        !function.is_empty(),
+        "Taskfile.yml defines no variable TEST_STEP"
+    );
+    function
+}
+
+/// Runs `TEST_STEP` with `sh` as `{TEST_STEP} demo <limit> <command…>`; returns its exit code,
+/// stdout, stderr and wall time.
+fn run_test_step(limit: &str, command: &[&str]) -> (Option<i32>, String, String, f64) {
+    let function = test_step_function(&yaml("Taskfile.yml"));
+    let started = std::time::Instant::now();
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{function} demo {limit} \"$@\""))
+        .arg("sh")
+        .args(command)
+        .output()
+        .expect("sh runs");
+    (
+        output.status.code(),
+        String::from_utf8(output.stdout).unwrap(),
+        String::from_utf8(output.stderr).unwrap(),
+        started.elapsed().as_secs_f64(),
+    )
+}
+
+#[test]
+fn every_test_running_step_of_the_gate_runs_under_its_step_limit() {
+    let taskfile = yaml("Taskfile.yml");
+    assert_test_steps_run_under_their_limit(&taskfile);
+    for (task, reason) in OUTSIDE_THE_TEST_STEP {
+        assert!(
+            test_running_lines(&taskfile).contains_key(task),
+            "`{task}` ({reason}) runs no tests: drop it from OUTSIDE_THE_TEST_STEP"
+        );
+    }
+    let ci = yaml(".github/workflows/ci.yml");
+    let mut covered = BTreeSet::new();
+    for lane in lane_invocations(&ci) {
+        reached(&taskfile, &lane.task, &mut covered);
+    }
+    for step in [
+        "test-shard",
+        "test-feature-off",
+        "test-xtask",
+        "test-doc",
+        "test-feature-off-doc",
+        "fuzz-check",
+    ] {
+        assert!(
+            covered.contains(step) && test_running_lines(&taskfile).contains_key(step),
+            "`{step}` is no test-running step of a ci.yml lane"
+        );
+    }
+
+    let caught = |taskfile: &Value, what: &str| {
+        assert!(
+            std::panic::catch_unwind(|| assert_test_steps_run_under_their_limit(taskfile)).is_err(),
+            "{what} went unnoticed"
+        );
+    };
+    let mut unwrapped = taskfile.clone();
+    let commands = unwrapped["tasks"]["test-shard"]["cmds"]
+        .as_sequence_mut()
+        .unwrap();
+    for command in commands.iter_mut() {
+        if let Some(line) = command.as_str().filter(|line| runs_tests(line)) {
+            let bare = line
+                .split_once(" cargo ")
+                .map(|(_, rest)| format!("cargo {rest}"));
+            *command = Value::String(bare.unwrap());
+        }
+    }
+    caught(&unwrapped, "a test-shard run without the step limit");
+    let mut raised = taskfile.clone();
+    for command in raised["tasks"]["test-doc"]["cmds"]
+        .as_sequence_mut()
+        .unwrap()
+        .iter_mut()
+    {
+        if let Some(line) = command.as_str().filter(|line| runs_tests(line)) {
+            *command = Value::String(line.replacen(" test-doc 60 ", " test-doc 121 ", 1));
+        }
+    }
+    caught(&raised, "a test-doc step given 121 s");
+}
+
+#[test]
+fn the_step_limit_kills_a_step_over_it_and_names_the_step_and_its_time() {
+    let (code, stdout, stderr, elapsed) = run_test_step("1", &["sleep", "20"]);
+    assert_eq!(code, Some(1), "stdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        elapsed < 10.0,
+        "the step was not killed at its limit: {elapsed} s"
+    );
+    assert!(
+        stderr.contains("test step demo ran ") && stderr.contains(" s, over its limit of 1 s"),
+        "the failure does not name the step and its time: {stderr}"
+    );
+
+    let (code, stdout, stderr, _) = run_test_step("5", &["sh", "-c", "exit 3"]);
+    assert_eq!(
+        code,
+        Some(3),
+        "a failing command's status is lost: {stderr}"
+    );
+    assert!(
+        stdout.contains("test step demo ran 0 s of its 5 s"),
+        "{stdout}"
+    );
+
+    let (code, stdout, _, _) = run_test_step("5", &["true"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        stdout.contains("test step demo ran 0 s of its 5 s"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn a_step_over_the_step_limit_is_named_with_its_measured_time_in_agents_md() {
+    let agents = fs::read_to_string(workspace_root().join("AGENTS.md")).expect("AGENTS.md");
+    let gate = agents
+        .split("\n## ")
+        .find(|section| section.starts_with("Gate\n"))
+        .expect("AGENTS.md has a § Gate");
+    for (step, ceiling) in STEP_CEILINGS {
+        assert!(
+            gate.contains(&format!("`{step}`")) && gate.contains(&format!("{ceiling} s")),
+            "AGENTS.md § Gate does not name `{step}` with its ceiling of {ceiling} s"
+        );
+    }
+}
+
+/// Every task that runs tests and prints its ten slowest removes the report it prints before its
+/// tests run: `rm -f …/junit.xml` for a nextest run, `rm -rf target/doc-tests/<task>` for
+/// doc-tests. A run that then writes no report prints that none was written, never an earlier
+/// step's.
+#[test]
+fn every_test_step_removes_the_report_it_prints_before_it_runs() {
+    let taskfile = yaml("Taskfile.yml");
+    let mut checked = 0;
+    for (task, _) in test_running_lines(&taskfile) {
+        let commands = shell_commands(&taskfile, &task);
+        let prints = commands
+            .iter()
+            .any(|command| command.contains("task test-slowest"))
+            || taskfile["tasks"][task.as_str()]["cmds"]
+                .as_sequence()
+                .into_iter()
+                .flatten()
+                .any(|entry| entry["defer"]["task"].as_str() == Some("test-slowest"));
+        if !prints {
+            continue;
+        }
+        checked += 1;
+        let before: Vec<&str> = commands
+            .iter()
+            .flat_map(|command| command.lines())
+            .take_while(|line| !runs_tests(line))
+            .collect();
+        let removes = before.iter().any(|line| {
+            let line = line.trim();
+            (line.starts_with("rm -f ") && line.ends_with("/junit.xml"))
+                || line == format!("rm -rf target/doc-tests/{task}")
+        });
+        assert!(
+            removes,
+            "`{task}` prints its ten slowest without removing the last report before it runs: \
+             {before:#?}"
+        );
+    }
+    assert!(checked >= 8, "only {checked} tasks print their ten slowest");
+}
+
+#[test]
+fn no_workflow_job_runs_tests_outside_a_task_unless_it_is_named_here() {
+    let named: BTreeSet<&str> = DIRECT_TEST_JOBS.iter().map(|(job, _)| *job).collect();
+    let mut direct = BTreeSet::new();
+    for file in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let workflow = yaml(file);
+        for (id, job) in workflow["jobs"].as_mapping().expect("jobs") {
+            for step in job["steps"].as_sequence().into_iter().flatten() {
+                if text(&step["run"]).lines().any(runs_tests) {
+                    direct.insert(text(id).to_owned());
+                }
+            }
+        }
+    }
+    let direct: BTreeSet<&str> = direct.iter().map(String::as_str).collect();
+    assert_eq!(
+        direct, named,
+        "the jobs that run tests in a step of their own, outside every test step"
+    );
+}
+
+/// The tests the nextest profile `ci` gives more than 60 s, one per line: binary id, test name and
+/// the most seconds it may be given, 1.2 times the longest time seen on CI from 2026-11-26 to
+/// 2026-11-27 (at most 72 s for the 33 tests whose longest time was 50 to 60 s). A line may only
+/// be dropped or its seconds lowered.
+const CI_EXCEPTIONS: &str = "\
+ess-cli::coverage_producers actual_coverage_producers_refuse_noninvoked_negative_clock_and_report1_without_output 79
+ess-cli::coverage_producers actual_go_coverage_exports_match_the_independent_plan 188
+ess-cli::explore_concurrent a_call_whose_answer_was_lost_is_written_indeterminate_counted_and_passes 292
+ess-cli::explore_concurrent a_client_count_outside_two_to_four_is_refused_with_one_message_in_both_languages 380
+ess-cli::explore_concurrent a_client_retry_of_a_command_declaring_replays_is_written_equally_and_catches_an_unretained_target 195
+ess-cli::explore_concurrent adversary_every_call_records::every_command_call_of_every_lane_records_its_input_and_every_answered_one_its_events 329
+ess-cli::explore_concurrent a_go_history_and_a_typescript_history_from_one_seed_are_equal_bytes_reads_included 223
+ess-cli::explore_concurrent a_lost_creation_of_one_entity_never_withholds_a_row_of_another_entitys_view 243
+ess-cli::explore_concurrent a_negative_seed_count_seed_or_call_count_is_refused_with_one_message_in_both_languages 267
+ess-cli::explore_concurrent an_unsupported_command_is_left_out_and_fails_the_check_unless_accepted 195
+ess-cli::explore_concurrent both_languages_write_the_same_explore_histories_and_verdicts 223
+ess-cli::explore_concurrent check_history_holds_each_answer_to_its_recorded_input_and_events_on_a_model_without_entities 69
+ess-cli::explore_concurrent concurrent_exploration_arranges_external_branches_and_catches_a_backend_dependent_defect 63
+ess-cli::explore_concurrent double_apply_on_redelivery_is_caught_through_a_view_read_with_injection_and_missed_without 235
+ess-cli::explore_concurrent every_written_history_is_admitted_and_is_the_readers_own_spelling 288
+ess-cli::explore_concurrent go_and_typescript_write_equal_bytes_from_the_same_seed_over_examples_billing 264
+ess-cli::explore_concurrent injection_over_examples_billing_writes_equal_bytes_in_go_and_typescript_and_stays_linearizable 253
+ess-cli::explore_concurrent seed_one_schedules_with_the_same_splitmix64_outputs_in_rust_typescript_and_go 293
+ess-cli::explore_concurrent the_correct_explore_target_gives_no_violation_and_no_unknown_over_200_seeds 379
+ess-cli::explore_concurrent the_explorers_read_every_view_and_write_rows_only_on_an_answered_read 243
+ess-cli::explore_concurrent the_lost_update_mutant_gives_a_violation_under_at_least_one_of_200_seeds 267
+ess-cli::explore_concurrent the_lost_update_violations_are_checked_again_by_ess_and_are_violations 234
+ess-cli::explore_concurrent the_same_seed_writes_the_same_history_bytes_on_two_runs_in_each_language 282
+ess-cli::explore_concurrent the_stale_read_mutant_gives_a_read_violation_under_at_least_one_of_200_seeds 264
+ess-cli::explore_concurrent without_ess_on_path_the_concurrent_mode_fails_naming_ess 253
+ess-cli::explore_concurrent_adversary a_target_that_does_not_support_close_ticket_does_not_pass_concurrent_exploration 70
+ess-cli::explore_concurrent_adversary_pass2 an_exclusion_found_at_seed_five_leaves_go_and_typescript_histories_equal 61
+ess-cli::explore_concurrent_adversary_pass2 replaying_a_seed_with_seed_writes_the_history_the_batch_wrote_for_it 63
+ess-cli::explore_concurrent_reads_adversary a_lost_answer_of_a_rejected_creation_does_not_hide_a_stale_read 189
+ess-cli::explore_concurrent_reads_adversary a_read_that_timed_out_is_written_indeterminate_without_rows_and_equally 193
+ess-cli::explore_concurrent_reads_adversary a_target_lagging_until_a_token_is_demanded_is_clean_and_a_deaf_one_is_caught 218
+ess-cli::explore_concurrent_reads_adversary a_view_the_target_does_not_expose_is_excluded_and_never_written 196
+ess-cli::explore_concurrent_reads_adversary correct_targets_over_200_seeds_wider_and_injected_give_no_violation 233
+ess-cli::explore_concurrent_reads_adversary_2 a_stale_read_beside_the_row_of_a_lost_creation_is_not_hidden 167
+ess-cli::explore_concurrent_reads_adversary_2 more_phantoms_than_lost_creations_are_still_a_violation 148
+ess-cli::explore_concurrent_reads_adversary_2 the_rule_writes_equal_bytes_in_go_and_typescript_and_again 190
+ess-cli::explore_optional_unknown_concurrent actual_concurrent_ports_record_optional_upserts_and_call_the_native_checker 73
+ess-cli::generate_ui_tui the_built_crate_reads_a_view_from_a_synthesized_gatepass_server 71
+ess-cli::generate_ui_tui the_generated_crate_builds_and_its_help_names_base_url 94
+ess-cli::known_failures_cli mutation_audit_of_a_generated_go_runner_under_a_bound_declaration 72
+ess-conformance::adversary_273_pass1 sweep_every_input_identity_an_event_copies_is_compared 70
+ess-conformance::adversary_273_pass1 sweep_identity_comparisons_never_fail_the_reference_interpreter 111
+ess-conformance::adversary_287_pass1 caller_upsert_go_and_typescript_match_actual_native_outcomes 101
+ess-conformance::adversary_287_pass1 wasm_executes_the_same_shared_row_and_isolation_fixtures 300
+ess-conformance::adversary_e1_reachability go_gives_the_native_verdict_at_every_position 129
+ess-conformance::adversary_e1_reachability typescript_gives_the_native_verdict_at_every_position 155
+ess-conformance::adversary_ess_issues_2_u9 accepting_pairs_over_the_enum_stand_in_decide_soundly 63
+ess-conformance::adversary_ess_issues_2_u9 guards_differing_only_by_the_answer_stay_scored 63
+ess-conformance::adversary_ess_issues_2_u9 not_and_defined_decide_soundly 66
+ess-conformance::adversary_map_witness_pass1 adv196_go_runtime_agrees_and_catches_every_dropped_map 151
+ess-conformance::adversary_mutate_pass2 a_mutant_whose_only_excluded_scenario_is_unchanged_from_the_baseline_survives 79
+ess-conformance::adversary_one_row_pass2 adv2_one_row_no_repository_model_loses_a_one_row_snapshot 95
+ess-conformance::adversary_u22_pass2 every_reachable_branch_of_seeded_chains_over_optional_integer_and_compared_enums_has_its_scenario 268
+ess-conformance::adversary_u22_pass3 every_reachable_branch_of_seeded_chains_over_wide_shared_inputs_has_its_scenario 440
+ess-conformance::adversary_u22_pass3 guards_sharing_an_enum_have_their_scenarios_at_sixteen_variants_and_name_the_bound_at_seventeen 176
+ess-conformance::adversary_w3_389_s2_pass1 adversary_player_and_rust_agree_a_1025_source_manifest_is_a_resource_limit 90
+ess-conformance::aggregate_delta_go go_gives_the_reference_verdict_for_every_change_mutant_on_both_seeds 97
+ess-conformance::aggregate_group_selection the_generated_go_runtime_agrees_with_the_native_runner 116
+ess-conformance::aggregate_group_selection the_generated_typescript_runtime_agrees_with_the_native_runner 97
+ess-conformance::aggregate_group_selection the_wasm_runner_agrees_with_the_native_runner 268
+ess-conformance::binding_arrangement_go go_fails_every_drop_control 66
+ess-conformance::binding_arrangement_typescript typescript_fails_every_drop_control 63
+ess-conformance::direct_response_constraints the_go_runner_gives_the_native_verdicts_on_the_same_vectors 77
+ess-conformance::direct_response_constraints the_typescript_runner_gives_the_native_verdicts_on_the_same_vectors 101
+ess-conformance::mixed_guard_overlap no_condition_contradicts_itself 75
+ess-conformance::nested_response_observations actual_foreign_readers_refuse_malformed_authority_before_any_target_callback 236
+ess-conformance::one_row_instance_bound one_row_no_repository_scenario_reads_an_instance_no_earlier_step_binds 97
+ess-conformance::one_time_compact_suite a_malformed_absent_run_or_unpublished_list_is_refused_by_every_reader 81
+ess-conformance::refusal_policy go_gives_the_native_verdicts_for_every_sender 66
+ess-conformance::row_sets_runtimes row_sets_typescript_gives_the_reference_verdicts_for_the_healthy_and_each_faulty_target 90
+ess-conformance::runtime_parity_go_28_35 direct_profile_preserves_presence_and_payload_local_bounds 72
+ess-conformance::set_effects_go go_gives_the_reference_verdict_for_every_set_effect_mode 67
+ess-conformance::undeclared_fields the_typescript_runner_gives_the_native_verdicts_on_the_same_vectors 78
+ess-synth::actor_grants the_go_server_refuses_a_caller_no_grant_admits_before_the_port_runs 62
+ess-synth::adversary_go_behaviour_pass2 adversary_a_domain_named_like_a_standard_library_import_still_builds 73
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_a_missing_row_answered_before_existing_instance_is_caught_go 83
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_a_related_row_of_another_domain_go 65
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_concurrent_requests_against_the_go_entry_point_race_free 100
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_existing_instance_answers_before_a_missing_related_row_go 67
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_generated_go_answers_every_sequence_as_the_interpreter 114
+ess-synth::adversary_related_guard_behaviour_pass1 adv319_generated_rust_answers_every_sequence_as_the_interpreter 73
+ess-synth::declared_behaviour an_absent_optional_reference_reads_no_row_go 76
+ess-synth::declared_behaviour a_related_guard_command_is_generated_and_passes_its_suite_go 64
+ess-synth::emit_swap_served a_typescript_runner_that_discards_event_expectations_fails_the_audit 84
+ess-synth::emit_swap_served the_generated_runners_kill_every_swap_against_each_generated_service_as_the_native_one_does 217
+ess-synth::external_request_binding go_matching_and_missing_proof_controls_compile_and_execute 141
+ess-synth::external_request_binding go_substituted_request_is_refused_by_direct_and_http 129
+ess-synth::external_request_binding no_use_and_owed_only_models_compile_without_an_external_port 278
+ess-synth::external_request_binding served_code_alias_preserves_direct_and_http_request_binding 352
+ess-synth::http_binding_rust go::a_bearer_challenge_quotes_the_error_wire_name 66
+ess-synth::http_binding_rust go::adopter_wire_reports::a_bound_view_reads_its_parameter_and_writes_its_field_under_their_wire_names 102
+ess-synth::http_binding_rust go::adopter_wire_reports::a_delete_command_encoded_query_reads_its_input_from_the_query_string 102
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_json_body_with_trailing_text_or_a_repeated_member_is_read_alike 85
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_json_input_reaches_the_command_as_the_rust_server_delivers_it 91
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_percent_encoded_document_path_is_answered_alike 99
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_percent_encoded_path_no_route_matches_is_refused_alike 109
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_refining_binding_is_served_by_go_at_the_path_it_fills_in 66
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_response_body_holding_u2028_is_the_same_bytes_from_both_servers 99
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_a_single_view_row_is_the_same_bytes_from_both_servers 77
+ess-synth::http_binding_rust go::adversary_k6_pass1::adv_the_go_server_answers_what_http_reads_first_as_the_rust_server_does 103
+ess-synth::http_binding_rust go::adversary_u9c_pass1::a_delete_query_string_out_of_its_rules_is_malformed_on_both_servers 100
+ess-synth::http_binding_rust go::adversary_u9c_pass1::an_ungranted_caller_is_refused_on_a_delete_query_route 86
+ess-synth::http_binding_rust go::adversary_u9c_pass1::every_flat_kind_is_read_from_a_delete_query_string_by_both_servers 93
+ess-synth::http_binding_rust go::adversary_u9c_pass1::get_and_delete_on_one_path_reach_their_own_commands 100
+ess-synth::http_binding_rust go::adversary_u9d_pass1::both_servers_answer_each_kind_of_field_bare 102
+ess-synth::http_binding_rust go::adversary_u9d_pass1::both_servers_write_the_same_bytes_for_each_bare_field 101
+ess-synth::http_binding_rust go::adversary_u9d_pass1::errors_leaves_the_standard_refusals_their_answers 97
+ess-synth::http_binding_rust go::adversary_u9d_pass1::the_embedded_openapi_admits_each_bare_field_both_servers_answer 80
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_a_bare_body_object_naming_the_path_field_is_malformed 103
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_a_bare_body_that_is_not_the_list_is_malformed 109
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_a_bare_empty_list_reaches_the_command 85
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_a_literal_spelled_with_a_percent_encoded_unreserved_character_takes_precedence 106
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_another_method_on_the_literal_path_is_one_405 106
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_the_servers_agree_on_a_bare_body_not_labelled_json 116
+ess-synth::http_binding_rust go::adversary_w089_u2_pass1::adv_the_servers_agree_on_an_extra_member_in_a_bare_body 105
+ess-synth::http_binding_rust go::a_fragment_redirect_writes_its_parameters_and_omits_an_absent_optional 66
+ess-synth::http_binding_rust go::a_json_body_is_read_as_the_rust_server_reads_it 101
+ess-synth::http_binding_rust go::answer_forms::both_servers_answer_a_text_body 106
+ess-synth::http_binding_rust go::answer_forms::both_servers_answer_outcomes_declared_alike_with_one_answer 97
+ess-synth::http_binding_rust go::answer_forms::both_servers_answer_route_refusals_empty_bodies_and_arrays 78
+ess-synth::http_binding_rust go::authentication::a_call_without_the_credential_gets_the_challenge_and_runs_nothing 103
+ess-synth::http_binding_rust go::authentication::a_credential_of_any_listed_scheme_admits_a_call_the_realization_authenticated 83
+ess-synth::http_binding_rust go::authentication::an_open_route_and_an_ungranted_caller_answer_as_today 116
+ess-synth::http_binding_rust go::authentication::a_route_override_answers_a_call_without_its_cookie 98
+ess-synth::http_binding_rust go::authentication::both_servers_answer_every_request_alike 109
+ess-synth::http_binding_rust go::bare_field_and_errors::both_servers_answer_an_unlisted_error_outcome_as_errors_declares 102
+ess-synth::http_binding_rust go::bare_field_and_errors::both_servers_answer_one_response_field_bare 98
+ess-synth::http_binding_rust go::bare_field_and_errors::errors_leaves_a_success_its_envelope 82
+ess-synth::http_binding_rust go::board_routes::both_servers_decode_a_bare_array_body 106
+ess-synth::http_binding_rust go::board_routes::both_servers_serve_the_literal_route_before_the_variable_one 84
+ess-synth::http_binding_rust go::errors_of_one_wire_name::both_servers_answer_each_outcome_of_one_wire_name_with_its_own_fields 116
+ess-synth::http_binding_rust go::ignored_members::a_form_or_query_key_the_path_carries_must_hold_the_path_value_under_ignore 122
+ess-synth::http_binding_rust go::ignored_members::a_json_body_under_ignore_drops_what_no_field_names_and_an_echo_of_the_path 100
+ess-synth::http_binding_rust go::ignored_members::under_refuse_a_key_or_member_the_path_carries_stays_malformed 105
+ess-synth::http_binding_rust go::multipart::a_multipart_request_out_of_its_rules_is_malformed_naming_the_part 98
+ess-synth::http_binding_rust go::multipart::a_multipart_request_runs_the_command_with_its_parts 88
+ess-synth::http_binding_rust go::multipart::review_a_non_ascii_parameter_name_is_no_filename_in_either_server 112
+ess-synth::http_binding_rust go::multipart::review_hostile_multipart_requests_answer_alike 99
+ess-synth::http_binding_rust go::multipart::the_go_server_answers_every_multipart_request_as_the_rust_server_does 84
+ess-synth::http_binding_rust go::query_beside_body::a_listed_field_is_read_from_the_query_beside_the_body 99
+ess-synth::http_binding_rust go::query_beside_body::a_listed_field_out_of_its_place_or_its_rules_is_malformed 116
+ess-synth::http_binding_rust go::query_beside_body::review_a_listed_field_in_the_body_is_malformed_when_the_query_is_silent 106
+ess-synth::http_binding_rust go::query_beside_body::the_go_server_answers_every_query_request_as_the_rust_server_does 102
+ess-synth::http_binding_rust go::representations::a_text_cell_a_spreadsheet_reads_as_a_formula_is_written_behind_an_apostrophe 99
+ess-synth::http_binding_rust go::representations::a_value_no_representation_names_and_a_repeated_selector_are_malformed 95
+ess-synth::http_binding_rust go::representations::a_view_reads_its_own_parameters_beside_the_selector 91
+ess-synth::http_binding_rust go::representations::both_servers_answer_a_view_as_csv_when_the_query_selects_it 107
+ess-synth::http_binding_rust go::the_bound_go_server_builds_and_is_vet_clean 61
+ess-synth::http_binding_rust go::the_go_and_rust_servers_answer_one_binding_alike 79
+ess-synth::http_binding_rust go::undeclared_members::a_struct_that_ignores_undeclared_fields_admits_one_and_refuses_one_in_what_it_holds 99
+ess-synth::http_binding_rust go::undeclared_members::the_go_server_refuses_an_undeclared_member_at_any_depth 113
+ess-synth::http_binding_rust go::uuid_segments::both_servers_read_a_uuid_from_a_path_segment 100
+ess-synth::http_binding_rust go::wrapped_answers::both_servers_answer_a_wrapped_row_rows_and_response 91
+ess-synth::json_go issue_224_json_round_trips_through_the_go_server_package 66
+ess-synth::nested_response_wasm actual_wasm_observes_independent_response_event_and_generated_sibling 345
+ess-synth::one_time_wasm shared_disclosure_controls_execute_inside_wasm_through_browser_bridge 340
+ess-synth::optional_recursive_codecs adv_g_dotted_and_coded_labels_reach_every_rust_and_go_site 83
+ess-synth::optional_recursive_codecs a_variant_code_names_its_identifier_on_every_target 88
+ess-synth::optional_recursive_codecs dotted_labels_synthesize_as_derived_identifiers_on_every_code_target 81
+ess-synth::optional_recursive_codecs go_server_codecs_carry_labels_and_recursive_values 73
+ess-synth::served_entry generated_names_do_not_hide_ports_or_runtime_imports 64
+ess-synth::served_unfinished_committed the_go_server_answers_a_failed_delivery_as_committed 76
+ess-synth::typed_text_operands t200_the_generated_rust_system_applies_every_operand_and_each_fault_fails 63
+ess-synth::union_unit_variants go_server_codecs_round_trip_both_variants_and_refuse_the_malformed_shapes 93
+ess-synth::union_unit_variants_adversary the_go_target_vets_an_optional_union_with_a_unit_variant 67
+ess-synth::view_params_served a_param_bound_by_the_ui_binding_reaches_the_port_through_both_servers 87
+ess-synth::view_params_served a_request_head_past_the_shared_bound_is_a_431_from_both_servers 71
+ess-ui-test::adversary_pass2 a_move_of_exactly_the_limit_is_played 63
+schema-contract::binary64_adversary native_rust_composition_preserves_identity_in_both_number_feature_modes 72
+schema-contract::normalization_binary64_targets native_rust_executes_finite_binary64_and_retained_documents 75
+schema-contract::normalization_positional_targets native_rust_executes_position_and_binary64_contracts 86
+schema-contract::normalization_raw_adversary generated_rust_runs_adversarial_lexical_cases 63
+schema-contract::normalization_raw_targets native_rust_captures_and_decodes_retained_documents 78
+schema-contract::normalization_rust standalone_rust_target_executes_model_owned_wire_records 70
+";
+
+/// The tests the nextest profile `slow` gives more than 60 s, in the form of [`CI_EXCEPTIONS`].
+const SLOW_EXCEPTIONS: &str = "\
+ess-conformance::adversary_244b_window_free_bytes adversary_244b_every_window_free_model_keeps_its_bytes_against_3b1684d1a 216
+ess-conformance::adversary_287_pass1 caller_set_wasm_matches_actual_native_outcomes 102
+ess-conformance::adversary_287_pass1 caller_upsert_wasm_matches_actual_native_outcomes 107
+ess-conformance::adversary_u22_pass1 a_refusal_the_step_bound_cut_short_names_the_bound 99
+ess-conformance::adversary_u22_pass1 every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario 375
+ess-conformance::adversary_u22_pass1 every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario 227
+ess-conformance::adversary_w3_266_267_dump adv_every_model_synthesizes_one_document_and_dumps_for_base_comparison 341
+ess-conformance::enum_presence_guard no_corpus_suite_requires_a_branch_the_precedence_takes_elsewhere 192
+ess-conformance::synthesis_suite_bytes_table every_repository_model_and_component_writes_its_bytes_at_one_two_and_seven_jobs 192
+ess-conformance::synthesis_suite_bytes_table every_repository_model_keeps_its_synthesized_bytes 67
+ess-synth::adversary_e_u2_bytes adv_e_u2_byte_identity_probe 267
+ess-synth::adversary_e_u6_bytes adv_e_u6_byte_identity_probe 405
+ess-synth::generated_view_queries conditional_measure_all_six_functions_execute_in_the_generated_go_queries 144
+ess-synth::generated_view_queries conditional_measure_all_six_functions_execute_in_the_generated_rust_queries 159
+ess-synth::generated_view_queries the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders 69
+";
+
+/// The pinned exceptions of `list`: `(binary id, test name, seconds)`.
+fn pinned_exceptions(list: &str) -> Vec<(String, String, u32)> {
+    list.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let [binary, test, seconds] = line.split_whitespace().collect::<Vec<_>>()[..] else {
+                panic!("a pinned exception is not `<binary> <test> <seconds>`: {line}")
+            };
+            let seconds = seconds
+                .parse()
+                .unwrap_or_else(|_| panic!("not whole seconds: {line}"));
+            (binary.to_owned(), test.to_owned(), seconds)
+        })
+        .collect()
+}
+
+/// The `slow-timeout` exceptions of the nextest profile `profile`, each from an override
+/// `filter = "binary_id(<binary>) & test(=<test>)"` with `slow-timeout = { period = "<n>s",
+/// terminate-after = 1 }`; panics on an override of another shape that sets `slow-timeout`.
+fn timeout_exceptions(config: &str, profile: &str) -> Vec<(String, String, u32)> {
+    let header = format!("[[profile.{profile}.overrides]]");
+    let mut found = Vec::new();
+    let mut lines = config.lines().map(str::trim).peekable();
+    while let Some(line) = lines.next() {
+        if line != header {
+            continue;
+        }
+        let mut filter = None;
+        let mut timeout = None;
+        while let Some(next) = lines.peek() {
+            if next.starts_with('[') {
+                break;
+            }
+            let next = lines.next().unwrap();
+            if let Some(value) = next.strip_prefix("filter = ") {
+                filter = Some(value.trim_matches('"').to_owned());
+            } else if let Some(value) = next.strip_prefix("slow-timeout = ") {
+                timeout = Some(value.to_owned());
+            }
+        }
+        let Some(timeout) = timeout else { continue };
+        let filter = filter.unwrap_or_default();
+        let (binary, test) = filter
+            .strip_prefix("binary_id(")
+            .and_then(|rest| rest.split_once(") & test(="))
+            .and_then(|(binary, test)| Some((binary, test.strip_suffix(')')?)))
+            .unwrap_or_else(|| {
+                panic!("a `{profile}` override sets slow-timeout for more than one test: {filter}")
+            });
+        let seconds = timeout
+            .strip_prefix("{ period = \"")
+            .and_then(|rest| rest.strip_suffix("s\", terminate-after = 1 }"))
+            .and_then(|seconds| seconds.parse().ok())
+            .unwrap_or_else(|| {
+                panic!("`{filter}` is not killed at its period in whole seconds: {timeout}")
+            });
+        found.push((binary.to_owned(), test.to_owned(), seconds));
+    }
+    found
+}
+
+/// The workspace has no TOML parser, so `.config/nextest.toml` is held to the one spelling the
+/// readers above understand, and any other is refused: a table header is `[test-groups]`,
+/// `[profile.<name>]`, `[profile.<name>.junit]` or `[[profile.<name>.overrides]]` alone on its line;
+/// a key is a bare lowercase name followed by ` = ` (no dotted or quoted key); no multi-line string
+/// or array; and `slow-timeout` is set only as `slow-timeout = { period = "<n>s", terminate-after =
+/// 1 }` under `[profile.ci]`, `[profile.slow]` or one of their overrides.
+fn assert_canonical_nextest_config(config: &str) {
+    let bare = |name: &str| {
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    };
+    let mut table = String::new();
+    for (number, raw) in config.lines().enumerate() {
+        let line = raw.trim();
+        let at = number + 1;
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        assert!(
+            !line.contains("\"\"\"") && !line.contains("'''"),
+            ".config/nextest.toml:{at}: a multi-line string: {raw}"
+        );
+        if line.starts_with('[') {
+            let header = line
+                .strip_prefix("[[profile.")
+                .and_then(|rest| rest.strip_suffix(".overrides]]"))
+                .or_else(|| {
+                    line.strip_prefix("[profile.")
+                        .and_then(|rest| rest.strip_suffix(".junit]"))
+                })
+                .or_else(|| {
+                    line.strip_prefix("[profile.")
+                        .and_then(|rest| rest.strip_suffix(']'))
+                });
+            assert!(
+                line == "[test-groups]" || header.is_some_and(bare),
+                ".config/nextest.toml:{at}: a table header in another spelling: {raw}"
+            );
+            line.clone_into(&mut table);
+            continue;
+        }
+        let Some((key, value)) = line.split_once(" = ") else {
+            panic!(".config/nextest.toml:{at}: not `<key> = <value>`: {raw}")
+        };
+        assert!(
+            bare(key),
+            ".config/nextest.toml:{at}: a dotted, quoted or spaced key: {raw}"
+        );
+        let opens = value.matches(['[', '{']).count();
+        let closes = value.matches([']', '}']).count();
+        assert_eq!(
+            opens, closes,
+            ".config/nextest.toml:{at}: a value continued on the next line: {raw}"
+        );
+        if line.contains("slow-timeout") || line.contains("overrides") {
+            assert!(
+                [
+                    "[profile.ci]",
+                    "[profile.slow]",
+                    "[[profile.ci.overrides]]",
+                    "[[profile.slow.overrides]]",
+                ]
+                .contains(&table.as_str()),
+                ".config/nextest.toml:{at}: slow-timeout under `{table}`, which the ratchet does \
+                 not read: {raw}"
+            );
+            let seconds = line
+                .strip_prefix("slow-timeout = { period = \"")
+                .and_then(|rest| rest.strip_suffix("s\", terminate-after = 1 }"));
+            assert!(
+                seconds.is_some_and(|seconds| seconds.parse::<u32>().is_ok()),
+                ".config/nextest.toml:{at}: slow-timeout in another spelling: {raw}"
+            );
+        }
+    }
+}
+
+fn assert_profile_kills_at_sixty_seconds(config: &str, profile: &str, pinned: &str) {
+    assert_canonical_nextest_config(config);
+    let pinned = pinned_exceptions(pinned);
+    let lines = config.lines().map(str::trim);
+    let mut in_profile = false;
+    let mut timeout = None;
+    for line in lines {
+        if line.starts_with('[') {
+            in_profile = line == format!("[profile.{profile}]");
+        } else if in_profile {
+            if let Some(value) = line.strip_prefix("slow-timeout = ") {
+                timeout = Some(value.to_owned());
+            }
+        }
+    }
+    assert_eq!(
+        timeout.as_deref(),
+        Some("{ period = \"60s\", terminate-after = 1 }"),
+        "the nextest profile `{profile}` does not kill a test at 60 s"
+    );
+    let found = timeout_exceptions(config, profile);
+    let mut seen = BTreeSet::new();
+    for (binary, test, seconds) in &found {
+        assert!(
+            seen.insert((binary.clone(), test.clone())),
+            "`{profile}` gives {binary} {test} two exceptions"
+        );
+        let Some((_, _, ceiling)) = pinned.iter().find(|(b, t, _)| b == binary && t == test) else {
+            panic!(
+                "`{profile}` gives {binary} {test} {seconds} s, and no exception is pinned for it"
+            )
+        };
+        assert!(
+            seconds <= ceiling,
+            "`{profile}` gives {binary} {test} {seconds} s, over its pinned {ceiling} s"
+        );
+        assert!(
+            *seconds > 60,
+            "{binary} {test}: an exception of {seconds} s"
+        );
+    }
+    for (binary, test, ceiling) in &pinned {
+        assert!(
+            found.iter().any(|(b, t, _)| b == binary && t == test),
+            "{binary} {test} ({ceiling} s) is pinned and no longer an exception of `{profile}`: \
+             drop it from the pinned list"
+        );
+    }
+}
+
+#[test]
+fn the_ci_and_slow_profiles_kill_a_test_at_sixty_seconds_and_their_exceptions_only_shrink() {
+    let config =
+        fs::read_to_string(workspace_root().join(".config/nextest.toml")).expect("nextest.toml");
+    assert_profile_kills_at_sixty_seconds(&config, "ci", CI_EXCEPTIONS);
+    assert_profile_kills_at_sixty_seconds(&config, "slow", SLOW_EXCEPTIONS);
+    // `fuzz/` is a workspace of its own, and nextest refuses an override naming a binary it lacks,
+    // so `fuzz-check` reads the fuzz workspace's config: the same kill, and no exception.
+    let fuzz = fs::read_to_string(workspace_root().join("fuzz/.config/nextest.toml"))
+        .expect("fuzz/.config/nextest.toml");
+    assert_profile_kills_at_sixty_seconds(&fuzz, "ci", "");
+    assert!(
+        timeout_exceptions(&fuzz, "default").is_empty(),
+        "a `default` override of the fuzz workspace sets slow-timeout"
+    );
+    assert!(
+        timeout_exceptions(&config, "default").is_empty(),
+        "a `default` override sets slow-timeout, which every profile inherits"
+    );
+
+    let (binary, test, ceiling) = pinned_exceptions(CI_EXCEPTIONS).remove(0);
+    let raised = config.replace(
+        &format!(
+            "filter = \"binary_id({binary}) & test(={test})\"\nslow-timeout = {{ period = \"{ceiling}s\""
+        ),
+        &format!(
+            "filter = \"binary_id({binary}) & test(={test})\"\nslow-timeout = {{ period = \"{}s\"",
+            ceiling + 1
+        ),
+    );
+    assert_ne!(
+        raised, config,
+        "the first ci exception is not where the case expects it"
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_profile_kills_at_sixty_seconds(
+            &raised,
+            "ci",
+            CI_EXCEPTIONS
+        ))
+        .is_err(),
+        "a raised exception went unnoticed"
+    );
+    let added = format!(
+        "{config}\n[[profile.ci.overrides]]\nfilter = \"binary_id(ess-cli::new) & test(=a_new_slow_test)\"\nslow-timeout = {{ period = \"90s\", terminate-after = 1 }}\n"
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_profile_kills_at_sixty_seconds(
+            &added,
+            "ci",
+            CI_EXCEPTIONS
+        ))
+        .is_err(),
+        "a new exception went unnoticed"
+    );
+}
+
+// Adversary pass on the test budget: what the steps above do not hold.
+
+/// The test-running tasks a gated `ci.yml` lane reaches, outside [`OUTSIDE_THE_TEST_STEP`], each
+/// with the lines of it that run tests.
+fn lane_test_steps(taskfile: &Value) -> BTreeMap<String, Vec<String>> {
+    let ci = yaml(".github/workflows/ci.yml");
+    let mut covered = BTreeSet::new();
+    for lane in lane_invocations(&ci) {
+        reached(taskfile, &lane.task, &mut covered);
+    }
+    let outside: BTreeSet<&str> = OUTSIDE_THE_TEST_STEP
+        .iter()
+        .map(|(task, _)| *task)
+        .collect();
+    test_running_lines(taskfile)
+        .into_iter()
+        .filter(|(task, _)| covered.contains(task) && !outside.contains(task.as_str()))
+        .collect()
+}
+
+/// The story's acceptance: "`test-xtask` and `test-doc` run under the same limit. A test that
+/// sleeps 61 s fails its step." A test is killed at 60 s by the `ci` profile, or its whole step
+/// has no more than 60 s; a `cargo test` step of 120 s lets a 61 s test pass.
+#[test]
+fn adversary_budget_every_lane_test_step_fails_a_test_of_sixty_one_seconds() {
+    let taskfile = yaml("Taskfile.yml");
+    let mut unbounded = Vec::new();
+    for (task, lines) in lane_test_steps(&taskfile) {
+        for line in lines {
+            let killed_by_ci_profile =
+                line.contains("cargo nextest run") && passes(&line, "--profile", "ci");
+            let step_within_sixty = test_step_of(&line).is_some_and(|(_, limit)| limit <= 60);
+            if !(killed_by_ci_profile || step_within_sixty) {
+                unbounded.push(format!("{task}: {line}"));
+            }
+        }
+    }
+    assert!(
+        unbounded.is_empty(),
+        "a test of 61 s passes in these lane steps, neither killed at 60 s nor in a step of 60 s: \
+         {unbounded:#?}"
+    );
+}
+
+/// The story's acceptance: "Every test-running step prints its ten slowest tests with their
+/// times."
+#[test]
+fn adversary_budget_every_lane_test_step_prints_its_ten_slowest_tests() {
+    let taskfile = yaml("Taskfile.yml");
+    let silent: Vec<String> = lane_test_steps(&taskfile)
+        .into_keys()
+        .filter(|task| {
+            !taskfile["tasks"][task.as_str()]["cmds"]
+                .as_sequence()
+                .into_iter()
+                .flatten()
+                .any(|entry| {
+                    entry["defer"]["task"].as_str() == Some("test-slowest")
+                        || entry["task"].as_str() == Some("test-slowest")
+                        || entry
+                            .as_str()
+                            .is_some_and(|command| command.contains("task test-slowest"))
+                })
+        })
+        .collect();
+    assert!(
+        silent.is_empty(),
+        "these lane steps run tests and print no ten slowest: {silent:?}"
+    );
+}
+
+/// The ratchet must see every override nextest reads. Each spelling below is valid TOML that
+/// nextest applies, and each gives every test without an exception 900 s.
+#[test]
+fn adversary_budget_an_added_override_is_caught_however_it_is_spelled() {
+    let config =
+        fs::read_to_string(workspace_root().join(".config/nextest.toml")).expect("nextest.toml");
+    let spellings = [
+        "[[profile.ci.overrides]] # story:the-test-step-meets-the-test-budget\nfilter = \"all()\"\nslow-timeout = { period = \"900s\", terminate-after = 1 }\n",
+        "[[ profile.ci.overrides ]]\nfilter = \"all()\"\nslow-timeout = { period = \"900s\", terminate-after = 1 }\n",
+        "[[profile.ci.overrides]]\nfilter = \"all()\"\nslow-timeout={ period = \"900s\", terminate-after = 1 }\n",
+        "[[profile.ci.overrides]]\nfilter = \"all()\"\nslow-timeout.period = \"900s\"\nslow-timeout.terminate-after = 1\n",
+    ];
+    let unnoticed: Vec<&str> = spellings
+        .into_iter()
+        .filter(|added| {
+            let config = format!("{config}\n{added}");
+            std::panic::catch_unwind(|| {
+                assert_profile_kills_at_sixty_seconds(&config, "ci", CI_EXCEPTIONS);
+            })
+            .is_ok()
+        })
+        .collect();
+    assert!(
+        unnoticed.is_empty(),
+        "an override giving every test 900 s passed the ratchet: {unnoticed:#?}"
+    );
+}
+
+/// A shard job runs `test-shard`, then `test-feature-off` in the same checkout, and both write
+/// `target/nextest/ci/junit.xml`. When the feature-off run fails before nextest writes its report
+/// (an archive that does not extract, nextest killed by `--kill-after`), the deferred
+/// `test-slowest` prints the earlier step's tests as "the ten slowest tests of this run".
+#[test]
+fn adversary_budget_a_feature_off_step_that_wrote_no_report_prints_no_earlier_one() {
+    let taskfile = yaml("Taskfile.yml");
+    let function = test_step_function(&taskfile);
+    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("ci_lanes_adversary_stale_report");
+    let _ = fs::remove_dir_all(&root);
+    let report = root.join("target/nextest/ci/junit.xml");
+    fs::create_dir_all(report.parent().unwrap()).unwrap();
+    fs::write(
+        &report,
+        "<testsuites>\n<testsuite name=\"ess-cli::earlier\">\n\
+         <testcase name=\"a_test_of_the_earlier_step\" classname=\"ess-cli::earlier\" time=\"99.000\"/>\n\
+         </testsuite>\n</testsuites>\n",
+    )
+    .unwrap();
+    let run = |line: &str, printed: &mut String| -> bool {
+        let line = line.replace(TEST_STEP, &function);
+        assert!(
+            !line.contains("{{"),
+            "a template this case cannot expand: {line}"
+        );
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(&line)
+            .current_dir(&root)
+            .output()
+            .expect("sh runs");
+        printed.push_str(&String::from_utf8_lossy(&output.stdout));
+        output.status.success()
+    };
+    let mut printed = String::new();
+    let mut deferred = Vec::new();
+    for entry in taskfile["tasks"]["test-feature-off"]["cmds"]
+        .as_sequence()
+        .expect("test-feature-off has cmds")
+    {
+        if let Some(task) = entry["defer"]["task"].as_str() {
+            deferred.push(task.to_owned());
+            continue;
+        }
+        let line = text(entry);
+        // The nextest run stands in as one that fails before it writes a report.
+        let line = match line.split_once("cargo nextest run") {
+            Some((head, _)) => format!("{head}false"),
+            None => line.to_owned(),
+        };
+        if !run(&line, &mut printed) {
+            break;
+        }
+    }
+    for task in deferred.iter().rev() {
+        for line in shell_commands(&taskfile, task) {
+            run(&line, &mut printed);
+        }
+    }
+    assert!(
+        !printed.contains("a_test_of_the_earlier_step"),
+        "test-feature-off wrote no report and printed an earlier step's as its own:\n{printed}"
+    );
+}
+
+// Adversary pass 2 on the test budget.
+
+/// The slow lane's tests whose longest time in the CI runs of 2026-11-26 and 2026-11-27 was 50 to
+/// 60 s, each with that time in milliseconds (both in run 45901071526, Slow lane job). AGENTS.md
+/// § Gate: "and so has each
+/// test whose longest time there was 50 to 60 s (1.2 times it, at most 72 s), since tests that
+/// close cross 60 s on some runs". The `slow` profile kills at 60 s and gates the merge (`Gate`
+/// needs `slow`); in run 45901071526 every pinned slow-lane test ran 20 % to 57 % over its longest
+/// time in the four runs before.
+const ADVERSARY_SLOW_NEAR_SIXTY: [(&str, &str, u32); 2] = [
+    (
+        "ess-synth::generated_view_queries",
+        "the_rust_servers_of_the_workbench_views_answer_their_parameters_and_orders",
+        57_113,
+    ),
+    (
+        "ess-conformance::synthesis_suite_bytes_table",
+        "every_repository_model_keeps_its_synthesized_bytes",
+        55_390,
+    ),
+];
+
+#[test]
+fn adversary_budget_a_slow_lane_test_of_fifty_to_sixty_seconds_has_its_exception() {
+    let config =
+        fs::read_to_string(workspace_root().join(".config/nextest.toml")).expect("nextest.toml");
+    let found = timeout_exceptions(&config, "slow");
+    let mut missing = Vec::new();
+    for (binary, test, longest_ms) in ADVERSARY_SLOW_NEAR_SIXTY {
+        let wanted = longest_ms.saturating_mul(12).div_ceil(10_000).min(72);
+        let have = found
+            .iter()
+            .find(|(b, t, _)| b == binary && t == test)
+            .map(|(_, _, seconds)| *seconds);
+        if have.is_none_or(|seconds| seconds < wanted) {
+            missing.push(format!(
+                "{binary} {test}: {longest_ms} ms on CI, wants {wanted} s, has {have:?}"
+            ));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "slow-lane tests of 50 to 60 s without the exception AGENTS.md promises: {missing:#?}"
+    );
+}
+
+/// A doc-test step killed at its 60 s limit: the crate whose doc-tests were running when the
+/// limit struck has a `Doc-tests` line and no `test result:` line. It is the slowest crate of the
+/// run, and the ten slowest printed must name it.
+#[test]
+fn adversary_budget_a_killed_doc_test_step_names_the_crate_it_was_killed_in() {
+    let taskfile = yaml("Taskfile.yml");
+    let times = text(&taskfile["vars"]["DOC_TEST_TIMES"]).to_owned();
+    fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("ci_lanes_adversary_killed_doc_tests");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let output = root.join("output.txt");
+    fs::write(
+        &output,
+        "    Finished `test` profile [unoptimized] target(s) in 0.13s\n   \
+         Doc-tests ess_conformance\n\nrunning 1 test\n\
+         test crates/verify/ess-conformance/src/history.rs - history::History (line 237) ... ok\n\n\
+         test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s\n\n   \
+         Doc-tests ess_domain\n\nrunning 1 test\n\
+         test crates/specify/ess-domain/src/lib.rs - slow (line 10) ... \n\
+         test step test-doc ran 60 s, over its limit of 60 s\n",
+    )
+    .unwrap();
+    let printed = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{times} {}", output.display()))
+        .output()
+        .expect("sh runs");
+    assert!(
+        printed.status.success(),
+        "DOC_TEST_TIMES failed: {printed:?}"
+    );
+    let report = String::from_utf8_lossy(&printed.stdout);
+    assert!(
+        report.contains("classname=\"ess_conformance\""),
+        "the case does not read the report it expects: {report}"
+    );
+    assert!(
+        report.contains("classname=\"ess_domain\""),
+        "the crate the doc-test step was killed in is missing from its ten slowest:\n{report}"
+    );
+}
+
+/// `test-feature-off`'s ceiling is 1.2 times the longest step time seen, and the step now holds
+/// nextest's listing of the extracted binaries as well as its tests: in run 45965268982, shard
+/// 3/20, the listing took 10.7 s (`Extracted` to `Starting`) and the tests 546.2 s (`Summary`),
+/// 556.9 s, so 669 s. AGENTS.md gives the listing up to 11.9 s.
+#[test]
+fn adversary_budget_the_feature_off_ceiling_is_one_point_two_times_its_longest_step() {
+    let taskfile = yaml("Taskfile.yml");
+    let longest_ms: u64 = 546_200 + 10_700;
+    let wanted = longest_ms.saturating_mul(12).div_ceil(10_000);
+    let limits: Vec<u64> = test_running_lines(&taskfile)
+        .remove("test-feature-off")
+        .expect("test-feature-off runs tests")
+        .iter()
+        .filter_map(|line| test_step_of(line).map(|(_, limit)| limit))
+        .collect();
+    assert!(!limits.is_empty(), "test-feature-off runs no test step");
+    for limit in limits {
+        assert!(
+            limit >= wanted,
+            "test-feature-off's ceiling is {limit} s, under 1.2 times its longest step on CI \
+             ({longest_ms} ms, so {wanted} s)"
+        );
+    }
 }

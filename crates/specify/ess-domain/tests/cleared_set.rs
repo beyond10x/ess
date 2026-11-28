@@ -137,3 +137,59 @@ fn only_exactly_one_explicit_source_is_admitted() {
         );
     }
 }
+
+/// A row-set selector comparing an `Optional` field a row may hold absent: a root node is created
+/// with no `parent`, and a selector compares `parent == input.parent` with no `defined(parent)`
+/// beside it (story:a-comparison-over-an-optional-field-a-row-holds-absent-is-decided-or-named-by-validate-and-not-left-unknown-for-the-interpreter-to-refuse).
+const ABSENT: &str = include_str!("fixtures/absent-comparison.yaml");
+
+#[test]
+fn from_ess_38_a_comparison_over_a_field_a_row_may_hold_absent_is_refused_naming_the_idiom() {
+    let Err(refused) = spec(ABSENT) else {
+        panic!("an unguarded comparison over `parent` is refused");
+    };
+    let line = refused
+        .lines()
+        .find(|line| line.contains("[missing_declaration]") && line.contains("`parent`"))
+        .unwrap_or_else(|| panic!("names `parent`: {refused}"));
+    assert!(line.contains("row-set selector"), "{line}");
+    assert!(line.contains("tree.nodes.Node"), "{line}");
+    assert!(
+        line.contains("defined(parent) and parent == input.parent"),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_presence_test_beside_the_comparison_validates() {
+    let guarded = ABSENT.replacen(
+        "where: {all: [parent == input.parent,",
+        "where: {all: [defined(parent), parent == input.parent,",
+        1,
+    );
+    spec(&guarded).unwrap_or_else(|errors| panic!("{errors}"));
+    let negated = ABSENT.replacen(
+        "where: {all: [parent == input.parent, name == input.name, state == Open]}",
+        "where: {all: [name == input.name, state == Open, {any: [missing(parent), parent == input.parent]}]}",
+        1,
+    );
+    spec(&negated).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+#[test]
+fn a_field_no_writer_leaves_absent_validates_unchanged() {
+    let start = ABSENT.find("  - name: tree.nodes.AddRoot\n").unwrap();
+    let end = ABSENT.find("  - name: tree.nodes.AddChild\n").unwrap();
+    let children_only = format!("{}{}", &ABSENT[..start], &ABSENT[end..]).replacen(
+        "may: [tree.nodes.AddRoot, tree.nodes.AddChild]",
+        "may: [tree.nodes.AddChild]",
+        1,
+    );
+    spec(&children_only).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+#[test]
+fn below_ess_38_the_comparison_validates_as_it_did() {
+    spec(&ABSENT.replacen("format: ess/38", "format: ess/37", 1))
+        .unwrap_or_else(|errors| panic!("{errors}"));
+}

@@ -1,0 +1,4 @@
+refused: refusal[ESS-SYNTH-001]: outcome shelf.stock.StageRelease/tier-unit-differs has no scenario `shelf.stock.StageRelease/outcome/tier-unit-differs`
+  no witness: `shelf.stock.Entry.name` is `String`, which a filter reads and no declared command writes, so no arrangement leaves rows on both sides of the filter
+  help: declare a `sets:` for the field on a command that creates the entity, from an input or from a caller attribute (`{caller: <attribute>}`), so the arranged rows can hold values on both sides of the filter
+6 scenario(s) (0 authored), 1 refusal(s), written to out/suite.json

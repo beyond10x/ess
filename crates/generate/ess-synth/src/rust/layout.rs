@@ -52,6 +52,9 @@ pub struct Layout {
     codecs: crate::codec_names::CodecNames,
     /// The method each accepted command and owned view is served by on its component's port.
     port_methods: crate::codec_names::PortMethods,
+    /// `true` for the single crate's allocation (`--layout crate`), whose root carries the `wire`
+    /// and `json` modules whether or not a server is generated.
+    single_crate: bool,
 }
 
 impl Layout {
@@ -120,6 +123,7 @@ impl Layout {
             boxed_structs,
             codecs,
             port_methods: crate::codec_names::PortMethods::empty(),
+            single_crate,
         };
         let methods = crate::codec_names::PortMethods::of(ir, |declared| {
             let method = name::value_ident(&layout.type_name(declared));
@@ -127,6 +131,12 @@ impl Layout {
         });
         layout.port_methods = methods;
         layout
+    }
+
+    /// `true` for the single crate (`--layout crate`): its root carries the `wire` and `json`
+    /// modules, and a served model's server re-exports them.
+    pub(crate) fn single_crate(&self) -> bool {
+        self.single_crate
     }
 
     /// The package name of the types crate.
@@ -375,9 +385,9 @@ pub(super) fn optional_self(reference: &ResolvedTypeRef, owner: &QualifiedName) 
 ///    that have no such module. `actor` joins them, on the same reasoning, only in a model that
 ///    declares an actor, whose types crate carries the `actor` grant table; `behaviour` joins them
 ///    the same way, only in a model where some command's behaviour is generated and the types
-///    crate carries the `behaviour` module. `ports`, `system` and `server` join them only in the
-///    single-crate layout (`--layout crate`), whose root holds those three modules beside the
-///    bounded contexts; the workspace layout keeps its names.
+///    crate carries the `behaviour` module. `ports`, `system`, `server`, `wire` and `json` join them
+///    only in the single-crate layout (`--layout crate`), whose root holds those five modules beside
+///    the bounded contexts; the workspace layout keeps its names.
 fn module_idents(ir: &EssIr, single_crate: bool) -> BTreeMap<QualifiedName, String> {
     let mut candidates: BTreeMap<QualifiedName, String> = ir
         .domains()

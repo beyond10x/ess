@@ -1,0 +1,39 @@
+format: ess/37
+system: shelf
+version: v1
+domain: shelf.sets
+summary: A set always holds at least one member; the invariant reads the member list's count.
+types:
+  - {name: shelf.sets.SetId, kind: newtype, of: Uuid}
+entities:
+  - name: shelf.sets.Set
+    identity: {name: set_id, type: shelf.sets.SetId}
+    fields:
+      - {name: members, type: List<String>}
+    invariants:
+      - members.count >= 1
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: shelf.sets.SetCreated
+    fields: [{name: set_id, type: shelf.sets.SetId}]
+actors:
+  - name: shelf.sets.Librarian
+    may: [shelf.sets.CreateSet]
+commands:
+  - name: shelf.sets.CreateSet
+    input:
+      - {name: members, type: List<String>}
+    outcomes:
+      - name: created
+        creates: shelf.sets.Set
+        instance: set_id
+        emits: [shelf.sets.SetCreated]
+        payload: {shelf.sets.SetCreated: {set_id: {generated: true}}}
+        sets: {members: input.members}
+views:
+  - name: shelf.sets.Sets
+    source: shelf.sets.Set
+    consistency: read_your_writes
+    fields:
+      - {name: set_id, type: shelf.sets.SetId}
+      - {name: members, type: List<String>}

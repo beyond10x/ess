@@ -298,6 +298,15 @@ fn everything(synthesis: &Synthesis) -> String {
         .collect()
 }
 
+/// The Rust module that declares the codecs: the server's `wire.rs` in the workspace, the crate
+/// root's `src/wire.rs` in the crate layout, whose server re-exports it.
+fn codecs(synthesis: &Synthesis) -> &str {
+    match synthesis.artifacts.get("src/wire.rs") {
+        Some(root) => &root.contents,
+        None => artifact(synthesis, "wire.rs"),
+    }
+}
+
 fn occurrences(text: &str, needle: &str) -> usize {
     text.matches(needle).count()
 }
@@ -305,7 +314,7 @@ fn occurrences(text: &str, needle: &str) -> usize {
 /// The Rust codecs and handlers of every command, declared once each, under the allocated stem,
 /// and the declaration each one documents is the command it was allocated for.
 fn assert_rust_names(label: &str, synthesis: &Synthesis, commands: &[String]) {
-    let wire = artifact(synthesis, "wire.rs");
+    let wire = codecs(synthesis);
     let all = everything(synthesis);
     let mut stems = Vec::new();
     for command in commands {
@@ -482,8 +491,10 @@ fn declaration_order_does_not_change_generated_bytes() {
     }
 }
 
-/// Embedded/direct (no `reached_by: network`): no served surface, so no codec is allocated or
-/// inventoried, and both targets admit the model exactly as before. Go refuses `ALIASED`'s
+/// Embedded/direct (no `reached_by: network`): no served surface, so no command codec is allocated
+/// or inventoried, and both targets admit the model exactly as before. The crate layout's root
+/// `src/wire.rs` reads and writes the model's types without a server (TD-D2 A), and is no served
+/// artifact. Go refuses `ALIASED`'s
 /// component port for its seam method names, which is that target's existing boundary.
 #[test]
 fn embedded_targets_keep_their_admission_boundary() {
@@ -498,8 +509,9 @@ fn embedded_targets_keep_their_admission_boundary() {
             let synthesis = synthesize_laid_out(&ir, target, layout)
                 .unwrap_or_else(|error| panic!("{label}: {error:?}"));
             for path in synthesis.artifacts.keys() {
+                let library = layout == OutputLayout::Crate && path == "src/wire.rs";
                 assert!(
-                    !path.contains("server") && !path.ends_with("wire.rs"),
+                    !path.contains("server") && (library || !path.ends_with("wire.rs")),
                     "{label}: no served artifact, found `{path}`"
                 );
             }
@@ -941,17 +953,20 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// (story:the-openapi-says-published-only-for-events-the-component-publishes). Every row was
 /// re-recorded when a generated file stopped carrying the whole-model digest. The `labelled go` row
 /// was re-recorded when the Go `server/wire.go` union decoder refused a member beside the tag and
-/// the content (`closedAt`, story `the-go-server-refuses-an-undeclared-member-at-any-depth`).
+/// the content (`closedAt`, story `the-go-server-refuses-an-undeclared-member-at-any-depth`). The
+/// `rust-crate` rows were re-recorded when the crate layout wrote its `wire` and `json` modules at
+/// the root, a served crate's server re-exporting them (TD-D2 A of the story
+/// `a-synthesized-rust-crate-carries-typed-decoders-and-encoders-without-a-server-…`).
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
     ("aliased rust-workspace", "25 artifact(s) 0626c5fa6e565804"),
-    ("aliased rust-crate", "22 artifact(s) e21f4f2c7c54536c"),
+    ("aliased rust-crate", "24 artifact(s) e4f26e98af82069f"),
     ("aliased web", "14 artifact(s) 47cc96128e6a6873"),
     ("cross rust-workspace", "26 artifact(s) aefc684a0ed1cea0"),
-    ("cross rust-crate", "23 artifact(s) 49c82f1e48b48437"),
+    ("cross rust-crate", "25 artifact(s) 862a5821f7abe1e8"),
     ("cross web", "14 artifact(s) b4577b7f32e9f17f"),
     ("cross go", "20 artifact(s) 3e128242f542e0ee"),
     ("labelled rust-workspace", "25 artifact(s) d951d0654c63c9c0"),
-    ("labelled rust-crate", "22 artifact(s) 82bd9e41b26d8423"),
+    ("labelled rust-crate", "24 artifact(s) c9ceeea1f502447a"),
     ("labelled web", "14 artifact(s) 5be6472be683b0b6"),
     ("labelled go", "19 artifact(s) ddbab8c4c1bfdfa4"),
 ];

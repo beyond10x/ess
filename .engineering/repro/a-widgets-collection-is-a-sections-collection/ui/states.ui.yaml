@@ -1,0 +1,28 @@
+format: ess-ui/1
+app: shop
+title: Shop
+model: shop
+placement_profile: fat
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: home, sections: [{name: all, pages: [home]}]}
+widgets:
+  item_list:
+    summary: The items of the channel.
+    body:
+      - name: rows
+        component: collection
+        reads: {view: shop.channel.Items, key: item_id}
+        columns: [label, kind]
+        states: {empty: {message: No items yet}}
+pages:
+  home:
+    kind: detail_page
+    title: Home
+    sections:
+      - {name: items, component: item_list}
+      - name: direct
+        component: collection
+        reads: {view: shop.channel.Items, key: item_id}
+        columns: [label, kind]
+        states: {empty: {message: No items yet}}

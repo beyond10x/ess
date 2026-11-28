@@ -257,11 +257,19 @@ pub(crate) fn input_absent(
 
 /// Structural code generation cannot supply atomic, durable one-time issuance.
 /// Refuse the named policy before emitting any incomplete implementation artifacts.
+///
+/// The Rust target emits it instead as the command behaviour's obligation, which the plan already
+/// holds for every command with a typed `response:` and whose contract carries the one-time duty
+/// of each marked outcome (`plan::one_time_clause`): its stub returns `UnmetObligation`, never the
+/// value. Go, web and the command-line target still refuse it.
 pub(crate) fn one_time_response(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
+    if target == Target::Rust {
+        return Ok(());
+    }
     let causes = ir.commands().values().flat_map(|command| {
         command.outcomes.iter().filter(|outcome| !outcome.one_time_response.is_empty()).map(move |outcome| {
             TargetFailureCause::new(
@@ -282,6 +290,10 @@ pub(crate) fn one_time_response(
 /// selected per refusal ([`refusal_policy`]) first, then a bounded retry ([`retry_bound`]). An
 /// event-payload condition (ess/22) is represented in every shape, selections and proved members
 /// included (`rust::condition`, `go::condition`).
+///
+/// The Rust dispatch represents both (`rust::system`): it selects the policy from the refusal the
+/// invoked command answered and counts the attempts of each occurrence against the bound, so the
+/// Rust target refuses neither. Go and web still refuse both.
 pub(crate) fn binding_policies(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
@@ -291,11 +303,18 @@ pub(crate) fn binding_policies(
     retry_bound(ir, plan, target)
 }
 
+/// Whether `target`'s dispatch selects a binding's failure policy per refusal and counts the
+/// attempts of each occurrence. The command-line target delivers no bindings, so it has nothing to
+/// represent.
+fn dispatches_per_refusal(target: Target) -> bool {
+    matches!(target, Target::Rust | Target::Clap)
+}
+
 /// A binding whose failure policy is selected per refusal (ess/22, beyond10x/ess#269) is refused
-/// by every target that delivers bindings. The command-line target delivers none, so it has
-/// nothing to refuse.
+/// by every target that delivers bindings and whose dispatch does not select per refusal: Go and
+/// web. The command-line target delivers none, so it has nothing to refuse.
 ///
-/// The generated dispatch answers every failure of a binding with one policy and counts no
+/// Their generated dispatch answers every failure of a binding with one policy and counts no
 /// attempts, so emitting it would apply one policy — the fallback's, or none — to every declared
 /// refusal, and could not stop a retry at its total bound. Each binding is named, so the
 /// representation is owed rather than silently wrong; the refusal is checked before the bounded
@@ -305,7 +324,7 @@ pub(crate) fn refusal_policy(
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
-    if target == Target::Clap {
+    if dispatches_per_refusal(target) {
         return Ok(());
     }
     let causes = ir
@@ -330,11 +349,11 @@ pub(crate) fn refusal_policy(
 }
 
 /// A binding with a bounded retry (ess/16, beyond10x/ess#165) is refused by every target that
-/// delivers bindings, as `Json` is. The command-line target delivers none, so it has nothing to
-/// refuse.
+/// delivers bindings and counts no attempts: Go and web. The command-line target delivers none,
+/// so it has nothing to refuse.
 ///
-/// The generated retry holds the event for the next pump and counts no attempts, so it cannot stop
-/// after `attempts:` or on a `final:` refusal; emitting it would retry forever where the
+/// Their generated retry holds the event for the next pump and counts no attempts, so it cannot
+/// stop after `attempts:` or on a `final:` refusal; emitting it would retry forever where the
 /// specification says how many times. Each binding is named rather than emitted with a meaning
 /// nobody chose.
 pub(crate) fn retry_bound(
@@ -342,7 +361,7 @@ pub(crate) fn retry_bound(
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
-    if target == Target::Clap {
+    if dispatches_per_refusal(target) {
         return Ok(());
     }
     let causes = ir
@@ -366,19 +385,20 @@ pub(crate) fn retry_bound(
     }
 }
 
-/// A struct with a shorthand (`ess/27`, beyond10x/ess#594) is refused by the Rust and Go servers
-/// and the web app.
+/// A struct with a shorthand (`ess/27`, beyond10x/ess#594) is refused by the Go server and the web
+/// app.
 ///
 /// Their codecs decode a struct from its object only, so a request or a row written in the short
 /// form — a value the specification admits — would be refused at run time as malformed. Each struct
-/// is named, so the short-form decoder is owed rather than silently missing. The command-line
-/// target is outside the story's list and keeps its output.
+/// is named, so the short-form decoder is owed rather than silently missing. The Rust target's wire
+/// module reads both spellings (`rust::wire`), so it passes here; the command-line target is
+/// outside the story's list and keeps its output.
 pub(crate) fn shorthand(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
-    if target == Target::Clap {
+    if matches!(target, Target::Clap | Target::Rust) {
         return Ok(());
     }
     let causes = ir

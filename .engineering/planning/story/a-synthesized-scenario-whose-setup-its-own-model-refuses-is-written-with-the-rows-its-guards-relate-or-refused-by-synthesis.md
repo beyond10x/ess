@@ -1,0 +1,198 @@
+---
+format: aep.planning-md/3
+id: story:a-synthesized-scenario-whose-setup-its-own-model-refuses-is-written-with-the-rows-its-guards-relate-or-refused-by-synthesis
+kind: story
+status: draft
+title: A synthesized scenario whose setup its own model refuses is written with the rows its guards relate, or refused by synthesis
+summary: '25 of 201 scenarios of a downstream model fail interpreted on 0.99.0 to 0.99.2: a link compared with an input (older than 0.97.4) and a re-pointed creation (regression fd8a86bcf3, 0.98.0); two red tests, fixes planned'
+tags:
+- conformance
+- defect
+- external-request
+- gap-reports-2026-11-24
+relations:
+- serves: vision:O2
+- informed_by: story:a-guard-compares-a-link-field-with-an-input
+- informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
+revision: 11
+---
+## Summary
+
+A synthesized conformance suite of a downstream application's model fails 25 of its 201 scenarios
+when it runs against the declared interpreter of that same model (`ess verify conform run --target
+interpreted`); the identical numbers hold on 0.99.0, 0.99.1 and 0.99.2. The suite of 0.97.4 had 124
+scenarios and all passed. All 25 failing scenarios are among the 77 that 0.97.4 did not write: 17
+were first written, and failing, by 0.98.0, the other 8 by 0.99.0. A scenario the interpreter of
+its own model refuses is a synthesis defect: the setup step sends an input the model's own guards
+refuse, or sends rows apart from the link the subject holds, so the model answers a refusal that
+the scenario did not expect.
+
+## Evidence
+
+Three groups, by the reporter's counts and by the diagnosis (each verdict is by reading and by the
+red test named; reductions are generic models, committed as tests):
+
+1. **A link compared with an input, beside refusals that read the row the input names.** 13
+   scenarios of two reply commands, answered with a "not a reply of that kind" refusal. A command
+   has a `when_subject` guard that compares the subject's stored link with an input
+   (`stored ref != input ref`) beside `when_related` refusals that read the row that input names.
+   The later branches are sent a related row arranged apart from the subject's link, and a setup
+   that ignores the held-state guards, so the model answers the held-state refusal where the
+   scenario expects a later outcome; the interpreter follows the declared precedence. Older than
+   0.97.4: the reduction fails on every release from 0.97.4 to 0.99.2, and the larger coverage of
+   0.98.0 and 0.99.0 exposes it. No regression commit.
+   Red test `a_link_guard_beside_a_missing_row_refusal_on_the_same_input_passes_its_own_model` in
+   `crates/verify/ess-conformance/tests/link_field_guard.rs`, commit `32f75b7249` (0.07 s for the
+   binary): the interpreter refuses two scenarios of the reduction with an "other-account" refusal.
+2. **An "elsewhere" refusal.** 8 scenarios of three commands. Two causes under one refusal name:
+   6 scenarios of one command are group 1's defect (a stored environment compared with an input
+   beside related refusals on that input); the 2 others fail in a setup grant whose component lives
+   in another environment than the one sent, the symptom of group 3 (the mechanism is inferred by
+   pattern, not traced).
+3. **A setup creation refused by the guards of its own creating act.** 4 scenarios of a revoke
+   command have the grant command of their setup step answered with a "namespace not allowed"
+   refusal. The revoke's scenarios point the created row's stored link at an arranged row by
+   rewriting the creating act's input (`relink`, the `Link::Row` arm of
+   `crates/verify/ess-conformance/src/synthesize/related_guard/stored.rs`), and that act was
+   arranged as its own scenario (`as_own_scenario`) with rows its guards relate to the old link, so
+   the rewritten send is refused. A regression of `fd8a86bcf3` (released in 0.98.0): at its parent
+   `df7eb37a65` the revoke outcome is refused by synthesis and 13 scenarios pass; at `fd8a86bcf3`
+   it is written, 17 scenarios, 4 fail.
+   Red test `a_setup_run_arranged_as_its_own_scenario_keeps_the_rows_its_guards_relate` in
+   `crates/verify/ess-conformance/tests/related_guard_multiple_vias.rs`, commit `a8d35b75de` (binary
+   3.33 s, 19 tests): the interpreter refuses four scenarios of the reduction.
+
+Both red tests are on the branch `fix/n88-n89-2026-11-25` (pushed at `a8d35b75de`), without a fix.
+
+## Fix plan (by group, not built)
+
+- Group 1, `related_guard.rs` (`drive` and `drive_several_strict` for a command with a subject):
+  where a `when_subject` guard answered before the branch compares a stored link of the subject
+  with the input that a `when_related` read uses as its via, bind that via to the row the subject's
+  link names (the pins and bound values) instead of arranging a row beside it; where the branch
+  needs another row there, refuse the branch with a note (as the "no account" outcome below an
+  "other account" row needs).
+- Group 3, `related_guard/stored.rs` (`relink`, the `Link::Row` arm): refuse the scenario as
+  unpointed where a `when_related` guard that the creating act answers before its writer relates
+  the row the rewritten input names to another input (a predicate over another row reading that
+  input, or over that row reading another input), so the scenario is refused as on 0.97.4 instead
+  of sent a creation its own guards refuse. Later: re-arrange the creator with the link bound.
+- Group 2 follows from the two above; its two scenarios of the group 3 symptom are checked after
+  group 3, since their mechanism was not traced.
+
+## Acceptance
+
+- The two red tests are green with the fixes, and the interpreted run of the reporter's model class
+  passes every scenario that is written: a scenario the interpreter of its model refuses is
+  refused by synthesis with a note instead.
+- Suites move. A fix that refuses a branch or binds a different row changes the written suites;
+  every moved committed suite and byte pin is re-pinned in the change with its cause beside it, and
+  the release's `CHANGELOG.md` names the moved suites.
+- The fix leaves group 3's 0.97.4 behaviour (the revoke outcome refused by synthesis) where the
+  creating act's guards refuse the rewritten send, and writes the scenario again where the creator
+  is re-arranged with the link bound.
+
+## Fit review
+
+1. **Class.** A defect of synthesis (a suite that fails against its own model). Group 3 is a
+   regression of `fd8a86bcf3`; group 1 is older than 0.97.4.
+2. **Release.** A fix moves suites, so it is a release of its own after 0.99.3 (the patch release
+   of `story:a-setup-run-that-falls-back-to-its-creating-commands-own-scenario-builds-that-scenario-once-per-distinct-arrangement-not-once-per-candidate-row`),
+   not part of it. The changelog names the moved suites.
+3. **Borders.** `story:a-guard-compares-a-link-field-with-an-input` (a link compared with an input
+   is refused, ESS-SYNTH-003; implemented) and
+   `story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own`
+   (a draft about the refusal text).
+4. **Safety net.** A check after synthesis that runs each written scenario against the model is a
+   story of its own:
+   `story:a-synthesis-runs-each-written-scenario-against-the-declared-interpreter-of-its-model-and-turns-a-failing-one-into-a-refusal-with-a-note`.
+
+## Decisions
+
+- None open. The release route of the fixes (after 0.99.3, a release of its own) follows from the
+  moved suites.
+
+- D153 (the coordinator, 2026-11-26): N90B and N95 ship in 0.99.6, N93 in 0.99.7, each a patch release from the previous tag.
+
+## Delivery
+
+Branch `fix/n88-a-synthesized-setup-is-accepted-by-its-own-model`, head
+`090b691e2dc686620b0940243b297885a6d3c67b`, pushed: the group 3 fix `39f1b33bc3`, a third red test
+`4eb8a5a6a3` (`a_link_guard_on_the_input_naming_a_row_beside_passes_its_own_model`), and the group
+1 fix `090b691e2d`. On the reported model 0 of 178 scenarios fail (25 of 201 on 0.99.2). 23
+scenarios are no longer written; each of them failed before, and none that passed was lost. No
+committed byte table moved. The gate ran every step with exit 0.
+
+Tagged 0.99.4 on `daae8ebd1d` (branch `hotfix/0.99.4`, release commit `78c4ba842c`); the tag's
+release run 45621137834 takes the full gate and was in progress when this was written.
+
+0.99.4 is released (2026-11-25): the tag's release run 45621137834 took the full gate and ended in
+success; the release is public at https://github.com/beyond10x/ess/releases/tag/0.99.4 with four
+archives and `SHA256SUMS`, authored by the organization bot. Pull request 832 brings
+`hotfix/0.99.4` to `main` with `main` merged in (head `c788b3bb79`); it was open when this was
+written.
+
+0.99.3 and 0.99.4 are on `main` since 2026-11-25 20:02 CET (pull request 832, merge commit `760b555161`).
+
+N93: in 0.99.7, prepared on branch `hotfix/0.99.7` at `e4232da4eb`; not tagged when written.
+
+0.99.7 is released (2026-11-26 13:17 CET) with the N93 fix, a branch reading the row the subject links is sent that row: https://github.com/beyond10x/ess/releases/tag/0.99.7. It is on `main` through pull request 839 (https://github.com/beyond10x/ess/pull/839, merge commit `a861afd90e`, merged 2026-11-26 18:33 CET).
+
+## Left open
+
+The 23 scenarios are refused by synthesis and not arranged; arranging them is not built.
+
+## Reported after 0.99.4
+
+Reported 2026-11-25 on 0.99.4 by a downstream application: several scenarios of a command whose branches read the row the subject links are refused with "no candidate of the 0 tried satisfies" a branch that "refuses first". This is the first half of group 1 of the Fix plan and of "Left open".
+
+Verdict: a defect, an arrangement that is not built, in `arranged_at` of `crates/verify/ess-conformance/src/synthesize/related_guard.rs` (the early `GuardUnsatisfiable` with `tried: 0`, commit `090b691e2d`, 0.99.4); the shape is wrong since before 0.97.4. The refusal is right for what synthesis builds: it arranges the row the input names apart from the subject, so an earlier branch with the guard `<link> != input.<field>` answers first (0.99.1 wrote those scenarios and they failed). The arrangement a hand-written scenario uses, where the input names the row the subject links, is not built.
+
+Cause. "0 tried" is literal: no filter empties a list. `arranged_at` returns before any candidate when `subject_link_refuses` finds that guard answered first and the field names the focus row or a row beside it. Three of the refused branches belong to `story:a-link-copied-from-a-related-row-s-proved-reference-is-itself-proved-so-a-command-reading-it-needs-no-dead-exists-false-branch` (a dead branch: no arrangement exists at all). Reading through the stored link instead (`stored::arranged_at`) does not help the reported shape: a link copied from another row's field is refused ("does not write it from its input unchanged"), and where the creator writes the link from its input the scenarios are written but send the compared input as a placeholder, so the earlier branch answers on the interpreted target (a further defect of the same class, `related_guard/stored.rs`). The refusal of a revoke on a revoked row is group 3 of this story (0.97.4 behaviour restored, by design).
+
+Reduction: a generic model with an order, a store, and a command that ships an order from a store, reproduces the refusals on the 0.99.5 binary; a hand arrangement exists (open the store, place the order at it, freeze it, ship naming it).
+
+Fix plan, in order: (1) `arranged_at`, where `subject_link_refuses` fires for the read field, arranges through `stored::arranged_at` with the subject's link as the read row and binds `input.<field>` to that row instead of refusing; (2) `stored::arranged_at`, non-absent arm, binds every `input.<field>` that a step-3 guard `<link> != input.<field>` compares to the linked row's instance, which fixes the placeholder send; (3) a relink through a link a creator copies from another row's field, arranging that row's link first (the reported shape needs it; no strategy has it).
+
+Built (2026-11-26): branch `fix/n93-a-branch-reading-the-row-the-subject-links-is-sent-that-row`, head `b0054486c1`, pushed. Red tests, each in `link_field_guard.rs`: A `a_branch_reading_the_row_the_input_names_beside_a_link_refusal_is_sent_the_subjects_own_row` (`746bf7b55b`), B `a_branch_reading_the_subjects_stored_link_beside_a_link_refusal_is_sent_that_row` (`298cd5d7e1`), C `a_branch_beside_a_link_refusal_is_sent_the_subjects_own_row_where_the_link_is_copied_from_another_row` (`f32b46797b`), D `a_branch_reading_two_rows_beside_a_link_refusal_is_sent_the_subjects_own_row` (`be63bb054e`, the reported shape with a second row beside). Fixes: part 2 (`7f63a3f059`), part 1 (`61f63169e8`), part 3 (`b7e0c1e132`), part 4 (`ad3c57b4e6`, several rows). `link_field_guard` 13 of 13; the gate ran every step with exit 0 on the third run and no committed byte row moved; the longest test was 48.5 s. Planned for 0.99.6 or 0.99.7.
+
+## Reported again on 0.99.9: a child under the same parent
+
+Reported 2026-11-28 by a second downstream application, on 0.99.2 and checked on 0.99.9: 5 scenarios
+of one specification are refused `ESS-SYNTH-003` since 0.99.4 (the refusal of `39f1b33bc3`, the
+group 3 fix above) where 0.99.2 wrote them and they failed on the interpreter. The refusal is
+right; the downstream asks for the scenarios.
+
+Shape, generic. A parent entity stores a list of names (slots of a shelf). A creating command
+places a child under a parent and checks, through `when_related: {via: input.parent_id, predicate:
+not exists …}`, that the named slot is one of the parent's own. An updating command moves a child
+to another slot and checks the slot against the parent its stored link names (`when_related: {via:
+parent_id, …}`). Synthesis arranges the guard of the updating command on one parent and creates the
+child through the creating command, which relates the parent its input names to another of its
+inputs (the slot) before storing it; the arrangement then creates the child under the other
+parent, with a slot that is not one of the first parent's, so the setup's own creating command
+answers "unknown slot". Since 0.99.4 synthesis refuses these scenarios instead:
+
+```text
+refused: refusal[ESS-SYNTH-003]: outcome shelves.rack.MoveTag/moved has no scenario `shelves.rack.MoveTag/outcome/moved`
+  no candidate of the 0 tried satisfies `the stored `shelf_id` of the addressed subject: `shelves.rack.PlaceTag` relates the row `input.shelf_id` names to another of its inputs before storing it, and the arrangement created the subject naming another row`
+```
+
+Neutral reproduction on 0.99.9:
+`.engineering/repro/a-synthesized-scenario-whose-setup-its-own-model-refuses-is-written-with-the-rows-its-guards-relate-or-refused-by-synthesis/system.yaml`.
+`ess verify conform synthesize` writes 6 scenarios and refuses 4: `MoveTag/outcome/moved`,
+`MoveTag/outcome/unknown-slot` and the invariant scenario after `MoveTag/moved` as `ESS-SYNTH-003`,
+and `MoveTag/outcome/no-tag` as `ESS-SYNTH-008`. The downstream's 5 scenarios are the same family
+(three branches of the moving command and two invariant scenarios built on them).
+
+Wanted, as a witness: where the creating command checks a value of its input against the row it
+relates (a slot of that parent), the arrangement picks the child's value from the same parent the
+guard was arranged on (the parent's own list), and sends the creating command the parent and a
+value of that parent together. This is the "arranging it is not built" of Left open for the case
+where the creating command's own guard decides whether the value is one of the related row's. No
+format key; a suite of a model that has the shape gains scenarios and keeps the bytes of every
+other scenario.
+
+Acceptance, added: on the reproduction above, the three `ESS-SYNTH-003` refusals become scenarios
+that pass `ess verify conform run --target interpreted`; a model whose creating command's check
+cannot hold for any value of the parent keeps the refusal and names the check.

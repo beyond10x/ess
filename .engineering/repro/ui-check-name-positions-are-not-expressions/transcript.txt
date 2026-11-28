@@ -1,0 +1,27 @@
+$ ess --version
+ess 0.99.9
+
+$ ess specify validate --path spec   (the model: domain shop.channel, view Items)
+shop v1 — 3 file(s), valid
+
+$ ess ui check --path ui/read.ui.yaml --model spec   (a section reads {view: channel.Items}, a name in reads/view)
+error channel_refs pages/home/sections/rows: `channel.Items` names no channel (in `reads/view`)
+warning fixture_per_view pages/home/sections/rows/reads: no fixture answers view `channel.Items` (`fixtures.views` or `fixtures.derived`)
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/read.ui.yaml: 1 error(s), 1 warning(s)
+
+$ ess ui check --path ui/widget-relative.ui.yaml --model spec   (a widget named channel.Items, used by component: channel.Items)
+error channel_refs pages/home/sections/items: `channel.Items` names no channel (in `component`)
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/widget-relative.ui.yaml: 1 error(s), 0 warning(s)
+
+$ ess ui check --path ui/widget-full.ui.yaml --model spec   (the same widget named shop.channel.Items)
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/widget-full.ui.yaml: 0 error(s), 0 warning(s)
+
+$ ess ui check --path ui/names.ui.yaml --model spec   (a command channel.AddItem in does, a page channel.list in navigate/to and in navigation)
+error channel_refs navigation/sections/all: `channel.list` names no channel (in `pages`)
+error channel_refs pages/home/header/actions/add: `channel.AddItem` names no channel (in `does`)
+error channel_refs pages/home/header/actions/go: `channel.list` names no channel (in `navigate/to`)
+coverage: 2 covered, 0 host-covered, 0 uncovered of 2 views and commands
+ui/names.ui.yaml: 3 error(s), 0 warning(s)

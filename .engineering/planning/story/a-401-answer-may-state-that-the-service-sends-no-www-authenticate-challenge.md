@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - derived_from: story:an-http-binding-declares-how-a-caller-authenticates
 - depends_on: story:an-http-binding-declares-how-a-caller-authenticates
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -95,6 +95,8 @@ refused, so the RFC default holds unless a binding opts out by name.
 ## Decisions
 
 **AC-D4**, default A (admit the declared exception). Options and costs are in the gap page's open decisions (`.engineering/waves/gap-reports-2026-11-24.md`, AC-D4).
+
+- S2: stays the owner's.
 
 ## Scope
 

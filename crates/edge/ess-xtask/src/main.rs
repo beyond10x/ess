@@ -192,6 +192,9 @@ enum ReleaseCommand {
     },
     /// Report whether every pushed version tag has a GitHub Release behind it.
     Status,
+    /// Refuse a changelog that lists an entry under `[Unreleased]`: a tag's release run checks
+    /// its tagged tree with it.
+    Unreleased,
 }
 
 fn main() -> ExitCode {
@@ -295,6 +298,12 @@ fn run(cli: Cli) -> Result<String, String> {
             let releases = published_releases(&root)?;
             let stranded = tags_off_main(&root, &tags)?;
             release_status(&root, &version, &changelog, &tags, &releases, &stranded)
+        }
+        Command::Release {
+            command: ReleaseCommand::Unreleased,
+        } => {
+            let (_, changelog) = release_inputs(&root)?;
+            release_notes::unreleased(&changelog)
         }
         Command::PrWatch(_) => Err("pr-watch is dispatched by main, not by run".to_owned()),
     }

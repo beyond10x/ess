@@ -227,11 +227,8 @@ pub(super) fn affects_segment(
              entries write, so a row an entry took and one it skipped cannot be told apart",
         ));
     }
-    let members = command
-        .input
-        .iter()
-        .find(|field| field.name == each.list)
-        .and_then(|field| match &field.type_ref {
+    let members = super::super::input_type(ir, command, &each.list)
+        .and_then(|type_ref| match type_ref {
             ResolvedTypeRef::List { of } => of.declared(),
             _ => None,
         })
@@ -413,7 +410,11 @@ pub(super) fn affects_segment(
         )
     })?;
     let mut decided = input.clone();
-    decided.insert(each.list.clone(), placeholders(&each.member, &listed, &ids));
+    super::super::set_at(
+        &mut decided,
+        &each.list,
+        Some(placeholders(&each.member, &listed, &ids)),
+    );
     if !selects_branch(ir, command, outcome, setup.before.as_ref(), &decided)
         .is_ok_and(|reached| reached)
     {
@@ -431,7 +432,7 @@ pub(super) fn affects_segment(
         Some(&instance),
         &setup.bound,
     );
-    supplied.insert(each.list.clone(), sent(&each.member, &listed));
+    super::super::supply_at(&mut supplied, &each.list, sent(&each.member, &listed));
 
     steps.extend(setup.steps.iter().cloned());
     source.extend(setup.source.iter().cloned());
@@ -587,9 +588,10 @@ fn skipped_row(
             members: moving.clone(),
         };
         let mut sent_input = input.clone();
-        sent_input.insert(
-            each.list.clone(),
-            placeholders(&each.member, &[&carried], ids),
+        super::super::set_at(
+            &mut sent_input,
+            &each.list,
+            Some(placeholders(&each.member, &[&carried], ids)),
         );
         if !selects_branch(ir, command, outcome, setup.before.as_ref(), &sent_input)
             .is_ok_and(|reached| reached)
@@ -604,7 +606,7 @@ fn skipped_row(
             Some(&instance),
             &setup.bound,
         );
-        supplied.insert(each.list.clone(), sent(&each.member, &[&carried]));
+        super::super::supply_at(&mut supplied, &each.list, sent(&each.member, &[&carried]));
         let Some((state, settled)) = left_by(
             ir,
             outcome,

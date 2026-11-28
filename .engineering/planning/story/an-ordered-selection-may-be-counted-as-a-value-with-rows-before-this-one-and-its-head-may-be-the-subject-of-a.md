@@ -11,7 +11,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -100,3 +100,12 @@ Amendment (tenth gap report, 2026-11-24): a `{count: {entity, where}}` with no `
 AC9-D7: the order of landing. A: both at the next G2 format step in one story. B: the count first, the head with `affects[].where`. C: decline, caller-supplied values. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation); accepted as redesigned (the selection syntax, not the reporter's two spellings).
 
 SW-D4, the dry-run count. A: amend this story to admit a plain `{count: {entity, where}}` without `before`. B: a second spelling `{count: selected}` on an `instances:` branch. Decided: A, 2026-11-24 (the coordinator, under the owner's delegation): one spelling for a count of a selection.
+
+## A second consumer, 2026-11-28: a count of rows as a stored number
+
+A downstream meta-model specification (ess 0.99.9) needs the count of a parent's rows as a value a
+creating outcome stores ("revisions are numbered from 1"). `{count: {entity, where}}` in a `sets:`
+entry is refused at `validate` on 0.99.9, as this story says of every count that is not
+`{count: changed}`. The case, its neutral model and the question of "count plus one" are in
+`story:a-creating-outcome-numbers-its-row-next-among-the-rows-of-its-parent`. Decision SW-D4 A
+(a plain `{count: {entity, where}}` without `before`) is what that consumer needs first.

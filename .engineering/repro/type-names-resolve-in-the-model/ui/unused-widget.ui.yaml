@@ -1,0 +1,29 @@
+format: ess-ui/1
+app: shop
+title: Shop
+model: shop
+placement_profile: fat
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: home, sections: [{name: all, pages: [home]}]}
+widgets:
+  unused_list:
+    summary: A widget no page uses.
+    body:
+      - name: rows
+        component: collection
+        reads: {view: shop.channel.Nothing, key: item_id}
+        columns: [nosuch]
+  used_list:
+    summary: A widget a page uses.
+    body:
+      - name: rows
+        component: collection
+        reads: {view: shop.channel.Items, key: item_id}
+        columns: [nosuch]
+pages:
+  home:
+    kind: detail_page
+    title: Home
+    sections:
+      - {name: items, component: used_list}
