@@ -12,8 +12,8 @@ use ess_synth::{
     synthesize_bound, BindingRefusal, OutputLayout, Synthesis, SynthesisFailure, Target,
 };
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run, rust_run};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::answers;
 
 const ROUTES: &str = "authentication:
   schemes:
@@ -146,23 +146,26 @@ const REQUESTS: &[[&str; 7]] = &[
     ],
 ];
 
+/// The servers [`both`] asks: `[rust, go]`.
+pub(super) fn servers() -> Vec<Server> {
+    let ir = shared::ir();
+    let bound = shared::binding(&ir, ROUTES);
+    let synthesis = |target| -> Synthesis {
+        synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
+    };
+    vec![
+        Server::rust("w681auth", &synthesis(Target::Rust), shared::RUST_HARNESS),
+        Server::go("w681auth", &synthesis(Target::Go), super::HARNESS),
+    ]
+}
+
 /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary
 /// (`story:the-go-http-server-answers-an-unauthenticated-call-with-its-challenge`).
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let ir = shared::ir();
-        let bound = shared::binding(&ir, ROUTES);
-        let synthesis = |target| -> Synthesis {
-            synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
-        };
-        (
-            rust_run("w681auth", &synthesis(Target::Rust), REQUESTS),
-            go_run("w681auth", &synthesis(Target::Go), REQUESTS),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 fn rust() -> &'static BTreeMap<String, Answer> {

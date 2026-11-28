@@ -40,6 +40,7 @@ vars:
   UI_HTTP_ITEMS_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-items-server'
   BODY_CAP_RUST_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-rust-server'
   BODY_CAP_GO_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/body-cap-go-server'
+  HTTP_BINDING_SERVERS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/http-binding-servers'
   CLAP_SHARED_BINARY: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/clap-shared-binary'
   BINARY64_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/binary64-harness'
   LIBRARY_CRATE_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/library-crate-harness'
@@ -112,6 +113,7 @@ tasks:
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
       ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
+      ESS_HTTP_BINDING_SERVERS: '{{.HTTP_BINDING_SERVERS}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
       ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
@@ -123,6 +125,7 @@ tasks:
       - task: ui-http-servers
       - task: body-cap-rust-server
       - task: body-cap-go-server
+      - task: http-binding-servers
       - task: clap-shared-binary
       - task: binary64-harness
       - task: library-crate-harness
@@ -150,6 +153,7 @@ tasks:
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
       ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
+      ESS_HTTP_BINDING_SERVERS: '{{.HTTP_BINDING_SERVERS}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
       ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
@@ -161,6 +165,7 @@ tasks:
       - task: ui-http-servers
       - task: body-cap-rust-server
       - task: body-cap-go-server
+      - task: http-binding-servers
       - task: clap-shared-binary
       - task: binary64-harness
       - task: library-crate-harness
@@ -208,6 +213,7 @@ tasks:
       - task: ui-http-servers
       - task: body-cap-rust-server
       - task: body-cap-go-server
+      - task: http-binding-servers
       - task: clap-shared-binary
       - task: binary64-harness
       - task: library-crate-harness
@@ -422,6 +428,74 @@ tasks:
       - cd {{.WORK}}/parcel && env GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -o {{.BODY_CAP_GO_SERVER}} ./cmd/parcel-server
       - rm -rf {{.WORK}}
 
+  # Every server ess-synth's http_binding_rust runs, built once here rather than in each test
+  # (the organization rule `Tests stay fast`; no_test_builds.rs). The test binary's ignored
+  # `write_the_sources_of_every_server` writes each server's sources under its digest; each is
+  # built to HTTP_BINDING_SERVERS/<digest>: a Rust harness program, a Go test binary, or, for a
+  # module that is only vetted, an empty file once `go vet` passes. A server that does not build
+  # leaves <digest>.failed with the compiler's output, which its test prints.
+  http-binding-servers:
+    desc: >-
+      Build the generated Rust and Go servers ess-synth's http_binding_rust runs, under
+      HTTP_BINDING_SERVERS (no test builds with cargo, no_test_builds.rs).
+    vars:
+      WORK: target/http-binding-servers
+    env:
+      ESS_HTTP_BINDING_SOURCES: '{{.ROOT_DIR}}/{{.WORK}}/sources'
+    cmds:
+      - rm -rf {{.WORK}} {{.HTTP_BINDING_SERVERS}}
+      - mkdir -p {{.WORK}}/sources {{.HTTP_BINDING_SERVERS}}
+      # The writer is the test binary's one ignored test, built first and run as a test step.
+      - cargo nextest run --workspace --exclude ess-xtask --locked --test http_binding_rust --profile ci --no-run
+      - rm -f target/nextest/ci/junit.xml
+      - defer: { task: test-slowest }
+      - >-
+        {{.TEST_STEP}} http-binding-servers 60 cargo nextest run --workspace --exclude ess-xtask
+        --locked --test http_binding_rust --profile ci --run-ignored only
+        -E 'test(=write_the_sources_of_every_server)'
+      # The Go servers build beside the Rust ones: each Rust server is a chain of crates that keeps
+      # about one core busy.
+      - |
+        set -eu
+        out={{.HTTP_BINDING_SERVERS}}
+        target={{.ROOT_DIR}}/{{.WORK}}/target
+        go_env="GOFLAGS=-mod=mod GOPROXY=off GOTOOLCHAIN=local"
+        build() {
+          digest=$(basename "$1")
+          kind=$(cat "$1/kind")
+          failed="$out/$digest.failed"
+          started=$(date +%s)
+          case "$kind" in
+            rust)
+              env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 \
+                cargo build --offline --quiet --manifest-path "$1/src/harness/Cargo.toml" \
+                --target-dir "$target" > "$failed" 2>&1 \
+                && cp "$target/debug/http-binding-harness" "$out/$digest" || true ;;
+            go)
+              (cd "$1/src" && env $go_env go test -c -o "$out/$digest" ./server/) > "$failed" 2>&1 || true ;;
+            go-vet)
+              (cd "$1/src" && env $go_env go vet ./...) > "$failed" 2>&1 && : > "$out/$digest" || true ;;
+            *)
+              echo "http-binding-servers: $1: unknown kind $kind"
+              return 1 ;;
+          esac
+          if [ -e "$out/$digest" ]; then
+            rm "$failed"
+            echo "http-binding-servers: $kind $(cat "$1/label") built in $(( $(date +%s) - started )) s"
+          else
+            echo "http-binding-servers: $kind $(cat "$1/label") does not build, see $failed"
+          fi
+        }
+        (for source in {{.WORK}}/sources/*; do
+          [ "$(cat "$source/kind")" = rust ] || build "$source"
+        done) &
+        go_builds=$!
+        for source in {{.WORK}}/sources/*; do
+          [ "$(cat "$source/kind")" != rust ] || build "$source"
+        done
+        wait "$go_builds"
+      - rm -rf {{.WORK}}
+
   clap-shared-binary:
     desc: >-
       Build the clap binary ess-synth's clap_shared_binary runs, generated from two components
@@ -509,6 +583,7 @@ tasks:
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_BODY_CAP_RUST_SERVER: '{{.BODY_CAP_RUST_SERVER}}'
       ESS_BODY_CAP_GO_SERVER: '{{.BODY_CAP_GO_SERVER}}'
+      ESS_HTTP_BINDING_SERVERS: '{{.HTTP_BINDING_SERVERS}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
       ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'

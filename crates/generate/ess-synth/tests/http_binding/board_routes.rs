@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run, ir_of, rust_run};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of, pair};
 
 /// `(anchor, replacement)` in the shared model, each anchor found exactly once.
 const MODEL_EDITS: &[(&str, &str)] = &[
@@ -207,17 +207,17 @@ fn synthesized() -> &'static (Synthesis, Synthesis) {
     })
 }
 
+/// Both servers: [`synthesized`] through the fixture's harnesses.
+pub(super) fn servers() -> Vec<Server> {
+    let (rust, go) = synthesized();
+    pair("board", rust, go)
+}
+
 /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let (rust, go) = synthesized();
-        (
-            rust_run("board", rust, REQUESTS),
-            go_run("board", go, REQUESTS),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 /// Each server's answer to `label`, held to the same status and JSON body.

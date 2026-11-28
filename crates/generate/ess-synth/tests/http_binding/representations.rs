@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run_with, ir_of, rust_run_with};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of};
 use super::answer_forms::{go_harness, rust_harness, MODEL_EDITS};
 
 /// The item gains an `Optional` note no command sets and an `Optional` rank `PutItem` sets from its
@@ -275,23 +275,26 @@ func clean(text string) string {",
     )
 }
 
+/// The servers [`both`] asks: `[rust, go]`.
+pub(super) fn servers() -> Vec<Server> {
+    let model = edited(&edited(shared::MODEL, MODEL_EDITS), EDITS);
+    let ir = ir_of(&model);
+    let bound = shared::binding(&ir, &edited(shared::ROUTES, ROUTE_EDITS));
+    let synthesis = |target| -> Synthesis {
+        synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
+    };
+    vec![
+        Server::rust("w753", &synthesis(Target::Rust), &rust()),
+        Server::go("w753", &synthesis(Target::Go), &go()),
+    ]
+}
+
 /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let model = edited(&edited(shared::MODEL, MODEL_EDITS), EDITS);
-        let ir = ir_of(&model);
-        let bound = shared::binding(&ir, &edited(shared::ROUTES, ROUTE_EDITS));
-        let synthesis = |target| -> Synthesis {
-            synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
-        };
-        (
-            rust_run_with("w753", &synthesis(Target::Rust), REQUESTS, &rust()),
-            go_run_with("w753", &synthesis(Target::Go), REQUESTS, &go()),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 /// Each server's answer to `label`, held to the same status, `Content-Type`, body bytes and

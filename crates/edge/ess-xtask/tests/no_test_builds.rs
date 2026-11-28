@@ -65,8 +65,6 @@ const ALLOWED: &[&str] = &[
     "crates/generate/ess-synth/tests/feasibility_adversary.rs",
     "crates/generate/ess-synth/tests/finite_boolean.rs",
     "crates/generate/ess-synth/tests/generated_view_queries.rs",
-    "crates/generate/ess-synth/tests/http_binding/go.rs",
-    "crates/generate/ess-synth/tests/http_binding/shared.rs",
     "crates/generate/ess-synth/tests/identity_changing_updates.rs",
     "crates/generate/ess-synth/tests/invariant_check.rs",
     "crates/generate/ess-synth/tests/json_clap.rs",

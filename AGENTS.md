@@ -316,7 +316,11 @@ through `ESS_BODY_CAP_GO_SERVER`) and `task library-crate-harness` (`ess-synth`'
 `single_crate_layout` round trip through a crate with no server, through
 `ESS_LIBRARY_CRATE_HARNESS`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
-change to either needs the task run again.
+change to either needs the task run again. `task http-binding-servers` builds every Rust and Go
+server of `ess-synth`'s `http_binding_rust` (through `ESS_HTTP_BINDING_SERVERS`, one file per
+digest of a server's sources, which the test binary writes); a change to the synthesis, a harness
+or a fixture of those tests needs it run again, and a test names the task when its server is
+missing.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
 `prettier@3.8.1`, `esbuild@0.28.2`, for example `npm install --prefix <dir>` and `<dir>/node_modules/.bin`
 first on `PATH`): without `esbuild` the generated React app's `npm run dev` and `npm run preview`

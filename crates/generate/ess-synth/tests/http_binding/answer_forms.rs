@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run_with, ir_of, rust_run_with};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of, pair_with};
 
 /// `(anchor, replacement)` in the shared routes, each anchor found exactly once.
 const EDITS: &[(&str, &str)] = &[
@@ -282,17 +282,17 @@ pub(super) fn go_harness() -> String {
     )
 }
 
+/// Both servers: [`synthesized`] through [`rust_harness`] and [`go_harness`].
+pub(super) fn servers() -> Vec<Server> {
+    let (rust, go) = synthesized();
+    pair_with("u5forms", (rust, &rust_harness()), (go, &go_harness()))
+}
+
 /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let (rust, go) = synthesized();
-        (
-            rust_run_with("u5forms", rust, REQUESTS, &rust_harness()),
-            go_run_with("u5forms", go, REQUESTS, &go_harness()),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 /// Each server's answer to `label`, held to the same status, `Content-Type`, body bytes and

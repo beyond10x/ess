@@ -364,8 +364,8 @@ jobs:
             /usr/local/share/chromium /usr/local/julia* /opt/microsoft /opt/google /opt/az
           df -h /
 
-      # The Go the generated Go server `body-cap-go-server` is built with: it is built here once
-      # and archived beside the test archives. Installed after the disk is freed, which deletes
+      # The Go the generated Go servers of `body-cap-go-server` and `http-binding-servers` are built
+      # with: they are built here once and archived beside the test archives. Installed after the disk is freed, which deletes
       # /opt/hostedtoolcache, where setup-go puts it. The generated modules intentionally have no
       # go.sum, so setup-go's automatic cache would only warn.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

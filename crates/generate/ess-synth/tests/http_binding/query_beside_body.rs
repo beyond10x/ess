@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run, ir_of, rust_run};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of};
 
 /// The shop gains two commands taking a `format` in the body and a `dry_run` (wire name `dryRun`)
 /// and an optional `note` the routes read from the query string, each emitting an event that
@@ -199,22 +199,25 @@ const REQUESTS: &[[&str; 7]] = &[
     ],
 ];
 
+/// The servers [`both`] asks: `[rust, go]`.
+pub(super) fn servers() -> Vec<Server> {
+    let ir = ir_of(&model());
+    let bound = shared::binding(&ir, ROUTES);
+    let synthesis = |target| -> Synthesis {
+        synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
+    };
+    vec![
+        Server::rust("w754query", &synthesis(Target::Rust), shared::RUST_HARNESS),
+        Server::go("w754query", &synthesis(Target::Go), super::HARNESS),
+    ]
+}
+
 /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let ir = ir_of(&model());
-        let bound = shared::binding(&ir, ROUTES);
-        let synthesis = |target| -> Synthesis {
-            synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
-        };
-        (
-            rust_run("w754query", &synthesis(Target::Rust), REQUESTS),
-            go_run("w754query", &synthesis(Target::Go), REQUESTS),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 /// The Rust server's answer to `label`, the Go server's held to its status, `Content-Type`, body
