@@ -9,7 +9,7 @@ refs:
   reference: beyond10x/ess#202
 relations:
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 3}
@@ -161,3 +161,24 @@ This narrows the readings above: none of the type, the guard-only read or the in
 the reproduction adds is the refusal on the command's own entity. The cause is still not found. The first step of the
 story is a test on this model, red on 0.99.2 (checked there) and green when the two `Integer` inputs differ in every
 scenario the command is sent, with both mutants killed; a check on `main` at 0.99.8 is still to be run.
+
+## A second consumer, 2026-11-28: an update field whose retarget and drop mutants are unwitnessed
+
+The same downstream meta-model specification (ess 0.99.9) reports that `sets-retarget` and
+`sets-drop` mutants on an update field are unwitnessed when synthesis re-sends the same literal the
+create step wrote, so the mutant's suite is unchanged (`ESS-MUTATE-004`). **Not reproduced for an
+update on 0.99.9**: `update-field/` in
+`.engineering/repro/sets-retarget-mutants-get-a-separating-witness/` adds an `Adjust` command
+(`updates:` with two `Integer` inputs read into two stored fields) to this story's 55-line model;
+its 4 `sets-retarget` and `sets-drop` mutants are killed.
+
+What the run does show on 0.99.9 is that the create shape of this story is still red: the 2
+`sets-retarget` mutants of `Define`, behind the `exists` refusal on its own entity, are
+`unwitnessed`. (The repro directory's `ess-inputs.yaml` pins 0.99.2, so a bare run there delegates
+to 0.99.2; `ESS_TOOLCHAIN=0.99.9` runs the release.) D4 of this story names an update that writes the
+stored value; whether the reporter's update does is not known.
+
+What a neutral model lacks is the reporter's update: one whose inputs are constrained so that one
+value is the only witness (an enum with one admitted variant, a bounded integer, a fixed-length
+text), or one beside the same trigger as the create shape (an `exists` refusal). The next
+reproduction should vary the update's input types and refusals, not the mutation class.

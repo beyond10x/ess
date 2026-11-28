@@ -1,0 +1,17 @@
+type: ess-scenario/1
+domain: pins.board
+scenario: removed-pin-refuses-a-second-removal
+summary: A pin is created, removed, and a second removal is refused.
+
+arrange:
+  - instance: pin
+    entity: pins.board.Pin
+
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: pins.board.CreatePin
+    input: {target: a}
+    outcome: created
+    capture: {instance: pin, event: pins.board.PinCreated, field: pin_id}
+  - {at: 2026-01-05T09:00:01Z, command: pins.board.RemovePin, input: {pin_id: {$instance: pin}}, outcome: removed}
+  - {at: 2026-01-05T09:00:02Z, command: pins.board.RemovePin, input: {pin_id: {$instance: pin}}, outcome: wrong-state, error: {name: pins.board.PinRemoved}}

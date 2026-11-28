@@ -1,0 +1,58 @@
+format: ess/37
+system: linking
+version: v1
+domain: linking.links
+summary: A pairing joins two apps the deployment already holds; no command of the specification creates one.
+types:
+  - {name: linking.links.AppId, kind: newtype, of: Uuid}
+  - {name: linking.links.PairingId, kind: newtype, of: Uuid}
+entities:
+  - name: linking.links.App
+    provided: true
+    identity: {name: app_id, type: linking.links.AppId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: linking.links.Pairing
+    identity: {name: pairing_id, type: linking.links.PairingId}
+    fields:
+      - {name: first_id, type: linking.links.AppId}
+      - {name: second_id, type: linking.links.AppId}
+    relations:
+      - {name: first, kind: references, target: linking.links.App, cardinality: one, via: first_id}
+      - {name: second, kind: references, target: linking.links.App, cardinality: one, via: second_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: linking.links.AppNotFound, summary: No app carries the identity., fields: []}
+events:
+  - name: linking.links.Paired
+    fields: [{name: pairing_id, type: linking.links.PairingId}]
+actors:
+  - name: linking.links.Operator
+    may: [linking.links.Pair]
+commands:
+  - name: linking.links.Pair
+    input:
+      - {name: first_id, type: linking.links.AppId}
+      - {name: second_id, type: linking.links.AppId}
+    outcomes:
+      - name: unknown-first
+        when_related: {via: input.first_id, exists: false}
+        error: linking.links.AppNotFound
+      - name: unknown-second
+        when_related: {via: input.second_id, exists: false}
+        error: linking.links.AppNotFound
+      - name: paired
+        creates: linking.links.Pairing
+        instance: pairing_id
+        sets: {first_id: input.first_id, second_id: input.second_id}
+        emits: [linking.links.Paired]
+        payload: {linking.links.Paired: {pairing_id: {generated: true}}}
+views:
+  - name: linking.links.Pairings
+    source: linking.links.Pairing
+    consistency: read_your_writes
+    fields:
+      - {name: pairing_id, type: linking.links.PairingId}
+      - {name: first_id, type: linking.links.AppId}
+      - {name: second_id, type: linking.links.AppId}

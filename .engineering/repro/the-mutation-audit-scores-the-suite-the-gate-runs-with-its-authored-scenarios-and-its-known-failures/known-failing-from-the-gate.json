@@ -1,0 +1,11 @@
+{
+  "format": "ess-known-failures/1",
+  "spec_digest": "f19cdb28d29ac84ffb8438f2999712cbf3908e51cdbbe77f0a046b03f8aae6a5",
+  "suite_digest": "sha256:0572806a8e5c468101393b2c70950b0a14f019c8891cee5af7b688ecd3902934",
+  "implementation": "interpreted 0.99.9",
+  "implementation_build": "sha256:58cd6cd5601d17db7999b810bbb94b6d77e0b46c24c81ffd8ceddb20776638a7",
+  "failures": [
+    {"scenario": "pins.board.MovePin/outcome/moved", "reason": "known defect", "tracking": "tracked"},
+    {"scenario": "pins.board.MovePin/outcome/unknown-member", "reason": "known defect", "tracking": "tracked"}
+  ]
+}

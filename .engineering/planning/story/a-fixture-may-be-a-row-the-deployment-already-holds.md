@@ -46,7 +46,7 @@ scope:
   path: docs/design/pre-execution-fixture-values.md
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T11:37:41Z", actor: "human:timo", revision: 20}
 - {from: "proposed", to: "active", at: "2026-10-31T11:37:42Z", actor: "human:timo", revision: 21}
@@ -195,3 +195,35 @@ specification is private; the neutral models are under
   `story:an-unfillable-required-field-is-named-by-validate-and-the-view`. Next step for whoever
   takes it: vary the types of the whole entity (a required `List`, a struct, an id) beside the
   invariant, not the invariant.
+
+## A second consumer, 2026-11-28: an authored scenario needing two provided rows, in a mutation audit
+
+The same downstream meta-model specification (ess 0.99.9) audits itself with `ess verify conform
+mutate --target interpreted` (173 mutants, 137 of 138 scored killed) and reports that an authored
+scenario of `ess-scenario/6` cannot reach the one survivor: its fixtures are type-only, and the
+interpreted target answers `unsupported` when a scenario needs rows of a provided entity ("the
+interpreted target provides only rows of an entity the deployment provides"), here two of them.
+
+**Reproduced on 0.99.9, and an idiom answers it for the audit.** The model and both forms of the
+authored scenario are in
+`.engineering/repro/a-fixture-may-be-a-row-the-deployment-already-holds/authored-two-provided-rows/`
+(`ess/37`; a provided `App`, a command `Pair(first_id, second_id)` that refuses an unknown row of
+either input and creates a `Pairing`):
+
+- `type-only/` declares `fixtures: {first-app: AppId, second-app: AppId}` (`ess-scenario/3`, the
+  version that admits fixtures). `run --target interpreted --scenarios type-only` reports 4
+  scenarios, 3 passed, 1 `unsupported`, `ESS-CF-TARGET: fixture `first-app` is type-only ...`; in
+  `mutate --scenarios type-only` the authored scenario is listed "not scored" (the baseline run
+  reported it unsupported), so it kills nothing. This is the decision above ("a type-only fixture stays
+  unsupported" on the interpreted target; no authored format changes), working as decided.
+- `arranged/` writes the same scenario with `arrange:` and an entity `setup:` for each row
+  (`ess-scenario/2`: `identity`, `fields`, `state`). `run` reports 4 scenarios, 4 passed;
+  `mutate --scenarios arranged` scores the authored scenario in the baseline.
+
+The `arrange:` form is the idiom the story's own Need lists as passing on the interpreted target
+and unusable against a deployment that only reads the rows, because the runner writes them. A
+mutation audit runs on the interpreted target only, so for it the idiom keeps the figure the
+suite checks (question 3 of `.agents/skills/assessing-external-requests/SKILL.md`): the
+declaration of the decision above holds, and no authored entity fixture is proposed here. What
+stays open is documentation: nothing in the `unsupported` line names the `arrange:` form, which
+the reporter did not find. A help line on that refusal is a convenience, not a story of its own.
