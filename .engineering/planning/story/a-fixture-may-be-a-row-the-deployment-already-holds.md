@@ -46,7 +46,7 @@ scope:
   path: docs/design/pre-execution-fixture-values.md
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T11:37:41Z", actor: "human:timo", revision: 20}
 - {from: "proposed", to: "active", at: "2026-10-31T11:37:42Z", actor: "human:timo", revision: 21}
@@ -166,3 +166,32 @@ Lines on `main` f692aab (0.77.0), read by the scoper on 2026-10-31.
 - End to end, `crates/edge/ess-cli/tests/interpreted_target.rs`:
   `a_provided_related_row_synthesizes_and_passes_on_the_interpreted_target` on a brand-free fixture
   (before: 1 refusal; after: 0 refusals, 2 passed, 0 unsupported on the interpreted target).
+
+## A second consumer, 2026-11-28: a guard over a provided row's fields, and an invariant over two of its fields
+
+A downstream meta-model specification (ess 0.99.9) reported two limits at provided rows. Its
+specification is private; the neutral models are under
+`.engineering/repro/a-fixture-may-be-a-row-the-deployment-already-holds/` and
+`.engineering/repro/a-guard-over-the-fields-of-a-provided-row-is-steered-by-its-fixture-not-refused-ess-synth-004/`.
+
+- **A guard that reads fields of a provided row: reproduced on 0.99.9.** `validate` accepts it,
+  synthesis refuses the guarded branch `ESS-SYNTH-004` and the sibling success outcome with it.
+  This is the open point the decision above left ("a guard over a provided row's fields cannot be
+  steered; refused by name"). It is filed as
+  `story:a-guard-over-the-fields-of-a-provided-row-is-steered-by-its-fixture-not-refused-ess-synth-004`
+  (draft, decision FD1); the consumer turned eight such guards into `external:` causes meanwhile.
+- **An invariant `a implies b` over two fields of a provided entity, the interpreted target unable
+  to build a row of it (15 scenarios `unsupported`, `ESS-CF-TARGET`): not reproduced on 0.99.9.**
+  Five neutral models, each a provided entity with an invariant over two of its fields written
+  `any: [{not: "<a>"}, "<b>"]`, a command that reads a row of it through `when_related`, and (in
+  the last) a view over it: two Boolean fields (`implies-boolean.yaml`,
+  `implies-boolean-with-a-view.yaml`), an enum and an `Optional<Integer>`
+  (`implies-enum-and-optional.yaml`), two `Optional<String>` (`implies-optional-pair.yaml`), two
+  Integer fields (`implies-integer.yaml`). Each validates, synthesizes 2 scenarios with 0 refusals
+  and `ess verify conform run --target interpreted --report-format 2` passes both.
+  What a neutral model lacks is the rest of the reporter's entity. A candidate cause, inferred and
+  not run: a required field of the provided entity that the invariant does not mention and the
+  fixture does not set, which is the case of
+  `story:an-unfillable-required-field-is-named-by-validate-and-the-view`. Next step for whoever
+  takes it: vary the types of the whole entity (a required `List`, a struct, an id) beside the
+  invariant, not the invariant.

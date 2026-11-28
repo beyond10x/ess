@@ -23,7 +23,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T20:21:30Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-22T20:21:32Z", actor: "human:timo", revision: 11}
@@ -225,3 +225,26 @@ values; scenarios whose setup the model itself refuses are no longer written, `C
 0.99.3 and 0.99.4), so the count on `main` may differ. The first step is a reduction of the
 reported refusals, synthesized on `main` and sorted by code and cause; a cause this story's outcome
 does not cover gets a story of its own.
+
+## A second consumer, 2026-11-28: a field copied from a related row into the created row
+
+A downstream meta-model specification (ess 0.99.9) reported that copying a field from a related
+row into the row a command creates cost all three scenarios of a sibling command, and turned the
+copy into an `external:` cause. **Not reproduced on 0.99.9** in the forms tried; its specification
+is private.
+
+Neutral models in `.engineering/repro/a-creating-branch-that-reads-several-related-rows-arranges-its-row-for-other-scenarios-wherever-its-own-scenario-is-witnessed/`
+(`ess/37`): `Snap(page_id)` refuses `unknown-page` (`when_related: {via: input.page_id, exists:
+false}`) and creates a `Snapshot` with `sets: {page_id: input.page_id, title: {related: {via:
+input.page_id, field: title}}}`; a sibling `Seal` addresses the `Snapshot` (`unknown_instance:`,
+`wrong_state:`, a move). `system.yaml`: the `Page` is created by `AddPage`; synthesis writes 7
+scenarios, 0 refusals, and the interpreted target passes all 7, including the three of `Seal`.
+`provided-source-row.yaml`: the `Page` is a provided entity no command creates; 6 scenarios, 0
+refusals, all 6 pass, with a note that no second row holding another `title` is placed. In both,
+the sibling's scenarios arrange the `Snapshot` through `Snap`.
+
+What a neutral model lacks is the reporter's copy: a copy whose source row the creator reaches
+through a stored field of another row (two hops), a copy into a field of an enum or struct type, or
+a copy beside a guard over the same related row. The next reproduction should vary the copy's
+source and the field's type, not the sibling. It is not known that the cause is in this story's
+arrangement path.
