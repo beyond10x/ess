@@ -1,0 +1,92 @@
+# One component reached by network serves two commands and two views. An interface of an
+# architecture exports a subset of a component's surface (here `RetireItem` and `Items`) as an
+# `ess-http/1` binding and an OpenAPI document of exactly that subset. `binding.yaml` is that
+# binding, its paths left open for each server:
+#
+#   ess specify http validate --path . --binding binding.yaml
+#
+# answers `binding.yaml — 2 route(s), 2 open, valid`. Its OpenAPI document cannot be projected:
+#
+#   ess generate --path . --kind openapi --http binding.yaml --out <dir>
+#
+# answers `binding.yaml cannot be projected to OpenAPI:` and, for each of the two operations,
+# `... has an open route: the binding leaves its path to each server, and a published document
+# needs one`. With every path filled in (`routes: [{command: repro.shop.RetireItem, method: post,
+# path: /items/retire}, {view: repro.shop.Items, method: get, path: /items}]`) the document still
+# holds `ListItem` at `/shop/commands/ListItem` and `ItemById` at `/shop/views/ItemById`: an
+# operation a binding does not name keeps its derived route, so a binding cannot select a subset of
+# a component's surface. Projecting the whole component (`--kind openapi`, no binding) and cutting
+# the document down to the two operations and the schemas they reference is the workaround.
+domain: repro.shop
+
+types:
+  - {name: repro.shop.ItemId, kind: newtype, of: String}
+
+entities:
+  - name: repro.shop.Item
+    identity: {name: item_id, type: repro.shop.ItemId}
+    fields:
+      - {name: price, type: Integer}
+    lifecycle:
+      initial: Listed
+      states: [Listed, Retired]
+      terminal: [Retired]
+      transitions:
+        - {name: retire, from: [Listed], to: Retired}
+
+commands:
+  - name: repro.shop.ListItem
+    input:
+      - {name: item_id, type: repro.shop.ItemId}
+      - {name: price, type: Integer}
+    outcomes:
+      - name: listed
+        creates: repro.shop.Item
+        instance: item_id
+        sets: {price: input.price}
+        emits: [repro.shop.ItemListed]
+        payload:
+          repro.shop.ItemListed: {item_id: input.item_id}
+  - name: repro.shop.RetireItem
+    input:
+      - {name: item_id, type: repro.shop.ItemId}
+    outcomes:
+      - name: retired
+        moves: repro.shop.Item.retire
+        instance: item_id
+        emits: [repro.shop.ItemRetired]
+        payload:
+          repro.shop.ItemRetired: {item_id: input.item_id}
+
+events:
+  - name: repro.shop.ItemListed
+    fields:
+      - {name: item_id, type: repro.shop.ItemId}
+  - name: repro.shop.ItemRetired
+    fields:
+      - {name: item_id, type: repro.shop.ItemId}
+
+views:
+  - name: repro.shop.Items
+    source: repro.shop.Item
+    fields:
+      - {name: item_id, type: repro.shop.ItemId}
+      - {name: price, type: Integer}
+  - name: repro.shop.ItemById
+    source: repro.shop.Item
+    params:
+      - {name: item_id, type: repro.shop.ItemId}
+    filter: item_id == param.item_id
+    fields:
+      - {name: item_id, type: repro.shop.ItemId}
+
+actors:
+  - name: repro.shop.Clerk
+    may: [repro.shop.ListItem, repro.shop.RetireItem]
+
+components:
+  - component: shop
+    reached_by: network
+    owns: {domains: [repro.shop]}
+    accepts: {commands: [repro.shop.ListItem, repro.shop.RetireItem]}
+    publishes: {events: [repro.shop.ItemListed, repro.shop.ItemRetired]}

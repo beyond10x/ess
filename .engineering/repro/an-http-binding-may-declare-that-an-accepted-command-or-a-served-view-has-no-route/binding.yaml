@@ -1,0 +1,8 @@
+type: ess-http/1
+specification:
+  system: repro
+  version: v1
+  source_digest: sha256:512219d24317467a5402f7c9f15b0de91e473c5be6056f20ea14a52e2086a6ae
+routes:
+  - {command: repro.shop.RetireItem, method: post}
+  - {view: repro.shop.Items, method: get}

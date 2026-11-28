@@ -1,0 +1,6 @@
+format: ess/37
+system: repro
+version: v1
+
+domains:
+  - repro.shop
