@@ -6785,7 +6785,7 @@ fn no_workflow_job_runs_tests_outside_a_task_unless_it_is_named_here() {
 
 /// The tests the nextest profile `ci` gives more than 60 s, one per line: binary id, test name and
 /// the most seconds it may be given, 1.2 times the longest time seen on CI from 2026-11-26 to
-/// 2026-11-27 (at most 72 s for the 33 tests whose longest time was 50 to 60 s). A line may only
+/// 2026-11-27 (at most 72 s for the tests whose longest time was 50 to 60 s). A line may only
 /// be dropped or its seconds lowered.
 const CI_EXCEPTIONS: &str = "\
 ess-cli::coverage_producers actual_coverage_producers_refuse_noninvoked_negative_clock_and_report1_without_output 79
@@ -6956,12 +6956,6 @@ ess-synth::union_unit_variants_adversary the_go_target_vets_an_optional_union_wi
 ess-synth::view_params_served a_param_bound_by_the_ui_binding_reaches_the_port_through_both_servers 87
 ess-synth::view_params_served a_request_head_past_the_shared_bound_is_a_431_from_both_servers 71
 ess-ui-test::adversary_pass2 a_move_of_exactly_the_limit_is_played 63
-schema-contract::binary64_adversary native_rust_composition_preserves_identity_in_both_number_feature_modes 72
-schema-contract::normalization_binary64_targets native_rust_executes_finite_binary64_and_retained_documents 75
-schema-contract::normalization_positional_targets native_rust_executes_position_and_binary64_contracts 86
-schema-contract::normalization_raw_adversary generated_rust_runs_adversarial_lexical_cases 63
-schema-contract::normalization_raw_targets native_rust_captures_and_decodes_retained_documents 78
-schema-contract::normalization_rust standalone_rust_target_executes_model_owned_wire_records 70
 ";
 
 /// The tests the nextest profile `slow` gives more than 60 s, in the form of [`CI_EXCEPTIONS`].

@@ -44,6 +44,7 @@ vars:
   BINARY64_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/binary64-harness'
   LIBRARY_CRATE_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/library-crate-harness'
   REFUSAL_POLICY_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/refusal-policy-harness'
+  SCHEMA_CONTRACT_NATIVE_CRATES: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/schema-contract-native-crates'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
@@ -116,6 +117,7 @@ tasks:
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
       ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
       ESS_REFUSAL_POLICY_HARNESS: '{{.REFUSAL_POLICY_HARNESS}}'
+      ESS_SCHEMA_CONTRACT_NATIVE_CRATES: '{{.SCHEMA_CONTRACT_NATIVE_CRATES}}'
     cmds:
       - task: integer-spellings-harness
       - task: append-set-harness
@@ -127,6 +129,7 @@ tasks:
       - task: binary64-harness
       - task: library-crate-harness
       - task: refusal-policy-harness
+      - task: schema-contract-native-crates
       - cargo test --workspace --exclude ess-xtask --locked
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
@@ -154,6 +157,7 @@ tasks:
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
       ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
       ESS_REFUSAL_POLICY_HARNESS: '{{.REFUSAL_POLICY_HARNESS}}'
+      ESS_SCHEMA_CONTRACT_NATIVE_CRATES: '{{.SCHEMA_CONTRACT_NATIVE_CRATES}}'
     cmds:
       - task: integer-spellings-harness
       - task: append-set-harness
@@ -165,6 +169,7 @@ tasks:
       - task: binary64-harness
       - task: library-crate-harness
       - task: refusal-policy-harness
+      - task: schema-contract-native-crates
       # The ten slowest are printed here, before `test-xtask` below writes its own report.
       - |
         set -eu
@@ -212,6 +217,7 @@ tasks:
       - task: binary64-harness
       - task: library-crate-harness
       - task: refusal-policy-harness
+      - task: schema-contract-native-crates
 
   # A test that runs cargo builds a crate graph inside its lane
   # (`crates/edge/ess-xtask/tests/no_test_builds.rs`), so the harness the `integer_spellings` test
@@ -447,6 +453,74 @@ tasks:
       - cp {{.WORK}}/target/debug/desk {{.CLAP_SHARED_BINARY}}
       - rm -rf {{.WORK}}
 
+  # Every generated Rust crate schema-contract's native-adapter tests run, built once here rather
+  # than in each test (the organization rule `Tests stay fast`; no_test_builds.rs). Each test
+  # binary's ignored `write_the_sources_of_every_native_crate` writes the sources of its crates
+  # under their digest; each crate's test binaries are built once without and once with
+  # serde_json's `arbitrary_precision`, to SCHEMA_CONTRACT_NATIVE_CRATES/<digest>/<mode>/. A crate
+  # that does not build leaves <digest>.<mode>.failed with the compiler's output, which its test
+  # prints.
+  schema-contract-native-crates:
+    desc: >-
+      Build the generated Rust crates schema-contract's native-adapter tests run, in both serde_json
+      number modes, under SCHEMA_CONTRACT_NATIVE_CRATES (no test builds with cargo, no_test_builds.rs).
+    vars:
+      WORK: target/schema-contract-native-crates
+      TESTS: >-
+        --test normalization_rust --test normalization_positional_targets
+        --test normalization_positional_adversary --test normalization_raw_targets
+        --test normalization_raw_adversary --test normalization_binary64_targets
+        --test binary64_adversary
+    env:
+      ESS_SCHEMA_CONTRACT_NATIVE_SOURCES: '{{.ROOT_DIR}}/{{.WORK}}/sources'
+    cmds:
+      - rm -rf {{.WORK}} {{.SCHEMA_CONTRACT_NATIVE_CRATES}}
+      - mkdir -p {{.WORK}}/sources {{.SCHEMA_CONTRACT_NATIVE_CRATES}}
+      # The writers are the test binaries' ignored tests, built first and run as a test step.
+      - cargo nextest run --workspace --exclude ess-xtask --locked {{.TESTS}} --profile ci --no-run
+      - rm -f target/nextest/ci/junit.xml
+      - defer: { task: test-slowest }
+      - >-
+        {{.TEST_STEP}} schema-contract-native-crates 60 cargo nextest run --workspace --exclude
+        ess-xtask --locked {{.TESTS}} --profile ci --run-ignored only
+        -E 'test(=write_the_sources_of_every_native_crate)'
+      # The two number modes build side by side, each into a target directory of its own, so the
+      # dependencies build once per mode.
+      - |
+        set -eu
+        out={{.SCHEMA_CONTRACT_NATIVE_CRATES}}
+        work={{.ROOT_DIR}}/{{.WORK}}
+        for source in "$work"/sources/*; do
+          cargo generate-lockfile --offline --quiet --manifest-path "$source/src/Cargo.toml"
+        done
+        build() {
+          source=$1
+          mode=$2
+          digest=$(basename "$source")
+          failed="$out/$digest.$mode.failed"
+          features=""
+          [ "$mode" = default ] || features="--features serde_json/$mode"
+          started=$(date +%s)
+          mkdir -p "$out/$digest/$mode"
+          if env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 \
+            cargo test --no-run --offline --locked --quiet --message-format=json-render-diagnostics \
+            --manifest-path "$source/src/Cargo.toml" --target-dir "$work/target-$mode" $features \
+            > "$work/$digest.$mode.json" 2> "$failed"; then
+            grep -o '"executable":"[^"]*"' "$work/$digest.$mode.json" | sed 's/^"executable":"//; s/"$//' \
+              | while read -r binary; do cp "$binary" "$out/$digest/$mode/"; done
+            rm "$failed"
+            echo "schema-contract-native-crates: $(cat "$source/label") $mode built in $(( $(date +%s) - started )) s"
+          else
+            rm -rf "$out/$digest/$mode"
+            echo "schema-contract-native-crates: $(cat "$source/label") $mode does not build, see $failed"
+          fi
+        }
+        (for source in "$work"/sources/*; do build "$source" arbitrary_precision; done) &
+        arbitrary=$!
+        for source in "$work"/sources/*; do build "$source" default; done
+        wait "$arbitrary"
+      - rm -rf {{.WORK}}
+
   test-archive-feature-off:
     desc: Compile the feature-off test binaries into the nextest archive `test-feature-off` runs.
     cmds:
@@ -513,6 +587,7 @@ tasks:
       ESS_BINARY64_HARNESS: '{{.BINARY64_HARNESS}}'
       ESS_LIBRARY_CRATE_HARNESS: '{{.LIBRARY_CRATE_HARNESS}}'
       ESS_REFUSAL_POLICY_HARNESS: '{{.REFUSAL_POLICY_HARNESS}}'
+      ESS_SCHEMA_CONTRACT_NATIVE_CRATES: '{{.SCHEMA_CONTRACT_NATIVE_CRATES}}'
     cmds:
       - rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst
       - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null
@@ -550,6 +625,7 @@ tasks:
     env:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_SCHEMA_CONTRACT_NATIVE_CRATES: '{{.SCHEMA_CONTRACT_NATIVE_CRATES}}'
     cmds:
       - rm -f target/nextest/ci/junit.xml
       - task: test-feature-off-extract
