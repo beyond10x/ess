@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 ## Need
 
@@ -170,6 +170,12 @@ Nothing. It touches `lib.rs` beside the `ae1` units: land after `ae1a`, or rebas
 
 Accept, redesigned. **AE-D5** (SECURITY), default A, fail-closed: absent means no cross-origin
 reads.
+
+- S6: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.
+
+- The owner's read of the four `ess-http/1` keys of pull request 833 (`request.members`, `select`, `cors`, `lists`), relayed by the operator session, 2026-11-26 about 05:55 CET: "why would we not include them ?". Pull request 833 merges when green and its keys go out in 0.100.0.
 
 ## Size
 

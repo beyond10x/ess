@@ -158,7 +158,7 @@ fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
 /// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [66, 67] {
+    for major in [68, 69] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -171,14 +171,14 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/65`".to_owned(),
+                "`ess-conformance/67`".to_owned(),
                 format!("`ess-conformance/{major}`"),
                 "regenerate using a supported suite version".to_owned(),
             ] {
                 assert!(
                     message.contains(&needle),
                     "{target} /{major}: the refusal does not say {needle} (the newest admitted \
-                     major is /65 since story:ess-37-and-conformance-64-65-are-open-for-the-epics-constructs): \
+                     major is /67 since story:the-suite-pair-ess-conformance-66-and-67-is-open-read-wherever-64-and-65-are-and-written-by-nothing-yet): \
                      {message}"
                 );
             }

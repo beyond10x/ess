@@ -527,6 +527,7 @@ fn check(
         // ess/28 (beyond10x/ess#558): below it the shape is read back as a nested mapping.
         PayloadSource::MissingElement { field } => {
             if let Some(refusal) = super::related_list::check(
+                &context.spec.system().types,
                 context.command,
                 context.outcome,
                 at,

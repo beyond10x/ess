@@ -277,8 +277,11 @@ pub(crate) fn checked_shaped(
     conversions(&mut inventory, ir, plan, &layout);
     size_cycles(&mut inventory, ir);
     bindings(&mut inventory, ir, plan);
-    if !super::http::served(ir).is_empty() {
-        wire(&mut inventory, ir, plan, &layout, |_| true);
+    // The single crate carries the wire module whether or not a server is generated; its command
+    // and view codecs only with one.
+    let served = !super::http::served(ir).is_empty();
+    if served || layout.single_crate() {
+        wire(&mut inventory, ir, plan, &layout, |_| served);
     }
     if target == Target::Web {
         web_dependencies(&mut inventory, ir, &layout);
@@ -340,9 +343,13 @@ fn paths_and_packages(
         format!("crates/{}/src/primitives.rs", layout.package()),
         &system,
     );
-    if super::json::used(ir) {
+    if super::json::used(ir) || layout.single_crate() {
         inventory.symbol("types root", "json", &system, "fixed module");
         inventory.path(format!("crates/{}/src/json.rs", layout.package()), &system);
+    }
+    if layout.single_crate() {
+        inventory.symbol("types root", "wire", &system, "fixed module");
+        inventory.path(format!("crates/{}/src/wire.rs", layout.package()), &system);
     }
     if plan.obligations().next().is_some()
         || !ir.components().is_empty()
@@ -1117,6 +1124,25 @@ fn wire(
             &event.name.to_string(),
             "event decoder",
         );
+    }
+    // Only the single crate's own `wire` module carries entity snapshot codecs.
+    if layout.single_crate() {
+        for entity in ir.entities().values() {
+            if !plan.is_generated(CapabilityKind::EntityLifecycle, &entity.name.to_string()) {
+                continue;
+            }
+            for function in [
+                super::wire::entity_encoder_name(layout, &entity.name),
+                super::wire::entity_decoder_name(layout, &entity.name),
+            ] {
+                inventory.symbol(
+                    "wire functions",
+                    &function,
+                    &entity.name.to_string(),
+                    "entity snapshot codec",
+                );
+            }
+        }
     }
     for command in ir
         .commands()

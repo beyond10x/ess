@@ -597,6 +597,14 @@ jobs:
           cargo xtask release notes "$TAG" > notes.md
           cat notes.md
 
+      # A tag's tree is all released: what it ships stands in its dated section, never under
+      # `[Unreleased]`. No pull-request gate runs this, because `main` lists unreleased entries
+      # between releases. A backfill may package a tag older than this command, so only a tag push
+      # runs it.
+      - name: No entry left under Unreleased
+        if: ${{ github.event_name == 'push' }}
+        run: cargo xtask release unreleased
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: ${{ needs.resolve.outputs.prebuilt-run == '' }}
         with:

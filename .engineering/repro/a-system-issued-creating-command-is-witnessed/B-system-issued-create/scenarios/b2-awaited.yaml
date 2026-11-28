@@ -1,0 +1,19 @@
+type: ess-scenario/6
+domain: repro.desk
+scenario: b2-awaited
+summary: The desk records an item; the act names no actor, so it awaits the system's own step.
+timeline:
+  - at: 2026-11-27T09:00:00Z
+    command: repro.desk.RecordItem
+    input:
+      label: first
+    outcome: recorded
+    events:
+      - event: repro.desk.ItemRecorded
+        payload:
+          label: first
+assert:
+  - view: repro.desk.Items
+    contains:
+      label: first
+      state: Recorded

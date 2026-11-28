@@ -112,6 +112,19 @@ pub struct SynthesisScope {
     /// shaped one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
+    /// The crate's package name, when the consumer named it (`--package`, the crate layout only).
+    ///
+    /// Absent when the crate is named for the system, as [`Self::layout`] is absent for the
+    /// default, so a tree generated without the option keeps its bytes. Here, like the layout, so
+    /// the regenerate command rewrites the crate under the name it was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// `true` when the crate's manifest leaves out its `[workspace]` table, so the crate is a
+    /// member of the consumer's workspace (`--no-workspace-table`, the crate layout only).
+    ///
+    /// Absent when `false`, for the reason [`Self::package`] is.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub no_workspace_table: bool,
 }
 
 impl SynthesisScope {
@@ -121,6 +134,8 @@ impl SynthesisScope {
         Self {
             profile: "component-skeletons".to_owned(),
             layout: None,
+            package: None,
+            no_workspace_table: false,
         }
     }
 }
@@ -192,6 +207,9 @@ pub enum CapabilityKind {
     ComponentTransport,
     /// A component's runtime requirements.
     Workload,
+    /// A step a component starts itself (ess/38): a command run per row a view answers, or every
+    /// period.
+    ComponentStep,
 }
 
 impl CapabilityKind {
@@ -214,6 +232,7 @@ impl CapabilityKind {
             Self::ComponentPort => "component port",
             Self::ComponentTransport => "component transport",
             Self::Workload => "workload",
+            Self::ComponentStep => "component step",
         }
     }
 }
@@ -329,6 +348,8 @@ pub enum RefusalReason {
     TopologyDeferred,
     /// Periodic execution requires the declared authenticated host and controlled-time seam.
     PeriodicHostRequired,
+    /// A component's step needs a loop that runs it, which no emitter generates yet.
+    StepLoopDeferred,
 }
 
 impl RefusalReason {
@@ -346,6 +367,9 @@ impl RefusalReason {
                 "periodic execution requires the declared host authority and lifetime integration"
             }
             Self::TopologyDeferred => "topology synthesis is deferred with its design",
+            Self::StepLoopDeferred => {
+                "a component step needs a loop that runs it, which this synthesis does not emit"
+            }
         }
     }
 }
@@ -381,6 +405,7 @@ impl SynthesisPlan {
         plan_bindings(ir, &mut capabilities);
         plan_components(ir, &mut capabilities);
         plan_workloads(ir, &mut capabilities);
+        plan_component_steps(ir, &mut capabilities);
 
         let mut seen = BTreeSet::new();
         for planned in &capabilities {
@@ -483,12 +508,19 @@ impl SynthesisPlan {
     }
 
     /// The command that rewrites the tree this plan sits in: [`REGENERATE`], plus the layout when
-    /// it is not the default.
+    /// it is not the default and the crate's manifest options when they were given.
     pub fn regenerate(&self) -> String {
-        match &self.scope.layout {
-            Some(layout) => format!("{REGENERATE} --layout {layout}"),
-            None => REGENERATE.to_owned(),
+        let mut command = REGENERATE.to_owned();
+        if let Some(layout) = &self.scope.layout {
+            let _ = write!(command, " --layout {layout}");
         }
+        if let Some(package) = &self.scope.package {
+            let _ = write!(command, " --package {package}");
+        }
+        if self.scope.no_workspace_table {
+            command.push_str(" --no-workspace-table");
+        }
+        command
     }
 
     /// The plan as Markdown, for the person deciding whether to trust the generated half.
@@ -1840,6 +1872,33 @@ fn plan_components(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: SynthesisDisposition::Generated,
         });
+    }
+}
+
+/// A component's step (ess/38) is run by a loop, and this synthesis emits none: each step is
+/// refused by name, for every target.
+fn plan_component_steps(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
+    for component in ir.components().values() {
+        for (index, step) in component.steps.iter().enumerate() {
+            capabilities.push(PlannedCapability {
+                capability: Capability {
+                    kind: CapabilityKind::ComponentStep,
+                    source: format!("{}.steps[{index}]", component.name),
+                },
+                disposition: SynthesisDisposition::Refused(SynthesisRefusal {
+                    reason: RefusalReason::StepLoopDeferred,
+                    stage: RefusalStage::Planning,
+                    detail: format!(
+                        "the {} step of `{}` runs `{}` as `{}`; {}",
+                        step.form.as_str(),
+                        component.name,
+                        step.command.name(),
+                        step.actor.name(),
+                        RefusalReason::StepLoopDeferred.describes()
+                    ),
+                }),
+            });
+        }
     }
 }
 

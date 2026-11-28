@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 ## Need
 
@@ -188,3 +188,9 @@ another.
 
 - PR-D1, PR-D2 and PR-D3 (architecture, defaults A).
 - No other open question.
+
+- PR-D1: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- PR-D3: A, taken by the operator session on 2026-11-25 on the owner's word of 04:03 CET; reversible until a release carries it
+
+- A release that carries this key names this pick in its pull-request line; the operator session merges that release only after the owner has read the list.

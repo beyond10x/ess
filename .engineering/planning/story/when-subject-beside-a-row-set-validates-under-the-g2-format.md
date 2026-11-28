@@ -33,7 +33,7 @@ scope:
   path: docs/design/language-grids.md
 - confidence: inferred
   path: website/docs/reference/predicates.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:49:15Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:49:19Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"review_outcome":2}}}
@@ -220,3 +220,7 @@ creating `unknown_instance:` answers after the row-set refusals. The synthesis h
 ## Source
 
 github:beyond10x/ess#642, github:beyond10x/ess#564
+
+## A second consumer, 2026-11-28
+
+A second consumer reported this on 2026-11-28, on 0.99.2, and 0.99.9 refuses it the same way: a command that guards its subject with `when_subject:` and selects a row set with `when_related: {entity, where, …}` is refused `ESS-COMMAND-009` ("selects on a row set … and on a `when_subject` guard; one command reads one kind of related row in this cut"). A specification of reusable building blocks hit it on one command of its file tools. Nothing in the story changes; the second consumer is a reason to keep its order.

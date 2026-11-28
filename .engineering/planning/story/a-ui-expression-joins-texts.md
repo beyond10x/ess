@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
 - informed_by: story:text-functions-compute-values
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -74,3 +74,59 @@ moves a text of the user interface into the model.
 Owed. This draft records the need and its reproduction only. It is an external request: the seven
 questions of `.agents/skills/assessing-external-requests/SKILL.md` are answered here before the
 story is accepted or dispatched, and the design below the need is chosen there, not in this draft.
+
+## Covered findings
+
+**Requirement 5 of a downstream page generator's report of 2026-11-25.** A column or record field
+shows text composed from its row's members, and a list field shows text composed from each item's
+members: `[{name: cpu, value: 6}, {name: mem, value: 0}]` reads `cpu 6 · mem 0`, with no host slot,
+and a test reads the cell in both renderers. Read against this story (tree `2e055bcd0c`,
+read-only):
+
+- A field shows one `field` through `as` and `labels` (`crates/ui/ess-ui/src/model.rs:2502-2546`);
+  no key of it holds an expression. The requester's way today is a host slot per place, whose
+  `host` names are unique, and the terminal draws the slot's label, so a test cannot read the cell
+  there (`website/docs/reference/ess-ui-test.md:412-446`, last row).
+- The active stories
+  `story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer` and
+  `story:a-list-field-names-the-text-that-joins-its-items-in-every-renderer` end the JSON text:
+  the list above reads `name: cpu, value: 6, name: mem, value: 0`. Which members show, and how
+  they read, is what is left.
+- What this story's draft did not name: the position (a field's text; the draft lists `text`,
+  `label`, `copy`, `args` and a navigate param) and the scope (each item of a list value, not only
+  the row).
+- Whether a view field of the model can compute text over each item of a list is not known from
+  this reading: the model language's list functions were not read for it.
+- Conflict, not decided here: the reference's Expressions section
+  (`website/docs/reference/ess-ui.md`, "Expressions": "short paths plus a few operators", and a
+  string that joins words with an operator but reads no path is a finding) and the fourth answer of
+  `story:a-duration-field-shows-the-time-between-two-instants-of-its-row-the-clock-standing-in-for-an-absent-end`
+  (a UI arithmetic would be a second expression language) hold the other side of the first
+  decision below.
+- Not adopted from the request: the glyph between items (` · `) and the way a member reads (a name
+  then a value, no colon) are how text looks. `ess-ui` is not extended for styling (XT-D3).
+- Second adopter: a deployments table whose list of `{region, count}` reads `eu 3 · us 1`.
+
+## Decisions
+
+Would add to `ess-ui/1`, none accepted (each waits for the owner's read before a release): under
+XT-D1 A, a join form in the expression grammar usable at a field's text; under XT-D2 A, the same
+form with a root for the item; under XT-D2 B, a key of a list field that names the members of each
+item that show.
+
+- **XT-D1. Does a field show text composed from its row?** (A) Yes: a UI expression that joins
+  texts (the model language's `+` or a template, as this story's design question asks), accepted at
+  a field's text and in every other `expr` position. (B) No: the model's view computes the text and
+  the field shows it (`story:text-functions-compute-values`); the reference says so and `ess ui
+  check` answers a joined string with a finding that names the idiom. A conflicts with the
+  Expressions section above. **Recommended: B.** Open, the coordinator's. Architecture of the
+  expression language: the owner's.
+- **XT-D2. What does a list field of records show for each item?** (A) A text expression over each
+  item, the form of XT-D1 A with a root for the item. (B) The list field names the members of each
+  item that show, beside `separator` of the active list story; no computation. (C) The view
+  reduces the list to text in the model, if the model language can, or a host slot. **Recommended:
+  B.** Open, the coordinator's.
+- **XT-D3. Is how a member reads inside an item (`name: value`, or the name and the value without a
+  colon) a renderer convention or a key of the document?** (A) A renderer convention, as the active
+  structured-value story fixes it; the document picks members and the join only. (B) A key of the
+  document. B is about looks and is not adopted. **Recommended: A.** Open, the coordinator's.

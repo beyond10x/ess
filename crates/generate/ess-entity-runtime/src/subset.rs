@@ -475,8 +475,11 @@ pub const CONSTRUCTS: &[Construct] = &[
     refused(
         AMBIGUOUS,
         LoweringCode::AmbiguousInstanceBinding,
-        Needs::NoTarget("the host loads one instance, from one input field, before a branch is chosen"),
-        &["tests/lowering.rs::command_shape_diagnostics_cover_multiple_targets_and_identity_bindings"],
+        Needs::NoTarget("the host loads one instance, from one top-level input field, before a branch is chosen; an `instance:` that names a member of a struct input has no single source"),
+        &[
+            "tests/lowering.rs::command_shape_diagnostics_cover_multiple_targets_and_identity_bindings",
+            "tests/lowering.rs::an_instance_named_by_a_struct_member_is_refused_by_name",
+        ],
     ),
     refused(
         WITHOUT_SUBJECT,
@@ -849,8 +852,9 @@ impl LoweringCode {
             Self::AmbiguousInstanceBinding => (
                 "AmbiguousInstanceBinding",
                 AMBIGUOUS,
-                "The instance a command acts on is not named by one input field, or a creation does \
-                 not observe its identity in an emitted event.",
+                "The instance a command acts on is not named by one top-level input field (a member \
+                 of a struct input is not one), or a creation does not observe its identity in an \
+                 emitted event.",
             ),
             Self::AcceptingOutcomeWithoutSubject => (
                 "AcceptingOutcomeWithoutSubject",

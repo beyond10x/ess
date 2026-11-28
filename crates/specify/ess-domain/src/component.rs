@@ -164,6 +164,69 @@ pub struct RawComponentSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// The work it starts itself (ess/38): a command run for each row a view answers, or every
+    /// period. See [`ComponentStep`] and `docs/design/component-steps.md`.
+    #[serde(default)]
+    pub steps: Vec<ComponentStep>,
+}
+
+/// What starts a [`ComponentStep`].
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum StepForm {
+    /// While the view answers rows, the command runs once for each row it answers.
+    Level,
+    /// The command runs once every period.
+    Time,
+}
+
+impl StepForm {
+    /// The word a document writes.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Level => "level",
+            Self::Time => "time",
+        }
+    }
+}
+
+/// Work a component starts itself (ess/38): `{form: level, view, command, actor, every}` runs the
+/// command for each row the view answers, its inputs read from the row's fields of the same name;
+/// `{form: time, command, actor, every}` runs the command every period.
+///
+/// The actor is the one system actor of a system-issued command (granted to system actors only),
+/// unless the step names one; the
+/// grants stay the one place that says who may run a command, and a named actor is checked against
+/// them ([`validate_steps`]).
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentStep {
+    /// What starts it.
+    pub form: StepForm,
+    /// The view whose rows start a level step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<QualifiedName>,
+    /// The command it runs.
+    pub command: QualifiedName,
+    /// Who runs the command, where the grants do not name one system actor for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<QualifiedName>,
+    /// How often it runs: required of a time step; how often a level step reads its view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub every: Option<crate::binding::periodic::Period>,
 }
 
 /// [`RawComponentSpec::name`]'s published schema: `name`, or its alias `component`.
@@ -494,6 +557,12 @@ pub struct ComponentSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// The work it starts itself, in the order the document declared it (ess/38).
+    ///
+    /// Skipped when empty, so a specification written before this key existed serialises exactly
+    /// as it did.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<ComponentStep>,
 }
 
 /// One configuration input a component declares.
@@ -706,6 +775,7 @@ impl TryFrom<RawComponentSpec> for ComponentSpec {
             },
             settings,
             refs: raw.refs,
+            steps: raw.steps,
         };
 
         errors.extend(component.validate());
@@ -1823,6 +1893,333 @@ fn owner_of<'a>(
 }
 
 /// What was available, which is where a misspelling shows.
+/// Where a component's step is: `component <name>.steps[<index>]`.
+fn step_site(component: &str, index: usize) -> ConstructRef {
+    ConstructRef::new(ConstructKind::Component, component)
+        .key("steps")
+        .index(index)
+}
+
+/// The actor a step's command is run as: the one it names, else the one system actor a
+/// system-issued command is granted to. `None` where neither settles it.
+pub fn step_actor<'a>(
+    specification: &'a crate::spec::Specification,
+    step: &ComponentStep,
+) -> Option<&'a QualifiedName> {
+    if let Some(named) = &step.actor {
+        return specification
+            .actors()
+            .get_key_value(named)
+            .map(|(name, _)| name);
+    }
+    if !specification.is_system_issued(&step.command) {
+        return None;
+    }
+    let mut system = specification
+        .actors()
+        .iter()
+        .filter(|(_, actor)| actor.system && actor.may_invoke(&step.command))
+        .map(|(name, _)| name);
+    match (system.next(), system.next()) {
+        (Some(only), None) => Some(only),
+        _ => None,
+    }
+}
+
+/// Checks every component's `steps:` against the specification (ess/38): below `ess/38` the key
+/// is refused naming the format. From it, the view and the command exist
+/// ([`UndeclaredReference`](ValidationCode::UndeclaredReference), the declared names in the hint);
+/// the actor ([`step_actor`]) may run the command and, for a level step, read the view
+/// ([`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration), naming the grant that is
+/// missing); a level step names a view and a time step a period, and every input of a level
+/// step's command is filled from the view's row field of the same name and type
+/// ([`MissingDeclaration`](ValidationCode::MissingDeclaration),
+/// [`TypeMismatch`](ValidationCode::TypeMismatch)). A period is read as the periodic binding cause
+/// reads it, and its parse refusal is unchanged.
+pub fn validate_steps(specification: &crate::spec::Specification) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let format = specification.system().format;
+    for component in specification.components().values() {
+        if component.steps.is_empty() {
+            continue;
+        }
+        let name = component.name.as_str();
+        if format.major() < crate::system::FormatVersion::V38.major() {
+            errors.push(
+                ValidationError::at(
+                    ConstructRef::new(ConstructKind::Component, name).key("steps"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("`steps` on component `{name}` requires specification format ess/38"),
+                )
+                .with_hint(crate::system::FormatVersion::V38.declaration_hint()),
+            );
+            continue;
+        }
+        for (index, step) in component.steps.iter().enumerate() {
+            let checked = StepCheck {
+                specification,
+                component: name,
+                index,
+                step,
+            };
+            checked.check(&mut errors);
+        }
+    }
+    errors
+}
+
+/// One step of one component, checked against the specification ([`validate_steps`]).
+struct StepCheck<'a> {
+    specification: &'a crate::spec::Specification,
+    component: &'a str,
+    index: usize,
+    step: &'a ComponentStep,
+}
+
+impl StepCheck<'_> {
+    fn at(&self) -> ConstructRef {
+        step_site(self.component, self.index)
+    }
+
+    fn check(&self, errors: &mut ValidationErrors) {
+        let command = self.command(errors);
+        let view = self.view(errors);
+        if self.step.form == StepForm::Time && self.step.every.is_none() {
+            errors.push(
+                ValidationError::at(
+                    self.at(),
+                    ValidationCode::MissingDeclaration,
+                    format!(
+                        "the time step of `{}` that runs `{}` names no `every`",
+                        self.component, self.step.command
+                    ),
+                )
+                .with_hint("name its period: `every: PT<seconds>S`"),
+            );
+        }
+        let Some(command) = command else {
+            return;
+        };
+        self.actor(view, errors);
+        if let Some((view, declared)) = view {
+            self.row_fields(command, view, declared, errors);
+        }
+    }
+
+    /// The command, or its refusal.
+    fn command(&self, errors: &mut ValidationErrors) -> Option<&crate::command::CommandSpec> {
+        let found = self.specification.commands().get(&self.step.command);
+        if found.is_none() {
+            let declared: BTreeSet<QualifiedName> =
+                self.specification.commands().keys().cloned().collect();
+            errors.push(
+                ValidationError::at(
+                    self.at().key("command"),
+                    ValidationCode::UndeclaredReference,
+                    format!(
+                        "the {} step of `{}` runs `{}`, which nothing declares as a command",
+                        self.step.form.as_str(),
+                        self.component,
+                        self.step.command
+                    ),
+                )
+                .with_hint(available("commands", &declared)),
+            );
+        }
+        found
+    }
+
+    /// The view a level step reads, or the refusal of a missing, misplaced or undeclared one.
+    fn view(
+        &self,
+        errors: &mut ValidationErrors,
+    ) -> Option<(&QualifiedName, &crate::view::ViewSpec)> {
+        let component = self.component;
+        let command = &self.step.command;
+        match (self.step.form, &self.step.view) {
+            (StepForm::Level, None) => {
+                errors.push(
+                    ValidationError::at(
+                        self.at(),
+                        ValidationCode::MissingDeclaration,
+                        format!(
+                            "the level step of `{component}` that runs `{command}` names no \
+                             `view` whose rows start it"
+                        ),
+                    )
+                    .with_hint("name the view: `view: <view>`"),
+                );
+                None
+            }
+            (StepForm::Time, Some(view)) => {
+                errors.push(
+                    ValidationError::at(
+                        self.at().key("view"),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "the time step of `{component}` names the view `{view}`, and a time \
+                             step is started by its period alone"
+                        ),
+                    )
+                    .with_hint("drop `view`, or write the step as `form: level`"),
+                );
+                None
+            }
+            (StepForm::Time, None) => None,
+            (StepForm::Level, Some(view)) => {
+                if let Some(declared) = self.specification.views().get(view) {
+                    return Some((view, declared));
+                }
+                let declared: BTreeSet<QualifiedName> =
+                    self.specification.views().keys().cloned().collect();
+                errors.push(
+                    ValidationError::at(
+                        self.at().key("view"),
+                        ValidationCode::UndeclaredReference,
+                        format!(
+                            "the level step of `{component}` reads `{view}`, which nothing \
+                             declares as a view"
+                        ),
+                    )
+                    .with_hint(available("views", &declared)),
+                );
+                None
+            }
+        }
+    }
+
+    /// The actor: declared, granted the command and, for a level step, the view.
+    fn actor(
+        &self,
+        view: Option<(&QualifiedName, &crate::view::ViewSpec)>,
+        errors: &mut ValidationErrors,
+    ) {
+        let component = self.component;
+        let form = self.step.form.as_str();
+        let command = &self.step.command;
+        let Some(actor_name) = step_actor(self.specification, self.step) else {
+            let granted: BTreeSet<QualifiedName> = self
+                .specification
+                .actors()
+                .iter()
+                .filter(|(_, actor)| actor.may_invoke(command))
+                .map(|(name, _)| name.clone())
+                .collect();
+            let (code, message) = match &self.step.actor {
+                Some(named) => (
+                    ValidationCode::UndeclaredReference,
+                    format!(
+                        "the {form} step of `{component}` runs `{command}` as `{named}`, which \
+                         nothing declares as an actor"
+                    ),
+                ),
+                None => (
+                    ValidationCode::MissingDeclaration,
+                    format!(
+                        "the {form} step of `{component}` names no `actor`, and `{command}` is \
+                         not granted to one system actor alone"
+                    ),
+                ),
+            };
+            errors.push(
+                ValidationError::at(self.at(), code, message).with_hint(format!(
+                    "name the actor that runs it; {}",
+                    available("granted actors", &granted)
+                )),
+            );
+            return;
+        };
+        let actor = &self.specification.actors()[actor_name];
+        if !actor.may_invoke(command) {
+            errors.push(
+                ValidationError::at(
+                    self.at().key("actor"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "the {form} step of `{component}` runs `{command}` as `{actor_name}`, and \
+                         no grant says `{actor_name}` may run `{command}`"
+                    ),
+                )
+                .with_hint(format!(
+                    "grant it (`may: [{command}]` on `{actor_name}`), or name an actor that may"
+                )),
+            );
+        }
+        let Some((view, _)) = view else {
+            return;
+        };
+        let open = !self
+            .specification
+            .actors()
+            .values()
+            .any(|actor| actor.may_read(view));
+        if !open && !actor.may_read(view) {
+            errors.push(
+                ValidationError::at(
+                    self.at().key("view"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "the level step of `{component}` reads `{view}` as `{actor_name}`, and no \
+                         grant says `{actor_name}` may read `{view}`"
+                    ),
+                )
+                .with_hint(format!(
+                    "grant it (`may: [{view}]` on `{actor_name}`), or name an actor that may"
+                )),
+            );
+        }
+    }
+
+    /// One run per answered row: every input is read from the row field of its name.
+    fn row_fields(
+        &self,
+        command: &crate::command::CommandSpec,
+        view: &QualifiedName,
+        declared: &crate::view::ViewSpec,
+        errors: &mut ValidationErrors,
+    ) {
+        let component = self.component;
+        let runs = &self.step.command;
+        for input in &command.input {
+            match declared
+                .fields
+                .iter()
+                .find(|field| field.name == input.name)
+            {
+                None if input.type_ref.is_optional() => {}
+                None => errors.push(
+                    ValidationError::at(
+                        self.at().key("view"),
+                        ValidationCode::MissingDeclaration,
+                        format!(
+                            "the level step of `{component}` runs `{runs}` once per row of \
+                             `{view}`, and no row field fills its input `{}`",
+                            input.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "project a field `{}` of type `{}` in `{view}`",
+                        input.name, input.type_ref
+                    )),
+                ),
+                Some(field) if field.type_ref != input.type_ref => errors.push(
+                    ValidationError::at(
+                        self.at().key("view"),
+                        ValidationCode::TypeMismatch,
+                        format!(
+                            "the level step of `{component}` fills the input `{}` of `{runs}` \
+                             ({}) from the row field `{}` of `{view}` ({})",
+                            input.name, input.type_ref, field.name, field.type_ref
+                        ),
+                    )
+                    .with_hint("project the field at the input's type"),
+                ),
+                Some(_) => {}
+            }
+        }
+    }
+}
+
 fn available(plural: &str, names: &BTreeSet<QualifiedName>) -> String {
     if names.is_empty() {
         return format!("no {plural} are declared anywhere in the specification");

@@ -2,7 +2,8 @@ type: ess-http/1
 specification:
   system: shelf
   version: v1
-  source_digest: sha256:5db635a02d65d98b0a6230b91c424a6f40afbadcc3268fff787a2d992a90912d
+  # model.yaml.in gained the shorthand struct shelf.items.Tag and the field `tag` that reaches it.
+  source_digest: sha256:886d4f31b977ccd67631153abcaad48f9c19bb966d88d744341643da0bcc65e8
 routes:
   - command: shelf.items.AddItem
     method: post

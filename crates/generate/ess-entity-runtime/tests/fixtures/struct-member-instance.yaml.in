@@ -1,0 +1,85 @@
+format: ess/38
+system: shop
+version: v1
+domain: shop.shelf
+summary: A pick names the slot it acts on inside a struct; a note is refused for a closed backup slot, a tag is not guarded.
+types:
+  - {name: shop.shelf.SlotId, kind: newtype, of: Uuid}
+  - name: shop.shelf.Pick
+    kind: struct
+    fields:
+      - {name: primary, type: shop.shelf.SlotId}
+      - {name: backup, type: shop.shelf.SlotId}
+      - {name: note, type: String}
+entities:
+  - name: shop.shelf.Slot
+    identity: {name: slot_id, type: shop.shelf.SlotId}
+    fields:
+      - {name: open, type: Boolean}
+      - {name: note, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+errors:
+  - {name: shop.shelf.UnknownSlot, summary: The slot the pick names does not exist., fields: []}
+  - {name: shop.shelf.ClosedSlot, summary: The backup slot the pick names is closed., fields: []}
+events:
+  - name: shop.shelf.SlotAdded
+    fields: [{name: slot_id, type: shop.shelf.SlotId}]
+  - name: shop.shelf.SlotNoted
+    fields: [{name: slot_id, type: shop.shelf.SlotId}]
+  - name: shop.shelf.SlotTagged
+    fields: [{name: slot_id, type: shop.shelf.SlotId}]
+actors:
+  - name: shop.shelf.Clerk
+    may: [shop.shelf.AddSlot, shop.shelf.Note, shop.shelf.Tag]
+commands:
+  - name: shop.shelf.AddSlot
+    input:
+      - {name: open, type: Boolean}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        creates: shop.shelf.Slot
+        instance: slot_id
+        emits: [shop.shelf.SlotAdded]
+        payload: {shop.shelf.SlotAdded: {slot_id: {generated: true}}}
+        sets: {open: input.open, note: input.note}
+  - name: shop.shelf.Note
+    input:
+      - {name: pick, type: shop.shelf.Pick}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: shop.shelf.UnknownSlot
+      - name: no-backup
+        when_related: {via: input.pick.backup, exists: false}
+        error: shop.shelf.UnknownSlot
+      - name: closed
+        when_related: {via: input.pick.backup, predicate: open == false}
+        error: shop.shelf.ClosedSlot
+      - name: noted
+        updates: shop.shelf.Slot
+        instance: pick.primary
+        emits: [shop.shelf.SlotNoted]
+        payload: {shop.shelf.SlotNoted: {slot_id: input.pick.primary}}
+        sets: {note: input.pick.note}
+  - name: shop.shelf.Tag
+    input:
+      - {name: pick, type: shop.shelf.Pick}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: shop.shelf.UnknownSlot
+      - name: tagged
+        updates: shop.shelf.Slot
+        instance: pick.primary
+        emits: [shop.shelf.SlotTagged]
+        payload: {shop.shelf.SlotTagged: {slot_id: input.pick.primary}}
+        sets: {note: input.pick.note}
+views:
+  - name: shop.shelf.Slots
+    source: shop.shelf.Slot
+    consistency: read_your_writes
+    fields:
+      - {name: slot_id, type: shop.shelf.SlotId}
+      - {name: open, type: Boolean}
+      - {name: note, type: String}

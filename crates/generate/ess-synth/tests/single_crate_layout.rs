@@ -15,7 +15,8 @@ use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_synth::{
-    synthesize_for, synthesize_laid_out, OutputLayout, Synthesis, SynthesisFailure, Target,
+    synthesize_crate, synthesize_for, synthesize_laid_out, CrateManifest, OutputLayout, Synthesis,
+    SynthesisFailure, Target,
 };
 
 /// An example directory, compiled where it lives.
@@ -136,12 +137,137 @@ types:
     )
 }
 
+/// A consumer's model crate: one bounded context with a newtype, an enum, two structs (one with an
+/// `any:` invariant) and a provided entity with a one-state lifecycle, and no component, so no
+/// server is generated.
+fn shop() -> EssIr {
+    let documents = [
+        (
+            "system.yaml",
+            "format: ess/37
+system: shop
+version: v1
+domains: [shop.catalog]
+",
+        ),
+        (
+            "domains/catalog.yaml",
+            "domain: shop.catalog
+types:
+  - {name: shop.catalog.ItemId, kind: newtype, of: String}
+  - {name: shop.catalog.Mode, kind: enum, variants: [enforce, report]}
+  - name: shop.catalog.Limit
+    kind: struct
+    fields:
+      - {name: min, type: Optional<Decimal>}
+      - {name: max, type: Optional<Decimal>}
+    invariants:
+      - any: [\"defined(min)\", \"defined(max)\"]
+  - name: shop.catalog.Entry
+    kind: struct
+    fields:
+      - {name: item, type: shop.catalog.ItemId}
+      - {name: mode, type: shop.catalog.Mode}
+      - {name: limit, type: shop.catalog.Limit}
+      - {name: tags, type: List<String>}
+      - {name: labels, type: \"Optional<Map<String, String>>\"}
+entities:
+  - name: shop.catalog.Catalog
+    provided: true
+    identity: {name: project, type: String}
+    fields:
+      - {name: format, type: String}
+      - {name: entries, type: List<shop.catalog.Entry>}
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+",
+        ),
+    ];
+    compile(
+        &documents
+            .iter()
+            .map(|(label, text)| ((*label).to_owned(), (*text).to_owned()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// The crate layout with the consumer's manifest options.
+fn manifested(ir: &EssIr, manifest: &CrateManifest) -> Result<Synthesis, SynthesisFailure> {
+    synthesize_crate(ir, Target::Rust, OutputLayout::Crate, manifest, None)
+}
+
+/// Two structs with a shorthand (`ess/27`), one over a `String` and one over an `Integer` with an
+/// invariant, reached by a command served over the network, so the short-form decoder is built in
+/// the crate's root wire module and behind its `server` feature.
+fn shorthands() -> EssIr {
+    let documents = [
+        (
+            "system.yaml",
+            "format: ess/37
+system: deps
+version: v1
+domains: [deps.manifest]
+components:
+  - component: deps-service
+    owns: {domains: [deps.manifest]}
+    accepts: {commands: [deps.manifest.Add]}
+    publishes: {events: [deps.manifest.Added]}
+    reached_by: network
+",
+        ),
+        (
+            "domains/manifest.yaml",
+            "domain: deps.manifest
+types:
+  - {name: deps.manifest.Mode, kind: enum, variants: [enforce, report]}
+  - name: deps.manifest.Dep
+    kind: struct
+    shorthand: requirement
+    fields:
+      - {name: requirement, type: String}
+      - {name: mode, type: Optional<deps.manifest.Mode>}
+  - name: deps.manifest.Quota
+    kind: struct
+    shorthand: amount
+    fields:
+      - {name: amount, type: Integer}
+      - {name: unit, type: Optional<String>}
+    invariants:
+      - amount >= 1
+events:
+  - name: deps.manifest.Added
+    fields:
+      - {name: quota, type: deps.manifest.Quota}
+commands:
+  - name: deps.manifest.Add
+    input:
+      - {name: deps, type: List<deps.manifest.Dep>}
+      - {name: quota, type: deps.manifest.Quota}
+    outcomes:
+      - name: added
+        emits: [deps.manifest.Added]
+        payload:
+          deps.manifest.Added: {quota: input.quota}
+",
+        ),
+    ];
+    compile(
+        &documents
+            .iter()
+            .map(|(label, text)| ((*label).to_owned(), (*text).to_owned()))
+            .collect::<Vec<_>>(),
+    )
+}
+
 /// Every model this file lays out as one crate, by name.
 fn models() -> Vec<(&'static str, EssIr)> {
     vec![
         ("gatepass", example("gatepass")),
         ("billing", example("billing")),
         ("demo", reserved_names()),
+        ("deps", shorthands()),
     ]
 }
 
@@ -289,6 +415,416 @@ fn the_plan_names_the_crate_layout() {
     }
 }
 
+/// Every model of this file and the consumer's library model.
+fn all_models() -> Vec<(&'static str, EssIr)> {
+    let mut all = models();
+    all.push(("shop", shop()));
+    all
+}
+
+#[test]
+fn without_the_manifest_options_the_crate_is_byte_for_byte_as_before() {
+    for (name, ir) in all_models() {
+        let before = crate_layout(&ir);
+        let unnamed = manifested(&ir, &CrateManifest::default()).expect("synthesizes");
+        assert_eq!(
+            before.artifacts.keys().collect::<Vec<_>>(),
+            unnamed.artifacts.keys().collect::<Vec<_>>(),
+            "{name}"
+        );
+        for (path, artifact) in &before.artifacts {
+            assert_eq!(
+                artifact.contents, unnamed.artifacts[path].contents,
+                "{name}: {path}"
+            );
+        }
+        let manifest = &before.artifacts["Cargo.toml"].contents;
+        assert!(
+            manifest.contains(&format!("\nname = \"{name}\"\n")),
+            "{manifest}"
+        );
+        assert!(manifest.ends_with("\n[workspace]\n"), "{manifest}");
+        let plan = &before.artifacts["plan.json"].contents;
+        assert!(
+            !plan.contains("\"package\"") && !plan.contains("\"no_workspace_table\""),
+            "{name}: {plan}"
+        );
+    }
+}
+
+#[test]
+fn the_package_is_named_by_its_consumer() {
+    let mut used = false;
+    let options = CrateManifest {
+        package: Some("consumer-model".to_owned()),
+        no_workspace_table: false,
+    };
+    for (name, ir) in all_models() {
+        let synthesis = manifested(&ir, &options).expect("synthesizes");
+        let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+        assert!(
+            manifest.contains("\n[package]\nname = \"consumer-model\"\n"),
+            "{name}: {manifest}"
+        );
+        assert!(manifest.ends_with("\n[workspace]\n"), "{name}: {manifest}");
+        let plan: serde_json::Value =
+            serde_json::from_str(&synthesis.artifacts["plan.json"].contents).expect("plan.json");
+        assert_eq!(plan["scope"]["package"], "consumer-model", "{name}: {plan}");
+        assert!(
+            plan["scope"].get("no_workspace_table").is_none(),
+            "{name}: {plan}"
+        );
+        let command = "ess synthesize --layout crate --package consumer-model";
+        assert!(
+            synthesis.artifacts["PLAN.md"]
+                .contents
+                .contains(&format!("Regenerate with `{command}`.")),
+            "{name}"
+        );
+        for (path, artifact) in &synthesis.artifacts {
+            if matches!(extension(path), Some("rs" | "toml")) {
+                assert!(
+                    artifact
+                        .contents
+                        .contains(&format!("regenerate with `{command}`")),
+                    "{name}: {path} names the command that rewrites it"
+                );
+            }
+            if path.starts_with("src/bin/") {
+                let before = &crate_layout(&ir).artifacts[path].contents;
+                assert_eq!(
+                    artifact.contents,
+                    before
+                        .replace(&format!("{name}::"), "consumer_model::")
+                        .replace("`ess synthesize --layout crate`", &format!("`{command}`")),
+                    "{name}: {path} uses the library by the package's name"
+                );
+                used |= before.contains(&format!("{name}::"));
+            }
+        }
+    }
+    assert!(used, "a server binary that uses the library is covered");
+}
+
+#[test]
+fn the_workspace_table_is_left_out_on_request() {
+    let options = CrateManifest {
+        package: None,
+        no_workspace_table: true,
+    };
+    for (name, ir) in all_models() {
+        let before = crate_layout(&ir);
+        let synthesis = manifested(&ir, &options).expect("synthesizes");
+        let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+        assert!(!manifest.contains("[workspace]"), "{name}: {manifest}");
+        let command = "ess synthesize --layout crate --no-workspace-table";
+        assert_eq!(
+            format!("{manifest}\n[workspace]\n"),
+            before.artifacts["Cargo.toml"]
+                .contents
+                .replace("`ess synthesize --layout crate`", &format!("`{command}`")),
+            "{name}: only the table and the command differ"
+        );
+        let plan: serde_json::Value =
+            serde_json::from_str(&synthesis.artifacts["plan.json"].contents).expect("plan.json");
+        assert_eq!(plan["scope"]["no_workspace_table"], true, "{name}: {plan}");
+        assert!(plan["scope"].get("package").is_none(), "{name}: {plan}");
+        assert!(
+            synthesis.artifacts["PLAN.md"]
+                .contents
+                .contains(&format!("Regenerate with `{command}`.")),
+            "{name}"
+        );
+    }
+    let both = manifested(
+        &shop(),
+        &CrateManifest {
+            package: Some("shop_model".to_owned()),
+            no_workspace_table: true,
+        },
+    )
+    .expect("synthesizes");
+    assert!(both.artifacts["PLAN.md"].contents.contains(
+        "Regenerate with `ess synthesize --layout crate --package shop_model --no-workspace-table`."
+    ));
+}
+
+#[test]
+fn the_manifest_options_are_refused_outside_the_crate_layout_and_for_a_bad_name() {
+    let ir = shop();
+    for (option, manifest) in [
+        (
+            "--package",
+            CrateManifest {
+                package: Some("shop-model".to_owned()),
+                no_workspace_table: false,
+            },
+        ),
+        (
+            "--no-workspace-table",
+            CrateManifest {
+                package: None,
+                no_workspace_table: true,
+            },
+        ),
+    ] {
+        let Err(SynthesisFailure::Manifest(refusal)) =
+            synthesize_crate(&ir, Target::Rust, OutputLayout::Workspace, &manifest, None)
+        else {
+            panic!("the workspace layout must refuse `{option}`");
+        };
+        let message = refusal.to_string();
+        assert!(
+            message.contains(&format!("`{option}`")) && message.contains("`--layout crate`"),
+            "{message}"
+        );
+        let Err(SynthesisFailure::Layout(_)) =
+            synthesize_crate(&ir, Target::Go, OutputLayout::Crate, &manifest, None)
+        else {
+            panic!("`go` refuses the crate layout before `{option}`");
+        };
+    }
+    for bad in [
+        "",
+        "Shop",
+        "1shop",
+        "-shop",
+        "shop model",
+        "shop.model",
+        "crate",
+        "std",
+        "match",
+        "clap",
+    ] {
+        let Err(SynthesisFailure::Manifest(refusal)) = manifested(
+            &ir,
+            &CrateManifest {
+                package: Some(bad.to_owned()),
+                no_workspace_table: false,
+            },
+        ) else {
+            panic!("`{bad}` is not a package name the crate can take");
+        };
+        let message = refusal.to_string();
+        assert!(
+            message.contains(&format!("`{bad}`")) && message.contains("--package"),
+            "{message}"
+        );
+    }
+    manifested(
+        &ir,
+        &CrateManifest {
+            package: Some("x".repeat(64)),
+            no_workspace_table: false,
+        },
+    )
+    .expect("64 characters is a package name");
+    assert!(matches!(
+        manifested(
+            &ir,
+            &CrateManifest {
+                package: Some("x".repeat(65)),
+                no_workspace_table: false,
+            },
+        ),
+        Err(SynthesisFailure::Manifest(_))
+    ));
+}
+
+/// The `pub fn` lines of a module: each codec's name and signature.
+fn functions(module: &str) -> Vec<&str> {
+    module
+        .lines()
+        .filter(|line| line.starts_with("pub fn "))
+        .collect()
+}
+
+/// Codecs that belong to a served component's commands and views.
+const SERVED_ONLY: [&str; 5] = [
+    "pub fn encode_command_",
+    "pub fn decode_command_",
+    "pub fn encode_outcome_",
+    "pub fn encode_view_",
+    "pub fn decode_params_",
+];
+
+#[test]
+fn a_crate_with_no_component_carries_its_codecs_at_the_root() {
+    let synthesis = crate_layout(&shop());
+    for path in ["src/wire.rs", "src/json.rs"] {
+        assert!(
+            synthesis.artifacts.contains_key(path),
+            "no `{path}` in {:?}",
+            synthesis.artifacts.keys().collect::<Vec<_>>()
+        );
+    }
+    assert!(
+        !synthesis.artifacts.keys().any(|path| is_server(path)),
+        "no server without a served component"
+    );
+    let lib = &synthesis.artifacts["src/lib.rs"].contents;
+    assert!(
+        lib.contains("\npub mod json;\n") && lib.contains("\npub mod wire;\n"),
+        "{lib}"
+    );
+    let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+    assert!(!manifest.contains("[features]"), "{manifest}");
+    let wire = &synthesis.artifacts["src/wire.rs"].contents;
+    assert!(wire.contains("\nuse crate::json;\n"), "{wire}");
+    for (declared, rust) in [
+        ("item_id", "ItemId"),
+        ("mode", "Mode"),
+        ("limit", "Limit"),
+        ("entry", "Entry"),
+    ] {
+        for function in [
+            format!(
+                "pub fn encode_shop_catalog_{declared}(value: &crate::catalog::{rust}, out: &mut \
+                 String) {{"
+            ),
+            format!(
+                "pub fn decode_shop_catalog_{declared}(value: &json::Value, at: &str) -> \
+                 Result<crate::catalog::{rust}, json::DecodeError> {{"
+            ),
+        ] {
+            assert!(
+                functions(wire).contains(&function.as_str()),
+                "no `{function}` in:\n{wire}"
+            );
+        }
+    }
+    for served in SERVED_ONLY {
+        assert!(!wire.contains(served), "`{served}` needs a server:\n{wire}");
+    }
+}
+
+#[test]
+fn a_crate_with_components_and_no_server_carries_no_command_or_view_codec() {
+    let synthesis = crate_layout(&example("billing"));
+    assert!(!synthesis.artifacts.keys().any(|path| is_server(path)));
+    let wire = &synthesis.artifacts["src/wire.rs"].contents;
+    assert!(
+        functions(wire)
+            .iter()
+            .any(|line| line.starts_with("pub fn decode_billing_")),
+        "{wire}"
+    );
+    for served in SERVED_ONLY {
+        assert!(!wire.contains(served), "`{served}` needs a server:\n{wire}");
+    }
+}
+
+#[test]
+fn a_served_crate_keeps_one_wire_module_and_every_codec_by_name_and_signature() {
+    let mut served_models = 0;
+    for (name, ir) in models() {
+        let workspace = synthesize_for(&ir, Target::Rust).expect("synthesizes");
+        let Some(before) = workspace
+            .artifacts
+            .get(&format!("crates/{name}-server/src/wire.rs"))
+        else {
+            continue;
+        };
+        served_models += 1;
+        let synthesis = crate_layout(&ir);
+        let root = &synthesis.artifacts["src/wire.rs"].contents;
+        let server = &synthesis.artifacts["src/server/wire.rs"].contents;
+        assert!(
+            server.contains("\npub use crate::wire::*;\n"),
+            "{name}: {server}"
+        );
+        assert!(
+            synthesis.artifacts["src/server/json.rs"]
+                .contents
+                .contains("\npub use crate::json::*;\n"),
+            "{name}"
+        );
+        let mut kept = functions(root);
+        kept.extend(functions(server));
+        for function in functions(&before.contents) {
+            // A bounded context named like a root module moves aside in this layout (`demo`).
+            let mut moved = function.to_owned();
+            for module in ["json", "ports", "server", "system", "wire"] {
+                moved = moved.replace(
+                    &format!("{name}_types::{module}::"),
+                    &format!("crate::{module}_domain::"),
+                );
+            }
+            let moved = moved
+                .replace(&format!("{name}_types::"), "crate::")
+                .replace(&format!("{name}_system::"), "crate::system::");
+            assert!(
+                kept.contains(&moved.as_str()),
+                "{name}: `{function}` lost its name or signature"
+            );
+        }
+        for function in functions(server) {
+            assert!(
+                !functions(root).contains(&function),
+                "{name}: `{function}` is written twice"
+            );
+        }
+    }
+    assert_eq!(served_models, 3, "gatepass, demo and deps are served");
+}
+
+#[test]
+fn an_entity_snapshot_has_a_decoder_and_an_encoder_in_the_crate_layout_only() {
+    let shop = crate_layout(&shop());
+    let wire = &shop.artifacts["src/wire.rs"].contents;
+    for function in [
+        "pub fn encode_entity_shop_catalog_catalog(value: &crate::catalog::CatalogSnapshot, out: \
+         &mut String) {",
+        "pub fn decode_entity_shop_catalog_catalog(value: &json::Value, at: &str) -> \
+         Result<crate::catalog::CatalogSnapshot, json::DecodeError> {",
+    ] {
+        assert!(
+            functions(wire).contains(&function),
+            "no `{function}` in:\n{wire}"
+        );
+    }
+    for line in [
+        "    json::closed_at(value, at, &[\"project\", \"format\", \"entries\", \"state\"])?;\n",
+        "    let data = crate::catalog::CatalogData {\n",
+        "    Ok(crate::catalog::CatalogSnapshot { state, data })\n",
+    ] {
+        assert!(wire.contains(line), "no `{line}` in:\n{wire}");
+    }
+    // The snapshot decoder holds the entity's declared invariants, as a struct's decoder does.
+    let billing = crate_layout(&example("billing"));
+    let wire = &billing.artifacts["src/wire.rs"].contents;
+    let decoder = wire
+        .split("\npub fn decode_entity_billing_invoice_invoice(")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .unwrap_or_else(|| panic!("no invoice snapshot decoder in:\n{wire}"));
+    assert!(
+        decoder.contains(
+            "    match data.broken_invariant() {\n        Some(broken) => \
+             Err(json::DecodeError::of(\n            at,\n            &format!(\"a value \
+             satisfying `{broken}`\"),\n"
+        ),
+        "{decoder}"
+    );
+    // Every other surface keeps its bytes: the workspace's server and the browser bridge carry no
+    // snapshot codec.
+    for (name, ir) in all_models() {
+        for target in [Target::Rust, Target::Web] {
+            let Ok(other) = synthesize_for(&ir, target) else {
+                continue;
+            };
+            for (path, artifact) in &other.artifacts {
+                assert!(
+                    !artifact.contents.contains("encode_entity_")
+                        && !artifact.contents.contains("decode_entity_"),
+                    "{name}: `{path}` of the {} target names an entity codec",
+                    target.name()
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn every_other_target_refuses_the_crate_layout_by_name() {
     let ir = example("gatepass");
@@ -413,4 +949,150 @@ fn generated_single_manifest_uses_caret_ranges() {
         !manifest.contains("\"="),
         "an exact pin remains:\n{manifest}"
     );
+}
+
+// ---- the consumer's crate, built once --------------------------------------------------------
+
+/// The variable naming the harness `task library-crate-harness` built: the crate generated from
+/// `fixtures/library-crate/model.yaml.in` with `--layout crate --package shop-model
+/// --no-workspace-table`, built as a member of the harness's workspace with warnings denied.
+const HARNESS: &str = "ESS_LIBRARY_CRATE_HARNESS";
+
+/// Each case: the declaration, the document read, and the line the harness prints for it, either
+/// `ok` and what the encoder wrote back (read again and held equal by the harness), or `refused`
+/// with the path and the words the served decoders use.
+const ROUND_TRIPS: &[(&str, &str, &str)] = &[
+    ("item_id", r#""i-1""#, r#"ok "i-1""#),
+    ("mode", r#""report""#, r#"ok "report""#),
+    ("limit", r#"{"min":"1.5"}"#, r#"ok {"min":"1.5"}"#),
+    (
+        "entry",
+        r#"{"item":"i-1","mode":"enforce","limit":{"max":"9"},"tags":["a","b"],"labels":{"k":"v"}}"#,
+        r#"ok {"item":"i-1","mode":"enforce","limit":{"max":"9"},"tags":["a","b"],"labels":{"k":"v"}}"#,
+    ),
+    ("sku", r#""sku-a1""#, r#"ok "sku-a1""#),
+    ("bundle", r#"{"skus":["sku-a","sku-b"]}"#, r#"ok {"skus":["sku-a","sku-b"]}"#),
+    ("note", r#"{"text":"t","extra":1}"#, r#"ok {"text":"t"}"#),
+    // A struct with a shorthand (`ess/27`): its field's value alone is the object holding only
+    // that field, and the encoder writes the object.
+    ("dep", r#""serde""#, r#"ok {"requirement":"serde"}"#),
+    ("dep", r#"{"requirement":"serde"}"#, r#"ok {"requirement":"serde"}"#),
+    (
+        "dep",
+        r#"{"requirement":"serde","mode":"report"}"#,
+        r#"ok {"requirement":"serde","mode":"report"}"#,
+    ),
+    (
+        "catalog",
+        r#"{"project":"p","format":"f","entries":[],"state":"Declared"}"#,
+        r#"ok {"project":"p","format":"f","entries":[],"state":"Declared"}"#,
+    ),
+    (
+        "shelf",
+        r#"{"shelf":"s","capacity":2,"state":"Open"}"#,
+        r#"ok {"shelf":"s","capacity":2,"state":"Open"}"#,
+    ),
+    (
+        "sku",
+        r#""sku-A""#,
+        "refused $ | a value whose every character is one of `abcdefghijklmnopqrstuvwxyz0123456789-`",
+    ),
+    ("sku", r#""abc""#, "refused $ | a value starting with `sku-`"),
+    ("sku", r#""sku-abcdefghij""#, "refused $ | a value satisfying `value.count <= 12`"),
+    ("limit", "{}", "refused $ | a value satisfying `(defined(min) or defined(max))`"),
+    (
+        "bundle",
+        r#"{"skus":["sku-a","sku-a"]}"#,
+        "refused $ | a value satisfying `distinct sku in skus`",
+    ),
+    (
+        "entry",
+        r#"{"item":"i-1","mode":"enforce","limit":{"max":"9"},"tags":[],"extra":1}"#,
+        "refused $.extra | no member: no field is named so",
+    ),
+    (
+        "catalog",
+        r#"{"project":"p","format":"f","entries":[{"item":"i-1","mode":"strict","limit":{"min":"1"},"tags":[]}],"state":"Declared"}"#,
+        "refused $.entries.0.mode | one of `enforce`, `report`",
+    ),
+    (
+        "shelf",
+        r#"{"shelf":"s","capacity":0,"state":"Open"}"#,
+        "refused $ | a value satisfying `capacity >= 1`",
+    ),
+    (
+        "shelf",
+        r#"{"shelf":"s","capacity":1,"state":"Gone"}"#,
+        "refused $.state | one of `Open`",
+    ),
+    // A value that is neither the object nor the field's scalar is refused by the field's own
+    // decoder, and the struct's invariants hold on the short form as on the object.
+    ("dep", r#"["serde"]"#, "refused $ | a string"),
+    ("dep", r#""""#, "refused $ | a value satisfying `requirement.count >= 1`"),
+    (
+        "dep",
+        r#"{"requirement":""}"#,
+        "refused $ | a value satisfying `requirement.count >= 1`",
+    ),
+];
+
+/// The harness `task library-crate-harness` built, from the path [`HARNESS`] names. A file that
+/// is not executable is made so: an uploaded CI artifact loses its mode bits.
+fn library_harness() -> PathBuf {
+    let Some(path) = std::env::var_os(HARNESS).map(PathBuf::from) else {
+        panic!(
+            "{HARNESS} is not set: run `task library-crate-harness` and set it to the binary that \
+             task names, or run the tests through `task test`, which does both"
+        );
+    };
+    let metadata = std::fs::metadata(&path).unwrap_or_else(|error| {
+        panic!(
+            "{HARNESS}={} names no harness ({error}): run `task library-crate-harness`",
+            path.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions).expect("the harness is made executable");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    path
+}
+
+/// A consumer's model crate, generated with no component, named by the consumer and built as a
+/// member of the consumer's workspace, reads every declared type and entity snapshot from a
+/// document, writes it back so that it reads the same again, and refuses a broken value at its
+/// path in the words the served decoders use.
+#[test]
+fn a_crate_without_a_server_reads_and_writes_its_types_in_a_workspace_of_its_consumer() {
+    let output = Command::new(library_harness())
+        .args(
+            ROUND_TRIPS
+                .iter()
+                .flat_map(|(declaration, document, _)| [*declaration, *document]),
+        )
+        .output()
+        .expect("the harness runs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "the harness failed:\n{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let read = ROUND_TRIPS
+        .iter()
+        .zip(stdout.lines())
+        .map(|((declaration, document, _), line)| format!("{declaration} {document}\n  {line}"))
+        .collect::<Vec<_>>();
+    let expected = ROUND_TRIPS
+        .iter()
+        .map(|(declaration, document, line)| format!("{declaration} {document}\n  {line}"))
+        .collect::<Vec<_>>();
+    assert_eq!(read.join("\n"), expected.join("\n"));
 }

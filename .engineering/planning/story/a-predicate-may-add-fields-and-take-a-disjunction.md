@@ -11,7 +11,7 @@ tags:
 - from-consumer-report
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-12T21:48:11Z", actor: "human:timo", revision: 4, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
 - {from: "proposed", to: "active", at: "2026-11-12T21:48:12Z", actor: "human:timo", revision: 5, executor: "agent:b10x", correlation: "operator-2026-11-12-round-2"}
@@ -31,6 +31,7 @@ Items 17 and 18 of the 2026-11-09 workbench report.
 
 - An invariant or guard may compare an arithmetic expression over fields (`passed + failed ==
   total`). Synthesis witnesses both sides.
+- Amendment A1 (thirteenth gap report, 2026-11-24): an invariant on a struct type or an entity compares an arithmetic expression over its fields with either side being one (`passed + failed <= executed`, any of `==`, `!=`, `<`, `<=`, `>`, `>=`), and every place that decides an invariant decides it: the shared evaluator, the Go and TypeScript predicate runners, the generated Rust and Go struct decoders, synthesis witnesses and the `x-ess-invariants` annotation of the schema.
 - `when_subject` takes `any:` and `all:` as `when:` does.
 - A string predicate containing ` or ` / ` and ` either parses as a disjunction or conjunction, or
   is refused with a message naming `any:`/`all:`; it is never read as a text literal.

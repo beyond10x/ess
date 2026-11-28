@@ -1,0 +1,5 @@
+refusal[ESS-AUTHOR-044]: `repro.desk/authored/b1-sent-as-system-actor` in scenarios/b1-sent-as-system-actor.yaml
+  `repro.desk.RecordItem` is sent as `repro.desk.Desk`, which is the system itself; the system issues it, so the act names no actor and the scenario awaits it
+  help: no caller can be the system: name no `actor:`, and the act awaits the system's step; to check that an outside caller cannot issue it, name an actor the specification does not grant it, with `refused: not_granted`
+0 authored scenario(s) from 1 file(s), 1 refusal(s), suite ess-conformance/34, written to out/b1-sent-as-system-actor.json
+exit 1

@@ -1,0 +1,6 @@
+format: ess/37
+system: shelf
+version: v1
+
+domains:
+  - shelf.stock

@@ -474,6 +474,66 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
     },
+    "ComponentStep": {
+      "description": "Work a component starts itself (ess/38): `{form: level, view, command, actor, every}` runs the command for each row the view answers, its inputs read from the row's fields of the same name; `{form: time, command, actor, every}` runs the command every period.\n\nThe actor is the one system actor of a system-issued command (granted to system actors only), unless the step names one; the grants stay the one place that says who may run a command, and a named actor is checked against them ([`validate_steps`]).",
+      "type": "object",
+      "required": [
+        "command",
+        "form"
+      ],
+      "properties": {
+        "actor": {
+          "description": "Who runs the command, where the grants do not name one system actor for it.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "description": "The command it runs.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "every": {
+          "description": "How often it runs: required of a time step; how often a level step reads its view.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "form": {
+          "description": "What starts it.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StepForm"
+            }
+          ]
+        },
+        "view": {
+          "description": "The view whose rows start a level step.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "Consistency": {
       "description": "How soon a view reflects a command that has already returned.\n\nThis decides whether a generated scenario asserts the view with `expect` or with `eventually` — which is the entire reason the field exists. Getting it wrong in the model is how a generated suite acquires a sleep.",
       "oneOf": [
@@ -2420,6 +2480,14 @@
             "$ref": "#/definitions/RawComponentSetting"
           }
         },
+        "steps": {
+          "description": "The work it starts itself (ess/38): a command run for each row a view answers, or every period. See [`ComponentStep`] and `docs/design/component-steps.md`.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ComponentStep"
+          }
+        },
         "summary": {
           "description": "What it is, in one line.",
           "default": null,
@@ -2481,7 +2549,7 @@
           "type": "string"
         },
         "in": {
-          "description": "The list, `input.<field>`.",
+          "description": "The list, `input.<field>`, or from `ess/38` `input.<path>` to a `List` member of a struct input.",
           "type": "string"
         },
         "repeated": {
@@ -2988,7 +3056,7 @@
           "type": "boolean"
         },
         "instance": {
-          "description": "Which field carries the identity of the instance this outcome acts on.\n\nRequired beside `creates`, `moves` and `updates`, and meaningless without one. The verb decides which surface the name is read from — see [`Subject::surface`].",
+          "description": "Which field carries the identity of the instance this outcome acts on.\n\nRequired beside `creates`, `moves` and `updates`, and meaningless without one. The verb decides which surface the name is read from — see [`Subject::surface`]. From `ess/38` an `updates:`, `moves:` or `deletes:` may name a member of a struct input, `instance: target.parcel_id`.",
           "type": [
             "string",
             "null"
@@ -3520,7 +3588,7 @@
           ]
         },
         "via": {
-          "description": "The input field that carries the other entity's identity, written `input.<field>`. Never beside `entity`.",
+          "description": "The input field that carries the other entity's identity, written `input.<field>`, or from `ess/38` `input.<path>` to a member of a struct input. Never beside `entity`.",
           "type": [
             "string",
             "null"
@@ -4422,6 +4490,25 @@
       "description": "One state of an entity's lifecycle, in UpperCamelCase, such as `Draft`.",
       "type": "string",
       "pattern": "^[A-Z][A-Za-z0-9]*$"
+    },
+    "StepForm": {
+      "description": "What starts a [`ComponentStep`].",
+      "oneOf": [
+        {
+          "description": "While the view answers rows, the command runs once for each row it answers.",
+          "type": "string",
+          "enum": [
+            "level"
+          ]
+        },
+        {
+          "description": "The command runs once every period.",
+          "type": "string",
+          "enum": [
+            "time"
+          ]
+        }
+      ]
     },
     "Transition": {
       "description": "A named move between states.\n\nThe name is the transition's own, unqualified, and it is a name *inside the entity*: the entity's own name plus this one is what an outcome writes to say it takes this move, so `settle` on `billing.invoice.Invoice` is written `moves: billing.invoice.Invoice.settle`. It is not a command name, and no command is found by matching one — inferring the driving command from a transition's spelling is exactly the invention the conformance design §19 refuses, which is why the link is declared on the outcome ([`Subject`](crate::command::Subject)) rather than guessed here.\n\n`from` is a set because one move can start in several states — §4.7's `CancelInvoice` leaves both `Draft` and `Issued` — and `to` is one state because a move with two destinations is two moves with different guards.",

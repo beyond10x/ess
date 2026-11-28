@@ -13,7 +13,7 @@ tags:
 relations:
 - decomposes: epic:zero-open-issues-2026-11
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -24,6 +24,8 @@ number alone (example `Gauge`) realizes on every target. On `--target rust` it i
 serde_json hands a number to a visitor as a map, which cannot be told apart from the record, so the
 short form cannot be read soundly. The story merged with this deviation; its test asserts the
 named refusal, not `model_binary64_layout`.
+
+Amendment A4 (thirteenth gap report, 2026-11-24): this story is `ess generate types --target rust` only. Synthesized Rust, Go and web servers refuse a shorthand struct for another reason, owned by story:the-generated-rust-go-and-web-targets-read-a-struct-written-in-its-short-form-instead-of-refusing-the-model; the serde reason given here does not apply to them.
 
 ## Acceptance
 

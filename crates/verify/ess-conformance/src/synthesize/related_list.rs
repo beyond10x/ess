@@ -92,21 +92,20 @@ fn fresh_element(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Result<N
         let inputs =
             crate::witness::candidates(ir, command, &[], Distinction::further(ROWS + 9 + nth))
                 .map_err(RefusalCause::NoWitness)?;
-        let element = inputs.iter().find_map(|input| match input.get(field) {
-            Some(Node::Seq(items)) => items.first().cloned(),
-            _ => None,
-        });
+        let element =
+            inputs
+                .iter()
+                .find_map(|input| match ess_compiler::ir::read_input(input, field) {
+                    Some(Node::Seq(items)) => items.first().cloned(),
+                    _ => None,
+                });
         if let Some(element) = element {
             return Ok(element);
         }
     }
     // A search trying only empty lists: an identity backed by a `Uuid` is minted from the command
     // and the field, which no arrangement of this scenario tries.
-    let declared = command
-        .input
-        .iter()
-        .find(|held| held.name == field)
-        .map(|held| &held.type_ref);
+    let declared = super::input_type(ir, command, field);
     let Some(ResolvedTypeRef::List { of }) = declared else {
         return Err(unarranged());
     };
@@ -154,7 +153,7 @@ pub(super) fn arrange(
     // row created under it (beyond10x/ess#761), and never the empty list again after it.
     let guarded = !refuses(outcome) && guards_on_list(outcome, field);
     let (mut steps, source, items) = if guarded {
-        let Some(Node::Seq(elements)) = input.get(field) else {
+        let Some(Node::Seq(elements)) = ess_compiler::ir::read_input(input, field) else {
             return Err(unarranged());
         };
         named_rows(ir, entity, actors, elements, (ROWS + 16, &setup.steps), &[])?
@@ -231,10 +230,14 @@ fn two_rows(
 /// selected by what the list holds, whose scenario sends the list its witness holds.
 fn guards_on_list(outcome: &ResolvedOutcome, field: &str) -> bool {
     crate::decision::when(outcome).is_some_and(|guard| {
-        guard
-            .fact_paths()
-            .iter()
-            .any(|path| path.segments().first().is_some_and(|root| root == field))
+        guard.fact_paths().iter().any(|path| {
+            if !ess_domain::command::input_path::is_path(field) {
+                return path.segments().first().is_some_and(|root| root == field);
+            }
+            // A list inside a struct input (ess/38, beyond10x/ess#640): a read at or below it.
+            let segments: Vec<&str> = path.segments().iter().map(String::as_str).collect();
+            ess_domain::command::input_path::reads_member(&segments, field)
+        })
     })
 }
 
@@ -251,7 +254,7 @@ pub(super) fn refuted_by_empty(
         return false;
     };
     let mut sent = input.clone();
-    sent.insert(field.to_owned(), Node::Seq(Vec::new()));
+    super::set_at(&mut sent, field, Some(Node::Seq(Vec::new())));
     crate::input::flatten(ir, command, &sent)
         .is_ok_and(|facts| matches!(facts.decide(guard), crate::decision::Decision::Refuted(_)))
 }
@@ -292,7 +295,7 @@ pub(super) fn driven(
     arranging: &[&EntityHandle],
 ) -> Result<(String, Rows), RefusalCause> {
     let (field, entity) = reads(command).ok_or_else(unarranged)?;
-    let Some(Node::Seq(elements)) = input.get(field) else {
+    let Some(Node::Seq(elements)) = ess_compiler::ir::read_input(input, field) else {
         return Err(unarranged());
     };
     let base = ROWS + 32 + 8 * at.get();
@@ -314,7 +317,10 @@ pub(super) fn backed(
     (at, known): (Distinction, &[super::ScenarioStep]),
 ) -> Option<Result<(String, Rows), RefusalCause>> {
     let (field, _) = reads(command)?;
-    let named = matches!(row.get(field), Some(Node::Seq(items)) if !items.is_empty());
+    let named = matches!(
+        ess_compiler::ir::read_input(row, field),
+        Some(Node::Seq(items)) if !items.is_empty()
+    );
     (named && !refuses(outcome)).then(|| driven(ir, command, actors, row, (at, known), &[]))
 }
 
@@ -437,7 +443,7 @@ fn empty_after(
         .iter()
         .map(|(name, value)| (name.clone(), ScenarioValue::literal(value.clone())))
         .collect();
-    sent.insert(field.to_owned(), empty);
+    super::supply_at(&mut sent, field, empty);
     let command_ref = crate::scenario::CommandRef::new(command.name.clone());
     vec![
         super::ScenarioStep::ExecuteCommand {
@@ -458,7 +464,7 @@ pub(super) fn first_missing(
     supplied: &BTreeMap<String, ScenarioValue>,
     field: &str,
 ) -> Option<Node> {
-    let Some(ScenarioValue::List { items }) = supplied.get(field) else {
+    let Some(ScenarioValue::List { items }) = super::supplied_at(supplied, field) else {
         return None;
     };
     items.iter().find_map(|item| match item {

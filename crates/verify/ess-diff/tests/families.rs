@@ -1989,3 +1989,28 @@ fn review_unclassified_transition_order_cannot_hide_beside_a_classified_edit() {
         review_change(&before, &after, "unclassified-changed");
     }
 }
+
+/// A queue worked by its own worker: one level step and one time step (ess/38).
+const JOBS: &str = include_str!("../../../specify/ess-domain/tests/fixtures/component-steps.yaml");
+
+#[test]
+fn review_a_step_added_removed_or_changed_is_a_component_change() {
+    let time = "      - {form: time, command: demo.jobs.RecordSweep, every: PT60S}\n";
+    let before = compiled(&[("jobs.yaml", JOBS)]);
+    let without = JOBS.replacen(time, "", 1);
+    review_change(&compiled(&[("jobs.yaml", &without)]), &before, "step-added");
+    review_change(
+        &before,
+        &compiled(&[("jobs.yaml", &without)]),
+        "step-removed",
+    );
+    let slower = JOBS.replacen("every: PT60S", "every: PT120S", 1);
+    review_change(
+        &before,
+        &compiled(&[("jobs.yaml", &slower)]),
+        "step-changed",
+    );
+    let unchanged = ess_diff::impact(&before, &compiled(&[("jobs.yaml", JOBS)]), None, None)
+        .expect("one system");
+    assert!(unchanged.delta.changes().is_empty());
+}

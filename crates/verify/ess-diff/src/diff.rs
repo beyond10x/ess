@@ -1067,6 +1067,7 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
                         after: is.cli.as_ref().map(cli_contract),
                     });
                 }
+                step_changes(&was.steps, &is.steps, &mut push);
 
                 for delta in naming_deltas(&was.naming, &is.naming, name.as_str()) {
                     match delta {
@@ -1086,6 +1087,64 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
                 }
             }
             (None, None) => unreachable!("a key came from one of the two maps"),
+        }
+    }
+}
+
+/// A step rendered for a change: `<form> [<view> →] <command> as <actor> [every <period>]`.
+fn written_step(step: &ess_compiler::ir::ResolvedComponentStep) -> String {
+    let view = step
+        .view
+        .as_ref()
+        .map_or_else(String::new, |view| format!("`{}` → ", view.name()));
+    let every = step.every.map_or_else(String::new, |every| {
+        format!(" every PT{}S", every.seconds())
+    });
+    format!(
+        "{} {view}`{}` as `{}`{every}",
+        step.form.as_str(),
+        step.command.name(),
+        step.actor.name()
+    )
+}
+
+/// The steps of one component in two revisions (ess/38). A step is identified by its form, view
+/// and command; one of those that runs as another actor or at another period is changed, and
+/// every other is added or removed.
+fn step_changes(
+    was: &[ess_compiler::ir::ResolvedComponentStep],
+    is: &[ess_compiler::ir::ResolvedComponentStep],
+    push: &mut impl FnMut(ComponentChange),
+) {
+    type Key<'a> = (&'a str, Option<&'a QualifiedName>, &'a QualifiedName);
+    fn key(step: &ess_compiler::ir::ResolvedComponentStep) -> Key<'_> {
+        (
+            step.form.as_str(),
+            step.view.as_ref().map(ess_compiler::ir::ViewHandle::name),
+            step.command.name(),
+        )
+    }
+    let before: BTreeMap<Key<'_>, &ess_compiler::ir::ResolvedComponentStep> =
+        was.iter().map(|step| (key(step), step)).collect();
+    let after: BTreeMap<Key<'_>, &ess_compiler::ir::ResolvedComponentStep> =
+        is.iter().map(|step| (key(step), step)).collect();
+    for (identity, step) in &after {
+        match before.get(identity) {
+            None => push(ComponentChange::StepAdded {
+                step: written_step(step),
+            }),
+            Some(old) if old != step => push(ComponentChange::StepChanged {
+                before: written_step(old),
+                after: written_step(step),
+            }),
+            Some(_) => {}
+        }
+    }
+    for (identity, step) in &before {
+        if !after.contains_key(identity) {
+            push(ComponentChange::StepRemoved {
+                step: written_step(step),
+            });
         }
     }
 }
@@ -2873,7 +2932,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
         }
         "components" => remove_keys(
             declaration,
-            &["owns", "accepts", "publishes", "reached_by", "cli"],
+            &["owns", "accepts", "publishes", "reached_by", "cli", "steps"],
         ),
         _ => unreachable!("closed coverage family list"),
     }

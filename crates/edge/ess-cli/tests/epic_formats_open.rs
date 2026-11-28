@@ -1,6 +1,7 @@
 //! The three formats the zero-open-issues epic fills are open and empty: source `ess/37`, the suite
 //! pair `ess-conformance/64` (ordinary) and `/65` (coverage), and `ess-diff/24`. Opening them adds
-//! no construct, so a document at the new number reads exactly as at the one before it.
+//! no construct, so a document at the new number reads exactly as at the one before it. Source
+//! `ess/38`, opened for the member-address feature, reads exactly as `ess/37`.
 
 use ess_cli::TemporaryDirectory;
 use ess_diff::{DeltaFormat, EssDelta, RawEssDelta};
@@ -55,7 +56,7 @@ fn ess_37_is_listed_as_added_in_0_93_0_and_reads_as_ess_36() {
         .find(|row| row["format"] == "ess/37")
         .unwrap_or_else(|| panic!("ess/37 is not listed: {rows}"));
     assert_eq!(row["release"], json!("0.93.0"), "{row}");
-    assert_eq!(row["newest"], json!(true), "{row}");
+    assert_eq!(row["newest"], json!(false), "{row}");
 
     let directory = TemporaryDirectory::create("ess-epic-formats-source").unwrap();
     let older = ledger_at(&directory, "older", "ess/36");
@@ -76,6 +77,44 @@ fn ess_37_is_listed_as_added_in_0_93_0_and_reads_as_ess_36() {
     let newer = String::from_utf8(compile(&newer)).unwrap();
     assert_eq!(
         older.replace("ess/36", "ess/37"),
+        newer,
+        "IR bytes differ apart from the format field"
+    );
+}
+
+#[test]
+fn ess_38_is_listed_unreleased_as_the_newest_and_reads_as_ess_37() {
+    let listed = good(&["specify", "formats", "--format", "json"]);
+    let rows: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["format"] == "ess/38")
+        .unwrap_or_else(|| panic!("ess/38 is not listed: {rows}"));
+    assert_eq!(row["release"], Value::Null, "{row}");
+    assert_eq!(row["newest"], json!(true), "{row}");
+
+    let directory = TemporaryDirectory::create("ess-epic-formats-source-38").unwrap();
+    let older = ledger_at(&directory, "older", "ess/37");
+    let newer = ledger_at(&directory, "newer", "ess/38");
+    good(&["specify", "validate", "--path", older.to_str().unwrap()]);
+    good(&["specify", "validate", "--path", newer.to_str().unwrap()]);
+    let compile = |path: &Path| {
+        good(&[
+            "specify",
+            "compile",
+            "--path",
+            path.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .stdout
+    };
+    let older = String::from_utf8(compile(&older)).unwrap();
+    let newer = String::from_utf8(compile(&newer)).unwrap();
+    assert_eq!(
+        older.replace("ess/37", "ess/38"),
         newer,
         "IR bytes differ apart from the format field"
     );
@@ -133,6 +172,24 @@ fn the_suite_pair_64_and_65_is_read_where_62_and_63_are() {
         let text = fs::read_to_string(path).unwrap();
         assert!(
             !text.contains("\"ess-conformance/64\"") && !text.contains("\"ess-conformance/65\""),
+            "{path:?}"
+        );
+    }
+}
+
+/// The pair `/66` and `/67`, opened for the open issues' suite vocabulary, is read where `/64`
+/// and `/65` are, and no synthesis writes it.
+#[test]
+fn the_suite_pair_66_and_67_is_read_where_64_and_65_are() {
+    let directory = TemporaryDirectory::create("ess-epic-formats-suite-66").unwrap();
+    let (ordinary, ordinary_66) = rewritten(&directory, "ordinary", &[], 66);
+    let (coverage, coverage_67) = rewritten(&directory, "coverage", &["--suite-format", "5"], 67);
+    assert_eq!(verdict(&ordinary), verdict(&ordinary_66));
+    assert_eq!(verdict(&coverage), verdict(&coverage_67));
+    for path in [&ordinary, &coverage] {
+        let text = fs::read_to_string(path).unwrap();
+        assert!(
+            !text.contains("\"ess-conformance/66\"") && !text.contains("\"ess-conformance/67\""),
             "{path:?}"
         );
     }

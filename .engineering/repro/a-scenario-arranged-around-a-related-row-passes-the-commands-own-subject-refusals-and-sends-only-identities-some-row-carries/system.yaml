@@ -1,0 +1,107 @@
+format: ess/37
+system: pins
+version: v1
+domain: pins.board
+summary: A pin moves by compare and set, by a member that exists; the pin's own state is checked before the member.
+types:
+  - {name: pins.board.PinId, kind: newtype, of: Uuid}
+  - {name: pins.board.MemberId, kind: newtype, of: Uuid}
+entities:
+  - name: pins.board.Member
+    identity: {name: member_id, type: pins.board.MemberId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: pins.board.Pin
+    identity: {name: pin_id, type: pins.board.PinId}
+    fields:
+      - {name: target, type: String}
+      - {name: moved_by, type: Optional<pins.board.MemberId>}
+    lifecycle:
+      initial: Live
+      states: [Live, Removed]
+      terminal: [Removed]
+      transitions:
+        - {name: remove, from: [Live], to: Removed}
+errors:
+  - {name: pins.board.PinNotFound, summary: No pin carries this identity., fields: []}
+  - {name: pins.board.PinRemoved, summary: The pin is removed., fields: []}
+  - {name: pins.board.TargetMoved, summary: The pin no longer points at the expected target., fields: []}
+  - {name: pins.board.UnknownMember, summary: No member carries this identity., fields: []}
+events:
+  - name: pins.board.MemberAdded
+    fields: [{name: member_id, type: pins.board.MemberId}]
+  - name: pins.board.PinCreated
+    fields: [{name: pin_id, type: pins.board.PinId}]
+  - name: pins.board.PinMoved
+    fields: [{name: pin_id, type: pins.board.PinId}]
+  - name: pins.board.PinWasRemoved
+    fields: [{name: pin_id, type: pins.board.PinId}]
+actors:
+  - name: pins.board.Operator
+    may: [pins.board.AddMember, pins.board.CreatePin, pins.board.MovePin, pins.board.RemovePin]
+commands:
+  - name: pins.board.AddMember
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: pins.board.Member
+        instance: member_id
+        emits: [pins.board.MemberAdded]
+        payload: {pins.board.MemberAdded: {member_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: pins.board.CreatePin
+    input:
+      - {name: target, type: String}
+    outcomes:
+      - name: created
+        creates: pins.board.Pin
+        instance: pin_id
+        emits: [pins.board.PinCreated]
+        payload: {pins.board.PinCreated: {pin_id: {generated: true}}}
+        sets: {target: input.target}
+  - name: pins.board.RemovePin
+    input:
+      - {name: pin_id, type: pins.board.PinId}
+    outcomes:
+      - name: removed
+        moves: pins.board.Pin.remove
+        instance: pin_id
+        emits: [pins.board.PinWasRemoved]
+        payload: {pins.board.PinWasRemoved: {pin_id: input.pin_id}}
+      - {name: wrong-state, wrong_state: true, error: pins.board.PinRemoved}
+  - name: pins.board.MovePin
+    input:
+      - {name: pin_id, type: pins.board.PinId}
+      - {name: expected, type: String}
+      - {name: to, type: String}
+      - {name: by, type: pins.board.MemberId}
+    outcomes:
+      - name: no-pin
+        unknown_instance: true
+        error: pins.board.PinNotFound
+      - name: removed
+        when_subject: {predicate: state == Removed}
+        error: pins.board.PinRemoved
+      - name: moved-since
+        when_subject: {predicate: target != input.expected}
+        error: pins.board.TargetMoved
+      - name: unknown-member
+        when_related: {via: input.by, exists: false}
+        error: pins.board.UnknownMember
+      - name: moved
+        updates: pins.board.Pin
+        instance: pin_id
+        emits: [pins.board.PinMoved]
+        payload: {pins.board.PinMoved: {pin_id: input.pin_id}}
+        sets: {target: input.to, moved_by: input.by}
+views:
+  - name: pins.board.Pins
+    source: pins.board.Pin
+    consistency: read_your_writes
+    fields:
+      - {name: pin_id, type: pins.board.PinId}
+      - {name: target, type: String}
+      - {name: moved_by, type: Optional<pins.board.MemberId>}
+      - {name: state, type: pins.board.Pin.State}

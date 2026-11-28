@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:a-structured-value-reads-as-one-line-of-its-members-in-every-renderer
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T00:39:18Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-24T00:39:20Z", actor: "human:timo", revision: 4}
@@ -124,3 +124,20 @@ keys to the same `Field`.
 ## Source
 
 A downstream application, 2026-11-24, second report, G4.
+
+## Downstream report 2026-11-26
+
+A downstream application reported on 0.99.2 (received 2026-11-26) that a list of records is drawn by the two renderers in two different ways, and that a path through a list means two things.
+
+Facts, read on `main` at `c0b5f560cb`:
+
+- `ess ui check --model` accepts a dotted field path through a list, `{field: lines.title}` over a view row whose `lines` is a list of records, with 0 errors (reported; not rerun here).
+- React reads the member of every entry: `getPath` maps a segment over an array, so `lines.title` is the list of the titles (`crates/ui/ess-ui-react/templates/runtime/json.ts.tmpl:31-43`). The cell then goes through `formatValue`, which joins a list with `, ` and writes an object as JSON (`crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl:822-831`).
+- The terminal prints nothing: `walk` asks a sequence for a member by name, finds none and returns an absent value (`crates/ui/ess-ui-tui/src/expr.rs:215-224`, `field_path` 229-237).
+- The reference defines `field` as a name (`website/docs/reference/ess-ui.md:1511`) and says nothing of a path that crosses a list.
+
+So one document gives a column of titles in the browser and an empty column in the terminal, and the checker accepts both.
+
+The need, stated apart from any spelling: one rendering of a list of records shared by both renderers (a row per record, a member per column, a tone per member), or a path through a list that both renderers resolve alike. A second adopter: an order list whose rows hold their lines, or an inventory whose shelves hold their bins, each shown as a small table under the row.
+
+This story names the text that joins the items of a list of scalars, `separator`. It does not cover this need either: each item is drawn "by the rule for its own value", so a list of records joined by a separator is still one line of pairs and not rows with columns, and a path through a list is not an `as: list` field at all. If a path through a list is kept (LR-D1 of `story:a-form-field-edits-a-list-of-records`, option B), its cell reads as a list and goes through this story's `separator`; if it is refused (option A), nothing here changes.
