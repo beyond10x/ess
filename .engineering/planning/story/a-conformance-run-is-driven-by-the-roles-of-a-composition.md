@@ -14,7 +14,7 @@ relations:
 - derived_from: story:a-component-plays-a-pinned-contract-role
 - informed_by: story:a-conformance-run-drives-a-target-process-in-any-language
 - informed_by: story:role-input-drift-tells-a-caller-from-an-implementation
-revision: 1
+revision: 4
 ---
 ## Need
 
@@ -42,6 +42,7 @@ The requester's proposal, labelled theirs: a conformance run driven by `roles`, 
 6. A role-driven run writes the same report/2 a hand-narrowed run writes for the same ids: byte-equal on the fixture, so the existing readers of a report need no change.
 7. Old documents keep their bytes: every `/1` to `/6` composition compiles to the bytes it has today (`composition_3_documents_keep_their_ir_bytes_under_the_4_reader` style pin for the new reader).
 8. `ess verify conform run --help`, `website/docs/reference/cli.md` and `website/docs/guides/verify/target-process.md` describe the option; the design page gains the section that states the decisions below.
+9. The report of a role-driven run accounts for every scenario of the block's suite: it states the count per reason (selected; left out by `selection_filter`; left out because a `gates` command is reached) and lists the ids of the scenarios left out, under the reason of each. The counts add up to the suite's scenario total. Test: on the five-scenario fixture of point 4, a role that covers two scenarios, leaves two out for lack of an entry and one because it reaches a `gates` command reports 2, 2 and 1 and names the three ids. With D4 as recommended this adds no outside reason to the suite format: the `gates` count is read from the role's own selection.
 
 ## Fit review
 
@@ -58,6 +59,8 @@ Written with `.agents/skills/assessing-external-requests/SKILL.md`. The consumer
 ## Decisions
 
 Accept, redesigned. The requester's wording was taken as evidence of the need. The redesign: the role is the single source of ids and names, the run gains the option, and the roles gain the ends the run needs.
+
+- **The requester's answer (2026-11-28 01:49 CET).** The requester accepted D1 to D6 as recommended: D1 A, D2 A, D3 A, D4 A, D5 A, D6 A. One acceptance line is added (point 9): the report states the count per reason and lists the ids left out.
 
 - **D1, where the run lives.** A: `ess verify conform run --composition <file> --role <service>` (the role of the composition whose `service` key is named), which derives the selected ids from the role and wraps the target in a name-mapping layer. B: `ess verify conform select --composition` writes a carrier with mapped names, run afterwards with the existing options. Recommended: A. A carrier holds the block's scenario names and the suite formats do not move; the mapping belongs to the target the suite meets. `ess-composition` is read by `ess-cli` only (`crates/edge/ess-cli/Cargo.toml:28`); `ess-conformance` does not depend on it, so the CLI hands the runner a plain table of mapped names and the dependency stays out of the runner.
 - **D2, whether `roles` gains a format `/7`.** A: `/7` adds `views:` and `events:` entries to a role, beside `commands:`, and an output comparison for `stands: implements`. B: no format change, the run covers commands only. C: `/7` adds views only. Recommended: A. Acceptance point 1 needs views and events to have ends, and one source format per design decision, not per request: the entries and the output comparison are one decision. It joins the open composition format if another story opens one before release; the latest shipped is `/6` (`crates/specify/ess-composition/src/lib.rs:84-87`).
