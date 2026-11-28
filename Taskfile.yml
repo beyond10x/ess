@@ -4,6 +4,30 @@ vars:
   FEATURE_OFF_PACKAGES: >-
     --package ess-primitives --package ess-conformance --package schema-contract
     --package ess-cli --package ess-kubernetes
+  # A test-running step: `{{.TEST_STEP}} <step> <seconds> <command>` kills the command at its
+  # limit and fails naming the step and its time (the organization rule `Tests stay fast`). The
+  # limit is 120 s, or the measured ceiling `crates/edge/ess-xtask/tests/ci_lanes.rs` pins for a
+  # step known to be over it.
+  TEST_STEP: >-
+    test_step() {
+    step=$1; limit=$2; shift 2; start=$(date +%s); status=0;
+    timeout --kill-after=30 "$limit" "$@" || status=$?;
+    took=$(( $(date +%s) - start ));
+    if [ "$status" = 124 ] || [ "$status" = 137 ] || [ "$took" -gt "$limit" ]; then
+    echo "test step $step ran $took s, over its limit of $limit s" >&2; return 1; fi;
+    echo "test step $step ran $took s of its $limit s"; return "$status"; };
+    test_step
+  # The time of each crate's doc-tests as a JUnit test case, read from `cargo test --doc` output:
+  # stable libtest prints no time per test, so a doc-test step's ten slowest are crates. A crate
+  # with no `test result:` line was running when its step was killed, and gets the step's time
+  # from `TEST_STEP`'s line.
+  DOC_TEST_TIMES: >-
+    awk '/^ *Doc-tests / { name = $2 }
+    /^test result: / && name != "" { t = $NF; sub(/s$/, "", t);
+    printf "<testcase name=\"doc-tests\" classname=\"%s\" time=\"%s\"/>\n", name, t; name = "" }
+    /^test step .* ran [0-9]+ s/ { for (i = 1; i < NF; i++) if ($i == "ran") took = $(i + 1) }
+    END { if (name != "") printf "<testcase name=\"doc-tests\" classname=\"%s\" time=\"%s\"/>\n",
+    name, took + 0 }'
   # Where the `test-archive-*` tasks write the nextest archives and the test shards read them.
   NEXTEST_ARCHIVES: target/nextest-archives
   # The Rust harness `ess-synth`'s `integer_spellings` test runs, built once by
@@ -141,7 +165,7 @@ tasks:
       - task: binary64-harness
       - task: library-crate-harness
       - task: refusal-policy-harness
-      - defer: { task: test-slowest }
+      # The ten slowest are printed here, before `test-xtask` below writes its own report.
       - |
         set -eu
         args=""
@@ -149,7 +173,12 @@ tasks:
           [ "$package" = ess-xtask ] || args="$args --package $package"
         done
         if [ -n "$args" ]; then
-          cargo nextest run --locked --profile ci --no-fail-fast $args
+          cargo nextest run --no-run --locked --profile ci $args
+          rm -f target/nextest/ci/junit.xml
+          status=0
+          {{.TEST_STEP}} test-packages 1004 cargo nextest run --locked --profile ci --no-fail-fast $args || status=$?
+          task test-slowest
+          [ "$status" = 0 ]
         fi
       - |
         case " {{.PACKAGES}} " in
@@ -452,6 +481,7 @@ tasks:
           for target in $(cargo xtask slow-list --package "$package" --targets); do
             targets="$targets --test $target"
           done
+          rm -f target/nextest/slow/junit.xml
           cargo nextest run --locked --profile slow --run-ignored only --no-fail-fast --package "$package" $targets -E "$(cargo xtask slow-list --package "$package" --filter)" || status=1
           SLOWEST_REPORT=target/nextest/slow/junit.xml task test-slowest
         done
@@ -487,8 +517,9 @@ tasks:
       - rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst
       - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null
       - rm {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst
+      - rm -f target/nextest/ci/junit.xml
       - defer: { task: test-slowest }
-      - cargo nextest run --binaries-metadata target/nextest/binaries-metadata.json --cargo-metadata target/nextest/cargo-metadata.json --workspace-remap . --target-dir-remap target --profile ci --no-fail-fast --partition slice:{{.PART}}
+      - '{{.TEST_STEP}} test-shard 1483 cargo nextest run --binaries-metadata target/nextest/binaries-metadata.json --cargo-metadata target/nextest/cargo-metadata.json --workspace-remap . --target-dir-remap target --profile ci --no-fail-fast --partition slice:{{.PART}}'
 
   test-transport-network:
     desc: Validate AsyncAPI and execute both generated publishers against real JetStream; requires explicit external test tooling.
@@ -499,7 +530,18 @@ tasks:
   test-doc:
     desc: Run the workspace doc-tests, which nextest does not.
     cmds:
-      - cargo test --workspace --exclude ess-xtask --locked --doc
+      # The libraries the doc-tests link are built before the step; `--doc` refuses `--no-run`, so
+      # the dev-dependencies and the crates whose features they change still build inside it.
+      - cargo build --workspace --exclude ess-xtask --locked --lib
+      - rm -rf target/doc-tests/test-doc
+      - mkdir -p target/doc-tests/test-doc
+      - |
+        status=0
+        {{.TEST_STEP}} test-doc 60 cargo test --workspace --exclude ess-xtask --locked --doc > target/doc-tests/test-doc/output.txt 2>&1 || status=$?
+        cat target/doc-tests/test-doc/output.txt
+        {{.DOC_TEST_TIMES}} target/doc-tests/test-doc/output.txt > target/doc-tests/test-doc/junit.xml
+        SLOWEST_REPORT=target/doc-tests/test-doc/junit.xml task test-slowest
+        exit "$status"
 
   test-feature-off:
     desc: Run one partition of the archive of packages without `arbitrary_precision`, e.g. `SHARD=1/4`; needs `task test-archive-feature-off`.
@@ -509,8 +551,17 @@ tasks:
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
     cmds:
+      - rm -f target/nextest/ci/junit.xml
+      - task: test-feature-off-extract
       - defer: { task: test-slowest }
-      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite --profile ci --no-fail-fast --partition slice:{{.SHARD}}
+      - '{{.TEST_STEP}} test-feature-off 669 cargo nextest run --binaries-metadata target/nextest/binaries-metadata.json --cargo-metadata target/nextest/cargo-metadata.json --workspace-remap . --target-dir-remap target --profile ci --no-fail-fast --partition slice:{{.SHARD}}'
+
+  # Extracting the feature-off archive took up to 345 s on CI; it runs before the test step, into
+  # the checkout's own `target/` as `test-shard` does.
+  test-feature-off-extract:
+    desc: Extract the feature-off archive `test-feature-off` runs.
+    cmds:
+      - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null
 
   test-slowest:
     desc: Print the ten slowest tests of the last nextest run under the `ci` profile, from its JUnit report; prints and never fails.
@@ -532,7 +583,17 @@ tasks:
   test-feature-off-doc:
     desc: Run the doc-tests of the packages without `arbitrary_precision`, which nextest does not.
     cmds:
-      - cargo test --locked --doc {{.FEATURE_OFF_PACKAGES}}
+      # Built before the step as in `test-doc`; the dev-dependencies still build inside it.
+      - cargo build --locked --lib {{.FEATURE_OFF_PACKAGES}}
+      - rm -rf target/doc-tests/test-feature-off-doc
+      - mkdir -p target/doc-tests/test-feature-off-doc
+      - |
+        status=0
+        {{.TEST_STEP}} test-feature-off-doc 60 cargo test --locked --doc {{.FEATURE_OFF_PACKAGES}} > target/doc-tests/test-feature-off-doc/output.txt 2>&1 || status=$?
+        cat target/doc-tests/test-feature-off-doc/output.txt
+        {{.DOC_TEST_TIMES}} target/doc-tests/test-feature-off-doc/output.txt > target/doc-tests/test-feature-off-doc/junit.xml
+        SLOWEST_REPORT=target/doc-tests/test-feature-off-doc/junit.xml task test-slowest
+        exit "$status"
 
   test-xtask:
     desc: Run the ess-xtask tests under the consumer-check native profile.
@@ -550,8 +611,9 @@ tasks:
       # The unit tests run the `ess` built here, beside their executable, never `cargo run`.
       - '{{.XTASK_ENV}} cargo build --package ess-cli --bin ess --locked'
       - '{{.XTASK_ENV}} cargo test --package ess-xtask --locked --no-run'
+      - rm -f target/nextest/ci/junit.xml
       - defer: { task: test-slowest }
-      - '{{.XTASK_ENV}} cargo nextest run --package ess-xtask --locked --profile ci --no-fail-fast'
+      - '{{.TEST_STEP}} test-xtask 120 {{.XTASK_ENV}} cargo nextest run --package ess-xtask --locked --profile ci --no-fail-fast'
 
   doc-check:
     env:
@@ -751,7 +813,16 @@ tasks:
     cmds:
       - cargo fmt --manifest-path fuzz/Cargo.toml --package ess-specification-fuzz -- --check
       - cargo clippy --manifest-path fuzz/Cargo.toml --locked --offline --all-targets -- -D warnings
-      - cargo test --manifest-path fuzz/Cargo.toml --locked --offline
+      # Under nextest with the fuzz workspace's own `ci` profile (`fuzz/.config/nextest.toml`; the
+      # repository's names binaries this workspace lacks, which nextest refuses), which kills a test
+      # at 60 s. The JUnit report is under `fuzz/target/`; the fuzz crate has no doc-tests.
+      - cargo nextest run --manifest-path fuzz/Cargo.toml --locked --offline --profile ci --no-run
+      - rm -f fuzz/target/nextest/ci/junit.xml
+      - |
+        status=0
+        {{.TEST_STEP}} fuzz-check 120 cargo nextest run --manifest-path fuzz/Cargo.toml --locked --offline --profile ci --no-fail-fast || status=$?
+        SLOWEST_REPORT=fuzz/target/nextest/ci/junit.xml task test-slowest
+        exit "$status"
       - cargo run --manifest-path fuzz/Cargo.toml --locked --offline --bin replay -- --regressions
 
   ci-lint:
