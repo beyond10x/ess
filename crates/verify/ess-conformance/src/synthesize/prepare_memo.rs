@@ -149,7 +149,7 @@ fn key(preparing: &Preparing<'_>, position: usize, context: &Context) -> String 
         prepares_unkept: _,
     } = context;
     format!(
-        "{}|{position}|{actors:?}|model={:p}|scope={scope:?}|dropped_write={dropped_write:?}|\
+        "{}|{position}|{actors}|model={:p}|scope={scope:?}|dropped_write={dropped_write:?}|\
          dropped_grant={dropped_grant:?}|added_grant={added_grant:?}|phase_order={phase_order:?}|\
          created_unkept={created_unkept}|runs_unkept={runs_unkept}|first_fresh={first_fresh}|\
          attempts_fresh={attempts_fresh}|companion_fresh={companion_fresh}|held={}|earlier={:?}|\
@@ -160,6 +160,7 @@ fn key(preparing: &Preparing<'_>, position: usize, context: &Context) -> String 
         super::earlier_runs::captured(),
         crate::witness::under_test_key(),
         super::related_guard::open_key(),
+        actors = super::memo_key::Actors(actors),
     )
 }
 

@@ -22,6 +22,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use super::memo_key::{Actors, Key};
 use super::{
     ActorRef, Arrangement, Distinction, Driver, EntityHandle, EssIr, Invocation, Node,
     QualifiedName, RefusalCause, ResolvedCommand, Unreachable,
@@ -30,8 +31,8 @@ use super::{
 /// The rows created for one model, and its setup runs arranged as their own scenario.
 struct Kept {
     ir: *const EssIr,
-    rows: BTreeMap<String, Entry>,
-    own: BTreeMap<String, OwnEntry>,
+    rows: BTreeMap<Key, Entry>,
+    own: BTreeMap<Key, OwnEntry>,
 }
 
 /// One creation's result, and how many searches for a row beside it cut.
@@ -151,7 +152,7 @@ fn key(
     arranging: &[&EntityHandle],
     owner: Option<&(String, Arrangement)>,
     input: Option<&BTreeMap<String, Node>>,
-) -> Option<String> {
+) -> Option<Key> {
     let declared = ir
         .commands()
         .get(&creator.command.name)
@@ -162,8 +163,8 @@ fn key(
         .iter()
         .position(|outcome| std::ptr::eq(outcome, creator.outcome))
         .filter(|_| declared)?;
-    Some(format!(
-        "{entity:?}|{}|{outcome}|{:?}|{actors:?}|{distinction:?}|{arranging:?}|{owner:?}|{input:?}|{}|{:?}|{}|{}|{}",
+    Some(super::memo_key::of(format_args!(
+        "{entity:?}|{}|{outcome}|{:?}|{actors}|{distinction:?}|{arranging:?}|{owner:?}|{input:?}|{}|{:?}|{}|{}|{}",
         creator.command.name,
         creator.effect,
         super::subject_fact::held_key(ir),
@@ -171,7 +172,8 @@ fn key(
         crate::witness::under_test_key(),
         super::related_guard::open_key(),
         super::dropped_key(),
-    ))
+        actors = Actors(actors),
+    )))
 }
 
 /// `make`'s row, from memory where this model asked the same creation in the same context before.
@@ -268,7 +270,7 @@ fn own_key(
         &BTreeMap<String, crate::scenario::InstanceName>,
         Option<&BTreeMap<String, Node>>,
     ),
-) -> Option<String> {
+) -> Option<Key> {
     let declared = ir
         .commands()
         .get(&driver.command.name)
@@ -279,8 +281,8 @@ fn own_key(
         .iter()
         .position(|outcome| std::ptr::eq(outcome, driver.outcome))
         .filter(|_| declared)?;
-    Some(format!(
-        "{}|{outcome}|{:?}|{actors:?}|{distinction:?}|{bound:?}|{chosen:?}|{}|{}|{}|{}|{:?}",
+    Some(super::memo_key::of(format_args!(
+        "{}|{outcome}|{:?}|{actors}|{distinction:?}|{bound:?}|{chosen:?}|{}|{}|{}|{}|{:?}",
         driver.command.name,
         driver.effect,
         super::subject_fact::held_key_within(ir, &reach(ir, driver.command)),
@@ -288,7 +290,8 @@ fn own_key(
         super::related_guard::open_key(),
         super::dropped_key(),
         super::threads::Context::current(),
-    ))
+        actors = Actors(actors),
+    )))
 }
 
 /// Every qualified name written in `text`, a `Debug` rendering of the model, as

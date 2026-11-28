@@ -45,7 +45,7 @@ pub(super) fn unarranged(reason: &str) -> bool {
 
 /// Whether a declared creation of `entity` mints the key `name` (`{generated: true}`).
 pub(super) fn minted(ir: &EssIr, entity: &EntityHandle, name: &str) -> bool {
-    ir.drivers().get(entity).is_some_and(|drivers| {
+    Some(super::drivers_of(ir, entity)).is_some_and(|drivers| {
         drivers
             .iter()
             .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))

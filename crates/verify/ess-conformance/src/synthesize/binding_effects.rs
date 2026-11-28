@@ -2971,7 +2971,7 @@ fn stored_destination<'a>(
             "arranging the row names an instance the trigger's arrangement already names",
         ));
     }
-    let mut setup = arrangement.steps.clone();
+    let mut setup = arrangement.steps.to_vec();
     setup.extend(named);
     Ok(Prepared {
         setup,

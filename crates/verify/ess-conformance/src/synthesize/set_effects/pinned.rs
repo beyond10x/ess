@@ -296,7 +296,7 @@ fn pinned_subject(
     };
     let setup = Setup {
         related_row: BTreeMap::new(),
-        steps: row.steps,
+        steps: row.steps.into(),
         instance: Some(row.instance),
         bound: BTreeMap::new(),
         source: row.source,
