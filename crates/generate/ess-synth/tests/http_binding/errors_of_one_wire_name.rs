@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run, ir_of, rust_run};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{ir_of, pair};
 
 /// `(anchor, replacement)` in the shared model, each anchor found exactly once.
 const MODEL_EDITS: &[(&str, &str)] = &[
@@ -119,14 +119,21 @@ fn synthesized() -> (Synthesis, Synthesis) {
     (rust, go)
 }
 
+/// Both servers of [`synthesized`] through the fixture's harnesses: `[rust, go]`.
+pub(super) fn servers() -> Vec<Server> {
+    let (rust, go) = synthesized();
+    pair("errwire", &rust, &go)
+}
+
 /// Both generated servers answer each outcome of the pair with its own fields, and the document
 /// each embeds describes both bodies on the `500` response.
 #[test]
 fn both_servers_answer_each_outcome_of_one_wire_name_with_its_own_fields() {
     let (rust, go) = synthesized();
+    let servers = pair("errwire", &rust, &go);
     let answers: [(&str, BTreeMap<String, Answer>); 2] = [
-        ("rust", rust_run("errwire", &rust, REQUESTS)),
-        ("go", go_run("errwire", &go, REQUESTS)),
+        ("rust", servers[0].answers(REQUESTS)),
+        ("go", servers[1].answers(REQUESTS)),
     ];
     for (target, answered) in &answers {
         let boom = &answered["boom"];

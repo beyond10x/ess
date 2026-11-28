@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run_with, ir_of, rust_run_with};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of};
 use super::answer_forms::{go_harness, rust_harness, MODEL_EDITS};
 
 /// `(anchor, replacement)` in the shared routes, each anchor found exactly once.
@@ -67,22 +67,25 @@ fn edited(text: &str, edits: &[(&str, &str)]) -> String {
     text
 }
 
+/// The servers [`both`] asks: `[rust, go]`.
+pub(super) fn servers() -> Vec<Server> {
+    let ir = ir_of(&edited(shared::MODEL, MODEL_EDITS));
+    let bound = shared::binding(&ir, &edited(shared::ROUTES, EDITS));
+    let synthesis = |target| -> Synthesis {
+        synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
+    };
+    vec![
+        Server::rust("w755", &synthesis(Target::Rust), &rust_harness()),
+        Server::go("w755", &synthesis(Target::Go), &go_harness()),
+    ]
+}
+
 /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let ir = ir_of(&edited(shared::MODEL, MODEL_EDITS));
-        let bound = shared::binding(&ir, &edited(shared::ROUTES, EDITS));
-        let synthesis = |target| -> Synthesis {
-            synthesize_bound(&ir, target, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for {target:?}: {failure}"))
-        };
-        (
-            rust_run_with("w755", &synthesis(Target::Rust), REQUESTS, &rust_harness()),
-            go_run_with("w755", &synthesis(Target::Go), REQUESTS, &go_harness()),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 /// Each server's answer to `label`, held to the same status, `Content-Type` and body bytes.

@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{go_run, ir_of, rust_run};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of, pair};
 
 const MODEL_EDITS: &[(&str, &str)] = &[
     (
@@ -209,24 +209,23 @@ fn model() -> String {
     model
 }
 
+/// The board's model and routes beside the fixture's, for both targets.
+pub(super) fn servers() -> Vec<Server> {
+    let routes = format!("{}{BOARD_ROUTES}", shared::ROUTES);
+    let ir = ir_of(&model());
+    let bound = shared::binding(&ir, &routes);
+    let rust: Synthesis =
+        synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
+    let go: Synthesis = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
+        .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
+    pair("w089u2", &rust, &go)
+}
+
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
-    BOTH.get_or_init(|| {
-        let routes = format!("{}{BOARD_ROUTES}", shared::ROUTES);
-        let ir = ir_of(&model());
-        let bound = shared::binding(&ir, &routes);
-        let rust: Synthesis =
-            synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
-        let go: Synthesis =
-            synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
-        (
-            rust_run("w089u2", &rust, REQUESTS),
-            go_run("w089u2", &go, REQUESTS),
-        )
-    })
+    BOTH.get_or_init(|| answers(&servers(), REQUESTS))
 }
 
 /// Each server's answer to `label`, held to one status and one JSON body.

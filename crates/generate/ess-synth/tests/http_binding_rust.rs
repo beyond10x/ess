@@ -5,8 +5,9 @@
 //! The model and the binding are `tests/fixtures/http-binding-shop.yaml` and
 //! `tests/fixtures/http-binding-shop.routes.yaml`, and the requests are those of
 //! `tests/http_binding/shared.rs`, which module [`go`] (`tests/http_binding/go.rs`) sends the Go
-//! server too. One harness, built once per test binary, drives the generated surface's own
-//! `dispatch` with every request and prints each answer; each test reads the answers it is about.
+//! server too. One harness drives the generated surface's own `dispatch` with every request and
+//! prints each answer; each test reads the answers it is about. No test builds a server: `task
+//! http-binding-servers` builds every one of [`servers`] once, before the tests (`shared::Server`).
 //! Its realization supplies what the plan owes: `Place`'s behaviour (unmet for a count of `0`, so
 //! the realization is unfinished there) and `ItemById`'s query over the same store the generated
 //! `PutItem` writes.
@@ -32,6 +33,29 @@ fn served(label: &str) -> &'static Answer {
     shared::rust_answers()
         .get(label)
         .unwrap_or_else(|| panic!("the harness answered `{label}`"))
+}
+
+/// Every server a test of this binary runs. `task http-binding-servers` builds each once, before
+/// the tests, from the sources [`write_the_sources_of_every_server`] writes.
+fn servers() -> Vec<shared::Server> {
+    let mut all = vec![shared::rust_server()];
+    all.extend(go::servers());
+    all
+}
+
+/// Writes the sources of every server of [`servers`] under `ESS_HTTP_BINDING_SOURCES`, one
+/// directory per digest, for `task http-binding-servers` to build. A step of that task, never a
+/// test of the suite.
+#[test]
+#[ignore = "generator: `task http-binding-servers` runs it before the tests"]
+fn write_the_sources_of_every_server() {
+    let root = std::env::var_os("ESS_HTTP_BINDING_SOURCES")
+        .map(std::path::PathBuf::from)
+        .expect("ESS_HTTP_BINDING_SOURCES names the directory the sources are written to");
+    std::fs::create_dir_all(&root).expect("mkdir");
+    for server in servers() {
+        server.write_sources(&root);
+    }
 }
 
 /// Without a binding every synthesized byte is the unbound synthesis's, in both layouts; with one,

@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 use serde_json::{json, Value};
 
-use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::{ir_of, rust_run_with};
+use super::super::shared::{self, Answer, Server};
+use super::adversary_k6_pass1::{answers, ir_of, pair_with};
 
 /// `(anchor, replacement)` in the shared model, each anchor found exactly once.
 const MODEL_EDITS: &[(&str, &str)] = &[
@@ -332,15 +332,6 @@ fn requests() -> Vec<[String; 7]> {
     lines
 }
 
-fn scratch(label: &str) -> std::path::PathBuf {
-    super::scratch(&format!("u9dadv-{label}"))
-}
-
-fn write_requests(path: &std::path::Path) {
-    let lines: Vec<String> = requests().iter().map(|line| line.join("\t")).collect();
-    std::fs::write(path, lines.join("\n")).expect("write");
-}
-
 /// [`super::HARNESS`] with its `Place` replaced by [`GO_PLACE`] and `primitives` imported.
 fn go_harness() -> String {
     let start = super::HARNESS
@@ -377,56 +368,22 @@ fn rust_harness() -> String {
     )
 }
 
-fn go_run(synthesis: &Synthesis) -> BTreeMap<String, Answer> {
-    let directory = scratch("module");
-    shared::write(synthesis, &directory);
-    std::fs::write(directory.join("server/http_binding_test.go"), go_harness()).expect("write");
-    let file = scratch("requests.tsv");
-    write_requests(&file);
-    let ran = super::go(
-        &directory,
-        &file,
-        &[
-            "test",
-            "-count=1",
-            "-timeout",
-            "120s",
-            "-v",
-            "-run",
-            "TestHTTPBinding",
-            "./server/",
-        ],
-    );
-    let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-    assert!(
-        ran.status.success(),
-        "the Go harness builds and runs:\n{stdout}\n{}",
-        String::from_utf8_lossy(&ran.stderr)
-    );
-    let _ = std::fs::remove_dir_all(&directory);
-    let _ = std::fs::remove_file(&file);
-    shared::parsed(
-        stdout
-            .lines()
-            .filter_map(|line| line.strip_prefix("answer\t")),
-    )
-}
-
-fn rust_run(synthesis: &Synthesis) -> BTreeMap<String, Answer> {
-    let owned = requests();
-    let borrowed: Vec<[&str; 7]> = owned
-        .iter()
-        .map(|line| std::array::from_fn(|index| line[index].as_str()))
-        .collect();
-    rust_run_with("u9dadv", synthesis, &borrowed, &rust_harness())
+/// Both servers of [`synthesized`] through [`rust_harness`] and [`go_harness`]: `[rust, go]`.
+pub(super) fn servers() -> Vec<Server> {
+    let (rust, go) = synthesized();
+    pair_with("u9dadv", (rust, &rust_harness()), (go, &go_harness()))
 }
 
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
     static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
         std::sync::OnceLock::new();
     BOTH.get_or_init(|| {
-        let (rust, go) = synthesized();
-        (rust_run(rust), go_run(go))
+        let owned = requests();
+        let borrowed: Vec<[&str; 7]> = owned
+            .iter()
+            .map(|line| std::array::from_fn(|index| line[index].as_str()))
+            .collect();
+        answers(&servers(), &borrowed)
     })
 }
 

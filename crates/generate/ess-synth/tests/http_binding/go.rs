@@ -6,24 +6,24 @@
 //! server (`tests/http_binding/shared.rs`). The Go harness is an in-package test of the generated
 //! `server` package: it reads each request as `net/http` reads one off a connection
 //! (`http.ReadRequest`), hands it to the surface's own dispatch, and prints the answer in the Rust
-//! harness's format; `go test -timeout` bounds it, and it opens no socket. Its realization is the
-//! Rust harness's: `Place` unmet for a count of `0` and refused past `5`, and `ItemById` over the
-//! store the generated `PutItem` writes.
+//! harness's format. It runs as the package's test binary, built once by `task
+//! http-binding-servers`; `-test.timeout` bounds it, and it opens no socket. Its realization is
+//! the Rust harness's: `Place` unmet for a count of `0` and refused past `5`, and `ItemById` over
+//! the store the generated `PutItem` writes.
 //!
 //! A module of `tests/http_binding_rust.rs` rather than a test binary of its own, so the two
 //! servers' cases link once.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::path::Path;
 
 use super::shared;
 
 use ess_synth::{
     synthesize_bound, synthesize_laid_out, BindingRefusal, OutputLayout, SynthesisFailure, Target,
 };
-use shared::{binding, ir, published, Answer, REQUESTS, ROUTES};
+use shared::{binding, ir, published, Answer, Server, REQUESTS, ROUTES};
 
 /// The Go harness. A request line `net/http` cannot read is answered by `net/http` itself before
 /// any handler runs, and is printed as the `400` it is, with the reason as its body.
@@ -151,75 +151,44 @@ func TestHTTPBinding(t *testing.T) {
 }
 "#;
 
-fn scratch(label: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("http-binding-go-{label}-{}", std::process::id()))
+/// Every server the tests of this module and its submodules run, for `servers()` in
+/// `tests/http_binding_rust.rs`.
+pub(super) fn servers() -> Vec<Server> {
+    let mut all = vec![go_server()];
+    all.extend(vet_servers().into_iter().map(|(_, server)| server));
+    all.extend(adversary_k6_pass1::servers());
+    all.extend(adopter_wire_reports::servers());
+    all.extend(adversary_u9c_pass1::servers());
+    all.extend(bare_field_and_errors::servers());
+    all.extend(adversary_u9d_pass1::servers());
+    all.extend(answer_forms::servers());
+    all.extend(board_routes::servers());
+    all.extend(errors_of_one_wire_name::servers());
+    all.extend(adversary_w089_u2_pass1::servers());
+    all.extend(wrapped_answers::servers());
+    all.extend(representations::servers());
+    all.extend(uuid_segments::servers());
+    all.extend(undeclared_members::servers());
+    all.extend(ignored_members::servers());
+    all.extend(multipart::servers());
+    all.extend(query_beside_body::servers());
+    all.extend(authentication::servers());
+    all
 }
 
-fn go(directory: &Path, requests: &Path, arguments: &[&str]) -> Output {
-    let mut command = Command::new("go");
-    command
-        .args(arguments)
-        .current_dir(directory)
-        .env("ESS_HTTP_REQUESTS", requests)
-        .env("GOFLAGS", "-mod=mod")
-        .env("GOPROXY", "off")
-        .env("GOTOOLCHAIN", "local");
-    // The caller's `GOCACHE` where it sets one (the tree's `target/go-build`), else one of this
-    // run's own beside the generated module. That one is shared by every test of the process that
-    // runs `go`, so no test removes it: one test's removal broke another's build mid-run.
-    if std::env::var_os("GOCACHE").is_none() {
-        command.env("GOCACHE", scratch("gocache"));
-    }
-    let output = command
-        .output()
-        .unwrap_or_else(|error| panic!("`go` runs: {error}"));
-    eprintln!(
-        "go {arguments:?} in {}\n{}{}",
-        directory.display(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
+/// The fixture's model and binding synthesized for Go, driven by [`HARNESS`].
+fn go_server() -> Server {
+    let ir = ir();
+    let bound = binding(&ir, ROUTES);
+    let synthesis = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
+        .unwrap_or_else(|failure| panic!("the bound model synthesizes for Go: {failure}"));
+    Server::go("fixture", &synthesis, HARNESS)
 }
 
 /// The Go server's answers by label, once per test binary.
 fn go_answers() -> &'static BTreeMap<String, Answer> {
     static ANSWERS: std::sync::OnceLock<BTreeMap<String, Answer>> = std::sync::OnceLock::new();
-    ANSWERS.get_or_init(|| {
-        let ir = ir();
-        let bound = binding(&ir, ROUTES);
-        let synthesis = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
-            .unwrap_or_else(|failure| panic!("the bound model synthesizes for Go: {failure}"));
-        let directory = scratch("module");
-        shared::write(&synthesis, &directory);
-        std::fs::write(directory.join("server/http_binding_test.go"), HARNESS).expect("write");
-        let requests = scratch("requests.tsv");
-        shared::write_requests(&requests);
-        let ran = go(
-            &directory,
-            &requests,
-            &[
-                "test",
-                "-count=1",
-                "-timeout",
-                "120s",
-                "-v",
-                "-run",
-                "TestHTTPBinding",
-                "./server/",
-            ],
-        );
-        let _ = std::fs::remove_dir_all(&directory);
-        let _ = std::fs::remove_file(&requests);
-        assert!(ran.status.success(), "the Go harness builds and runs");
-        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-        shared::parsed(
-            stdout
-                .lines()
-                .filter_map(|line| line.strip_prefix("answer\t")),
-        )
-    })
+    ANSWERS.get_or_init(|| go_server().answers(REQUESTS))
 }
 
 fn served(label: &str) -> &'static Answer {
@@ -228,34 +197,36 @@ fn served(label: &str) -> &'static Answer {
         .unwrap_or_else(|| panic!("the Go harness answered `{label}`"))
 }
 
-/// The bound server builds and `go vet` finds nothing in it, for the fixture's binding and for one
-/// that binds every operation the surface serves, so no derived route is left beside the bound ones
-/// and `refusals.not_granted` answers every grant check.
-#[test]
-fn the_bound_go_server_builds_and_is_vet_clean() {
+/// The bound Go module for the fixture's binding and for one that binds every operation the
+/// surface serves, so no derived route is left beside the bound ones and
+/// `refusals.not_granted` answers every grant check.
+fn vet_servers() -> Vec<(&'static str, Server)> {
     let ir = ir();
     let every = format!(
         "{ROUTES}  - command: shop.items.Archive\n    method: post\n    path: /archive/{{item_id}}\n    \
          parameters: {{item_id: input.item_id}}\n"
     );
-    for (label, routes) in [("fixture", ROUTES.to_owned()), ("every", every)] {
-        let synthesis = synthesize_bound(
-            &ir,
-            Target::Go,
-            OutputLayout::Workspace,
-            Some(&binding(&ir, &routes)),
-        )
-        .unwrap_or_else(|failure| panic!("{label}: synthesizes: {failure}"));
-        let directory = scratch(&format!("vet-{label}"));
-        shared::write(&synthesis, &directory);
-        let requests = scratch(&format!("vet-{label}.tsv"));
-        let vetted = go(&directory, &requests, &["vet", "./..."]);
-        let _ = std::fs::remove_dir_all(&directory);
-        assert!(
-            vetted.status.success(),
-            "{label}: `go vet` refuses the bound server:\n{}",
-            String::from_utf8_lossy(&vetted.stderr)
-        );
+    [("fixture", ROUTES.to_owned()), ("every", every)]
+        .into_iter()
+        .map(|(label, routes)| {
+            let synthesis = synthesize_bound(
+                &ir,
+                Target::Go,
+                OutputLayout::Workspace,
+                Some(&binding(&ir, &routes)),
+            )
+            .unwrap_or_else(|failure| panic!("{label}: synthesizes: {failure}"));
+            (label, Server::go_vet(&format!("vet-{label}"), &synthesis))
+        })
+        .collect()
+}
+
+/// The bound server builds and `go vet` finds nothing in it, for both bindings of
+/// [`vet_servers`].
+#[test]
+fn the_bound_go_server_builds_and_is_vet_clean() {
+    for (_, server) in vet_servers() {
+        server.vetted();
     }
 }
 
@@ -801,8 +772,6 @@ fn the_go_and_rust_servers_answer_one_binding_alike() {
 mod adversary_k6_pass1 {
     use std::collections::BTreeMap;
     use std::fmt::Write as _;
-    use std::path::{Path, PathBuf};
-    use std::process::Command;
 
     use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
     use ess_domain::{spec::RawSpecFile, system::Source, Specification};
@@ -810,7 +779,7 @@ mod adversary_k6_pass1 {
     use ess_gen::http::Binding;
     use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 
-    use super::shared::{self, Answer};
+    use super::shared::{self, Answer, Server};
 
     /// The view's fields as the fixture declares them, and declared `title` first: an order that
     /// is not the alphabetical one.
@@ -949,121 +918,52 @@ mod adversary_k6_pass1 {
         ir_of(&shared::MODEL.replace(VIEW_FIELDS.0, VIEW_FIELDS.1))
     }
 
-    fn scratch(label: &str) -> PathBuf {
-        super::scratch(&format!("k6adv-{label}"))
+    /// The Rust and Go servers of one variant, `[rust, go]`, through the fixture's own harnesses.
+    pub(super) fn pair(label: &str, rust: &Synthesis, go: &Synthesis) -> Vec<Server> {
+        pair_with(label, (rust, shared::RUST_HARNESS), (go, super::HARNESS))
     }
 
-    fn write_requests(path: &Path, requests: &[[&str; 7]]) {
-        let lines: Vec<String> = requests.iter().map(|request| request.join("\t")).collect();
-        std::fs::write(path, lines.join("\n")).expect("write");
-    }
-
-    /// The Go server's answers to `requests`, through the module's own harness.
-    pub(super) fn go_run(
+    /// The Rust and Go servers of one variant, `[rust, go]`, each with its own harness.
+    pub(super) fn pair_with(
         label: &str,
-        synthesis: &Synthesis,
-        requests: &[[&str; 7]],
-    ) -> BTreeMap<String, Answer> {
-        go_run_with(label, synthesis, requests, super::HARNESS)
+        (rust, main): (&Synthesis, &str),
+        (go, harness): (&Synthesis, &str),
+    ) -> Vec<Server> {
+        vec![
+            Server::rust(label, rust, main),
+            Server::go(label, go, harness),
+        ]
     }
 
-    /// The Go server's answers to `requests`, through `harness` as the module's harness.
-    pub(super) fn go_run_with(
-        label: &str,
-        synthesis: &Synthesis,
+    /// The answers of a [`pair`] to `requests`: `(rust, go)`.
+    pub(super) fn answers(
+        servers: &[Server],
         requests: &[[&str; 7]],
-        harness: &str,
-    ) -> BTreeMap<String, Answer> {
-        let directory = scratch(&format!("{label}-module"));
-        shared::write(synthesis, &directory);
-        std::fs::write(directory.join("server/http_binding_test.go"), harness).expect("write");
-        let file = scratch(&format!("{label}.tsv"));
-        write_requests(&file, requests);
-        let ran = super::go(
-            &directory,
-            &file,
-            &[
-                "test",
-                "-count=1",
-                "-timeout",
-                "120s",
-                "-v",
-                "-run",
-                "TestHTTPBinding",
-                "./server/",
-            ],
-        );
-        let _ = std::fs::remove_dir_all(&directory);
-        let _ = std::fs::remove_file(&file);
-        assert!(
-            ran.status.success(),
-            "{label}: the Go harness builds and runs"
-        );
-        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-        shared::parsed(
-            stdout
-                .lines()
-                .filter_map(|line| line.strip_prefix("answer\t")),
-        )
+    ) -> (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
+        let [rust, go] = servers else {
+            panic!("a pair is a Rust server and a Go server")
+        };
+        (rust.answers(requests), go.answers(requests))
     }
 
-    /// The Rust server's answers to `requests`, through [`shared::RUST_HARNESS`].
-    pub(super) fn rust_run(
-        label: &str,
-        synthesis: &Synthesis,
-        requests: &[[&str; 7]],
-    ) -> BTreeMap<String, Answer> {
-        rust_run_with(label, synthesis, requests, shared::RUST_HARNESS)
+    /// Every server this module runs.
+    pub(super) fn servers() -> Vec<Server> {
+        let mut all = reordered_servers();
+        all.push(refined_server());
+        all.extend(json_servers());
+        all.push(nbsp_server());
+        all
     }
 
-    /// The Rust server's answers to `requests`, through `main` as the harness's `src/main.rs`.
-    pub(super) fn rust_run_with(
-        label: &str,
-        synthesis: &Synthesis,
-        requests: &[[&str; 7]],
-        main: &str,
-    ) -> BTreeMap<String, Answer> {
-        let root = scratch(&format!("{label}-rust"));
-        shared::write(synthesis, &root.join("shop"));
-        let harness = root.join("harness");
-        std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-        let dependencies = ["shop-server", "shop-system", "shop-service", "shop-types"]
-            .iter()
-            .fold(String::new(), |mut out, name| {
-                let _ = writeln!(out, "{name} = {{ path = \"../shop/crates/{name}\" }}");
-                out
-            });
-        std::fs::write(
-            harness.join("Cargo.toml"),
-            format!(
-                "[package]\nname = \"k6adv-rust-harness\"\nversion = \"0.0.0\"\n\
-                 edition = \"2021\"\n\n[dependencies]\n{dependencies}\n[workspace]\n"
-            ),
-        )
-        .expect("write");
-        std::fs::write(harness.join("src/main.rs"), main).expect("write");
-        let file = root.join("requests.tsv");
-        write_requests(&file, requests);
-        let target = root.join("target");
-        let ran = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-            .args(["run", "--offline", "--quiet", "--target-dir"])
-            .arg(&target)
-            .arg("--")
-            .arg(&file)
-            .current_dir(&harness)
-            .env_remove("CARGO_TARGET_DIR")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env("CARGO_INCREMENTAL", "0")
-            .output()
-            .expect("cargo runs");
-        let _ = std::fs::remove_dir_all(&root);
-        assert!(
-            ran.status.success(),
-            "{label}: the Rust harness builds and runs:\n{}",
-            String::from_utf8_lossy(&ran.stderr)
-        );
-        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-        shared::parsed(stdout.lines())
+    /// The reordered model and the fixture's binding, for both targets.
+    fn reordered_servers() -> Vec<Server> {
+        let ir = reordered();
+        let bound = shared::binding(&ir, shared::ROUTES);
+        let rust = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
+        let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
+        pair("k6adv", &rust, &go)
     }
 
     /// Both servers' answers to [`REQUESTS`] for the reordered model and the fixture's binding:
@@ -1071,18 +971,7 @@ mod adversary_k6_pass1 {
     fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
         static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
             std::sync::OnceLock::new();
-        BOTH.get_or_init(|| {
-            let ir = reordered();
-            let bound = shared::binding(&ir, shared::ROUTES);
-            let rust = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
-            let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
-            (
-                rust_run("both", &rust, REQUESTS),
-                go_run("both", &go, REQUESTS),
-            )
-        })
+        BOTH.get_or_init(|| answers(&reordered_servers(), REQUESTS))
     }
 
     fn answered(label: &str) -> (&'static Answer, &'static Answer) {
@@ -1221,12 +1110,8 @@ mod adversary_k6_pass1 {
         assert!(differing.is_empty(), "the servers disagree:\n{differing}");
     }
 
-    /// A standard refusal's literal body is any text (`ESS-HTTP-029` checks only that its member
-    /// has a name), so a French message with a no-break space before `!` compiles. The Go server
-    /// writes the text into Go source with Rust's `{:?}`, whose `\u{a0}` is no Go escape; the
-    /// package's own `go_string` (`src/go/selection.rs`) is the Go spelling.
-    #[test]
-    fn adv_a_refusal_literal_holding_a_no_break_space_builds_in_go() {
+    /// The fixture with a refusal literal holding a no-break space, synthesized for Go and vetted.
+    fn nbsp_server() -> Server {
         let ir = shared::ir();
         let from = "body: {error: {literal: invalid_request}}";
         assert!(shared::ROUTES.contains(from), "the fixture's refusal moved");
@@ -1241,21 +1126,20 @@ mod adversary_k6_pass1 {
             Some(&shared::binding(&ir, &routes)),
         )
         .unwrap_or_else(|failure| panic!("synthesizes: {failure}"));
-        let directory = scratch("nbsp-vet");
-        shared::write(&synthesis, &directory);
-        let vetted = super::go(&directory, &scratch("nbsp-vet.tsv"), &["vet", "./..."]);
-        let _ = std::fs::remove_dir_all(&directory);
-        assert!(
-            vetted.status.success(),
-            "`go vet` refuses the bound server:\n{}",
-            String::from_utf8_lossy(&vetted.stderr)
-        );
+        Server::go_vet("nbsp-vet", &synthesis)
     }
 
-    /// A server binding that refines a protocol binding leaving `Purge` open is served by the Go
-    /// server at the path the server binding fills in, with the protocol's refusal overrides.
+    /// A standard refusal's literal body is any text (`ESS-HTTP-029` checks only that its member
+    /// has a name), so a French message with a no-break space before `!` compiles. The Go server
+    /// writes the text into Go source with Rust's `{:?}`, whose `\u{a0}` is no Go escape; the
+    /// package's own `go_string` (`src/go/selection.rs`) is the Go spelling.
     #[test]
-    fn adv_a_refining_binding_is_served_by_go_at_the_path_it_fills_in() {
+    fn adv_a_refusal_literal_holding_a_no_break_space_builds_in_go() {
+        nbsp_server().vetted();
+    }
+
+    /// A server binding that refines a protocol binding leaving `Purge` open, synthesized for Go.
+    fn refined_server() -> Server {
         let ir = shared::ir();
         let split = shared::ROUTES
             .find("routes:\n")
@@ -1282,14 +1166,17 @@ mod adversary_k6_pass1 {
         let bound = Binding::new(compiled).expect("every route has a path");
         let synthesis = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
             .unwrap_or_else(|failure| panic!("synthesizes: {failure}"));
-        let answers = go_run(
-            "refined",
-            &synthesis,
-            &[
-                ["purge", "y", "POST", "/purge/p1", "", "", ""],
-                ["purge-open", "y", "POST", "/purge", "", "", ""],
-            ],
-        );
+        Server::go("refined", &synthesis, super::HARNESS)
+    }
+
+    /// A server binding that refines a protocol binding leaving `Purge` open is served by the Go
+    /// server at the path the server binding fills in, with the protocol's refusal overrides.
+    #[test]
+    fn adv_a_refining_binding_is_served_by_go_at_the_path_it_fills_in() {
+        let answers = refined_server().answers(&[
+            ["purge", "y", "POST", "/purge/p1", "", "", ""],
+            ["purge-open", "y", "POST", "/purge", "", "", ""],
+        ]);
         let purge = &answers["purge"];
         assert_eq!(
             (purge.status, purge.json()),
@@ -1332,8 +1219,8 @@ mod adversary_k6_pass1 {
     ];
 
     /// The fixture model with [`JSON_MODEL`] in it, synthesized for Rust and for Go with the
-    /// fixture's routes and one more, `POST /notes/{item_id}` for `Annotate`: `(rust, go)`.
-    fn json_syntheses() -> (Synthesis, Synthesis) {
+    /// fixture's routes and one more, `POST /notes/{item_id}` for `Annotate`: a [`pair`].
+    fn json_servers() -> Vec<Server> {
         let mut model = shared::MODEL.to_owned();
         for (anchor, inserted) in JSON_MODEL {
             assert_eq!(
@@ -1361,7 +1248,7 @@ mod adversary_k6_pass1 {
             .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
         let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
             .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
-        (rust, go)
+        pair("json-input", &rust, &go)
     }
 
     /// A `Json` input field, at the top of a `json` body and inside a body member, holding an
@@ -1372,7 +1259,7 @@ mod adversary_k6_pass1 {
     /// other readers are held alike once it uses `Json`.
     #[test]
     fn adv_a_json_input_reaches_the_command_as_the_rust_server_delivers_it() {
-        let (rust, go) = json_syntheses();
+        let servers = json_servers();
         let sent: &[(&str, &str, &str)] = &[
             (
                 "json-object",
@@ -1419,8 +1306,7 @@ mod adversary_k6_pass1 {
             ],
         ];
         requests.extend_from_slice(others);
-        let rust_answers = rust_run("json-input", &rust, &requests);
-        let go_answers = go_run("json-input", &go, &requests);
+        let (rust_answers, go_answers) = answers(&servers, &requests);
         let mut differing = String::new();
         for [label, ..] in others {
             let (rust, go) = (&rust_answers[*label], &go_answers[*label]);
@@ -1480,8 +1366,8 @@ mod adopter_wire_reports {
 
     use ess_synth::{synthesize_bound, OutputLayout, Target};
 
-    use super::adversary_k6_pass1::{go_run, ir_of, rust_run};
-    use super::shared::{self, Answer};
+    use super::adversary_k6_pass1::{answers, ir_of, pair};
+    use super::shared::{self, Answer, Server};
 
     /// `(anchor, replacement)`, each anchor once in the fixture.
     const EDITS: &[(&str, &str)] = &[
@@ -1641,40 +1527,40 @@ mod adopter_wire_reports {
         ],
     ];
 
+    /// The fixture with [`EDITS`] and its routes with [`ROUTE_EDITS`], for both targets.
+    pub(super) fn servers() -> Vec<Server> {
+        let mut model = shared::MODEL.to_owned();
+        for (anchor, replacement) in EDITS {
+            assert_eq!(
+                model.matches(anchor).count(),
+                1,
+                "the fixture moved: {anchor}"
+            );
+            model = model.replace(anchor, replacement);
+        }
+        let ir = ir_of(&model);
+        let mut routes = shared::ROUTES.to_owned();
+        for (anchor, replacement) in ROUTE_EDITS {
+            assert_eq!(
+                routes.matches(anchor).count(),
+                1,
+                "the routes moved: {anchor}"
+            );
+            routes = routes.replace(anchor, replacement);
+        }
+        let bound = shared::binding(&ir, &routes);
+        let rust = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
+        let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
+            .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
+        pair("adopter-wire", &rust, &go)
+    }
+
     /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
     fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
         static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
             std::sync::OnceLock::new();
-        BOTH.get_or_init(|| {
-            let mut model = shared::MODEL.to_owned();
-            for (anchor, replacement) in EDITS {
-                assert_eq!(
-                    model.matches(anchor).count(),
-                    1,
-                    "the fixture moved: {anchor}"
-                );
-                model = model.replace(anchor, replacement);
-            }
-            let ir = ir_of(&model);
-            let mut routes = shared::ROUTES.to_owned();
-            for (anchor, replacement) in ROUTE_EDITS {
-                assert_eq!(
-                    routes.matches(anchor).count(),
-                    1,
-                    "the routes moved: {anchor}"
-                );
-                routes = routes.replace(anchor, replacement);
-            }
-            let bound = shared::binding(&ir, &routes);
-            let rust = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
-            let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
-                .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
-            (
-                rust_run("adopter-wire", &rust, REQUESTS),
-                go_run("adopter-wire", &go, REQUESTS),
-            )
-        })
+        BOTH.get_or_init(|| answers(&servers(), REQUESTS))
     }
 
     /// Each server's answer to `label`, both held to the same status and JSON body.

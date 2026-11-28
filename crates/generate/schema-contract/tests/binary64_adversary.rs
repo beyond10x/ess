@@ -6,6 +6,10 @@ mod fixture;
 use schema_contract::realize::normalize::Plan;
 use serde_json::json;
 
+#[path = "support/native_crate.rs"]
+mod native_crate;
+use native_crate::NativeCrate;
+
 #[test]
 fn nested_nullable_floats_raw_capture_and_exact_siblings_survive_two_stages() {
     let plan = fixture::plan();
@@ -94,6 +98,7 @@ fn lazy_defaults_and_later_stages_cannot_erase_float_identity() {
     eprintln!("2 wrong-kind lazy defaults and later-stage mixed numeric equality refuse");
 }
 
+#[cfg(feature = "go-typecheck")]
 fn write_target(
     name: &str,
     files: std::collections::BTreeMap<String, String>,
@@ -108,54 +113,34 @@ fn write_target(
     root
 }
 
+/// The adapter of the fixture with its cases and the adversary's tests.
+fn adversarial_adapter() -> NativeCrate {
+    let mut files = fixture::plan().rust("normalization_adapter").unwrap().files;
+    files.insert("tests/cases.json".to_owned(), fixture::cases().to_string());
+    files.insert(
+        "tests/adversary.rs".to_owned(),
+        include_str!("fixtures/binary64_adversary_rust.rs.txt").to_owned(),
+    );
+    NativeCrate::new("binary64_adversary", files)
+}
+
+/// Every adapter a test of this binary runs. `task schema-contract-native-crates` builds each
+/// once, before the tests (`support/native_crate.rs`).
+fn native_crates() -> Vec<NativeCrate> {
+    vec![adversarial_adapter()]
+}
+
+/// Writes the sources of every crate of [`native_crates`] for `task
+/// schema-contract-native-crates` to build. A step of that task, never a test of the suite.
+#[test]
+#[ignore = "generator: `task schema-contract-native-crates` runs it before the tests"]
+fn write_the_sources_of_every_native_crate() {
+    native_crate::write_sources(native_crates());
+}
+
 #[test]
 fn native_rust_composition_preserves_identity_in_both_number_feature_modes() {
-    use std::{fs, path::Path, process::Command};
-    let root = write_target(
-        "rust",
-        fixture::plan().rust("normalization_adapter").unwrap().files,
-    );
-    fs::create_dir_all(root.join("tests")).unwrap();
-    fs::write(root.join("tests/cases.json"), fixture::cases().to_string()).unwrap();
-    fs::write(
-        root.join("tests/adversary.rs"),
-        include_str!("fixtures/binary64_adversary_rust.rs.txt"),
-    )
-    .unwrap();
-    for features in [None, Some("serde_json/arbitrary_precision")] {
-        let mut command = Command::new(env!("CARGO"));
-        command
-            .args(["test", "--offline", "--quiet", "--manifest-path"])
-            .arg(root.join("Cargo.toml"))
-            .env(
-                "CARGO_TARGET_DIR",
-                Path::new(env!("CARGO_TARGET_TMPDIR")).join("normalization-rust-target"),
-            );
-        if let Some(features) = features {
-            command.args(["--features", features]);
-        }
-        command.args(["--", "--nocapture"]);
-        let output = command.output().unwrap();
-        let text = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        fs::write(
-            root.join(if features.is_some() {
-                "arbitrary.log"
-            } else {
-                "default.log"
-            }),
-            &text,
-        )
-        .unwrap();
-        eprintln!(
-            "native Rust {features:?}, actual exit {}:\n{text}",
-            output.status
-        );
-        assert!(output.status.success());
-    }
+    eprintln!("{}", adversarial_adapter().run(&["--nocapture"]));
 }
 
 #[cfg(feature = "go-typecheck")]

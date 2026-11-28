@@ -302,6 +302,12 @@ Set `ESS_TYPES_NODE` to a `node_modules` outside the checkout that holds `@types
 `ci.yml` installs (`npm install --prefix <dir> @types/node@26.3.0`): without it the TypeScript cases
 in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for 'node'` and
 `cargo test` stops at that target, so the binaries after it never run.
+`schema-contract`'s native-adapter tests (`normalization_rust`, `normalization_positional_*`,
+`normalization_raw_*`, `normalization_binary64_targets` and `binary64_adversary`) run the test
+binaries `task schema-contract-native-crates` builds once per serde_json number mode, through
+`ESS_SCHEMA_CONTRACT_NATIVE_CRATES`, one directory per digest of a generated crate's sources,
+which the test binaries write; a change to the generator, a fixture or a case of those tests needs
+it run again, and a test names the task when its crate is missing.
 `ess-synth`'s `integer_spellings` runs a Rust harness built once by `task integer-spellings-harness`
 (no test builds with cargo, `no_test_builds.rs`); `task test` and the CI shards set
 `ESS_INTEGER_SPELLINGS_HARNESS` to it, and a bare `cargo test -p ess-synth` needs that task run and
@@ -316,7 +322,11 @@ through `ESS_BODY_CAP_GO_SERVER`) and `task library-crate-harness` (`ess-synth`'
 `single_crate_layout` round trip through a crate with no server, through
 `ESS_LIBRARY_CRATE_HARNESS`).
 Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
-change to either needs the task run again.
+change to either needs the task run again. `task http-binding-servers` builds every Rust and Go
+server of `ess-synth`'s `http_binding_rust` (through `ESS_HTTP_BINDING_SERVERS`, one file per
+digest of a server's sources, which the test binary writes); a change to the synthesis, a harness
+or a fixture of those tests needs it run again, and a test names the task when its server is
+missing.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
 `prettier@3.8.1`, `esbuild@0.28.2`, for example `npm install --prefix <dir>` and `<dir>/node_modules/.bin`
 first on `PATH`): without `esbuild` the generated React app's `npm run dev` and `npm run preview`

@@ -505,43 +505,228 @@ pub fn binding(ir: &EssIr, routes: &str) -> Binding {
     Binding::new(compiled).unwrap_or_else(|refused| panic!("every route has a path: {refused}"))
 }
 
-pub fn write(synthesis: &Synthesis, directory: &Path) {
-    let _ = std::fs::remove_dir_all(directory);
-    for (relative, artifact) in &synthesis.artifacts {
-        let destination = directory.join(relative);
-        std::fs::create_dir_all(destination.parent().expect("a parent")).expect("mkdir");
-        std::fs::write(&destination, &artifact.contents).expect("write");
+/// What a [`Server`] is built into: the generated Rust workspace with a harness crate beside it,
+/// run as a program; the generated Go module with an in-package test harness, run as its compiled
+/// test binary; or a Go module that is only vetted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Rust,
+    Go,
+    GoVet,
+}
+
+impl Kind {
+    /// The word `task http-binding-servers` reads from a server's `kind` file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Rust => "rust",
+            Kind::Go => "go",
+            Kind::GoVet => "go-vet",
+        }
     }
 }
 
-/// Every request of [`REQUESTS`], one tab-separated line each, written to `path`.
-pub fn write_requests(path: &Path) {
-    std::fs::write(
-        path,
-        REQUESTS
-            .iter()
-            .map(|request| request.join("\t"))
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
-    .expect("write");
+/// The crate name of every Rust harness, so its binary is `target/debug/<this>`.
+pub const RUST_HARNESS_CRATE: &str = "http-binding-harness";
+
+/// One server a test sends requests to, as the sources it is built from.
+///
+/// A test never builds one: `task http-binding-servers` writes the sources of every server
+/// `servers()` in `tests/http_binding_rust.rs` lists and builds each once, before the tests, into
+/// `ESS_HTTP_BINDING_SERVERS`, under its [`Server::digest`]. A test synthesizes the same sources
+/// again, which is cheap, and runs the program built from exactly those bytes, so a change to the
+/// synthesis, a harness or a fixture is never answered by a stale build.
+pub struct Server {
+    pub label: String,
+    pub kind: Kind,
+    files: BTreeMap<String, String>,
 }
 
-fn cargo(directory: &Path, arguments: &[String]) -> Output {
-    let output = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-        .args(arguments)
-        .current_dir(directory)
-        .env_remove("CARGO_TARGET_DIR")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env("CARGO_INCREMENTAL", "0")
-        .output()
-        .expect("cargo runs");
-    eprintln!(
-        "cargo {arguments:?} in {}\n{}",
-        directory.display(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
+impl Server {
+    /// The generated Rust workspace under `shop/` and a harness crate under `harness/` whose
+    /// `src/main.rs` is `main`.
+    pub fn rust(label: &str, synthesis: &Synthesis, main: &str) -> Self {
+        let mut files: BTreeMap<String, String> = synthesis
+            .artifacts
+            .iter()
+            .map(|(relative, artifact)| (format!("shop/{relative}"), artifact.contents.clone()))
+            .collect();
+        let dependencies = ["shop-server", "shop-system", "shop-service", "shop-types"]
+            .iter()
+            .fold(String::new(), |mut out, name| {
+                let _ = writeln!(out, "{name} = {{ path = \"../shop/crates/{name}\" }}");
+                out
+            });
+        files.insert(
+            "harness/Cargo.toml".to_owned(),
+            format!(
+                "[package]\nname = \"{RUST_HARNESS_CRATE}\"\nversion = \"0.0.0\"\n\
+                 edition = \"2021\"\n\n[dependencies]\n{dependencies}\n[workspace]\n"
+            ),
+        );
+        files.insert("harness/src/main.rs".to_owned(), main.to_owned());
+        Self {
+            label: label.to_owned(),
+            kind: Kind::Rust,
+            files,
+        }
+    }
+
+    /// The generated Go module with `harness` as `server/http_binding_test.go`.
+    pub fn go(label: &str, synthesis: &Synthesis, harness: &str) -> Self {
+        let mut server = Self::go_vet(label, synthesis);
+        server.kind = Kind::Go;
+        server
+            .files
+            .insert("server/http_binding_test.go".to_owned(), harness.to_owned());
+        server
+    }
+
+    /// The generated Go module, which `go vet ./...` must find nothing in.
+    pub fn go_vet(label: &str, synthesis: &Synthesis) -> Self {
+        Self {
+            label: label.to_owned(),
+            kind: Kind::GoVet,
+            files: synthesis
+                .artifacts
+                .iter()
+                .map(|(relative, artifact)| (relative.clone(), artifact.contents.clone()))
+                .collect(),
+        }
+    }
+
+    /// The SHA-256 of the kind and every file, path and bytes, as lowercase hex: the name the
+    /// built server goes under.
+    pub fn digest(&self) -> String {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(self.kind.name().as_bytes());
+        bytes.push(0);
+        for (path, contents) in &self.files {
+            bytes.extend_from_slice(path.as_bytes());
+            bytes.push(0);
+            bytes.extend_from_slice(&(contents.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(contents.as_bytes());
+        }
+        let digest = ess_http::digest(&bytes);
+        digest.strip_prefix("sha256:").unwrap_or(&digest).to_owned()
+    }
+
+    /// Writes the sources under `root/<digest>/`: the tree under `src/`, and the files `kind`
+    /// and `label` that `task http-binding-servers` reads. A server listed twice is written once.
+    pub fn write_sources(&self, root: &Path) {
+        let directory = root.join(self.digest());
+        if directory.exists() {
+            return;
+        }
+        for (relative, contents) in &self.files {
+            let destination = directory.join("src").join(relative);
+            std::fs::create_dir_all(destination.parent().expect("a parent")).expect("mkdir");
+            std::fs::write(&destination, contents).expect("write");
+        }
+        std::fs::write(directory.join("kind"), self.kind.name()).expect("write");
+        std::fs::write(directory.join("label"), &self.label).expect("write");
+    }
+
+    /// The program `task http-binding-servers` built from these sources, or a panic saying
+    /// what to run.
+    fn built(&self) -> PathBuf {
+        let (label, kind) = (&self.label, self.kind.name());
+        let Some(directory) = std::env::var_os("ESS_HTTP_BINDING_SERVERS") else {
+            panic!(
+                "ESS_HTTP_BINDING_SERVERS is not set: run `task http-binding-servers` and set it \
+                 to the directory that task names, or run the tests through `task test`, which \
+                 does both"
+            )
+        };
+        let digest = self.digest();
+        let built = Path::new(&directory).join(&digest);
+        if built.is_file() {
+            return built;
+        }
+        if let Ok(log) =
+            std::fs::read_to_string(Path::new(&directory).join(format!("{digest}.failed")))
+        {
+            panic!("{label}: the {kind} server does not build:\n{log}");
+        }
+        panic!(
+            "{label}: no {kind} server {digest} in ESS_HTTP_BINDING_SERVERS={}: run `task \
+             http-binding-servers` again, since its sources changed; a server that task does not \
+             build is missing from `servers()` in tests/http_binding_rust.rs",
+            Path::new(&directory).display()
+        )
+    }
+
+    /// Asserts that `go vet ./...` found nothing in a [`Kind::GoVet`] module.
+    pub fn vetted(&self) {
+        assert_eq!(
+            self.kind,
+            Kind::GoVet,
+            "{}: only a vetted module",
+            self.label
+        );
+        self.built();
+    }
+
+    /// What the server printed to `requests`, one tab-separated line each.
+    pub fn run(&self, requests: &[[&str; 7]]) -> String {
+        let binary = self.built();
+        std::fs::create_dir_all(env!("CARGO_TARGET_TMPDIR")).expect("mkdir");
+        let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "http-binding-{}-{}-{}.tsv",
+            self.label,
+            self.kind.name(),
+            std::process::id()
+        ));
+        let lines: Vec<String> = requests.iter().map(|request| request.join("\t")).collect();
+        std::fs::write(&file, lines.join("\n")).expect("write");
+        let mut command = Command::new(&binary);
+        match self.kind {
+            Kind::Rust => {
+                command.arg(&file);
+            }
+            Kind::Go => {
+                command
+                    .args([
+                        "-test.count=1",
+                        "-test.timeout=120s",
+                        "-test.v",
+                        "-test.run=TestHTTPBinding",
+                    ])
+                    .env("ESS_HTTP_REQUESTS", &file);
+            }
+            Kind::GoVet => panic!("{}: a vetted module is not run", self.label),
+        }
+        let ran: Output = command
+            .output()
+            .unwrap_or_else(|error| panic!("{} runs: {error}", binary.display()));
+        let _ = std::fs::remove_file(&file);
+        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
+        assert!(
+            ran.status.success(),
+            "{}: the {} harness runs:\n{stdout}\n{}",
+            self.label,
+            self.kind.name(),
+            String::from_utf8_lossy(&ran.stderr)
+        );
+        stdout
+    }
+
+    /// The server's answers to `requests`, by label.
+    pub fn answers(&self, requests: &[[&str; 7]]) -> BTreeMap<String, Answer> {
+        self.answers_in(&self.run(requests))
+    }
+
+    /// The answers in what [`Server::run`] printed, by label.
+    pub fn answers_in(&self, stdout: &str) -> BTreeMap<String, Answer> {
+        match self.kind {
+            Kind::Go => parsed(
+                stdout
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("answer\t")),
+            ),
+            _ => parsed(stdout.lines().filter(|line| !line.starts_with("events\t"))),
+        }
+    }
 }
 
 /// One answer a harness printed.
@@ -620,6 +805,15 @@ fn rust_events_harness() -> String {
     )
 }
 
+/// The fixture's model and binding synthesized for Rust, driven by [`rust_events_harness`].
+pub fn rust_server() -> Server {
+    let ir = ir();
+    let bound = binding(&ir, ROUTES);
+    let synthesis = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
+        .unwrap_or_else(|failure| panic!("the bound model synthesizes: {failure}"));
+    Server::rust("fixture", &synthesis, &rust_events_harness())
+}
+
 /// [`rust_answers`] and [`rust_events`], from one run of the harness.
 fn rust_run() -> &'static (
     BTreeMap<String, Answer>,
@@ -630,50 +824,8 @@ fn rust_run() -> &'static (
         BTreeMap<String, serde_json::Value>,
     )> = std::sync::OnceLock::new();
     ANSWERS.get_or_init(|| {
-        let ir = ir();
-        let bound = binding(&ir, ROUTES);
-        let synthesis = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
-            .unwrap_or_else(|failure| panic!("the bound model synthesizes: {failure}"));
-        let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("http-binding-rust-{}", std::process::id()));
-        write(&synthesis, &root.join("shop"));
-        let harness = root.join("harness");
-        std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-        let dependencies = ["shop-server", "shop-system", "shop-service", "shop-types"]
-            .iter()
-            .fold(String::new(), |mut out, name| {
-                let _ = writeln!(out, "{name} = {{ path = \"../shop/crates/{name}\" }}");
-                out
-            });
-        std::fs::write(
-            harness.join("Cargo.toml"),
-            format!(
-                "[package]\nname = \"http-binding-rust-harness\"\nversion = \"0.0.0\"\n\
-                 edition = \"2021\"\n\n[dependencies]\n{dependencies}\n[workspace]\n"
-            ),
-        )
-        .expect("write");
-        std::fs::write(harness.join("src/main.rs"), rust_events_harness()).expect("write");
-        let requests = root.join("requests.tsv");
-        write_requests(&requests);
-        let target = root.join("target");
-        let arguments: Vec<String> = [
-            "run",
-            "--offline",
-            "--quiet",
-            "--target-dir",
-            target.to_str().expect("UTF-8"),
-            "--",
-            requests.to_str().expect("UTF-8"),
-        ]
-        .iter()
-        .map(|argument| (*argument).to_owned())
-        .collect();
-        let ran = cargo(&harness, &arguments);
-        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-        let _ = std::fs::remove_dir_all(&root);
-        assert!(ran.status.success(), "the harness builds and runs");
-        eprintln!("{stdout}");
+        let server = rust_server();
+        let stdout = server.run(REQUESTS);
         let events = stdout
             .lines()
             .filter_map(|line| line.strip_prefix("events\t"))
@@ -684,10 +836,7 @@ fn rust_run() -> &'static (
                 (label.to_owned(), listed)
             })
             .collect();
-        (
-            parsed(stdout.lines().filter(|line| !line.starts_with("events\t"))),
-            events,
-        )
+        (server.answers_in(&stdout), events)
     })
 }
 
