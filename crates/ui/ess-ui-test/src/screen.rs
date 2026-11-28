@@ -105,10 +105,13 @@ impl Screen {
 
     fn capture_at(app: &App, width: u16) -> Self {
         let mut terminal = Terminal::new(TestBackend::new(width, HEIGHT)).expect("a test terminal");
-        terminal
+        // The frame's own buffer, not the backend's: the backend is written from the frame's diff,
+        // whose cell positions are `u16` and wrap past 65,535 cells, so a screen wider than 273
+        // columns drew its lower lines over its upper ones.
+        let frame = terminal
             .draw(|frame| app.draw(frame))
             .expect("a test terminal draws");
-        let buffer = terminal.backend().buffer();
+        let buffer = frame.buffer;
         let lines = (0..buffer.area.height)
             .map(|y| {
                 (0..buffer.area.width)

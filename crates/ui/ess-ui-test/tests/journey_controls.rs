@@ -1343,6 +1343,67 @@ fn a_server_pager_returns_to_page_one_when_another_param_changes() {
     ));
 }
 
+/// A server read whose pager names a page param and no size param, between two sections.
+const SERVER_PAGED_NO_SIZE: &str = r"format: ess-ui/1
+app: probe
+model: probe.system
+placement_profile: fat
+fixtures: {views: {shelf.Orders: orders.yaml, shelf.Notes: orders.yaml}}
+shells:
+  app:
+    regions:
+      main: {kind: page_outlet}
+navigation:
+  home: orders
+  sections: [{name: all, pages: [orders]}]
+pages:
+  orders:
+    kind: list_page
+    shell: app
+    title: Orders
+    state:
+      at: {type: integer, class: page_state, store: url}
+    sections:
+      - name: list
+        component: collection
+        reads: {view: shelf.Orders, params: {at: state.at}, paging: server, pager: {page: at}}
+        columns: [id, status]
+      - name: notes
+        component: collection
+        reads: {view: shelf.Notes}
+        columns: [id, text]
+";
+
+/// Without a size param the terminal answers a server read with pages of 25 rows, as the
+/// generated React project's fixture adapter does (`request.params.size ?? 25`), and counts its
+/// pages at that size; it drew every row of the fixture from 0.99.8 to 0.99.11, so the sections
+/// below fell off the headless screen.
+#[test]
+fn a_server_pager_without_a_size_param_pages_by_25() {
+    let document = document_of(SERVER_PAGED_NO_SIZE, "server_pager_no_size");
+    let rows: Vec<String> = (1..=130)
+        .map(|at| format!("      - {{id: o-{at}, status: open}}\n"))
+        .collect();
+    std::fs::write(
+        document.with_file_name("orders.yaml"),
+        format!(
+            "views:\n  shelf.Orders:\n    rows:\n{}  shelf.Notes:\n    rows:\n      - {{id: n-1, text: NOTEEND}}\n",
+            rows.concat()
+        ),
+    )
+    .expect("the fixture is written");
+    let text = "format: ess-ui-test/1\ndocument: ui.yaml\ntests:\n- name: no_size\n  steps:\n  \
+                - open: orders\n  \
+                - expect: {at: pages/orders/sections/list, rows: 25}\n  \
+                - expect: {at: pages/orders/sections/notes, text: NOTEEND}\n  \
+                - page: {at: pages/orders/sections/list, to: 6}\n  \
+                - expect: {at: pages/orders/sections/list, rows: [o-126, o-127, o-128, o-129, o-130]}\n";
+    let file = ess_ui_test::parse_str(text, &document.with_file_name("journey.yaml"))
+        .unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let report = ess_ui_test::execute(&document, &[file]).unwrap_or_else(|error| panic!("{error}"));
+    passed(&report.tests.into_iter().next().expect("one outcome"));
+}
+
 // ── a collection's `item` on every row, at `…/rows/<key>/item/<name>` (beyond10x/ess#722) ───
 
 const ITEMS: &str = r"format: ess-ui/1

@@ -2166,7 +2166,7 @@ impl App {
                 .and_then(|value| display(value).parse::<usize>().ok())
         };
         let size = number(pager.size.as_ref())
-            .unwrap_or(self.options.page_size)
+            .unwrap_or(crate::data::SERVER_PAGE_SIZE)
             .max(1);
         let page = number(pager.page.as_ref()).unwrap_or(1).max(1);
         let total = self

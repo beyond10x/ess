@@ -4201,6 +4201,14 @@ fn prepare_with(
                 setup.source.extend(row.source.iter().cloned());
             }
             setup.bound.insert((*via).to_owned(), row.instance.clone());
+            // A value the branch copies from a row the input names is that row's, not the one
+            // the subject's arrangement pointed the input at before.
+            if let Some((_, entity)) = super::related_guard::rows(command)
+                .into_iter()
+                .find(|(read, _)| read.field() == *via)
+            {
+                super::related::settle(ir, outcome, &mut setup, (via, entity), row);
+            }
         }
         named
             .into_iter()
