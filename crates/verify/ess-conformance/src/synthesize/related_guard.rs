@@ -3223,7 +3223,8 @@ fn own_scenario_applies(
 /// ([`own_opening`]) or names a row through a field `bound` already binds.
 ///
 /// Built once per model and context, and answered from memory when asked again
-/// ([`super::created_memo::own_arranged`]).
+/// ([`super::created_memo::own_arranged`]); a chosen value no branch of the command reads is
+/// left out of what is remembered and sent as chosen.
 fn as_own_scenario(
     ir: &EssIr,
     driver: &super::Driver<'_>,
@@ -3240,15 +3241,34 @@ fn as_own_scenario(
     if carries {
         overlay_worked(0, 0, 1);
     }
-    super::created_memo::own_arranged(ir, driver, actors, distinction, (bound, chosen), || {
-        if carries {
-            overlay_worked(1, 0, 0);
-        }
-        own_built(ir, driver, actors, distinction, (bound, chosen))
-    })
+    let arranged = super::created_memo::own_arranged(
+        ir,
+        driver,
+        actors,
+        distinction,
+        (bound, chosen),
+        || {
+            if carries {
+                overlay_worked(1, 0, 0);
+            }
+            own_built(ir, driver, actors, distinction, (bound, chosen))
+        },
+    )?;
+    Ok(own_sent(ir, driver, actors, arranged))
 }
 
-/// The run of `driver` arranged as its own scenario, built ([`as_own_scenario`]).
+/// The run of `driver` arranged as its own scenario, up to its send: the steps arranging it,
+/// the constructs they depend on, the rows its input names by field, and the input it is sent
+/// ([`as_own_scenario`]).
+#[derive(Clone)]
+pub(super) struct OwnArranged {
+    steps: Vec<super::ScenarioStep>,
+    source: BTreeSet<crate::scenario::EssSemanticRef>,
+    pub(super) bound: BTreeMap<String, crate::scenario::InstanceName>,
+    pub(super) input: BTreeMap<String, Node>,
+}
+
+/// The run of `driver` arranged as its own scenario, built up to its send ([`as_own_scenario`]).
 fn own_built(
     ir: &EssIr,
     driver: &super::Driver<'_>,
@@ -3258,7 +3278,7 @@ fn own_built(
         &BTreeMap<String, crate::scenario::InstanceName>,
         Option<&BTreeMap<String, Node>>,
     ),
-) -> Result<super::Invocation, RefusalCause> {
+) -> Result<OwnArranged, RefusalCause> {
     let models = super::caller::InvocationModels::plain(ir);
     let (setup, input, _) = arranged_choosing(
         &models,
@@ -3275,12 +3295,28 @@ fn own_built(
             return Err(unarranged());
         }
     }
-    let mut invocation = super::invoke_with(ir, driver, None, actors, &bound, &input);
-    let mut steps = setup.steps;
+    Ok(OwnArranged {
+        steps: setup.steps,
+        source: setup.source,
+        bound,
+        input,
+    })
+}
+
+/// The arranged run of `driver` as its own scenario, its send appended ([`as_own_scenario`]).
+fn own_sent(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    arranged: OwnArranged,
+) -> super::Invocation {
+    let mut invocation =
+        super::invoke_with(ir, driver, None, actors, &arranged.bound, &arranged.input);
+    let mut steps = arranged.steps;
     steps.append(&mut invocation.steps);
     invocation.steps = steps;
-    invocation.source.extend(setup.source);
-    Ok(invocation)
+    invocation.source.extend(arranged.source);
+    invocation
 }
 
 /// [`drive`] on a command reading several rows (beyond10x/ess#283): the run driven around one of

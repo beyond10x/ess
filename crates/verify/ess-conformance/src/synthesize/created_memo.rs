@@ -18,14 +18,24 @@
 //! outcome, chosen values and bound rows, and before it was kept a model of a few hundred
 //! scenarios took about 30 times as long to synthesize as the release before the arrangement took
 //! chosen values.
+//!
+//! A chosen value that no branch of the command reads ([`unread`]) decides nothing in that
+//! arrangement: the arrangement only carries it into the input it sends. So it is kept out of the
+//! key, and a later ask differing only there is answered by the arrangement already built with
+//! its own value sent. A creator searched for a row that another command reads tries many inputs
+//! differing in such fields, and with each one in the key, a creation that reads a second related
+//! row (a grant and the class it names) was arranged afresh for every one of them: a reduced
+//! model of such a creation took 585 s to synthesize, and 378 s with such fields out of the key.
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use super::memo_key::{Actors, Key};
+use super::related_guard::OwnArranged;
 use super::{
-    ActorRef, Arrangement, Distinction, Driver, EntityHandle, EssIr, Invocation, Node,
-    QualifiedName, RefusalCause, ResolvedCommand, Unreachable,
+    ActorRef, Arrangement, Distinction, Driver, EntityHandle, EssIr, Node, QualifiedName,
+    RefusalCause, ResolvedCommand, Unreachable,
 };
 
 /// The rows created for one model, and its setup runs arranged as their own scenario.
@@ -42,11 +52,13 @@ struct Entry {
     cuts: usize,
 }
 
-/// One setup run arranged as its own scenario, and how many searches for a row beside it cut.
+/// One setup run arranged as its own scenario, how many searches for a row beside it cut, and the
+/// chosen values it was built with that no branch of its command reads ([`unread`]).
 #[derive(Clone)]
 struct OwnEntry {
-    made: Result<Invocation, RefusalCause>,
+    made: Result<OwnArranged, RefusalCause>,
     cuts: usize,
+    unread: BTreeMap<String, Node>,
 }
 
 thread_local! {
@@ -248,7 +260,9 @@ pub(super) fn created_owned(
 /// The key a setup run arranged as its own scenario is kept under: every argument and every
 /// thread-local the arrangement reads, the open arrangements and the whole caller-reading context
 /// ([`super::threads::Context`]) among them. `None` for a command the model does not declare as
-/// such (one projected for a related guard), which has no stable name to be kept by.
+/// such (one projected for a related guard), which has no stable name to be kept by. Of the chosen
+/// values, `chosen` holds every field and the value only of a field some branch reads
+/// ([`split_chosen`]).
 ///
 /// Of the rows held for the runs advancing them ([`super::subject_fact::holding`]), only those of
 /// an entity the arrangement can reach ([`reach`]) are in the key: the arrangement reads a held row
@@ -268,7 +282,7 @@ fn own_key(
     distinction: Distinction,
     (bound, chosen): (
         &BTreeMap<String, crate::scenario::InstanceName>,
-        Option<&BTreeMap<String, Node>>,
+        Option<&Keyed>,
     ),
 ) -> Option<Key> {
     let declared = ir
@@ -366,30 +380,120 @@ fn reach(ir: &EssIr, command: &ResolvedCommand) -> Rc<BTreeSet<QualifiedName>> {
         .unwrap_or_else(|| Rc::new(make()))
 }
 
+/// The input fields of `command` that no branch reads: named in no branch's condition, subject,
+/// rows changed by a filter or secondary effects, only copied into what it sets, emits or reports.
+/// Read off the `Debug` rendering of those parts, where an input field is named as a word
+/// (`FactPath(input.scope)`); a name that also stands there as any other word counts as read.
+/// Kept per model, for a command the model declares (a projected one shares its name).
+fn unread(ir: &EssIr, command: &ResolvedCommand) -> Rc<BTreeSet<String>> {
+    let make = || {
+        let mut text = String::new();
+        for outcome in &command.outcomes {
+            let _ = writeln!(
+                text,
+                "{:?}|{:?}|{:?}|{:?}|{:?}",
+                outcome.condition,
+                outcome.subject,
+                outcome.replays,
+                outcome.instances,
+                outcome.affects
+            );
+        }
+        command
+            .input
+            .iter()
+            .map(|field| field.name.clone())
+            .filter(|field| !names_word(&text, field))
+            .collect::<BTreeSet<String>>()
+    };
+    super::made::kept(ir, &format!("own-scenario unread|{}", command.name), make)
+        .unwrap_or_else(|| Rc::new(make()))
+}
+
+/// Whether `word` stands in `text` with no letter, digit or `_` either side of it.
+fn names_word(text: &str, word: &str) -> bool {
+    let part = |c: char| c.is_alphanumeric() || c == '_';
+    text.match_indices(word).any(|(at, _)| {
+        !text[..at].chars().next_back().is_some_and(part)
+            && !text[at + word.len()..].chars().next().is_some_and(part)
+    })
+}
+
+/// Chosen values as an own-scenario arrangement is kept by: every chosen field, with its value only
+/// where a branch reads it ([`split_chosen`]).
+type Keyed = BTreeMap<String, Option<Node>>;
+
+/// `chosen` split for the key: every chosen field, with its value only where a branch reads it,
+/// and the chosen values of the fields none reads ([`unread`]).
+fn split_chosen(
+    unread: &BTreeSet<String>,
+    chosen: Option<&BTreeMap<String, Node>>,
+) -> (Option<Keyed>, BTreeMap<String, Node>) {
+    let mut left = BTreeMap::new();
+    let keyed = chosen.map(|chosen| {
+        chosen
+            .iter()
+            .map(|(field, value)| {
+                if unread.contains(field) {
+                    left.insert(field.clone(), value.clone());
+                    (field.clone(), None)
+                } else {
+                    (field.clone(), Some(value.clone()))
+                }
+            })
+            .collect()
+    });
+    (keyed, left)
+}
+
+/// `known`, built with the unread chosen values `built`, sent with the unread chosen values
+/// `chosen` instead; `None` where its input does not carry each built value as it was chosen, or
+/// names a row through such a field, so the arrangement may have decided it.
+fn sent_with(
+    known: &OwnArranged,
+    built: &BTreeMap<String, Node>,
+    chosen: &BTreeMap<String, Node>,
+) -> Option<OwnArranged> {
+    let mut sent = known.clone();
+    for (field, value) in chosen {
+        if known.bound.contains_key(field) || known.input.get(field) != built.get(field) {
+            return None;
+        }
+        sent.input.insert(field.clone(), value.clone());
+    }
+    Some(sent)
+}
+
 /// `make`'s setup run of `driver` arranged as its own scenario, from memory where this model asked
-/// the same arrangement in the same context before. A model not remembered innermost, and a thread
-/// on which every creation is made afresh ([`unkept`]), is answered by `make` every time.
+/// the same arrangement in the same context before, a chosen value no branch reads sent as chosen
+/// ([`unread`]). A model not remembered innermost, and a thread on which every creation is made
+/// afresh ([`unkept`]), is answered by `make` every time.
 pub(super) fn own_arranged(
     ir: &EssIr,
     driver: &Driver<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    asked: (
+    (bound, chosen): (
         &BTreeMap<String, crate::scenario::InstanceName>,
         Option<&BTreeMap<String, Node>>,
     ),
-    make: impl FnOnce() -> Result<Invocation, RefusalCause>,
-) -> Result<Invocation, RefusalCause> {
+    make: impl FnOnce() -> Result<OwnArranged, RefusalCause>,
+) -> Result<OwnArranged, RefusalCause> {
     let held = !UNKEPT.with(Cell::get)
         && KEPT.with(|kept| {
             kept.borrow()
                 .last()
                 .is_some_and(|top| std::ptr::eq(top.ir, ir))
         });
-    let Some(key) = held
-        .then(|| own_key(ir, driver, actors, distinction, asked))
-        .flatten()
-    else {
+    let declared = ir
+        .commands()
+        .get(&driver.command.name)
+        .is_some_and(|command| std::ptr::eq(command, driver.command));
+    if !held || !declared {
+        return make();
+    }
+    let (keyed, left) = split_chosen(&unread(ir, driver.command), chosen);
+    let Some(key) = own_key(ir, driver, actors, distinction, (bound, keyed.as_ref())) else {
         return make();
     };
     let known = KEPT.with(|kept| {
@@ -398,8 +502,15 @@ pub(super) fn own_arranged(
             .and_then(|top| top.own.get(&key).cloned())
     });
     if let Some(known) = known {
-        super::related_guard::add_cuts(known.cuts);
-        return known.made;
+        let answered = match &known.made {
+            Ok(arranged) => sent_with(arranged, &known.unread, &left).map(Ok),
+            Err(cause) => Some(Err(cause.clone())),
+        };
+        if let Some(answered) = answered {
+            super::related_guard::add_cuts(known.cuts);
+            return answered;
+        }
+        return make();
     }
     // No borrow is held while making: the arrangement asks the memory too.
     let before = super::related_guard::cuts();
@@ -413,6 +524,7 @@ pub(super) fn own_arranged(
                     OwnEntry {
                         made: arranged.clone(),
                         cuts,
+                        unread: left,
                     },
                 );
             }

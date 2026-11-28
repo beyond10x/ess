@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.99.13] — 2026-11-28
+
+### Fixed
+
+- `ess verify conform synthesize` arranges a creation that reads two related rows, such as a grant and the action class it names, once for the inputs a search tries that differ only in fields the creating command copies into the row and reads nowhere. Each such input was arranged afresh as the creator's own scenario, and a reduced model where other commands decide on fields of the created row took 585 s to synthesize (beyond 600 s on 0.99.11); it takes 378 s, and writes the same suite. Those fields are left out of what the arrangement is remembered by and sent as chosen.
+
+The fix changes no format key.
+
 ## [0.99.12] — 2026-11-28
 
 ### Fixed
