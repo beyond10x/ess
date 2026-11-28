@@ -13,7 +13,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:an-unknown-instance-scenario-is-sent-an-identity-no-row-carries-where-a-related-guard-reads-the-addressed-row
 - informed_by: story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -86,6 +86,9 @@ never holds a scenario its own model answers differently.
   checked by the downstream's own run, not by a committed test.
 - A scenario written before this change for a branch of another shape keeps its bytes; the
   committed byte tables move only by the rows of the new fixtures.
+- D4: when an outcome reads a related row through `{related: {via, field}}`, the expectation names the
+  row the command addresses, not the row of that entity created first. Reproduced on 0.99.9 by a
+  second downstream (92 scenarios, 1 failed). It is in hotfix 0.99.11, in progress.
 
 ## Fit review
 
