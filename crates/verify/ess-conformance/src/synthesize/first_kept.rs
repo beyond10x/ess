@@ -83,14 +83,15 @@ pub(super) fn arranged_first(
         return make();
     }
     let key = || {
-        format!(
-            "arrange_first|{entity:?}|{targets:?}|{actors:?}|{distinction:?}|{}|{:?}|{}|{}|{}",
+        super::memo_key::of(format_args!(
+            "arrange_first|{entity:?}|{targets:?}|{actors}|{distinction:?}|{}|{:?}|{}|{}|{}",
             super::subject_fact::held_key(ir),
             super::earlier_runs::captured(),
             crate::witness::under_test_key(),
             super::related_guard::open_key(),
             super::dropped_key(),
-        )
+            actors = super::memo_key::Actors(actors),
+        ))
     };
     // The memory holds rows and refusals: an unreachable row is kept as the refusal carrying it.
     let kept = super::made::made(ir, key, || {

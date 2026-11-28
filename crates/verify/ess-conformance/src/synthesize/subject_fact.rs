@@ -827,7 +827,8 @@ fn bound_row(
     settled: &BTreeMap<String, super::Determined>,
     unwritten: &BTreeSet<String>,
 ) -> std::rc::Rc<BoundRow> {
-    let Some(anchor) = super::made::row_picks(ir, ANCHOR.to_owned()) else {
+    let Some(anchor) = super::made::row_picks(ir, super::memo_key::of(format_args!("{ANCHOR}")))
+    else {
         return std::rc::Rc::new(BoundRow::new(ir, entity, settled, unwritten));
     };
     let key = row_key(entity, settled, unwritten);
@@ -2699,12 +2700,12 @@ fn selected_key(
     entity: &EntityHandle,
     arrangement: &Arrangement,
     order: Order,
-) -> Option<String> {
+) -> Option<super::memo_key::Key> {
     ir.commands()
         .get(&command.name)
         .is_some_and(|declared| std::ptr::eq(declared, command))
         .then(|| {
-            format!(
+            super::memo_key::of(format_args!(
                 "{}|{entity:?}|{order:?}|{arrangement:?}|{}|{:?}|{}|{}|{}",
                 command.name,
                 held_key(ir),
@@ -2712,7 +2713,7 @@ fn selected_key(
                 crate::witness::under_test_key(),
                 super::related_guard::open_key(),
                 super::dropped_key(),
-            )
+            ))
         })
 }
 
@@ -2894,8 +2895,8 @@ fn row_under(
     owner_state: &super::StateName,
 ) -> Option<Arrangement> {
     let via = ir.owner_of(entity)?.via;
-    let all = ir.drivers();
-    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    let all = super::drivers_of(ir, entity);
+    let drivers = all.as_slice();
     drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -2920,7 +2921,7 @@ fn row_under(
                 Arrangement {
                     instance: owner.clone(),
                     state: owner_state.clone(),
-                    steps: Vec::new(),
+                    steps: super::Steps::default(),
                     source: BTreeSet::new(),
                     settled: BTreeMap::new(),
                     unwritten: BTreeSet::new(),
@@ -3263,7 +3264,7 @@ pub(super) fn external_witness(
         let plain = Arrangement {
             instance: instance.clone(),
             state: state.clone(),
-            steps: Vec::new(),
+            steps: super::Steps::default(),
             source: BTreeSet::new(),
             settled: setup.settled.clone(),
             unwritten: BTreeSet::new(),
@@ -3441,7 +3442,7 @@ fn external_setup(
         // state and fields it was left in are kept for its snapshot; below ess/26 nothing is.
         let complete = outcome.complete_refusal;
         return Setup {
-            steps: arrangement.steps,
+            steps: arrangement.steps.into(),
             bound,
             source: arrangement.source,
             unobserved: arrangement.unobserved,
@@ -3463,7 +3464,7 @@ fn external_setup(
     };
     Setup {
         related_row: BTreeMap::new(),
-        steps: arrangement.steps,
+        steps: arrangement.steps.into(),
         instance: Some(arrangement.instance),
         bound,
         source: arrangement.source,
@@ -4668,9 +4669,9 @@ pub(super) fn toward_moves(
 
 /// The stored-field guards of every command moving a row of `entity`, each once, in driver order.
 fn move_guards(ir: &EssIr, entity: &EntityHandle) -> Vec<Predicate> {
-    let all = ir.drivers();
+    let all = super::drivers_of(ir, entity);
     let mut read: Vec<Predicate> = Vec::new();
-    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+    for driver in &all {
         if driver.effect.transition().is_none() || !uses(driver.command) {
             continue;
         }
@@ -4689,9 +4690,9 @@ fn guarded_moves(
     ir: &EssIr,
     entity: &EntityHandle,
 ) -> Vec<(Predicate, BTreeSet<super::StateName>)> {
-    let all = ir.drivers();
+    let all = super::drivers_of(ir, entity);
     let mut read: Vec<(Predicate, BTreeSet<super::StateName>)> = Vec::new();
-    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+    for driver in &all {
         let Some(transition) = driver.effect.transition() else {
             continue;
         };
@@ -4743,7 +4744,7 @@ fn hinted(
             .iter()
             .any(|outcome| std::ptr::eq(outcome, driver.outcome));
     let anchor = if declared {
-        super::made::row_picks(ir, ANCHOR.to_owned())
+        super::made::row_picks(ir, super::memo_key::of(format_args!("{ANCHOR}")))
     } else {
         None
     };
@@ -5133,9 +5134,9 @@ pub(super) struct Counter {
 
 /// The stored counters of one entity: every field an arranging branch moves with `{increment: n}`.
 pub(super) fn counters(ir: &EssIr, entity: &EntityHandle) -> BTreeMap<String, Counter> {
-    let all = ir.drivers();
+    let all = super::drivers_of(ir, entity);
     let mut out: BTreeMap<String, Counter> = BTreeMap::new();
-    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+    for driver in &all {
         for set in &driver.outcome.sets {
             let counter = out.entry(set.target.clone()).or_insert_with(|| Counter {
                 amounts: Vec::new(),
@@ -5748,8 +5749,8 @@ fn creations(
         return make();
     };
     let key = || {
-        format!(
-            "{entity:?}|{}|{outcome}|{:?}|{actors:?}|{hints:?}|{distinction:?}|{arranging:?}|{under:?}|{}|{:?}|{}|{}|{}",
+        super::memo_key::of(format_args!(
+            "{entity:?}|{}|{outcome}|{:?}|{actors}|{hints:?}|{distinction:?}|{arranging:?}|{under:?}|{}|{:?}|{}|{}|{}",
             creator.command.name,
             creator.effect,
             held_key(ir),
@@ -5757,7 +5758,8 @@ fn creations(
             crate::witness::under_test_key(),
             super::related_guard::open_key(),
             super::dropped_key(),
-        )
+            actors = super::memo_key::Actors(actors),
+        ))
     };
     super::made::made(ir, key, make)
 }
@@ -6181,7 +6183,7 @@ fn copied_creations(
                     let mut invocation = invoke_with(ir, creator, None, actors, &bound, &input);
                     let mut steps = row.steps.clone();
                     steps.append(&mut invocation.steps);
-                    invocation.steps = steps;
+                    invocation.steps = steps.into();
                     invocation.source.extend(row.source.iter().cloned());
                     Ok::<_, RefusalCause>(invocation)
                 },
@@ -6454,10 +6456,10 @@ fn row_picks(
     if !declared || !super::made::remembers(ir) {
         return None;
     }
-    let key = format!(
+    let key = super::memo_key::of(format_args!(
         "{}|{entity:?}|{:?}|{:?}|{:?}",
         command.name, arrangement.state, arrangement.settled, arrangement.unwritten
-    );
+    ));
     super::made::row_picks(ir, key)
 }
 
@@ -6686,8 +6688,8 @@ pub(super) fn search_under<T>(
     under: Under<'_>,
     mut goal: impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
-    let all = ir.drivers();
-    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    let all = super::drivers_of(ir, entity);
+    let drivers = all.as_slice();
     let mut first: Option<RefusalCause> = None;
     let mut tried: Vec<(OutcomeRef, RefusalCause)> = Vec::new();
     for creator in drivers
@@ -6793,8 +6795,26 @@ fn search_from<T>(
 
 thread_local! {
     /// The rows a search on this thread is advancing, innermost last ([`holding`]).
-    static HELD: std::cell::RefCell<Vec<(*const EssIr, EntityHandle, Arrangement)>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    static HELD: std::cell::RefCell<Vec<Held>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// One row held for the runs advancing it ([`holding`]), and the digest of its rendering in a
+/// memory's key, written the first time a key names it ([`held_key`]).
+struct Held {
+    model: *const EssIr,
+    entity: EntityHandle,
+    row: Arrangement,
+    digest: std::cell::OnceCell<super::memo_key::Key>,
+}
+
+impl Held {
+    /// `entity=row` as a key wrote it whole before, digested once ([`super::memo_key`]).
+    fn digest(&self) -> super::memo_key::Key {
+        *self.digest.get_or_init(|| {
+            let Self { entity, row, .. } = self;
+            super::memo_key::of(format_args!("{entity:?}={row:?}"))
+        })
+    }
 }
 
 /// One row held for the arranging runs advancing it, until dropped ([`holding`]).
@@ -6817,8 +6837,12 @@ impl Drop for Holding {
 /// on it ([`held`], [`held_owner`]) instead of stopping at the cycle.
 pub(super) fn holding(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> Holding {
     HELD.with(|held| {
-        held.borrow_mut()
-            .push((std::ptr::from_ref(ir), entity.clone(), row.clone()));
+        held.borrow_mut().push(Held {
+            model: std::ptr::from_ref(ir),
+            entity: entity.clone(),
+            row: row.clone(),
+            digest: std::cell::OnceCell::new(),
+        });
     });
     Holding
 }
@@ -6829,13 +6853,13 @@ pub(super) fn holding_any() -> bool {
 }
 
 /// The rows of `ir` held on this thread ([`holding`]), as the key of what a search under them
-/// made ([`super::made`]).
+/// made ([`super::made`]): the digest of each ([`Held::digest`]), in order.
 pub(super) fn held_key(ir: &EssIr) -> String {
     HELD.with(|held| {
         held.borrow()
             .iter()
-            .filter(|(model, _, _)| std::ptr::eq(*model, ir))
-            .map(|(_, entity, row)| format!("{entity:?}={row:?}"))
+            .filter(|held| std::ptr::eq(held.model, ir))
+            .map(|held| held.digest().to_string())
             .collect::<Vec<_>>()
             .join(";")
     })
@@ -6847,8 +6871,8 @@ pub(super) fn held_key_within(ir: &EssIr, within: &BTreeSet<QualifiedName>) -> S
     HELD.with(|held| {
         held.borrow()
             .iter()
-            .filter(|(model, entity, _)| std::ptr::eq(*model, ir) && within.contains(entity.name()))
-            .map(|(_, entity, row)| format!("{entity:?}={row:?}"))
+            .filter(|held| std::ptr::eq(held.model, ir) && within.contains(held.entity.name()))
+            .map(|held| held.digest().to_string())
             .collect::<Vec<_>>()
             .join(";")
     })
@@ -6864,10 +6888,12 @@ pub(super) fn held(
         held.borrow()
             .iter()
             .rev()
-            .find(|(model, of, row)| {
-                std::ptr::eq(*model, ir) && of == entity && row.instance == *instance
+            .find(|held| {
+                std::ptr::eq(held.model, ir)
+                    && held.entity == *entity
+                    && held.row.instance == *instance
             })
-            .map(|(_, _, row)| row.clone())
+            .map(|held| held.row.clone())
     })
 }
 
@@ -6878,8 +6904,8 @@ pub(super) fn held_owner(ir: &EssIr, entity: &EntityHandle) -> Option<Arrangemen
         held.borrow()
             .iter()
             .rev()
-            .find(|(model, of, _)| std::ptr::eq(*model, ir) && *of == owner)
-            .map(|(_, _, row)| row.clone())
+            .find(|held| std::ptr::eq(held.model, ir) && held.entity == owner)
+            .map(|held| held.row.clone())
     })
 }
 
@@ -6905,14 +6931,13 @@ fn search_rows<T>(
         .then(|| reached_key(ir, entity, drivers, actors, hints, field, arranging, &level))
         .flatten();
     let mut reached = key
-        .as_deref()
         .and_then(|key| super::made::reached(ir, key))
         .unwrap_or_default();
     let mut start = Some(level);
     let mut first: Option<RefusalCause> = None;
     for depth in 0.. {
-        if let Some((_, cuts)) = reached.depths.get(depth) {
-            super::related_guard::add_cuts(*cuts);
+        if let Some(kept) = reached.depths.get(depth) {
+            super::related_guard::add_cuts(kept.1);
         } else {
             let before = super::related_guard::cuts();
             let Reached { depths, nested, .. } = &mut reached;
@@ -6939,9 +6964,9 @@ fn search_rows<T>(
                 &mut reached,
             );
             let cuts = super::related_guard::cuts().saturating_sub(before);
-            reached.depths.push((met, cuts));
+            reached.depths.push(std::rc::Rc::new((met, cuts)));
             if let Some(key) = &key {
-                super::made::reach(ir, key.clone(), reached.clone());
+                super::made::reach(ir, *key, reached.clone());
             }
         }
         let (fresh, scores) = match &reached.depths[depth].0 {
@@ -7006,8 +7031,9 @@ fn search_rows<T>(
 #[derive(Clone, Default)]
 pub(super) struct Reached {
     /// Each depth, and how many searches for a row beside were cut while it was made
-    /// ([`super::related_guard::cuts`]), counted as cut again when it is read back.
-    depths: Vec<(Depth, usize)>,
+    /// ([`super::related_guard::cuts`]), counted as cut again when it is read back. Shared, so the
+    /// copy kept after each depth ([`super::made::reach`]) copies no row.
+    depths: Vec<std::rc::Rc<(Depth, usize)>>,
     /// The profiles of every row met so far: a row met again is no new node.
     seen: BTreeSet<Profile>,
     /// Whether a row met so far lies past the followed counter bound.
@@ -7132,7 +7158,7 @@ fn reached_key(
     field: &str,
     arranging: &[&EntityHandle],
     level: &[Arrangement],
-) -> Option<String> {
+) -> Option<super::memo_key::Key> {
     let mut named = Vec::with_capacity(drivers.len());
     for driver in drivers {
         let declared = ir
@@ -7150,14 +7176,15 @@ fn reached_key(
             driver.command.name, driver.effect
         ));
     }
-    Some(format!(
-        "{entity:?}|{named:?}|{actors:?}|{hints:?}|{field}|{arranging:?}|{level:?}|{}|{:?}|{}|{}|{}",
+    Some(super::memo_key::of(format_args!(
+        "{entity:?}|{named:?}|{actors}|{hints:?}|{field}|{arranging:?}|{level:?}|{}|{:?}|{}|{}|{}",
         held_key(ir),
         super::earlier_runs::captured(),
         crate::witness::under_test_key(),
         super::related_guard::open_key(),
         super::dropped_key(),
-    ))
+        actors = super::memo_key::Actors(actors),
+    )))
 }
 
 /// Delete the actual row a create-or-refuse segment already stored. No creation or deletion is
@@ -7169,8 +7196,8 @@ pub(super) fn delete_existing(
     mut arrangement: Arrangement,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Option<Arrangement>, RefusalCause> {
-    let all = ir.drivers();
-    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    let all = super::drivers_of(ir, entity);
+    let drivers = all.as_slice();
     let deleting: Vec<_> = drivers
         .iter()
         .filter(|driver| *driver.effect == ResolvedEffect::Deletes)
@@ -7296,8 +7323,8 @@ fn unarrangeable(
     entity: &EntityHandle,
     fields: &BTreeSet<String>,
 ) -> Option<RefusalCause> {
-    let all = ir.drivers();
-    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    let all = super::drivers_of(ir, entity);
+    let drivers = all.as_slice();
     for field in fields {
         let written = drivers.iter().any(|driver| {
             driver.outcome.sets.iter().any(|set| {
@@ -7347,10 +7374,8 @@ pub(super) fn now_uncarried(
     creating: bool,
 ) -> Option<RefusalCause> {
     let declared = ir.entity(entity);
-    let all = ir.drivers();
+    let all = super::drivers_of(ir, entity);
     let drivers: Vec<&Driver<'_>> = all
-        .get(entity)
-        .map_or(&[][..], Vec::as_slice)
         .iter()
         .filter(|driver| !creating || matches!(driver.effect, ResolvedEffect::Creates))
         .collect();
@@ -7861,7 +7886,7 @@ pub(super) fn prepare(
     };
     Ok((
         Setup {
-            steps: arrangement.steps,
+            steps: arrangement.steps.into(),
             instance: Some(arrangement.instance),
             bound,
             source: arrangement.source,
@@ -7927,8 +7952,8 @@ pub(super) fn reach_state(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
 ) -> Result<Arrangement, RefusalCause> {
-    let all = ir.drivers();
-    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    let all = super::drivers_of(ir, entity);
+    let drivers = all.as_slice();
     let mut hints = Vec::new();
     for driver in drivers.iter().filter(|driver| uses(driver.command)) {
         for hint in self::hints(driver.command) {
@@ -8701,7 +8726,7 @@ fn claimed_row(
     models.mark(super::caller::InvocationPhase::Act, &mut act);
     steps.extend(act);
     Ok(Claimed {
-        steps,
+        steps: steps.into(),
         source,
         refused: Vec::new(),
         unobserved,
@@ -8802,7 +8827,7 @@ fn around_row(
     let arrangement = Arrangement {
         instance: instance.clone(),
         state: state.clone(),
-        steps: Vec::new(),
+        steps: super::Steps::default(),
         source: BTreeSet::new(),
         settled: left,
         unwritten: BTreeSet::new(),
@@ -10665,7 +10690,7 @@ pub(super) fn prepare_seeded(
     Ok(Ok((
         Setup {
             related_row: BTreeMap::new(),
-            steps: arrangement.steps,
+            steps: arrangement.steps.into(),
             instance: Some(arrangement.instance),
             bound,
             source: arrangement.source,
@@ -10817,7 +10842,8 @@ fn seed_arrangement(
             identity: seed.identity.clone(),
             fields: seed.fields.clone(),
             state: seed.state.clone(),
-        }],
+        }]
+        .into(),
         source,
         settled: declared
             .fields

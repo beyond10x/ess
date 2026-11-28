@@ -105,6 +105,9 @@ pub(super) const STATE: &[(&str, &str, Handling)] = &[
     ("synthesize/made.rs", "MAKES", Handling::Counter),
     ("synthesize/made.rs", "PICKS", Handling::Counter),
     ("synthesize/made.rs", "RELATED_PICKS", Handling::Counter),
+    ("synthesize/memo_key.rs", "ACTOR_DIGESTS", Handling::Memory),
+    ("synthesize/memo_key.rs", "KEYING", Handling::Scope),
+    ("synthesize/memo_key.rs", "RENDERED", Handling::Counter),
     (
         "synthesize/model_memo.rs",
         "ABSENT_BUILT",
@@ -199,6 +202,11 @@ pub(super) const PREPARE_KEY: &[(&str, &str, &str)] = &[
     ("synthesize/first_kept.rs", "WORK", "Context::first_fresh"),
     ("synthesize/grant.rs", "ADDED", "Context::added_grant"),
     ("synthesize/grant.rs", "DROPPED", "Context::dropped_grant"),
+    (
+        "synthesize/memo_key.rs",
+        "KEYING",
+        "none: open only while a key is rendered, inside one call",
+    ),
     (
         "synthesize/prepare_memo.rs",
         "UNKEPT",
@@ -490,6 +498,7 @@ work! {
     makes: u64 = super::made::taken_makes();
     picks: u64 = super::made::taken_picks();
     related_picks: u64 = super::made::taken_related_picks();
+    key_bytes: u64 = super::memo_key::taken_rendered();
     absent_built: u64 = super::model_memo::taken_absent_built();
     steering_maps: u64 = super::ordered_head::taken_steering_work().0;
     steering_checks: u64 = super::ordered_head::taken_steering_work().1;
@@ -548,6 +557,7 @@ impl Work {
         "synthesize/made.rs:MAKES",
         "synthesize/made.rs:PICKS",
         "synthesize/made.rs:RELATED_PICKS",
+        "synthesize/memo_key.rs:RENDERED",
         "synthesize/model_memo.rs:ABSENT_BUILT",
         "synthesize/ordered_head.rs:STEERING_WORK",
         "synthesize/prepare_memo.rs:ASKED",
@@ -597,6 +607,7 @@ impl Work {
         super::made::add_makes(self.makes);
         super::made::add_picks(self.picks);
         super::made::add_related_picks(self.related_picks);
+        super::memo_key::add_rendered(self.key_bytes);
         super::model_memo::add_absent_built(self.absent_built);
         super::ordered_head::add_steering_work((self.steering_maps, self.steering_checks));
         prepare_memo::add_asked(self.prepare_asked);
