@@ -1,0 +1,20 @@
+type: ess-scenario/6
+domain: repro.desk
+scenario: b1-sent-as-system-actor
+summary: The desk records an item; the act sends the system-issued command as the system actor.
+timeline:
+  - at: 2026-11-27T09:00:00Z
+    command: repro.desk.RecordItem
+    actor: repro.desk.Desk
+    input:
+      label: first
+    outcome: recorded
+    events:
+      - event: repro.desk.ItemRecorded
+        payload:
+          label: first
+assert:
+  - view: repro.desk.Items
+    contains:
+      label: first
+      state: Recorded

@@ -12,7 +12,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-domain-language
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -87,3 +87,32 @@ second source.
 Probe script, models and output on the 0.94.0 release binary: session scratch `ess/adopter12/`
 (`probe.py`, one directory per row of the table with `system.yaml` and `validate.txt`; not in the
 repository).
+
+## A second consumer, 2026-11-28: "revisions are numbered from 1", and no construct counts rows
+
+A downstream meta-model specification (ess 0.99.9) cannot declare that a document's revisions are
+numbered from 1: no construct counts rows, so the number is a caller-sent input or no declared
+rule. **Reproduced on 0.99.9**: the neutral model
+`.engineering/repro/a-creating-outcome-numbers-its-row-next-among-the-rows-of-its-parent/system.yaml`
+(`ess/37`; `Revision` with `document_id` and `number: Integer`, `AddRevision(document_id)` whose
+creating outcome sets `number: {count: {entity: papers.numbering.Revision, where: document_id ==
+input.document_id}}`, the spelling being a probe and not a proposal) is refused at `validate`:
+
+```text
+[type_mismatch] command.papers.numbering.AddRevision.outcomes.added.sets.number: `number` is `Integer`, and a nested mapping fills a struct's fields
+error[ESS-COMMAND-002]
+```
+
+This is the story's gap in its simplest case: one parent, the number being the count of the
+parent's rows plus one, with no ordered head to read. The story's forms fit it: form A reads an
+ordered head and adds one, which for a gap-free sequence equals the count plus one; form B
+(`{next: {entity, where, of: <field>}}`) gives 1 where no row exists. The consumer's rule is
+"numbered from 1", the first row gets 1, which both forms must witness (acceptance 3). Its count
+form is the base of
+`story:an-ordered-selection-may-be-counted-as-a-value-with-rows-before-this-one-and-its-head-may-be-the-subject-of-a`
+(decision SW-D4 A admits a plain `{count: {entity, where}}`); if that lands first, `count + 1` is
+an expression over it and this story's form A needs no head.
+
+A second adopter's need is the same fact on a different noun: invoice lines numbered within an
+invoice, drafts within a document. The fit review the story lacks can cite this consumer as the
+second adopter its question 5 asks for.

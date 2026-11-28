@@ -1,0 +1,25 @@
+$ ess --version
+ess 0.99.9
+
+$ ess ui check --path ui/page-params.ui.yaml --model spec   (page params naming NoSuchId; ItemId resolves in the model)
+error type_in_model pages/detail/params/id: `NoSuchId` names no type of the document, no construct of the schema and no type, entity or view of the model
+error type_in_model pages/detail/params/other: `NoSuchId` names no type of the document, no construct of the schema and no type, entity or view of the model
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/page-params.ui.yaml: 2 error(s), 0 warning(s)
+exit 1
+
+$ ess ui check --path ui/widget-params.ui.yaml --model spec   (widget params: {optional: NoSuchId} and NoSuchType)
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/widget-params.ui.yaml: 0 error(s), 0 warning(s)
+exit 0
+
+$ ess ui check --path ui/state-types.ui.yaml --model spec   (page state types and a document type naming NoSuchId, NoSuchType)
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/state-types.ui.yaml: 0 error(s), 0 warning(s)
+exit 0
+
+$ ess ui check --path ui/unused-widget.ui.yaml --model spec   (a widget no page uses names a view and a column the model lacks)
+error field_in_model pages/home/sections/items/body/rows/columns/nosuch: `nosuch` is no field of `shop.channel.Items`, whose fields are `item_id`, `kind`, `label`
+coverage: 1 covered, 0 host-covered, 1 uncovered of 2 views and commands
+ui/unused-widget.ui.yaml: 1 error(s), 0 warning(s)
+exit 1

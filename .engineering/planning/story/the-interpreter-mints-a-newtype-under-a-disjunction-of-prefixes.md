@@ -31,7 +31,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/newtype_any_prefix.rs
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:47:47Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:47:48Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}}
@@ -290,3 +290,30 @@ builder would redo the first's choice); fold (chosen).
 
 - Decision: accept as proposed, folded into
   story:the-interpreter-mints-a-newtype-under-a-disjunction-of-prefixes.
+
+## Amendment of 2026-11-24: a text newtype whose invariants exclude several characters (a downstream report)
+
+Same path, same refusal, a rule family the story's title leaves out: the negative text rules.
+`not: {value: {contains: <c>}}`, alone or inside `not: {any: [...]}`, excluding several characters.
+
+Reproduced on 0.98.0 with a generic model: a `Code` String newtype with the invariant
+`all: [not: {value: {contains: " "}}, not: {any: [{value: {contains: "0"}}, ...]}]`, and a creating
+command whose event carries `code: {generated: true}`. With the space and two digits excluded the
+suite passes 15 of 15. With the space and three digits excluded, 2 pass and 13 are unsupported
+(`ESS-CF-TARGET`: "the model leaves a value of `Code` to the implementation, and its type has no
+shape the interpreter can mint"); a downstream report saw one excluded character mint and five not.
+`main` at 0.99.0 holds the same path: `interpret/values.rs` (`mint`) draws from `witness::fields`, whose
+`invariant_ladders` builds its candidates from the positive reads of each invariant and its
+compositions; a value that avoids every excluded character is in none of them (read, not traced).
+
+Acceptance to add:
+
+- A `String` newtype whose invariants exclude characters with `not: {value: {contains: <c>}}`, singly
+  or in `not: {any: [...]}`, is minted by the interpreter with a value that holds none of them, for
+  an entity field and for an event payload left to the implementation; the case with four or more
+  excluded characters passes where it is unsupported today.
+- A type whose exclusions leave no text over its alphabet (every character of the alphabet excluded)
+  stays unsupported with the existing message.
+
+Not probed: a guard-read input of such a type (the witness search, not the mint). The implementor
+checks it in the same change.

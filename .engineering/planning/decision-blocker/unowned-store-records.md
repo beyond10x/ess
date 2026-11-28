@@ -10,7 +10,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - blocks: story:a-specification-may-declare-the-records-another-system-owns-without-claiming-ownership-and-check-a-job-over
-revision: 2
+revision: 3
 ---
 Which construct lets a specification rely on records a system outside its components owns and still check a job over them against a test double: options A, B, C of SW-D1, an architecture decision with the owner. There is no default; nothing waiting on it takes one.
 
@@ -27,3 +27,7 @@ A system-issued job acts on rows in a store another system owns, and that system
 The coordinator recommends A, the smallest that makes the check real and adds no key. The owner decides. The Acceptance of `story:a-specification-may-declare-the-records-another-system-owns-without-claiming-ownership-and-check-a-job-over` is written for A and changes with the pick.
 
 Related rule: `story:a-command-writes-only-rows-its-own-component-stores` (draft) is the ownership rule that option A and B relax for a defined set of effects.
+
+## Decisions
+
+- SW-D1: stays the owner's.

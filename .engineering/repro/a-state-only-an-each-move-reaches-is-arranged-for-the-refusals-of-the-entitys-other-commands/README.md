@@ -1,0 +1,1 @@
+Run from this directory with ess 0.99.8: `ess verify conform synthesize --path each-over-list-witnessed.yaml --out <file>` writes 12 scenarios and 0 refusals; the same command on `state-only-each-reaches.yaml` writes 16 scenarios and 1 refusal (ESS-SYNTH-004, `Item/state/Removed/refuses/ListOne`).

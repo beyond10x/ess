@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 4
 ---
 ## Need
 
@@ -122,6 +122,8 @@ Tree `bcfc51555`, read-only. Second report, G13.
   the idiom: commands granted to a `system: true` actor, with their events, and a `missing_causation`
   hint naming it. (C) The requester's `recorded_by: owner` on the lifecycle or a transition, from
   `ess/39`. **Recommended: A.**
+
+- AQ3: stays the owner's.
 
 ## Scope
 

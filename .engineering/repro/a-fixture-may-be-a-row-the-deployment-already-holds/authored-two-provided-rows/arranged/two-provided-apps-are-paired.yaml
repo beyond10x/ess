@@ -1,0 +1,26 @@
+type: ess-scenario/2
+domain: linking.links
+scenario: two-provided-apps-are-paired
+summary: Two apps the deployment holds are paired.
+
+arrange:
+  - instance: first-app
+    entity: linking.links.App
+    setup:
+      identity: 00000000-0000-4000-8000-000000000a01
+      fields: {title: first}
+      state: Active
+  - instance: second-app
+    entity: linking.links.App
+    setup:
+      identity: 00000000-0000-4000-8000-000000000a02
+      fields: {title: second}
+      state: Active
+
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: linking.links.Pair
+    input:
+      first_id: {$instance: first-app}
+      second_id: {$instance: second-app}
+    outcome: paired

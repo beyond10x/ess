@@ -1,0 +1,17 @@
+format: ess-ui/1
+app: shop
+title: Shop
+model: shop
+placement_profile: fat
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: home, sections: [{name: all, pages: [home]}]}
+pages:
+  home:
+    kind: detail_page
+    title: Home
+    sections:
+      - name: rows
+        component: collection
+        reads: {view: channel.Items}
+        columns: [label, kind]

@@ -1,0 +1,46 @@
+format: ess/37
+system: shelf
+version: v1
+domain: shelf.books
+summary: A command lists the titles on a shelf and stores nothing.
+types:
+  - {name: shelf.books.BookId, kind: newtype, of: Uuid}
+entities:
+  - name: shelf.books.Book
+    identity: {name: book_id, type: shelf.books.BookId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: shelf.books.BookAdded
+    fields: [{name: book_id, type: shelf.books.BookId}]
+actors:
+  - name: shelf.books.Librarian
+    may: [shelf.books.AddBook, shelf.books.ListTitles]
+commands:
+  - name: shelf.books.AddBook
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: shelf.books.Book
+        instance: book_id
+        emits: [shelf.books.BookAdded]
+        payload: {shelf.books.BookAdded: {book_id: {generated: true}}}
+        sets: {title: input.title}
+  - name: shelf.books.ListTitles
+    input:
+      - {name: prefix, type: String}
+    response:
+      - {name: titles, type: List<String>}
+    outcomes:
+      - name: listed
+        accepts: nothing
+        returns: true
+views:
+  - name: shelf.books.Books
+    source: shelf.books.Book
+    consistency: read_your_writes
+    fields:
+      - {name: book_id, type: shelf.books.BookId}
+      - {name: title, type: String}

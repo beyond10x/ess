@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - derived_from: story:ess-verify-conform-synthesize-and-run-take-jobs-and-the-bytes-are-the-same-at-every-job-count
-revision: 2
+revision: 4
 ---
 ## Outcome
 
@@ -50,6 +50,8 @@ it, is not called there).
 `conform run` with no `--suite` and `--jobs 4`, behave as they do today; a test in `ess-cli`
 runs the three commands and asserts the status and the message.
 
+Amendment (eleventh gap report, 2026-11-24): `ess verify conform synthesize --jobs N` and a `conform run` that synthesizes, on a model whose actors declare no attributes, print one line on standard error that no caller reading ran, and the help of `--jobs` says the count reaches only models whose actors carry attributes.
+
 ## Decisions
 
 - **D1 (open): what a count beside a named suite does.** A (default): refuse it with `clap`'s
@@ -59,6 +61,8 @@ runs the three commands and asserts the status and the message.
   state it in the help only (today's behaviour). A is the default because the other flags of the
   command refuse such a combination and a silently ignored number looks like a speed-up that did
   not happen.
+
+ST-D6, a job count that reaches nothing in a model with no caller readings. A: the sentence above on this story's Acceptance. B: the help sentence only. C: leave as is. Decided: A, 2026-11-24 16:27 CET (the coordinator, under the owner's delegation), taken on the default.
 
 ## Scope
 

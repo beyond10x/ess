@@ -9,7 +9,7 @@ tags:
 - gap-reports-2026-11-24
 relations:
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Need
 
@@ -85,6 +85,10 @@ story widens to error outcomes too, under the same distinguishability rule (`ESS
 **AC-D5**, default C. Options and costs are in `DECISIONS.md`.
 
 Asked again by a ninth report, 2026-11-24; open with the owner.
+
+- S3: stays the owner's.
+
+- S8: stays the owner's; until he picks, the state is option B: declined.
 
 ## Scope
 

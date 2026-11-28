@@ -1,0 +1,79 @@
+domain: m2.d
+summary: Two Integer inputs, an existence refusal on create, and an update that writes both.
+naming:
+  wire: m2
+  display: D
+entities:
+  - name: m2.d.Thing
+    identity:
+      name: name
+      type: String
+    fields:
+      - {name: a, type: Integer}
+      - {name: b, type: Integer}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+events:
+  - name: m2.d.Defined
+    fields:
+      - {name: name, type: String}
+  - name: m2.d.Adjusted
+    fields:
+      - {name: name, type: String}
+errors:
+  - name: m2.d.Exists
+    summary: It exists already.
+  - name: m2.d.Missing
+    summary: It does not exist.
+commands:
+  - name: m2.d.Define
+    input:
+      - {name: name, type: String}
+      - {name: a, type: Integer}
+      - {name: b, type: Integer}
+    outcomes:
+      - name: exists
+        when_related:
+          entity: m2.d.Thing
+          where: name == input.name
+          exists: true
+        error: m2.d.Exists
+      - name: defined
+        creates: m2.d.Thing
+        instance: name
+        sets:
+          a: input.a
+          b: input.b
+        emits: [m2.d.Defined]
+        payload:
+          m2.d.Defined:
+            name: input.name
+  - name: m2.d.Adjust
+    input:
+      - {name: name, type: String}
+      - {name: a, type: Integer}
+      - {name: b, type: Integer}
+    outcomes:
+      - name: missing
+        unknown_instance: true
+        error: m2.d.Missing
+      - name: adjusted
+        updates: m2.d.Thing
+        instance: name
+        sets:
+          a: input.a
+          b: input.b
+        emits: [m2.d.Adjusted]
+        payload:
+          m2.d.Adjusted:
+            name: input.name
+views:
+  - name: m2.d.Things
+    source: m2.d.Thing
+    consistency: read_your_writes
+    fields:
+      - {name: name, type: String}
+      - {name: a, type: Integer}
+      - {name: b, type: Integer}

@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 3
+revision: 5
 ---
 ## Need
 
@@ -162,6 +162,10 @@ Tree `bcfc51555`. Received 2026-11-24 from a downstream application, report item
   the guard compares a String value, and an author whose key carries a prefix declares the digest
   part as its own field. (b) String concatenation with a literal (`"sha256:" + hex(…)`), which
   opens String `+` in grid O, a G1 decision of its own. **Recommended: (a).**
+
+- AQ1a: stays the owner's.
+
+- AQ1b: stays the owner's.
 
 ## Scope
 

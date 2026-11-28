@@ -1,0 +1,117 @@
+format: ess/37
+system: membership
+version: v1
+domain: membership.groups
+summary: A person joins a group once; the pair of keys is unique, and a member can be promoted.
+types:
+  - {name: membership.groups.PersonId, kind: newtype, of: Uuid}
+  - {name: membership.groups.GroupId, kind: newtype, of: Uuid}
+  - {name: membership.groups.MemberId, kind: newtype, of: Uuid}
+entities:
+  - name: membership.groups.Person
+    identity: {name: person_id, type: membership.groups.PersonId}
+    fields:
+      - {name: name, type: String}
+    lifecycle: {initial: Known, states: [Known], terminal: [Known]}
+  - name: membership.groups.Group
+    identity: {name: group_id, type: membership.groups.GroupId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: membership.groups.Member
+    identity: {name: member_id, type: membership.groups.MemberId}
+    fields:
+      - {name: person_id, type: membership.groups.PersonId}
+      - {name: group_id, type: membership.groups.GroupId}
+    relations:
+      - {name: person, kind: references, target: membership.groups.Person, cardinality: one, via: person_id}
+      - {name: group, kind: references, target: membership.groups.Group, cardinality: one, via: group_id}
+    lifecycle:
+      initial: Plain
+      states: [Plain, Lead]
+      terminal: [Lead]
+      transitions:
+        - {name: promote, from: [Plain], to: Lead}
+errors:
+  - {name: membership.groups.PersonNotFound, summary: No person carries the identity., fields: []}
+  - {name: membership.groups.GroupNotFound, summary: No group carries the identity., fields: []}
+  - {name: membership.groups.AlreadyMember, summary: The person is in the group., fields: []}
+  - {name: membership.groups.MemberNotFound, summary: No member carries the identity., fields: []}
+  - {name: membership.groups.MemberState, summary: The member is not plain., fields: []}
+events:
+  - name: membership.groups.PersonAdded
+    fields: [{name: person_id, type: membership.groups.PersonId}]
+  - name: membership.groups.GroupOpened
+    fields: [{name: group_id, type: membership.groups.GroupId}]
+  - name: membership.groups.Joined
+    fields: [{name: member_id, type: membership.groups.MemberId}]
+  - name: membership.groups.Promoted
+    fields: [{name: member_id, type: membership.groups.MemberId}]
+actors:
+  - name: membership.groups.Clerk
+    may: [membership.groups.AddPerson, membership.groups.OpenGroup, membership.groups.Join, membership.groups.Promote]
+commands:
+  - name: membership.groups.AddPerson
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: added
+        creates: membership.groups.Person
+        instance: person_id
+        sets: {name: input.name}
+        emits: [membership.groups.PersonAdded]
+        payload: {membership.groups.PersonAdded: {person_id: {generated: true}}}
+  - name: membership.groups.OpenGroup
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: membership.groups.Group
+        instance: group_id
+        sets: {title: input.title}
+        emits: [membership.groups.GroupOpened]
+        payload: {membership.groups.GroupOpened: {group_id: {generated: true}}}
+  - name: membership.groups.Join
+    input:
+      - {name: person_id, type: membership.groups.PersonId}
+      - {name: group_id, type: membership.groups.GroupId}
+    outcomes:
+      - name: unknown-person
+        when_related: {via: input.person_id, exists: false}
+        error: membership.groups.PersonNotFound
+      - name: unknown-group
+        when_related: {via: input.group_id, exists: false}
+        error: membership.groups.GroupNotFound
+      - name: already-member
+        when_related:
+          entity: membership.groups.Member
+          where: {all: [person_id == input.person_id, group_id == input.group_id]}
+          exists: true
+        error: membership.groups.AlreadyMember
+      - name: joined
+        creates: membership.groups.Member
+        instance: member_id
+        sets: {person_id: input.person_id, group_id: input.group_id}
+        emits: [membership.groups.Joined]
+        payload: {membership.groups.Joined: {member_id: {generated: true}}}
+  - name: membership.groups.Promote
+    input:
+      - {name: member_id, type: membership.groups.MemberId}
+    outcomes:
+      - name: unknown-member
+        unknown_instance: true
+        error: membership.groups.MemberNotFound
+      - {name: wrong-state, wrong_state: true, error: membership.groups.MemberState}
+      - name: promoted
+        moves: membership.groups.Member.promote
+        instance: member_id
+        emits: [membership.groups.Promoted]
+        payload: {membership.groups.Promoted: {member_id: input.member_id}}
+views:
+  - name: membership.groups.Members
+    source: membership.groups.Member
+    consistency: read_your_writes
+    fields:
+      - {name: member_id, type: membership.groups.MemberId}
+      - {name: person_id, type: membership.groups.PersonId}
+      - {name: group_id, type: membership.groups.GroupId}

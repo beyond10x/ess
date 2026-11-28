@@ -1,0 +1,66 @@
+format: ess/37
+system: papers
+version: v1
+domain: papers.numbering
+summary: Each revision of a document carries its number, one more than the revisions the document already has.
+types:
+  - {name: papers.numbering.DocumentId, kind: newtype, of: Uuid}
+  - {name: papers.numbering.RevisionId, kind: newtype, of: Uuid}
+entities:
+  - name: papers.numbering.Document
+    identity: {name: document_id, type: papers.numbering.DocumentId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: papers.numbering.Revision
+    identity: {name: revision_id, type: papers.numbering.RevisionId}
+    fields:
+      - {name: document_id, type: papers.numbering.DocumentId}
+      - {name: number, type: Integer}
+    relations:
+      - {name: document, kind: references, target: papers.numbering.Document, cardinality: one, via: document_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: papers.numbering.NotFound, summary: No document carries the identity., fields: []}
+events:
+  - name: papers.numbering.DocumentAdded
+    fields: [{name: document_id, type: papers.numbering.DocumentId}]
+  - name: papers.numbering.RevisionAdded
+    fields: [{name: revision_id, type: papers.numbering.RevisionId}]
+actors:
+  - name: papers.numbering.Editor
+    may: [papers.numbering.AddDocument, papers.numbering.AddRevision]
+commands:
+  - name: papers.numbering.AddDocument
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: papers.numbering.Document
+        instance: document_id
+        sets: {title: input.title}
+        emits: [papers.numbering.DocumentAdded]
+        payload: {papers.numbering.DocumentAdded: {document_id: {generated: true}}}
+  - name: papers.numbering.AddRevision
+    input:
+      - {name: document_id, type: papers.numbering.DocumentId}
+    outcomes:
+      - name: unknown-document
+        when_related: {via: input.document_id, exists: false}
+        error: papers.numbering.NotFound
+      - name: added
+        creates: papers.numbering.Revision
+        instance: revision_id
+        sets:
+          document_id: input.document_id
+          number: {count: {entity: papers.numbering.Revision, where: document_id == input.document_id}}
+        emits: [papers.numbering.RevisionAdded]
+        payload: {papers.numbering.RevisionAdded: {revision_id: {generated: true}}}
+views:
+  - name: papers.numbering.Revisions
+    source: papers.numbering.Revision
+    consistency: read_your_writes
+    fields:
+      - {name: revision_id, type: papers.numbering.RevisionId}
+      - {name: document_id, type: papers.numbering.DocumentId}
+      - {name: number, type: Integer}

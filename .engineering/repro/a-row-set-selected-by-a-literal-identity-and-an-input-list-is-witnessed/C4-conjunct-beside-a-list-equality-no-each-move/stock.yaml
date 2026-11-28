@@ -1,0 +1,130 @@
+domain: shelf.stock
+
+types:
+  - {name: shelf.stock.ReleaseId, kind: newtype, of: Uuid}
+  - {name: shelf.stock.EntryId, kind: newtype, of: Uuid}
+  - name: shelf.stock.EntryKind
+    kind: enum
+    variants: [flat, tiered]
+  - name: shelf.stock.Unit
+    kind: enum
+    variants: [each, daily]
+  - name: shelf.stock.EntryDecl
+    kind: struct
+    fields:
+      - {name: entry_id, type: shelf.stock.EntryId}
+      - {name: kind, type: shelf.stock.EntryKind}
+      - {name: name, type: String}
+      - {name: unit, type: Optional<shelf.stock.Unit>}
+
+entities:
+  - name: shelf.stock.Release
+    identity:
+      name: release_id
+      type: shelf.stock.ReleaseId
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Draft
+      states: [Draft, Staged]
+      terminal: [Staged]
+      transitions:
+        - {name: stage, from: [Draft], to: Staged}
+
+  - name: shelf.stock.Entry
+    identity:
+      name: entry_id
+      type: shelf.stock.EntryId
+    fields:
+      - {name: release_id, type: shelf.stock.ReleaseId}
+      - {name: kind, type: shelf.stock.EntryKind}
+      - {name: name, type: String}
+      - {name: unit, type: Optional<shelf.stock.Unit>}
+    relations:
+      - name: release
+        kind: references
+        target: shelf.stock.Release
+        cardinality: one
+        via: release_id
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+
+errors:
+  - name: shelf.stock.ReleaseNotFound
+  - name: shelf.stock.EntriesRepeated
+  - name: shelf.stock.TierUnitConflict
+  - name: shelf.stock.ReleaseStateConflict
+
+events:
+  - name: shelf.stock.ReleaseOpened
+    fields:
+      - {name: release_id, type: shelf.stock.ReleaseId}
+  - name: shelf.stock.ReleaseStaged
+    fields:
+      - {name: release_id, type: shelf.stock.ReleaseId}
+
+commands:
+  - name: shelf.stock.OpenRelease
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: shelf.stock.Release
+        instance: release_id
+        sets:
+          label: input.label
+        emits: [shelf.stock.ReleaseOpened]
+        payload:
+          shelf.stock.ReleaseOpened:
+            release_id: {generated: true}
+
+  - name: shelf.stock.StageRelease
+    input:
+      - {name: release_id, type: shelf.stock.ReleaseId}
+      - {name: entries, type: List<shelf.stock.EntryDecl>}
+    outcomes:
+      - name: entries-repeated
+        when:
+          not: {distinct: {in: entries, as: e, by: e.entry_id}}
+        error: shelf.stock.EntriesRepeated
+      - name: no-such-release
+        unknown_instance: true
+        error: shelf.stock.ReleaseNotFound
+      - name: tier-unit-differs
+        when_related:
+          entity: shelf.stock.Entry
+          where:
+            exists: {in: input.entries, as: e, that: {all: [e.name == name, e.kind == tiered]}}
+          exists: true
+        error: shelf.stock.TierUnitConflict
+      - name: staged
+        moves: shelf.stock.Release.stage
+        instance: release_id
+        emits: [shelf.stock.ReleaseStaged]
+        payload:
+          shelf.stock.ReleaseStaged:
+            release_id: input.release_id
+      - name: wrong-state
+        wrong_state: true
+        error: shelf.stock.ReleaseStateConflict
+
+views:
+  - name: shelf.stock.Releases
+    source: shelf.stock.Release
+    consistency: eventual
+    fields:
+      - {name: release_id, type: shelf.stock.ReleaseId}
+      - {name: label, type: String}
+      - {name: state, type: shelf.stock.Release.State}
+  - name: shelf.stock.Entries
+    source: shelf.stock.Entry
+    consistency: read_your_writes
+    fields:
+      - {name: entry_id, type: shelf.stock.EntryId}
+      - {name: release_id, type: shelf.stock.ReleaseId}
+      - {name: kind, type: shelf.stock.EntryKind}
+      - {name: name, type: String}
+      - {name: unit, type: Optional<shelf.stock.Unit>}
+      - {name: state, type: shelf.stock.Entry.State}

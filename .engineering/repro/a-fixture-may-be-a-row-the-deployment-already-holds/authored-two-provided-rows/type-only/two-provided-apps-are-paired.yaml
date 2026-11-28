@@ -1,0 +1,16 @@
+type: ess-scenario/3
+domain: linking.links
+scenario: two-provided-apps-are-paired
+summary: Two apps the deployment holds are paired.
+
+fixtures:
+  first-app: linking.links.AppId
+  second-app: linking.links.AppId
+
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: linking.links.Pair
+    input:
+      first_id: {$fixture: first-app}
+      second_id: {$fixture: second-app}
+    outcome: paired

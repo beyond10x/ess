@@ -1,0 +1,5 @@
+refusal[ESS-AUTHOR-045]: `repro.desk/authored/b2-awaited` in scenarios/b2-awaited.yaml
+  `repro.desk.RecordItem` is issued by the system and awaited on a record, and its outcome `recorded` creates the record it addresses, so no record exists before the step
+  help: state the input the outcomes name as `instance:` under `input:`, a literal or `{$instance: name}`; a step the system takes to create a record, or over rows with no subject, is not awaited in this release
+0 authored scenario(s) from 1 file(s), 1 refusal(s), suite ess-conformance/34, written to out/b2-awaited.json
+exit 1

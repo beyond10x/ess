@@ -12,7 +12,7 @@ relations:
 - derived_from: story:create-beside-a-move-on-the-same-key
 - depends_on: story:create-beside-a-move-on-the-same-key
 - depends_on: story:the-specification-format-ess-38-is-open-as-the-newest-reads-and-compiles-every-specification-exactly-as-ess
-revision: 1
+revision: 3
 ---
 ## Need
 
@@ -179,3 +179,18 @@ and `P2A-D6` (format). The parent's format line (`ess/25`) is superseded by `P2A
 ## Source
 
 A downstream application, 2026-11-24, report item 12 (its G2).
+
+## Downstream report 2026-11-26
+
+A downstream application reported the same need on 0.99.2 (gap 2 of a report of ten): a creating
+command cannot also change another existing row in the same outcome, so the application splits one
+decision over two commands or keeps the change outside the model. On `main` at `c0b5f560cb`
+`affects:` still sits only beside `moves:`, `updates:` and `deletes:` with an existing subject
+(`website/docs/guides/specify/selection-effects.md:36`, `:55`), and beside `creates:` it is refused
+as `ESS-COMMAND-009`. The report is a further instance of this story, not a new one; it also blocks
+a creating command from keeping a counter on the row it files the new row under, which the draft
+story on an aggregate test of a row-set guard names as the idiom it replaces.
+
+## A second consumer, 2026-11-28
+
+A second consumer reported this on 2026-11-28, on 0.99.2, and 0.99.9 refuses it the same way: an outcome that creates its subject and declares `affects:` is refused `ESS-COMMAND-009` ("creates its subject and declares `affects:`"). A specification of reusable building blocks hit it on one creating outcome that also had to change rows that existed before it. Nothing in the story changes; the second consumer is a reason to keep its order.

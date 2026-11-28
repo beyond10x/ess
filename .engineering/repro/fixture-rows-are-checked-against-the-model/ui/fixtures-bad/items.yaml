@@ -1,0 +1,6 @@
+views:
+  shop.channel.Items:
+    rows:
+      - {item_id: it-01, label: Hammer, kind: Gadget, colour: red}
+      - {item_id: it-02, label: Robot, kind: Toy}
+      - {item_id: it-03, label: 5}

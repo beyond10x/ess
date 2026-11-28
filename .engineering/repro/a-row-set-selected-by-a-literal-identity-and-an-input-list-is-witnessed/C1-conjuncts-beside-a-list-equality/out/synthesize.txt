@@ -1,0 +1,10 @@
+refused: refusal[ESS-SYNTH-001]: outcome shelf.stock.StageRelease/tier-unit-differs has no scenario `shelf.stock.StageRelease/outcome/tier-unit-differs`
+  no witness: `shelf.stock.StageRelease/tier-unit-differs` is `row set`, which selects rows by no equality between a String or Uuid field and the input or the addressed subject, so the rows it counts are not only the scenario's own
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: outcome shelf.stock.StageRelease/staged has no scenario `shelf.stock.StageRelease/outcome/staged`
+  no witness: `shelf.stock.StageRelease/staged` is `row set`, which selects rows by no equality between a String or Uuid field and the input or the addressed subject, so the rows it counts are not only the scenario's own
+  help: give the field a type that has a finite value, or drop it from the command's input
+refused: refusal[ESS-SYNTH-001]: transition shelf.stock.Release/stage has no scenario `shelf.stock.Release/transition/stage/by/shelf.stock.StageRelease/staged`
+  no witness: `shelf.stock.StageRelease/staged` is `row set`, which selects rows by no equality between a String or Uuid field and the input or the addressed subject, so the rows it counts are not only the scenario's own
+  help: give the field a type that has a finite value, or drop it from the command's input
+4 scenario(s) (0 authored), 3 refusal(s), written to out/suite.json

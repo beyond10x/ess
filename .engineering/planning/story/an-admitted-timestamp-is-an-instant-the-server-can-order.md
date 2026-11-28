@@ -28,7 +28,7 @@ scope:
   path: crates/generate/ess-synth/tests/json_body_closure.rs
 - confidence: cited
   path: crates/specify/ess-primitives/tests/vectors/rfc3339-instants.json
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-10T00:38:36Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":2}}}
 - {from: "proposed", to: "active", at: "2026-11-10T00:38:37Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":2}}}
@@ -115,3 +115,14 @@ The W1 GEN1 adversary pass wrote `the_timestamp_decoder_answers_the_trees_rfc333
 `crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs` (over `ess-primitives/tests/vectors/rfc3339-instants.json`
 and a fixed 604,800-text corpus; 7,304 admitted texts the instant grammar cannot read). They were left out of the
 committed file because the item is out of W1.
+
+## Related (2026-11-25)
+
+The decoders are one of five readers of the text of a `Timestamp`. `Primitive::admits`
+(`crates/specify/ess-domain/src/types.rs:2954-2956`), the Go and TypeScript conformance runners and the
+browser adapter admit any text, so the interpreter admits `"soon"` for a `Timestamp` where the generated
+servers answer 400.
+`story:the-interpreter-the-runners-and-the-generated-servers-admit-one-text-for-a-timestamp-and-for-a-duration`
+carries the instant grammar this story fixes to those four readers and holds the cross-lane agreement
+check; its TS-D1 (wire contract) is the decision to move what a released reader admits. This story keeps
+the decoders' grammar and its leap-second and fraction rows.
