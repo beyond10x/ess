@@ -446,6 +446,13 @@ impl SemanticChange {
                 changed: TypeChange::OrderedChanged { .. },
                 ..
             } => ORDERED_DELTA_FORMAT,
+            Self::Component {
+                changed:
+                    ComponentChange::StepAdded { .. }
+                    | ComponentChange::StepRemoved { .. }
+                    | ComponentChange::StepChanged { .. },
+                ..
+            } => STEPS_DELTA_FORMAT,
             Self::View {
                 changed: ViewChange::AbsentChanged { .. },
                 ..
@@ -874,6 +881,11 @@ pub const TRANSITION_SUMMARY_DELTA_FORMAT: u32 = 22;
 /// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
 /// that carries one is classified even when nobody asked.
 pub const ORDERED_DELTA_FORMAT: u32 = 23;
+
+/// The first delta format whose vocabulary has `step-added`, `step-removed` and `step-changed` on a
+/// component: a level or time step declared, dropped, or run as another actor or at another period
+/// (`ess/38`, `docs/design/component-steps.md`).
+pub const STEPS_DELTA_FORMAT: u32 = 24;
 
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
@@ -2045,6 +2057,23 @@ pub enum ComponentChange {
         /// The new contract.
         after: Option<CliContract>,
     },
+    /// It starts a step it did not start (ess/38).
+    StepAdded {
+        /// The step, as `<form> [<view> →] <command> as <actor> [every <period>]`.
+        step: String,
+    },
+    /// It no longer starts a step it started.
+    StepRemoved {
+        /// The step, rendered as in `StepAdded`.
+        step: String,
+    },
+    /// A step of one form, view and command runs as another actor or at another period.
+    StepChanged {
+        /// The step it was.
+        before: String,
+        /// The step it is.
+        after: String,
+    },
 }
 
 impl ComponentChange {
@@ -2053,6 +2082,9 @@ impl ComponentChange {
         match self {
             Self::ReachChanged { .. } => "reach-changed",
             Self::CliChanged { .. } => "cli-changed",
+            Self::StepAdded { .. } => "step-added",
+            Self::StepRemoved { .. } => "step-removed",
+            Self::StepChanged { .. } => "step-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::OwnsAdded { .. } => "owns-added",
@@ -2092,6 +2124,9 @@ impl ComponentChange {
         match self {
             Self::ReachChanged { before, after } => format!("reach {before} → {after}"),
             Self::CliChanged { .. } => "command-line surface changed".to_owned(),
+            Self::StepAdded { step } => format!("starts the step {step}"),
+            Self::StepRemoved { step } => format!("no longer starts the step {step}"),
+            Self::StepChanged { before, after } => format!("step {before} → {after}"),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::OwnsAdded { domain } => format!("owns {domain}"),
@@ -3877,11 +3912,10 @@ mod tests {
         ActorRef::new(QualifiedName::new(name).expect("a valid qualified name"))
     }
 
-    /// `ess-diff/24` is open for the constructs of one release and carries no change kind yet: it
-    /// is read and written wherever `ess-diff/23` is, and the newest floor a change asks for is
-    /// still `ess-diff/23`.
+    /// `ess-diff/24` is open for the constructs of one release; a component's step changes are the
+    /// first kinds that ask for it.
     #[test]
-    fn delta_format_24_is_open_and_no_change_kind_asks_for_it() {
+    fn delta_format_24_is_open_and_the_step_kinds_ask_for_it() {
         let opened = crate::DeltaFormat::parse("ess-diff/24").expect("a well formed version");
         assert!(opened.is_supported());
         assert_eq!(crate::SUPPORTED_DELTA_FORMATS.last(), Some(&24));
@@ -3889,6 +3923,7 @@ mod tests {
             .expect("a well formed version")
             .is_supported());
         assert_eq!(ORDERED_DELTA_FORMAT, 23);
+        assert_eq!(STEPS_DELTA_FORMAT, 24);
     }
 
     #[test]

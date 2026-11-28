@@ -1444,6 +1444,13 @@ fn validate_instance(
 
     let mut errors = ValidationErrors::new();
     let surface = subject.surface();
+    // A path to a member of a struct input (`ess/38`) is checked with the declared types in
+    // hand, by `input_path::validate_instances`.
+    if surface == InstanceSurface::CommandInput
+        && crate::command::input_path::is_path(&subject.instance)
+    {
+        return errors;
+    }
     let at: ConstructRef = command
         .site()
         .key("outcomes")

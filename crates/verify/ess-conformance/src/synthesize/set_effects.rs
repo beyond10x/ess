@@ -3074,7 +3074,7 @@ fn affects_segment_on(
     // and a decoy in place.
     let each = each_lists(ir, command, outcome, setup.before.as_ref(), &input)?;
     if let Some(each) = &each {
-        input.insert(each.each.list.clone(), each.second.clone());
+        super::set_at(&mut input, &each.each.list, Some(each.second.clone()));
     }
     let supplied = supply(
         ir,
@@ -3368,11 +3368,8 @@ fn each_lists<'o>(
     let Some((index, affect, each)) = one_each(outcome)? else {
         return Ok(None);
     };
-    let members = command
-        .input
-        .iter()
-        .find(|field| field.name == each.list)
-        .and_then(|field| match &field.type_ref {
+    let members = super::input_type(ir, command, &each.list)
+        .and_then(|type_ref| match type_ref {
             ResolvedTypeRef::List { of } => of.declared(),
             _ => None,
         })
@@ -3422,7 +3419,7 @@ fn each_lists<'o>(
         };
         let reaches = |list: &Node| {
             let mut sent = input.clone();
-            sent.insert(each.list.clone(), list.clone());
+            super::set_at(&mut sent, &each.list, Some(list.clone()));
             super::selects_branch(ir, command, outcome, held, &sent).is_ok_and(|reached| reached)
         };
         let first = list(&[&held_row, &decoy]);
@@ -3485,7 +3482,7 @@ fn first_call(
         )
     })?;
     let mut sent = input.clone();
-    sent.insert(each.each.list.clone(), each.first.clone());
+    super::set_at(&mut sent, &each.each.list, Some(each.first.clone()));
     let supplied = supply(
         ir,
         command,
@@ -3594,7 +3591,7 @@ fn carry(
             let Ok(mut input) = reach(ir, command, outcome, Distinction::PLAIN) else {
                 continue;
             };
-            input.insert(field.name.clone(), held.clone());
+            super::set_at(&mut input, &field.name, Some(held.clone()));
             if !super::selects_branch(ir, command, outcome, Some(initial), &input)
                 .is_ok_and(|reached| reached)
             {
@@ -3656,7 +3653,7 @@ fn empty_call(
         .as_ref()
         .expect("affects_segment checked the subject");
     let mut sent = input.clone();
-    sent.insert(each.each.list.clone(), Node::Seq(Vec::new()));
+    super::set_at(&mut sent, &each.each.list, Some(Node::Seq(Vec::new())));
     let distinction = next(ir, &subject.entity, taken);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
     let Some(instance) = setup.instance.clone() else {
@@ -4152,12 +4149,12 @@ fn refused_writes_none(ir: &EssIr, command: &ResolvedCommand, suite: &mut Confor
         for (affect, each) in &entries {
             let Some(ScenarioValue::Literal {
                 value: Node::Seq(items),
-            }) = input.get(&each.list)
+            }) = super::supplied_at(input, &each.list)
             else {
                 continue;
             };
             let mut named: Vec<&Node> = Vec::new();
-            for item in items {
+            for item in &items {
                 let Node::Map(members) = item else {
                     continue;
                 };

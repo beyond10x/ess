@@ -189,6 +189,7 @@ pub mod structured_values;
 pub mod subject;
 pub mod suite_diff;
 pub mod suite_pair_64;
+pub mod suite_pair_66;
 pub mod synthesis_seeds;
 pub mod synthesize;
 pub mod system_issued;

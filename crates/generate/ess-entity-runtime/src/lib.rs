@@ -1725,6 +1725,36 @@ impl Projector<'_> {
         refused
     }
 
+    /// Refuses every branch of `command` whose `instance:` names a member of a struct input
+    /// (ess/38, beyond10x/ess#640), and says whether it refused one: the host loads the instance
+    /// from one top-level input field before a branch is chosen, so such a command is not lowered
+    /// further.
+    fn refuse_member_instances(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in &command.outcomes {
+            let Some(ResolvedInstance::Supplied { field }) =
+                outcome.subject.as_ref().map(|subject| &subject.instance)
+            else {
+                continue;
+            };
+            if !ess_domain::command::input_path::is_path(&field.name) {
+                continue;
+            }
+            self.diagnostic(
+                LoweringCode::AmbiguousInstanceBinding,
+                command.name.to_string(),
+                format!(
+                    "`instance: {}` of outcome `{}` names a member of a struct input; the host \
+                     loads the instance from one top-level input field before a branch is chosen",
+                    field.name,
+                    outcome.name.as_str()
+                ),
+            );
+            refused = true;
+        }
+        refused
+    }
+
     /// Refuses every error field of `command` read from the held lifecycle state, `{subject:
     /// state}` (ess/23, beyond10x/ess#458), by the `{subject: …}` row every such value is refused
     /// under: an entity-core refusal carries no value read from the row it answers for. An event
@@ -1936,8 +1966,9 @@ impl Projector<'_> {
         let related_guards = self.refuse_related_guards(command);
         let compensating = self.refuse_compensating_refusals(command);
         let rekeying = self.refuse_identity_changes(command);
+        let member_instances = self.refuse_member_instances(command);
         self.refuse_held_state_errors(command);
-        if set_effects || related_guards || compensating || rekeying {
+        if set_effects || related_guards || compensating || rekeying || member_instances {
             return false;
         }
         let mut targets = BTreeSet::new();

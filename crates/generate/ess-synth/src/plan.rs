@@ -207,6 +207,9 @@ pub enum CapabilityKind {
     ComponentTransport,
     /// A component's runtime requirements.
     Workload,
+    /// A step a component starts itself (ess/38): a command run per row a view answers, or every
+    /// period.
+    ComponentStep,
 }
 
 impl CapabilityKind {
@@ -229,6 +232,7 @@ impl CapabilityKind {
             Self::ComponentPort => "component port",
             Self::ComponentTransport => "component transport",
             Self::Workload => "workload",
+            Self::ComponentStep => "component step",
         }
     }
 }
@@ -344,6 +348,8 @@ pub enum RefusalReason {
     TopologyDeferred,
     /// Periodic execution requires the declared authenticated host and controlled-time seam.
     PeriodicHostRequired,
+    /// A component's step needs a loop that runs it, which no emitter generates yet.
+    StepLoopDeferred,
 }
 
 impl RefusalReason {
@@ -361,6 +367,9 @@ impl RefusalReason {
                 "periodic execution requires the declared host authority and lifetime integration"
             }
             Self::TopologyDeferred => "topology synthesis is deferred with its design",
+            Self::StepLoopDeferred => {
+                "a component step needs a loop that runs it, which this synthesis does not emit"
+            }
         }
     }
 }
@@ -396,6 +405,7 @@ impl SynthesisPlan {
         plan_bindings(ir, &mut capabilities);
         plan_components(ir, &mut capabilities);
         plan_workloads(ir, &mut capabilities);
+        plan_component_steps(ir, &mut capabilities);
 
         let mut seen = BTreeSet::new();
         for planned in &capabilities {
@@ -1862,6 +1872,33 @@ fn plan_components(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: SynthesisDisposition::Generated,
         });
+    }
+}
+
+/// A component's step (ess/38) is run by a loop, and this synthesis emits none: each step is
+/// refused by name, for every target.
+fn plan_component_steps(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
+    for component in ir.components().values() {
+        for (index, step) in component.steps.iter().enumerate() {
+            capabilities.push(PlannedCapability {
+                capability: Capability {
+                    kind: CapabilityKind::ComponentStep,
+                    source: format!("{}.steps[{index}]", component.name),
+                },
+                disposition: SynthesisDisposition::Refused(SynthesisRefusal {
+                    reason: RefusalReason::StepLoopDeferred,
+                    stage: RefusalStage::Planning,
+                    detail: format!(
+                        "the {} step of `{}` runs `{}` as `{}`; {}",
+                        step.form.as_str(),
+                        component.name,
+                        step.command.name(),
+                        step.actor.name(),
+                        RefusalReason::StepLoopDeferred.describes()
+                    ),
+                }),
+            });
+        }
     }
 }
 

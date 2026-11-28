@@ -522,3 +522,53 @@ fn adversary_the_hint_for_an_optional_or_list_field_names_only_references() {
     let hint = report["warnings"][0]["hint"].as_str().unwrap();
     assert!(hint.contains("`owns`"), "{hint}");
 }
+
+/// Below `ess/38` a comparison over an `Optional` field a row may hold absent, with no presence
+/// test beside it, is a warning naming the field, the position and the `defined(f) and` form; the
+/// exit status stays 0.
+#[test]
+fn an_unguarded_comparison_over_an_absent_field_warns_below_ess_38() {
+    let model = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../specify/ess-domain/tests/fixtures/absent-comparison.yaml"),
+    )
+    .unwrap()
+    .replacen("format: ess/38", "format: ess/37", 1);
+    let path = written("absent", &model);
+    let (output, report) = validate_json(&path);
+    assert!(output.status.success(), "{output:?}");
+    let warning = report["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|warning| {
+            warning["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("`parent`"))
+        })
+        .unwrap_or_else(|| panic!("the comparison over `parent` warns: {report}"));
+    assert!(
+        warning["message"]
+            .as_str()
+            .unwrap()
+            .contains("row-set selector"),
+        "{warning}"
+    );
+    assert!(
+        warning["hint"]
+            .as_str()
+            .unwrap()
+            .contains("defined(parent) and parent == input.parent"),
+        "{warning}"
+    );
+    let guarded = model.replacen(
+        "where: {all: [parent == input.parent,",
+        "where: {all: [defined(parent), parent == input.parent,",
+        1,
+    );
+    let (_, report) = validate_json(&written("absent-guarded", &guarded));
+    assert!(
+        warning_codes(&report).is_empty(),
+        "a presence test silences it: {report}"
+    );
+}

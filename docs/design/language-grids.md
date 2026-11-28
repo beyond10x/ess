@@ -56,6 +56,10 @@ and a view field or filter reads the row a reference of its source names, one ho
   invariant that changes truth with time is not an invariant).
 - **view param**: every view position.
 
+From `ess/38` the addressing positions (`via:`, `all:` elements, `instance:`, `each: {in:}`,
+`{missing:}`) read `input.<path>` as `sets:` does; this opens the input column in every position
+that names a row (`story:via-and-instance-may-name-a-member-of-a-struct-input`).
+
 Rows, closed whole: the **binding cause `where:`** takes the full expression language over its
 `event` root (https://github.com/beyond10x/ess/issues/492, item 1); **measure input** and **view
 field** take any expression over their row (G3).

@@ -352,13 +352,19 @@ helper, so they add no head literal below. `types.rs` gains one, `ordered: true`
 at `types.<name>.ordered`, for the reason the #426 and #448 sites above are, and its `types` head
 rises from 14 to 15 literals.
 
+`component.rs` gains eleven typed sites with format `ess/38`
+(`docs/design/component-steps.md`): a component's `steps:` below `ess/38`, and each refusal of a
+step (an undeclared command, view or actor, a missing view, period or actor, a time step naming a
+view, an actor not granted the command or the view, a row field missing or of another type), each
+at the step's `ConstructRef`, so they add no head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
 command.rs 15 68
-component.rs 16 10
+component.rs 16 21
 domain.rs 5 0
 entity.rs 19 6
 expression.rs 1 0

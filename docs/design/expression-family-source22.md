@@ -417,6 +417,15 @@ error payloads, nested target leaves, declaration order, and conversions. Mutant
 root object, first child, same-named top-level field, primary after absence, or literal spelling of
 the fallback must each fail.
 
+From `ess/38` (beyond10x/ess#640) the addressing positions read the same path: a `when_related:`
+guard's `via:`, an `all:` element's `via:`, `instance:` on `updates:`, `moves:` and `deletes:` and
+the `unknown_instance:` and `existing_instance:` branches answering it, `each: {in:}` over a `List`
+member, and `{missing:}`. The IR carries the path in the existing `field` strings, the declared
+segments joined by `.`; no key is added. A route through an `Optional` reads as an Optional
+reference under `via:`, checked only when present, and is refused under `instance:` as an
+`Optional` input is. Below `ess/38` each is refused as `unsupported_format_version` naming
+`ess/38`.
+
 ## `distinct`
 
 Add one predicate variant:

@@ -631,3 +631,80 @@ fn an_unreachable_row_set_branch_names_the_guard_that_refused() {
         );
     }
 }
+
+/// A row-set selector comparing an `Optional` field a stored row holds absent
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "A comparison over an absent field"):
+/// written without `defined(parent)` the selector leaves the row's membership unknown and the
+/// interpreter cannot decide the command; with it, the conjunction is false for that row and the
+/// command is decided.
+#[test]
+fn a_selector_over_an_absent_optional_field_is_decided_once_its_presence_is_tested() {
+    let unguarded = include_str!(
+        "../../../specify/ess-domain/tests/fixtures/absent-comparison.yaml"
+    )
+    .replacen("format: ess/38", "format: ess/37", 1);
+    match absent_run(&unguarded) {
+        Err(ess_conformance::target::TargetError::Unsupported { .. }) => {}
+        other => panic!("the unguarded selector is undecided: {other:?}"),
+    }
+    let guarded = unguarded.replacen(
+        "where: {all: [parent == input.parent,",
+        "where: {all: [defined(parent), parent == input.parent,",
+        1,
+    );
+    let answered = absent_run(&guarded).unwrap_or_else(|error| panic!("decided: {error}"));
+    assert_eq!(
+        answered
+            .outcome
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("tree.nodes.AddChild/added")
+    );
+}
+
+/// A root named `a`, then a child named `a` under it: the root's own row holds `parent` absent.
+fn absent_run(
+    text: &str,
+) -> Result<ess_conformance::target::SemanticCommandResult, ess_conformance::target::TargetError> {
+    use ess_conformance::scenario::{ActorRef, CommandRef};
+    use ess_conformance::target::{ScenarioContext, SemanticCommandRequest};
+    use ess_primitives::ids::CorrelationId;
+    let specification = ess_domain::Specification::assemble([(
+        ess_domain::system::Source::new("absent-comparison.yaml"),
+        ess_domain::spec::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap_or_else(|errors| panic!("{errors}"));
+    let model =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let target = Interpreted::for_model(model);
+    let correlation = CorrelationId::new("absent").unwrap();
+    target
+        .begin_scenario(&ScenarioContext::new(
+            "tree.nodes.AddChild/outcome/added".parse().unwrap(),
+            correlation.clone(),
+        ))
+        .unwrap();
+    let request = |command: &str, input: BTreeMap<String, Node>| SemanticCommandRequest {
+        command: CommandRef::new(command.parse().unwrap()),
+        actor: Some(ActorRef::new("tree.nodes.Editor".parse().unwrap())),
+        caller: None,
+        input,
+        correlation: correlation.clone(),
+    };
+    let root = target
+        .execute_command(request(
+            "tree.nodes.AddRoot",
+            BTreeMap::from([("name".to_owned(), Node::Text("a".to_owned()))]),
+        ))
+        .unwrap();
+    let root_id = root.direct_events[0].payload["node_id"].clone();
+    target.execute_command(request(
+        "tree.nodes.AddChild",
+        BTreeMap::from([
+            ("parent".to_owned(), root_id),
+            ("name".to_owned(), Node::Text("a".to_owned())),
+        ]),
+    ))
+}

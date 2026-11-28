@@ -139,7 +139,8 @@ pub struct RawAffect {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawEach {
-    /// The list, `input.<field>`.
+    /// The list, `input.<field>`, or from `ess/38` `input.<path>` to a `List` member of a struct
+    /// input.
     #[serde(rename = "in")]
     pub list: String,
     /// The name each element is read under.
@@ -977,10 +978,12 @@ fn each_entry(
              the selection as an entry of its own",
         );
     }
+    // From `ess/38` (beyond10x/ess#640) a path to a `List` member of a struct input; below it
+    // [`refuse_each`] refuses the path naming `ess/38`.
     let list = each
         .list
         .strip_prefix("input.")
-        .filter(|field| crate::binding::is_field_name(field));
+        .filter(|field| field.split('.').all(crate::binding::is_field_name));
     let Some(list) = list else {
         return refused(
             ".each",
@@ -3064,6 +3067,20 @@ fn each_below_ess_23(at: String) -> ValidationError {
     .with_hint(FormatVersion::V23.declaration_hint())
 }
 
+/// The refusal of `each: {in: input.<path>}` naming a member of a struct input below ess/38, at
+/// `at` (beyond10x/ess#640), with the sentence of [`super::input_path::below_ess_38`].
+fn each_path_below_ess_38(at: String, list: &str) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedFormatVersion,
+        at,
+        format!(
+            "`each: {{in: {list}}}` names a member of a struct input, which requires \
+             specification format ess/38"
+        ),
+    )
+    .with_hint(FormatVersion::V38.declaration_hint())
+}
+
 /// The refusal of `moves:` or `deletes:` (`beside`) in an `each:` entry below ess/27, at `at`
 /// (beyond10x/ess#596): the code and message it had before ess/27, the hint naming the format
 /// that admits it.
@@ -3133,6 +3150,7 @@ pub(crate) fn refuse_each(
     }
     let below_23 = major < FormatVersion::V23.major();
     let below_27 = major < FormatVersion::V27.major();
+    let below_38 = !super::input_path::addresses_members(Some(format.unwrap_or(FormatVersion::V1)));
     for (source, file) in files.iter_mut() {
         crate::spec::mark(read, errors, Some(&*source));
         for command in &mut file.commands {
@@ -3140,6 +3158,24 @@ pub(crate) fn refuse_each(
                 let name = outcome.name.as_str().to_owned();
                 for (index, affect) in outcome.affects.iter_mut().enumerate() {
                     let at = format!("command.{}.outcomes.{name}.affects[{index}]", command.name);
+                    // A path to a member of a struct input is read from ess/38
+                    // (beyond10x/ess#640); below it the entry is refused naming ess/38 and left
+                    // changing nothing, as below ess/23.
+                    if let Some(list) = affect.each.as_ref().map(|each| each.list.clone()) {
+                        let member = list
+                            .strip_prefix("input.")
+                            .is_some_and(super::input_path::is_path);
+                        if below_38 && !below_23 && member {
+                            errors.push(each_path_below_ess_38(format!("{at}.each"), &list));
+                            affect.each = None;
+                            affect.instance = None;
+                            affect.sets.0.clear();
+                            affect
+                                .filter
+                                .get_or_insert_with(|| Predicate::Always.into());
+                            continue;
+                        }
+                    }
                     if below_23 && affect.each.take().is_some() {
                         errors.push(each_below_ess_23(format!("{at}.each")));
                         affect.instance = None;
@@ -3217,7 +3253,16 @@ fn each_rules(
     let mut errors = ValidationErrors::new();
     let site = at.clone().key("each");
     let binder = &each.binder;
-    let Some(list) = command.input.iter().find(|field| field.name == each.list) else {
+    // From ess/38 the list may be a `List` member of a struct input (beyond10x/ess#640).
+    let Some(list) = super::input_path::address(command, &spec.system().types, &each.list) else {
+        if super::input_path::is_path(&each.list) {
+            if let Err(unresolved) =
+                super::input_path::resolve(command, &spec.system().types, &each.list)
+            {
+                errors.push(unresolved.refusal(&site, command, &each.list));
+                return errors;
+            }
+        }
         errors.push(
             ValidationError::at(
                 site,
@@ -3460,11 +3505,17 @@ fn each_rules(
 /// condition is a plain `when:` over the input.
 fn held_distinct(command: &CommandSpec, outcome: &Outcome, each: &Each) -> bool {
     let names = |distinct: &ess_primitives::predicate::Distinct| {
-        let list = match distinct.over.segments() {
-            [only] => *only == each.list,
-            [root, only] => root == super::subject_fact::INPUT_NAMESPACE && *only == each.list,
-            _ => false,
+        // `in: <list>` or `in: input.<list>`, the list a path to a member of a struct input from
+        // ess/38 (beyond10x/ess#640).
+        let over = match distinct.over.segments() {
+            [root, rest @ ..]
+                if root == super::subject_fact::INPUT_NAMESPACE && !rest.is_empty() =>
+            {
+                rest
+            }
+            all => all,
         };
+        let list = over.join(".") == each.list;
         list && distinct.key.as_ref().is_some_and(|key| {
             matches!(key.segments(), [bind, member]
                 if *bind == distinct.bind && *member == each.member)

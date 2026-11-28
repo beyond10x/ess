@@ -1,0 +1,91 @@
+format: ess/38
+system: shop
+version: v1
+domain: shop.stock
+summary: A check reads the bin its settings name first, and a note updates that bin.
+types:
+  - {name: shop.stock.BinId, kind: newtype, of: Uuid}
+  - name: shop.stock.Settings
+    kind: struct
+    fields:
+      - {name: primary, type: shop.stock.BinId}
+      - {name: backup, type: shop.stock.BinId}
+      - {name: note, type: String}
+entities:
+  - name: shop.stock.Bin
+    identity: {name: bin_id, type: shop.stock.BinId}
+    fields:
+      - {name: open, type: Boolean}
+      - {name: note, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+errors:
+  - name: shop.stock.UnknownBin
+    summary: The bin the settings name does not exist.
+    fields:
+      - {name: bin_id, type: shop.stock.BinId}
+  - {name: shop.stock.ClosedBin, summary: The bin the settings name is closed., fields: []}
+events:
+  - name: shop.stock.BinAdded
+    fields: [{name: bin_id, type: shop.stock.BinId}]
+  - name: shop.stock.BinChecked
+    fields: [{name: bin_id, type: shop.stock.BinId}]
+  - name: shop.stock.BinNoted
+    fields: [{name: bin_id, type: shop.stock.BinId}]
+actors:
+  - name: shop.stock.Clerk
+    may: [shop.stock.AddBin, shop.stock.Check, shop.stock.Note]
+commands:
+  - name: shop.stock.AddBin
+    input:
+      - {name: open, type: Boolean}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        creates: shop.stock.Bin
+        instance: bin_id
+        emits: [shop.stock.BinAdded]
+        payload: {shop.stock.BinAdded: {bin_id: {generated: true}}}
+        sets: {open: input.open, note: input.note}
+  - name: shop.stock.Check
+    input:
+      - {name: settings, type: shop.stock.Settings}
+    outcomes:
+      - name: no-bin
+        when_related: {via: input.settings.primary, exists: false}
+        error: shop.stock.UnknownBin
+        payload: {shop.stock.UnknownBin: {bin_id: input.settings.primary}}
+      - name: closed
+        when_related: {via: input.settings.primary, predicate: open == false}
+        error: shop.stock.ClosedBin
+      - name: checked
+        emits: [shop.stock.BinChecked]
+        payload: {shop.stock.BinChecked: {bin_id: input.settings.primary}}
+  - name: shop.stock.Note
+    input:
+      - {name: settings, type: shop.stock.Settings}
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: shop.stock.UnknownBin
+        payload: {shop.stock.UnknownBin: {bin_id: input.settings.primary}}
+      - name: no-backup
+        when_related: {via: input.settings.backup, exists: false}
+        error: shop.stock.UnknownBin
+        payload: {shop.stock.UnknownBin: {bin_id: input.settings.backup}}
+      - name: backup-closed
+        when_related: {via: input.settings.backup, predicate: open == false}
+        error: shop.stock.ClosedBin
+      - name: noted
+        updates: shop.stock.Bin
+        instance: settings.primary
+        emits: [shop.stock.BinNoted]
+        payload: {shop.stock.BinNoted: {bin_id: input.settings.primary}}
+        sets: {note: input.settings.note}
+views:
+  - name: shop.stock.Bins
+    source: shop.stock.Bin
+    consistency: read_your_writes
+    fields:
+      - {name: bin_id, type: shop.stock.BinId}
+      - {name: open, type: Boolean}
+      - {name: note, type: String}

@@ -4481,8 +4481,15 @@ pub(super) fn absent_input(
     {
         // Every reference left out: on a command reading several rows, each is Optional
         // ([`optional`], beyond10x/ess#283).
+        // A reference named through a member of a struct input (ess/38, beyond10x/ess#640) is
+        // left out at the first `Optional` on its route.
         for (via, _) in rows(command) {
-            input.remove(via.field());
+            let field = via.field();
+            let left_out = super::optional_prefixes(ir, command, field)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| field.to_owned());
+            super::set_at(&mut input, &left_out, None);
         }
         if selects_absent(ir, command, &input)?.is_some_and(|branch| branch.name == outcome.name) {
             return Ok(input);
@@ -5166,9 +5173,10 @@ pub(super) fn overlaps(
             && addresses_through(command, via.field());
         if missing && later_absent && !addressed {
             let mut sent = input.clone();
-            sent.insert(
-                via.field().to_owned(),
-                fresh_identity(ir, command, via.field(), Some(input))?,
+            super::set_at(
+                &mut sent,
+                via.field(),
+                Some(fresh_identity(ir, command, via.field(), Some(input))?),
             );
             let mut bound = setup.bound.clone();
             bound.remove(via.field());
@@ -5209,13 +5217,28 @@ pub(super) fn overlaps(
         ));
     }
     let sends = unclaimed_sends(ir, command, outcome, sends)?;
+    send_overlaps(models, command, outcome, actors, sends, steps, setup);
+    Ok(())
+}
+
+/// Appends to `setup` the rows `steps` arranges and each of [`overlaps`]' `sends` expecting
+/// `outcome`, between the arrange and act marks; nothing where no send is left.
+fn send_overlaps(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    sends: Vec<BoundInput>,
+    mut steps: Vec<super::ScenarioStep>,
+    setup: &mut Setup,
+) {
     if sends.is_empty() {
-        return Ok(());
+        return;
     }
     models.mark(super::caller::InvocationPhase::Arrange, &mut steps);
     for (sent, bound) in sends {
         send_each_without_row(
-            ir,
+            models.arrangement,
             command,
             actors,
             &bound,
@@ -5225,7 +5248,6 @@ pub(super) fn overlaps(
     }
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
     setup.steps.append(&mut steps);
-    Ok(())
 }
 
 /// Of `sends`, those no input-guarded refusal the plan reads before `outcome` claims ([`overlaps`]):
@@ -5877,7 +5899,7 @@ pub(super) fn missing_row_send(
     let field = via.field();
     let fresh = fresh_identity(ir, command, field, Some(input)).ok()?;
     let mut missing = input.clone();
-    missing.insert(field.to_owned(), fresh);
+    super::set_at(&mut missing, field, Some(fresh));
     let mut unbound = bound.clone();
     unbound.remove(field);
     Some((missing, unbound))
@@ -6005,7 +6027,7 @@ fn unclaimed(
         for mut input in
             candidates(ir, command, directed, distinction).map_err(RefusalCause::NoWitness)?
         {
-            input.insert(field.to_owned(), fresh.clone());
+            super::set_at(&mut input, field, Some(fresh.clone()));
             decided(&mut input);
             tried += 1;
             match input_refusal_taking(ir, command, &input)? {
@@ -6125,7 +6147,7 @@ fn without_row_each(
     Ok(inputs
         .into_iter()
         .map(|mut input| {
-            input.insert(field.to_owned(), fresh.clone());
+            super::set_at(&mut input, field, Some(fresh.clone()));
             input
         })
         .collect())
@@ -6511,10 +6533,14 @@ fn guards_read(guards: &[&Predicate], via: &ResolvedRelatedVia) -> bool {
         return false;
     };
     guards.iter().any(|guard| {
-        guard
-            .fact_paths()
-            .iter()
-            .any(|path| path.namespace() == field)
+        guard.fact_paths().iter().any(|path| {
+            if !ess_domain::command::input_path::is_path(field) {
+                return path.namespace() == field;
+            }
+            // A member of a struct input (ess/38, beyond10x/ess#640): a read at or below it.
+            let segments: Vec<&str> = path.segments().iter().map(String::as_str).collect();
+            ess_domain::command::input_path::reads_member(&segments, field)
+        })
     })
 }
 
@@ -6527,7 +6553,7 @@ fn on_row(
     row: &Arrangement,
 ) {
     if let Some(identity) = created_identity(ir, &row.steps, &row.instance) {
-        input.insert(via.field().to_owned(), identity);
+        super::set_at(input, via.field(), Some(identity));
     }
 }
 
@@ -6697,6 +6723,6 @@ pub(super) fn point_at_missing(
 ) -> Result<(), RefusalCause> {
     let (via, _) = read(command).ok_or_else(unarranged)?;
     let fresh = fresh_identity(ir, command, via.field(), Some(&*input))?;
-    input.insert(via.field().to_owned(), fresh);
+    super::set_at(input, via.field(), Some(fresh));
     Ok(())
 }

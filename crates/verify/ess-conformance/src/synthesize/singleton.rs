@@ -193,13 +193,10 @@ fn flipped(op: CompareOp) -> CompareOp {
     }
 }
 
-/// `true` where `field` of `command`'s input names the one row of a singleton entity.
+/// `true` where `field` of `command`'s input — from ess/38 a member path — names the one row of a
+/// singleton entity.
 pub(super) fn names_the_one_row(ir: &EssIr, command: &ResolvedCommand, field: &str) -> bool {
-    command
-        .input
-        .iter()
-        .find(|input| input.name == field)
-        .is_some_and(|input| has_one_value(ir, &input.type_ref))
+    super::input_type(ir, command, field).is_some_and(|type_ref| has_one_value(ir, type_ref))
 }
 
 /// `true` where `entity`'s identity has one value, so it has no row beside the one.

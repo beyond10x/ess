@@ -379,8 +379,10 @@ impl ElementFacts<'_> {
         let (first, rest) = path.segments().split_first()?;
         if first == self.binder {
             return Some(FactPath::from_segments(
-                [self.list.to_owned(), self.index.to_string()]
-                    .into_iter()
+                self.list
+                    .split('.')
+                    .map(str::to_owned)
+                    .chain([self.index.to_string()])
                     .chain(rest.iter().cloned()),
             ));
         }
@@ -453,7 +455,7 @@ fn subject<'a>(
         ));
     };
     let entity = ir.entity(&declared.entity);
-    let key = supplied.get(&field.name).ok_or_else(|| {
+    let key = ess_compiler::ir::read_input(supplied, &field.name).ok_or_else(|| {
         Undetermined::Request("secondary effect subject identity is absent".into())
     })?;
     let row = store
