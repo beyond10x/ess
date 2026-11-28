@@ -34,7 +34,7 @@ pub(super) fn nothing_creates(ir: &EssIr, entity: &EntityHandle) -> Unreachable 
 /// Whether a related row of `entity` is resolved as an entity fixture: the deployment provides its
 /// rows, no outcome creates one, and it is filed under no owner.
 pub(super) fn serves(ir: &EssIr, entity: &EntityHandle) -> bool {
-    let created = ir.drivers().get(entity).is_some_and(|drivers| {
+    let created = Some(super::drivers_of(ir, entity)).is_some_and(|drivers| {
         drivers
             .iter()
             .any(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -75,7 +75,7 @@ pub(super) fn search<T>(
         let row = Arrangement {
             instance: instance.clone(),
             state: state.clone(),
-            steps: vec![ScenarioStep::ResolveFixtures { fixtures }],
+            steps: vec![ScenarioStep::ResolveFixtures { fixtures }].into(),
             source: BTreeSet::from([EntityRef::from(entity).into()]),
             settled: BTreeMap::new(),
             unwritten: BTreeSet::new(),

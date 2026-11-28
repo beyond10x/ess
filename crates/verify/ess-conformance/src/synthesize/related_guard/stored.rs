@@ -843,7 +843,7 @@ fn ordered(
         return Ok(row.clone());
     };
     let mut named = row.clone();
-    named.steps = created;
+    named.steps = created.into();
     after.extend(later);
     Ok(named)
 }
@@ -896,11 +896,11 @@ fn split_moves(row: &Arrangement) -> (Vec<ScenarioStep>, Vec<ScenarioStep>) {
     });
     match captured {
         Some(at) => {
-            let mut created = row.steps.clone();
+            let mut created = row.steps.to_vec();
             let moves = created.split_off(at + 1);
             (created, moves)
         }
-        None => (row.steps.clone(), Vec::new()),
+        None => (row.steps.to_vec(), Vec::new()),
     }
 }
 

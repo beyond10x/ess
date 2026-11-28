@@ -442,10 +442,10 @@ fn row_picks(
     if !declared || !super::made::remembers(ir) {
         return None;
     }
-    let key = format!(
+    let key = super::memo_key::of(format_args!(
         "\u{0}related|{}|{entity:?}|{:?}|{:?}|{:?}",
         command.name, row.state, row.settled, row.unwritten
-    );
+    ));
     super::made::row_picks(ir, key)
 }
 
@@ -3478,7 +3478,7 @@ fn searched(
     let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
     let mut steps = std::mem::take(&mut row.steps);
     steps.append(&mut invocation.steps);
-    invocation.steps = steps;
+    invocation.steps = steps.into();
     invocation.source.extend(row.source.iter().cloned());
     Ok((invocation, row))
 }
@@ -3617,7 +3617,7 @@ fn nested(
     let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
     let mut steps = row.steps;
     steps.append(&mut invocation.steps);
-    invocation.steps = steps;
+    invocation.steps = steps.into();
     invocation.source.extend(row.source);
     Ok(invocation)
 }

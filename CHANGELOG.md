@@ -15,6 +15,14 @@
 - `ess generate synthesize --target rust` and `--target web` emit a binding whose mapping copies a required event member into a command input of type `Optional` of the same type (a `String`, a scalar, a newtype identifier or a struct) and passes it as `Some(event.<member>.clone())`, as the Go target wraps it; both refused the whole workspace with "emits a plain clone of `<T>` for `<input>` of type `Optional<T>`". A newtype copied into an `Optional` of another newtype is still refused by validation as `type_mismatch`, and a copy that adds more than one `Optional` level by both targets.
 - `ess generate synthesize --target rust` and `--target go` select by an enum member the way the predicate compares it, by the variant's name: Rust printed the variant's internal record and the generated crate failed to build while the plan said generated, and Go compared the variant's wire spelling, so a variant declaring a wire spelling was never selected.
 
+## [0.99.9] — 2026-11-27
+
+### Fixed
+
+- `ess verify conform synthesize` writes the suites 0.99.8 writes with less than half its work and a third of its memory where it drives a creating branch beside a row-set refusal, as 0.99.8 began to do. A specification of 565 scenarios took 158–245 s and 17.2 GB with 0.99.8 and takes 59 s and 6.0 GB on the same machine. Synthesis keeps each answer under a key naming everything the answer reads, and wrote that key out in full for every question it asked: the actor of every granted command, every row held for the runs advancing it and every step of every arrangement the key named. A key is now a 128-bit digest of that text, and each of those parts is rendered once and named by its own digest after that. The arrangements synthesis keeps share their steps until one of them is changed, the rows a search reached are shared with its memory rather than copied after each depth, and the commands that change an entity are read from an index kept per model. Every suite is byte for byte the one 0.99.8 writes.
+
+The fix changes no format key.
+
 ## [0.99.8] — 2026-11-26
 
 ### Fixed
@@ -59,7 +67,6 @@ The entries below shipped in 0.99.8 through its merge of `main` and were listed 
 - `ess verify conform synthesize` arranges a row through a creating command that refuses both a missing related row its input names (`when_related: {via: input.<field>, exists: false}`) and a row set over the rows it creates, such as a name already taken (`when_related: {entity: <created>, where: name == input.name, exists: true}`). The row-set refusal was counted as answering every input, so the creating branch was never sent to arrange a row: the row-set refusal was refused `ESS-SYNTH-001`, and every later command acting on such a row `ESS-SYNTH-004` ("which no input reaches"). On a three-command model 4 scenarios and 4 refusals become 8 scenarios and none. A row-set refusal that holds where its selector selects no row (`exists: false`) still answers such a run.
 - `ess verify conform synthesize` no longer writes three kinds of scenario that `ess verify conform run --target interpreted` fails. From `ess/27`, a missing row the command addresses is answered by that row's existence before any related row is read: such a row is no longer sent missing beside another missing related row, and an `exists: false` branch over it (`when_related: {via: input.<id>}` on the identity the command updates or moves) is refused as never reached, with its own help line, where it was refused `ESS-SYNTH-008` or, beside a row set, written and failed. The one-time disclosure scenarios are held to the row sets their sends read, as every other scenario is; one that a row set answers otherwise is no longer written. No repository model's suite moves.
 - `ess verify conform synthesize` arranges a command whose `when:` guards hold a scope to which Optional references it is sent (`{all: [scope == Account, {formation_id: {defined: true}}]}`) before `when_related: {via: input.<reference>}` guards over the same references. A send an earlier `when:` refusal answers is no longer written into an `exists: false` scenario expecting the missing row, and a branch no arrangement with a row for every reference reaches is sent with every Optional reference left out, which reads no row, as the interpreter reads an absent Optional reference; it was refused `ESS-SYNTH-003`.
-
 
 ## [0.99.7] — 2026-11-26
 
