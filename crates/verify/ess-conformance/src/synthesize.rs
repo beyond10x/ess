@@ -200,6 +200,9 @@ pub use first_kept::first_rows_made;
 mod grant;
 mod identity;
 mod made;
+mod memo_key;
+#[doc(hidden)]
+pub use memo_key::key_bytes_rendered;
 mod model_memo;
 mod ordered_head;
 mod paging;
@@ -7336,7 +7339,7 @@ fn identity_sent(
     )?;
     let steered = Setup {
         related_row: BTreeMap::new(),
-        steps: row.steps,
+        steps: row.steps.into(),
         instance: Some(row.instance),
         bound: BTreeMap::new(),
         source: row.source,
@@ -7406,7 +7409,7 @@ fn held_row_in(
 /// input field `field` it is sent through.
 fn held_setup(arrangement: Arrangement, field: &str, complete: bool) -> Setup {
     Setup {
-        steps: arrangement.steps,
+        steps: arrangement.steps.into(),
         bound: BTreeMap::from([(field.to_owned(), arrangement.instance)]),
         source: arrangement.source,
         // A complete refusal (ess/26, beyond10x/ess#587) reads the row back, so the state and
@@ -7787,7 +7790,7 @@ fn run_state_refusal(
     );
     Ok(Run {
         after_steps: Vec::new(),
-        setup: steps,
+        setup: steps.into(),
         invoke,
         after: Some(state.clone()),
         before: Some(state.clone()),
@@ -8080,7 +8083,7 @@ fn replay_eligibility(
     let arrangement = Arrangement {
         instance: instance.clone(),
         state: held.clone(),
-        steps: Vec::new(),
+        steps: Steps::default(),
         source: BTreeSet::new(),
         settled: origin.settled.clone(),
         unwritten: BTreeSet::new(),
@@ -8299,7 +8302,7 @@ fn prepare_steered(
     };
     let setup = Setup {
         related_row: BTreeMap::new(),
-        steps: arrangement.steps,
+        steps: arrangement.steps.into(),
         instance: Some(arrangement.instance),
         bound: BTreeMap::new(),
         source: arrangement.source,
@@ -8383,7 +8386,7 @@ fn prepare_subject(
                 },
                 Some((field, arrangement)) => Setup {
                     related_row: BTreeMap::new(),
-                    steps: arrangement.steps,
+                    steps: arrangement.steps.into(),
                     // Not `instance`: that names the branch's subject, and this arrangement made
                     // the subject's *owner*. The subject does not exist yet.
                     bound: [(field, arrangement.instance)].into_iter().collect(),
@@ -8428,7 +8431,7 @@ fn prepare_subject(
         })?;
     Ok(Setup {
         related_row: BTreeMap::new(),
-        steps: arrangement.steps,
+        steps: arrangement.steps.into(),
         instance: Some(arrangement.instance),
         // The branch under test acts on an instance that already exists, so its own input names the
         // subject and nothing else the arrangement built.
@@ -8439,6 +8442,104 @@ fn prepare_subject(
         settled: arrangement.settled,
         unobserved: arrangement.unobserved,
     })
+}
+
+/// The steps of an [`Arrangement`], shared by its copies until one of them is changed.
+///
+/// The memories of synthesis ([`made`], [`created_memo`], [`subject_fact`]'s searches) hand out a
+/// copy of each arrangement they keep, and every arrangement copies the rows it builds on. Beside a
+/// row-set refusal those rows carry dozens of steps each (0.99.8: 67 on average, up to 281):
+/// copying them was a tenth of a synthesis, and sharing them took a third off the memory it held.
+/// A change through [`std::ops::DerefMut`] copies the steps first where another copy shares them,
+/// so no copy sees it.
+///
+/// Written with `Debug` as the list itself, except inside the key of a memory
+/// ([`memo_key::keying`]): there as the digest of that list, rendered once per list however many
+/// keys name it, and again only after a change.
+#[derive(Clone, Default)]
+struct Steps(std::rc::Rc<KeyedSteps>);
+
+/// The list of [`Steps`], and the digest of its `Debug` rendering once a key asked for it.
+#[derive(Clone, Default)]
+struct KeyedSteps {
+    steps: Vec<ScenarioStep>,
+    digest: std::cell::OnceCell<memo_key::Key>,
+}
+
+impl PartialEq for Steps {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.steps == other.0.steps
+    }
+}
+
+impl std::ops::Deref for Steps {
+    type Target = Vec<ScenarioStep>;
+
+    fn deref(&self) -> &Vec<ScenarioStep> {
+        &self.0.steps
+    }
+}
+
+impl std::ops::DerefMut for Steps {
+    fn deref_mut(&mut self) -> &mut Vec<ScenarioStep> {
+        let keyed = std::rc::Rc::make_mut(&mut self.0);
+        // The list may change through the reference: its digest is written again when asked.
+        keyed.digest = std::cell::OnceCell::new();
+        &mut keyed.steps
+    }
+}
+
+impl fmt::Debug for Steps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if memo_key::keying() {
+            let digest = self
+                .0
+                .digest
+                .get_or_init(|| memo_key::of(format_args!("{:?}", self.0.steps)));
+            write!(f, "steps={digest}")
+        } else {
+            fmt::Debug::fmt(&self.0.steps, f)
+        }
+    }
+}
+
+impl From<Vec<ScenarioStep>> for Steps {
+    fn from(steps: Vec<ScenarioStep>) -> Self {
+        Self(std::rc::Rc::new(KeyedSteps {
+            steps,
+            digest: std::cell::OnceCell::new(),
+        }))
+    }
+}
+
+impl From<Steps> for Vec<ScenarioStep> {
+    fn from(steps: Steps) -> Self {
+        std::rc::Rc::unwrap_or_clone(steps.0).steps
+    }
+}
+
+impl FromIterator<ScenarioStep> for Steps {
+    fn from_iter<I: IntoIterator<Item = ScenarioStep>>(steps: I) -> Self {
+        Self::from(steps.into_iter().collect::<Vec<_>>())
+    }
+}
+
+impl IntoIterator for Steps {
+    type Item = ScenarioStep;
+    type IntoIter = std::vec::IntoIter<ScenarioStep>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Vec::from(self).into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Steps {
+    type Item = &'a ScenarioStep;
+    type IntoIter = std::slice::Iter<'a, ScenarioStep>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.steps.iter()
+    }
 }
 
 /// One instance of an entity, resting in a state, and the name the scenario calls it by.
@@ -8453,7 +8554,7 @@ struct Arrangement {
     /// answers to one question.
     state: StateName,
     /// The steps that produce it.
-    steps: Vec<ScenarioStep>,
+    steps: Steps,
     /// What those steps depend on.
     source: BTreeSet<EssSemanticRef>,
     /// What those steps left in the entity's fields, where the branches said.
@@ -8639,6 +8740,53 @@ fn arrange_first(
     cheapest.ok_or_else(|| Unreachable::across_targets(failed))
 }
 
+/// The drivers of `entity`: [`EssIr::drivers`]' entry for it, in the same order, and empty where
+/// the map has none.
+///
+/// Read from an index kept per model ([`made::kept`]). [`EssIr::drivers`] builds the map for
+/// every entity on each call, and the searches that arrange a row ask it for each row they move:
+/// a model of a few hundred scenarios spent a tenth of its synthesis building it. A model not
+/// remembered is answered by [`EssIr::drivers_of`].
+fn drivers_of<'ir>(ir: &'ir EssIr, entity: &EntityHandle) -> Vec<Driver<'ir>> {
+    let index = made::kept(ir, "drivers by entity", || {
+        ir.drivers()
+            .into_iter()
+            .map(|(entity, drivers)| {
+                let named = drivers
+                    .iter()
+                    .filter_map(|driver| {
+                        let position = driver
+                            .command
+                            .outcomes
+                            .iter()
+                            .position(|outcome| std::ptr::eq(outcome, driver.outcome))?;
+                        Some((driver.command.name.clone(), position))
+                    })
+                    .collect::<Vec<_>>();
+                (entity.clone(), named)
+            })
+            .collect::<BTreeMap<EntityHandle, Vec<(QualifiedName, usize)>>>()
+    });
+    let Some(index) = index else {
+        return ir.drivers_of(entity);
+    };
+    index.get(entity).map_or_else(Vec::new, |named| {
+        named
+            .iter()
+            .filter_map(|(name, position)| {
+                let command = ir.commands().get(name)?;
+                let outcome = command.outcomes.get(*position)?;
+                let subject = outcome.subject.as_ref()?;
+                Some(Driver {
+                    command,
+                    outcome,
+                    effect: &subject.effect,
+                })
+            })
+            .collect()
+    })
+}
+
 /// Bring one instance of `entity` into existence and drive it to `target`.
 ///
 /// Two questions the model can now answer and could not before G21: which outcome brings an instance
@@ -8660,8 +8808,8 @@ fn arrange(
     distinction: Distinction,
     arranging: &[&EntityHandle],
 ) -> Result<Arrangement, Unreachable> {
-    let all = ir.drivers();
-    let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
+    let all = drivers_of(ir, entity);
+    let drivers: &[Driver<'_>] = all.as_slice();
     // Every creating branch is a place to start (ess/15, `into:`): the route is the shortest from
     // the state some creation lands in, ties to the first creator in the order `EssIr::drivers`
     // yields them: command name, then declared branch order, since the IR keeps commands by name.
@@ -8901,7 +9049,7 @@ fn filed_under(
         Arrangement {
             instance: owner.clone(),
             state: ir.entity(&belongs.owner).lifecycle.initial.clone(),
-            steps: Vec::new(),
+            steps: Steps::default(),
             source: BTreeSet::new(),
             settled: BTreeMap::new(),
             unwritten: BTreeSet::new(),
@@ -9137,7 +9285,7 @@ fn created_by<E>(
     let mut arrangement = Arrangement {
         instance,
         state: born(ir, creator).clone(),
-        steps,
+        steps: steps.into(),
         source,
         settled,
         unwritten: unwritten_by(ir, entity, creator.outcome),
@@ -12793,7 +12941,7 @@ fn arrange_ranked(
             let row = Arrangement {
                 instance: owner.clone(),
                 state: ir.entity(&belongs.owner).lifecycle.initial.clone(),
-                steps: Vec::new(),
+                steps: Steps::default(),
                 source: BTreeSet::new(),
                 settled: BTreeMap::new(),
                 unwritten: BTreeSet::new(),
@@ -13077,7 +13225,7 @@ fn arrange_matching(
         let by_identity = identified && reads_root(view, identity_name);
         let by_copy = identified
             && !singleton::is_singleton(ir, beside.entity)
-            && ir.drivers().get(beside.entity).is_some_and(|drivers| {
+            && Some(drivers_of(ir, beside.entity)).is_some_and(|drivers| {
                 drivers
                     .iter()
                     .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -16328,8 +16476,8 @@ fn arrange_toward_with(
     ),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
-    let all = ir.drivers();
-    let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
+    let all = drivers_of(ir, entity);
+    let drivers: &[Driver<'_>] = all.as_slice();
     let states = &ir.entity(entity).lifecycle.states;
     let identity = &ir.entity(entity).identity;
     // A second pass, only where the first arranged nothing, sends the creators whose refusal of
@@ -16533,7 +16681,7 @@ fn arrange_toward_with(
                     start.source.extend(row.source.iter().cloned());
                 }
                 steps.append(&mut start.steps);
-                start.steps = steps;
+                start.steps = steps.into();
             }
             let mut best: Option<Arrangement> = None;
             for target in states {
@@ -18596,7 +18744,7 @@ fn unknown_instance(
         Some((row, (_, bound))) if !related_guard::reads_addressed_row(command, attempt) => {
             (row.steps, row.source, bound)
         }
-        _ => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
+        _ => (Steps::default(), BTreeSet::new(), BTreeMap::new()),
     };
     let supplied = supply(ir, command, &input, None, None, &bound);
     steps.extend([
@@ -19806,7 +19954,7 @@ fn from_source(
     models.mark(caller::InvocationPhase::Act, &mut steps);
     source.insert(command_ref.into());
     source.insert(outcome_ref.into());
-    Ok((steps, source))
+    Ok((steps.into(), source))
 }
 
 /// One ordered comparison of a guard's conjunct against a literal, read with the fact on the left.

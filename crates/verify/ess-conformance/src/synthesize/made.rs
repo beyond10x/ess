@@ -34,6 +34,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use super::memo_key::Key;
 use super::subject_fact::{Reached, RowPicks, Selections};
 use super::{Arrangement, EssIr, RefusalCause};
 
@@ -47,14 +48,14 @@ struct Made {
     /// The model, compared by address only. It is borrowed for as long as this entry is on the
     /// stack ([`Remembered`]), so the address cannot be reused by another model meanwhile.
     ir: *const EssIr,
-    rows: BTreeMap<String, Entry>,
+    rows: BTreeMap<Key, Entry>,
     /// What each stored-row search reached, by its key ([`reached`]).
-    searches: BTreeMap<String, Reached>,
+    searches: BTreeMap<Key, Reached>,
     /// The branches a command's inputs select on a row, by their key ([`selections`]).
-    selections: BTreeMap<String, Rc<Selections>>,
+    selections: BTreeMap<Key, Rc<Selections>>,
     /// The branch a command selects on a row for each input asked so far, by command and row
     /// ([`row_picks`]).
-    picks: BTreeMap<String, Rc<RowPicks>>,
+    picks: BTreeMap<Key, Rc<RowPicks>>,
     /// Values derived from the model alone and owning what they hold, by their key ([`kept`]).
     kept: BTreeMap<String, Rc<dyn std::any::Any>>,
 }
@@ -230,12 +231,12 @@ pub(super) fn remembers(ir: &EssIr) -> bool {
 }
 
 /// What the search under `key` reached when this model asked it before ([`Reached`]), if it did.
-pub(super) fn reached(ir: &EssIr, key: &str) -> Option<Reached> {
+pub(super) fn reached(ir: &EssIr, key: Key) -> Option<Reached> {
     MADE.with(|made| {
         made.borrow()
             .last()
             .filter(|top| std::ptr::eq(top.ir, ir))
-            .and_then(|top| top.searches.get(key).cloned())
+            .and_then(|top| top.searches.get(&key).cloned())
     })
 }
 
@@ -244,7 +245,7 @@ pub(super) fn reached(ir: &EssIr, key: &str) -> Option<Reached> {
 /// in as later branches ask, through the shared handle.
 pub(super) fn selections(
     ir: &EssIr,
-    key: String,
+    key: Key,
     make: impl FnOnce() -> Selections,
 ) -> Rc<Selections> {
     let known = MADE.with(|made| {
@@ -271,7 +272,7 @@ pub(super) fn selections(
 /// The branches a command selects on one row under `key` ([`RowPicks`]), as far as the model
 /// remembered innermost has asked; `None` where `ir` is not that model. They are filled in as
 /// later searches ask, through the shared handle.
-pub(super) fn row_picks(ir: &EssIr, key: String) -> Option<Rc<RowPicks>> {
+pub(super) fn row_picks(ir: &EssIr, key: Key) -> Option<Rc<RowPicks>> {
     MADE.with(|made| {
         let mut made = made.borrow_mut();
         let top = made.last_mut().filter(|top| std::ptr::eq(top.ir, ir))?;
@@ -280,7 +281,7 @@ pub(super) fn row_picks(ir: &EssIr, key: String) -> Option<Rc<RowPicks>> {
 }
 
 /// Keeps what the search under `key` has reached so far, for the searches after it.
-pub(super) fn reach(ir: &EssIr, key: String, reached: Reached) {
+pub(super) fn reach(ir: &EssIr, key: Key, reached: Reached) {
     MADE.with(|made| {
         if let Some(top) = made.borrow_mut().last_mut() {
             if std::ptr::eq(top.ir, ir) {
@@ -294,7 +295,7 @@ pub(super) fn reach(ir: &EssIr, key: String, reached: Reached) {
 /// remembered innermost is answered by `make` every time.
 pub(super) fn made(
     ir: &EssIr,
-    key: impl FnOnce() -> String,
+    key: impl FnOnce() -> Key,
     make: impl FnOnce() -> Result<Vec<Arrangement>, RefusalCause>,
 ) -> Result<Vec<Arrangement>, RefusalCause> {
     let held = MADE.with(|made| {

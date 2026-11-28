@@ -223,7 +223,7 @@ fn two_rows(
             instance: second.instance,
         });
     }
-    Ok((steps, source, items))
+    Ok((steps.into(), source, items))
 }
 
 /// Whether `outcome`'s own `when:` guard reads the list `field` (beyond10x/ess#761): a branch

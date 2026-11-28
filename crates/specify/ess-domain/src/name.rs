@@ -138,7 +138,15 @@ impl QualifiedName {
 
 impl fmt::Display for QualifiedName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.segments.join("."))
+        // Segment by segment: a name is written into every memo key of synthesis, and joining it
+        // first allocated a string each time.
+        for (at, segment) in self.segments.iter().enumerate() {
+            if at > 0 {
+                f.write_str(".")?;
+            }
+            f.write_str(segment)?;
+        }
+        Ok(())
     }
 }
 

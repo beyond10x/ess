@@ -1772,7 +1772,7 @@ fn segment(
     };
     let setup = Setup {
         related_row: BTreeMap::new(),
-        steps: arrangement.steps,
+        steps: arrangement.steps.into(),
         instance: Some(arrangement.instance),
         bound: BTreeMap::new(),
         source: arrangement.source,
@@ -1864,7 +1864,7 @@ fn stored_first(
     if let Some((setup, _)) = rows {
         let mut steps = setup.steps.clone();
         steps.append(&mut arrangement.steps);
-        arrangement.steps = steps;
+        arrangement.steps = steps.into();
         arrangement.source.extend(setup.source.iter().cloned());
     }
     Ok(arrangement)
@@ -1971,7 +1971,7 @@ fn creators_leave_unset(ir: &EssIr, command: &ResolvedCommand, related: &EntityH
         .map(ess_primitives::FactPath::namespace)
         .filter(|name| fields.iter().any(|field| field.name == *name))
         .collect();
-    ir.drivers().get(related).is_some_and(|drivers| {
+    Some(super::drivers_of(ir, related)).is_some_and(|drivers| {
         drivers
             .iter()
             .filter(|creator| matches!(creator.effect, ResolvedEffect::Creates))
@@ -2088,7 +2088,10 @@ fn recreated(
         }
         other => other,
     }));
-    Segment { steps, source }
+    Segment {
+        steps: steps.into(),
+        source,
+    }
 }
 
 fn recreation(

@@ -2767,7 +2767,7 @@ fn arrange_and_observe(
                 row: (
                     field.clone(),
                     Arrangement {
-                        steps: Vec::new(),
+                        steps: super::Steps::default(),
                         ..owner.clone()
                     },
                 ),
@@ -3190,7 +3190,7 @@ fn create_row(
             field.clone(),
             Arrangement {
                 steps: if referenced.iter().any(|(via, _)| via == field) {
-                    Vec::new()
+                    super::Steps::default()
                 } else {
                     owner.steps.clone()
                 },
@@ -3430,7 +3430,7 @@ fn arrange_related<'p>(
             out.named.push((
                 via,
                 Arrangement {
-                    steps: Vec::new(),
+                    steps: super::Steps::default(),
                     ..owner.clone()
                 },
             ));
@@ -3534,7 +3534,7 @@ fn point_others(
         }
     }
     prelude.append(&mut named.steps);
-    named.steps = prelude;
+    named.steps = prelude.into();
     Ok(out)
 }
 
@@ -3760,7 +3760,7 @@ fn arrange_referenced(
             Some((
                 read.to_owned(),
                 Arrangement {
-                    steps: Vec::new(),
+                    steps: super::Steps::default(),
                     ..owner.clone()
                 },
             ))
