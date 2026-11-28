@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - informed_by: story:a-guard-compares-a-link-field-with-an-input
 - informed_by: story:a-setup-runs-refusal-names-the-real-cause-where-its-branch-has-a-scenario-of-its-own
-revision: 10
+revision: 11
 ---
 ## Summary
 
@@ -155,3 +155,44 @@ Reduction: a generic model with an order, a store, and a command that ships an o
 Fix plan, in order: (1) `arranged_at`, where `subject_link_refuses` fires for the read field, arranges through `stored::arranged_at` with the subject's link as the read row and binds `input.<field>` to that row instead of refusing; (2) `stored::arranged_at`, non-absent arm, binds every `input.<field>` that a step-3 guard `<link> != input.<field>` compares to the linked row's instance, which fixes the placeholder send; (3) a relink through a link a creator copies from another row's field, arranging that row's link first (the reported shape needs it; no strategy has it).
 
 Built (2026-11-26): branch `fix/n93-a-branch-reading-the-row-the-subject-links-is-sent-that-row`, head `b0054486c1`, pushed. Red tests, each in `link_field_guard.rs`: A `a_branch_reading_the_row_the_input_names_beside_a_link_refusal_is_sent_the_subjects_own_row` (`746bf7b55b`), B `a_branch_reading_the_subjects_stored_link_beside_a_link_refusal_is_sent_that_row` (`298cd5d7e1`), C `a_branch_beside_a_link_refusal_is_sent_the_subjects_own_row_where_the_link_is_copied_from_another_row` (`f32b46797b`), D `a_branch_reading_two_rows_beside_a_link_refusal_is_sent_the_subjects_own_row` (`be63bb054e`, the reported shape with a second row beside). Fixes: part 2 (`7f63a3f059`), part 1 (`61f63169e8`), part 3 (`b7e0c1e132`), part 4 (`ad3c57b4e6`, several rows). `link_field_guard` 13 of 13; the gate ran every step with exit 0 on the third run and no committed byte row moved; the longest test was 48.5 s. Planned for 0.99.6 or 0.99.7.
+
+## Reported again on 0.99.9: a child under the same parent
+
+Reported 2026-11-28 by a second downstream application, on 0.99.2 and checked on 0.99.9: 5 scenarios
+of one specification are refused `ESS-SYNTH-003` since 0.99.4 (the refusal of `39f1b33bc3`, the
+group 3 fix above) where 0.99.2 wrote them and they failed on the interpreter. The refusal is
+right; the downstream asks for the scenarios.
+
+Shape, generic. A parent entity stores a list of names (slots of a shelf). A creating command
+places a child under a parent and checks, through `when_related: {via: input.parent_id, predicate:
+not exists …}`, that the named slot is one of the parent's own. An updating command moves a child
+to another slot and checks the slot against the parent its stored link names (`when_related: {via:
+parent_id, …}`). Synthesis arranges the guard of the updating command on one parent and creates the
+child through the creating command, which relates the parent its input names to another of its
+inputs (the slot) before storing it; the arrangement then creates the child under the other
+parent, with a slot that is not one of the first parent's, so the setup's own creating command
+answers "unknown slot". Since 0.99.4 synthesis refuses these scenarios instead:
+
+```text
+refused: refusal[ESS-SYNTH-003]: outcome shelves.rack.MoveTag/moved has no scenario `shelves.rack.MoveTag/outcome/moved`
+  no candidate of the 0 tried satisfies `the stored `shelf_id` of the addressed subject: `shelves.rack.PlaceTag` relates the row `input.shelf_id` names to another of its inputs before storing it, and the arrangement created the subject naming another row`
+```
+
+Neutral reproduction on 0.99.9:
+`.engineering/repro/a-synthesized-scenario-whose-setup-its-own-model-refuses-is-written-with-the-rows-its-guards-relate-or-refused-by-synthesis/system.yaml`.
+`ess verify conform synthesize` writes 6 scenarios and refuses 4: `MoveTag/outcome/moved`,
+`MoveTag/outcome/unknown-slot` and the invariant scenario after `MoveTag/moved` as `ESS-SYNTH-003`,
+and `MoveTag/outcome/no-tag` as `ESS-SYNTH-008`. The downstream's 5 scenarios are the same family
+(three branches of the moving command and two invariant scenarios built on them).
+
+Wanted, as a witness: where the creating command checks a value of its input against the row it
+relates (a slot of that parent), the arrangement picks the child's value from the same parent the
+guard was arranged on (the parent's own list), and sends the creating command the parent and a
+value of that parent together. This is the "arranging it is not built" of Left open for the case
+where the creating command's own guard decides whether the value is one of the related row's. No
+format key; a suite of a model that has the shape gains scenarios and keeps the bytes of every
+other scenario.
+
+Acceptance, added: on the reproduction above, the three `ESS-SYNTH-003` refusals become scenarios
+that pass `ess verify conform run --target interpreted`; a model whose creating command's check
+cannot hold for any value of the parent keeps the refusal and names the check.
