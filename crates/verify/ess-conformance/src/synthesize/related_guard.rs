@@ -1073,7 +1073,7 @@ fn addressed_beside_an_earlier_predicate(
 /// Every related row the command's guards read — the `via` naming it and its entity — in the
 /// order first declared: one, but on a command reading several rows through its input (ess/22,
 /// beyond10x/ess#283).
-fn rows(command: &ResolvedCommand) -> Vec<(&ResolvedRelatedVia, &EntityHandle)> {
+pub(super) fn rows(command: &ResolvedCommand) -> Vec<(&ResolvedRelatedVia, &EntityHandle)> {
     let mut rows: Vec<(&ResolvedRelatedVia, &EntityHandle)> = Vec::new();
     for outcome in &command.outcomes {
         if let ResolvedCondition::Related {
@@ -2653,16 +2653,41 @@ pub(super) fn beside_acting(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
 ) -> Option<Result<Setup, RefusalCause>> {
+    beside_acting_on(ir, command, outcome, actors, distinction, None)
+        .map(|arranged| arranged.map(|(setup, _)| setup))
+}
+
+/// [`beside_acting`], the row the sibling acts on steered past the refusals of `steer` where one is
+/// given ([`steered_subject`]), and what the arrangement left in that row.
+fn beside_acting_on(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    steer: Option<&Steer<'_>>,
+) -> Option<Result<(Setup, Addressed), RefusalCause>> {
     let (sibling, named) = acting(command)?;
-    Some(
-        prepare_in(ir, sibling, actors, None, distinction).and_then(|arranged| {
-            let instance = arranged.instance.ok_or_else(unarranged)?;
-            // A complete input-guarded or related-row refusal (ess/34) reads the row back
-            // unchanged, so the state and fields it was left in are kept for its snapshot
-            // (`story:every-witness-reads-back-its-outcome-effect`); every other branch keeps
-            // what it had.
-            let complete = super::guarded_complete(outcome);
-            Ok(Setup {
+    let entity = sibling.subject.as_ref()?.entity.clone();
+    let steered = steer.and_then(|steer| steered_subject(ir, sibling, actors, distinction, steer));
+    let arranged = match steered {
+        Some(steered) => super::related::arrange(ir, sibling, actors, distinction, steered),
+        None => prepare_in(ir, sibling, actors, None, distinction),
+    };
+    Some(arranged.and_then(|arranged| {
+        let instance = arranged.instance.ok_or_else(unarranged)?;
+        let addressed = Addressed {
+            entity,
+            state: arranged.before.clone(),
+            settled: arranged.settled.clone(),
+        };
+        // A complete input-guarded or related-row refusal (ess/34) reads the row back
+        // unchanged, so the state and fields it was left in are kept for its snapshot
+        // (`story:every-witness-reads-back-its-outcome-effect`); every other branch keeps
+        // what it had.
+        let complete = super::guarded_complete(outcome);
+        Ok((
+            Setup {
                 steps: arranged.steps,
                 source: arranged.source,
                 bound: BTreeMap::from([(named.to_owned(), instance)]),
@@ -2673,9 +2698,10 @@ pub(super) fn beside_acting(
                     BTreeMap::new()
                 },
                 ..Setup::none()
-            })
-        }),
-    )
+            },
+            addressed,
+        ))
+    }))
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.
@@ -3665,9 +3691,46 @@ fn on_held(
             tried,
             cut: 0,
         })?;
-    Ok(super::invoke_with(
-        ir, driver, instance, actors, bound, &input,
-    ))
+    // A command reading several rows (beyond10x/ess#283) refuses a missing one at step 4 by its own
+    // `exists: false` branch, which [`selects`] reads over the held row alone: each other row the
+    // chosen input names is arranged first, at a block of its own, and the input names it
+    // ([`row_for`]). `AddCard` pointed at a board for the read of a kept reference was sent a job
+    // no step created.
+    let mut bound = bound.clone();
+    let mut before: Vec<super::ScenarioStep> = Vec::new();
+    let mut source = BTreeSet::new();
+    if several(driver.command) {
+        let others: Vec<_> = rows(driver.command)
+            .into_iter()
+            .filter(|(other, _)| {
+                other.field() != via.field()
+                    && !bound.contains_key(other.field())
+                    && matches!(other, ResolvedRelatedVia::Input { .. })
+                    && input
+                        .get(other.field())
+                        .is_some_and(|sent| !matches!(sent, Node::Null))
+            })
+            .collect();
+        for (index, (other, of)) in others.into_iter().enumerate() {
+            let at = block_start(BESIDE_DRIVEN + index, distinction);
+            let row = row_for(
+                ir,
+                (driver.command, driver.outcome),
+                (other, of),
+                actors,
+                (at, &input),
+            )
+            .ok_or_else(unarranged)?;
+            bound.insert(other.field().to_owned(), row.instance.clone());
+            before.extend(row.steps.iter().cloned());
+            source.extend(row.source);
+        }
+    }
+    let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
+    before.append(&mut invocation.steps);
+    invocation.steps = before;
+    invocation.source.extend(source);
+    Ok(invocation)
 }
 
 /// The inputs a run deciding its related guards on the arranged `row` is tried with: the caller's,
@@ -4783,10 +4846,15 @@ fn link_comparisons(
 }
 
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
-#[allow(
-    clippy::too_many_lines,
-    reason = "one arrangement, read in the order the precedence plan answers its branches"
-)]
+///
+/// Under the one rule (`ess/27`) the addressed row's `when_subject:` refusals answer at step 3,
+/// before any related row is read, so a branch arranged here is sent only where none of them is
+/// selected. The plain arrangement of the addressed row is kept where it refutes every one of them.
+/// Where one holds there, or is not decided, the row is arranged as the subject-fact family arranges
+/// the command's accepting branch, and the input fields those refusals read are sent as that
+/// arrangement chose them ([`steered_subject`]). Where a refusal still holds, the branch is refused
+/// naming it, never written with a send the refusal answers: `MovePointer/moved` beside `moved-since:
+/// target != input.expected` was sent `expected` other than the stored `target`.
 fn arranged_at(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -4800,6 +4868,367 @@ fn arranged_at(
     if stored::field(command).is_some() {
         return stored::arranged_at(models, command, outcome, actors, distinction, goal);
     }
+    let mut refusals = subject_refusals(ir, command, outcome);
+    // A refusal comparing the subject's stored link with the input the related row is read
+    // through is met by the arrangement itself, which sends the row the link names (0.99.7).
+    if read(command).is_some_and(|(via, entity)| {
+        linked_through(ir, command, outcome, (via.field(), entity)).is_some()
+    }) {
+        refusals.retain(|refusal| {
+            !matches!(
+                &refusal.condition,
+                ResolvedCondition::SubjectPredicate { predicate, input: None }
+                    if compares_a_link(predicate)
+            )
+        });
+    }
+    let plain = arranged_at_on(
+        models,
+        command,
+        outcome,
+        actors,
+        (distinction, goal),
+        around,
+        None,
+    );
+    if refusals.is_empty() {
+        return plain.map(|(found, _)| found);
+    }
+    let ((setup, input, lonely), addressed) = plain?;
+    let Some(addressed) = addressed else {
+        return Ok((setup, input, lonely));
+    };
+    let truth = addressed.answers(ir, command, &refusals, &input);
+    if truth == Truth::False {
+        return Ok((setup, input, lonely));
+    }
+    if let Ok(((again, sent, alone), Some(steered))) = arranged_at_on(
+        models,
+        command,
+        outcome,
+        actors,
+        (distinction, goal),
+        around,
+        Some(&Steer {
+            refusals: &refusals,
+        }),
+    ) {
+        if steered.answers(ir, command, &refusals, &sent) != Truth::True {
+            return Ok((again, sent, alone));
+        }
+    }
+    if truth == Truth::Unknown {
+        return Ok((setup, input, lonely));
+    }
+    let first = refusals
+        .iter()
+        .find(|refusal| addressed.answers(ir, command, &[*refusal], &input) == Truth::True)
+        .map_or_else(String::new, |refusal| refusal.name.to_string());
+    Err(RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "an addressed row of `{}` and an input on which `{}/{first}`, answered before the \
+             related row is read, is not selected, beside the row the scenario is arranged around",
+            addressed.entity.name(),
+            command.name,
+        ),
+        tried: 2,
+        cut: 0,
+    })
+}
+
+/// The `when_subject:` refusals of `command` the precedence plan reads before `outcome`: the
+/// addressed row's stored fields and held state, at step 3 under the one rule (`ess/27`).
+fn subject_refusals<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<&'c ResolvedOutcome> {
+    super::precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .filter(|branch| {
+            branch.error.is_some()
+                && matches!(
+                    branch.condition,
+                    ResolvedCondition::SubjectPredicate { .. }
+                        | ResolvedCondition::SubjectField { .. }
+                        | ResolvedCondition::SubjectState { .. }
+                )
+        })
+        .collect()
+}
+
+/// Whether `predicate` refuses wherever a stored link differs from an input: `<link> !=
+/// input.<field>`, alone or as a disjunct ([`link_comparisons`]).
+fn compares_a_link(predicate: &Predicate) -> bool {
+    match predicate {
+        Predicate::Compare {
+            left: ess_primitives::predicate::Operand::Fact(left),
+            op: ess_primitives::predicate::CompareOp::Ne,
+            right: ess_primitives::predicate::Operand::Fact(right),
+            ..
+        } => [(left, right), (right, left)]
+            .into_iter()
+            .any(|(stored, sent)| {
+                stored.segments().len() == 1
+                    && stored.namespace() != ess_domain::command::subject_fact::INPUT_NAMESPACE
+                    && sent.segments().len() == 2
+                    && sent.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+            }),
+        Predicate::Any(children) => children.iter().any(compares_a_link),
+        _ => false,
+    }
+}
+
+/// An arrangement's setup, input and whether its row is alone of its entity, with what it left in
+/// the row the command addresses, where it arranged one ([`arranged_at_on`]).
+type Arranged = ((Setup, BTreeMap<String, Node>, bool), Option<Addressed>);
+
+/// What an arrangement left in the row the command addresses: its entity, the state it rests in
+/// and the fields the branches it ran said.
+struct Addressed {
+    entity: EntityHandle,
+    state: Option<super::StateName>,
+    settled: BTreeMap<String, super::Determined>,
+}
+
+impl Addressed {
+    /// Whether one of `refusals` is selected on this row for the send `input`: `True` where one
+    /// is, `False` where every one is refuted, `Unknown` where one is not decided.
+    fn answers(
+        &self,
+        ir: &EssIr,
+        command: &ResolvedCommand,
+        refusals: &[&ResolvedOutcome],
+        input: &BTreeMap<String, Node>,
+    ) -> Truth {
+        let facts = flatten(ir, command, input).ok();
+        let mut found = Truth::False;
+        for refusal in refusals {
+            let mut truth = Truth::True;
+            match &self.state {
+                Some(state) if !super::admits_held_state(&refusal.condition, state) => continue,
+                None if matches!(refusal.condition, ResolvedCondition::SubjectState { .. }) => {
+                    truth = Truth::Unknown;
+                }
+                _ => {}
+            }
+            if let Some(predicate) = subject_fact::stored(&refusal.condition) {
+                match subject_fact::guard_truth_with(
+                    ir,
+                    &self.entity,
+                    &self.settled,
+                    &BTreeSet::new(),
+                    self.state.as_ref(),
+                    &predicate,
+                    Some((command, input)),
+                ) {
+                    Truth::False => continue,
+                    Truth::Unknown => truth = Truth::Unknown,
+                    Truth::True => {}
+                }
+            }
+            let guard = match &refusal.condition {
+                ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+                ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
+                _ => None,
+            };
+            if let Some(guard) = guard {
+                match facts
+                    .as_ref()
+                    .and_then(|facts| decides(facts, &[guard], true).ok())
+                {
+                    Some(false) => continue,
+                    Some(true) => {}
+                    None => truth = Truth::Unknown,
+                }
+            }
+            if truth == Truth::True {
+                return Truth::True;
+            }
+            found = Truth::Unknown;
+        }
+        found
+    }
+}
+
+/// The `when_subject:` refusals [`arranged_at`] holds an arrangement to: the addressed row is
+/// steered away from those that read no input ([`steered_subject`]), and the input fields the
+/// others read are sent where none of them is selected on that row ([`past_refusals`]).
+struct Steer<'r> {
+    refusals: &'r [&'r ResolvedOutcome],
+}
+
+impl Steer<'_> {
+    /// The stored-field predicate of each refusal, where it reads the input or not as `reading`
+    /// says.
+    fn predicates(&self, ir: &EssIr, entity: &EntityHandle, reading: bool) -> Vec<Predicate> {
+        self.refusals
+            .iter()
+            .filter_map(|refusal| subject_fact::stored(&refusal.condition))
+            .filter(|predicate| subject_fact::reads_input(ir, entity, predicate) == reading)
+            .collect()
+    }
+
+    /// The input fields the refusals read: through `input.` in their stored-field predicate, or in
+    /// their input guard.
+    fn fields(&self) -> BTreeSet<String> {
+        let mut read = BTreeSet::new();
+        for refusal in self.refusals {
+            for path in subject_fact::stored(&refusal.condition)
+                .iter()
+                .flat_map(Predicate::fact_paths)
+            {
+                if let [root, field, ..] = path.segments() {
+                    if root == ess_domain::command::subject_fact::INPUT_NAMESPACE {
+                        read.insert(field.clone());
+                    }
+                }
+            }
+            let guard = match &refusal.condition {
+                ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+                ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
+                _ => None,
+            };
+            for path in guard.iter().flat_map(|guard| guard.fact_paths()) {
+                if let Some(field) = guard_input(path) {
+                    read.insert(field.to_owned());
+                }
+            }
+        }
+        read
+    }
+}
+
+/// The addressed row `branch` acts on, arranged so that no refusal of `steer` reading only the
+/// row's stored fields holds there: the row searched for, its creators steered toward the
+/// negation of each ([`super::steered_row`]), in the first state `branch` acts from where one is
+/// found. The setup holds no `{related: …}` row yet: the caller arranges those, as for the plain
+/// [`super::prepare_subject`]. `None` for a branch creating its row, and where no bounded search
+/// finds one.
+fn steered_subject(
+    ir: &EssIr,
+    branch: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    steer: &Steer<'_>,
+) -> Option<Setup> {
+    let subject = branch.subject.as_ref()?;
+    let lifecycle = &ir.entity(&subject.entity).lifecycle;
+    let (states, after): (Vec<&super::StateName>, Option<&super::StateName>) = match &subject.effect
+    {
+        ResolvedEffect::Creates => return None,
+        ResolvedEffect::Moves { transition } => {
+            (transition.from.iter().collect(), Some(&transition.to))
+        }
+        ResolvedEffect::Updates | ResolvedEffect::Preserves => {
+            (vec![&lifecycle.initial], Some(&lifecycle.initial))
+        }
+        ResolvedEffect::Deletes => (vec![&lifecycle.initial], None),
+    };
+    let steering: Vec<Predicate> = steer
+        .predicates(ir, &subject.entity, false)
+        .into_iter()
+        .map(|predicate| Predicate::Not(Box::new(predicate)))
+        .collect();
+    if steering.is_empty() {
+        return None;
+    }
+    states.into_iter().find_map(|state| {
+        let arrangement =
+            super::steered_row(ir, &subject.entity, state, actors, distinction, &steering).ok()?;
+        Some(Setup {
+            related_row: BTreeMap::new(),
+            steps: arrangement.steps.into(),
+            instance: Some(arrangement.instance),
+            bound: BTreeMap::new(),
+            source: arrangement.source,
+            after: after.cloned(),
+            before: Some(arrangement.state),
+            settled: arrangement.settled,
+            unobserved: arrangement.unobserved,
+        })
+    })
+}
+
+/// `input`, its fields the refusals of `steer` read sent so that none of them is selected on the
+/// addressed row `addressed` holds: each comparison of a refusal with the input grounded on the
+/// values the row holds ([`subject_fact::grounded`]) and searched beside the command's input
+/// guards, and the first candidate taken whose fields leave every refusal refuted and, where the
+/// related row `row` is arranged, `outcome` selected on it. `input` itself where it already
+/// leaves every refusal refuted; `None` where no candidate does.
+fn past_refusals(
+    ir: &EssIr,
+    (command, outcome, entity): (&ResolvedCommand, &ResolvedOutcome, &EntityHandle),
+    (steer, addressed): (&Steer<'_>, &Addressed),
+    row: Option<&Arrangement>,
+    (input, distinction): (&BTreeMap<String, Node>, Distinction),
+) -> Option<BTreeMap<String, Node>> {
+    if addressed.answers(ir, command, steer.refusals, input) == Truth::False {
+        return Some(input.clone());
+    }
+    // A field naming a row the command reads is the arrangement's to send.
+    let mut fields = steer.fields();
+    for (via, _) in vias(command) {
+        fields.remove(via);
+    }
+    let grounded = subject_fact::grounded(
+        ir,
+        &addressed.entity,
+        &addressed.settled,
+        &steer.predicates(ir, &addressed.entity, true),
+    );
+    let mut guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
+    guards.extend(grounded.iter());
+    let mut tried = candidates(ir, command, &guards, distinction).unwrap_or_default();
+    tried.extend(candidates(ir, command, &guards, retry(distinction)).unwrap_or_default());
+    tried.into_iter().find_map(|candidate| {
+        let mut next = input.clone();
+        for field in &fields {
+            match candidate.get(field) {
+                Some(value) => next.insert(field.clone(), value.clone()),
+                None => next.remove(field),
+            };
+        }
+        (addressed.answers(ir, command, steer.refusals, &next) == Truth::False
+            && row.is_none_or(|row| chooses(ir, command, outcome, entity, (row, None), &next)))
+        .then_some(next)
+    })
+}
+
+/// [`past_refusals`] where a `steer` is given and the arrangement knows the addressed row; `input`
+/// as it is otherwise. Refused where no candidate leaves every refusal refuted.
+fn steered_past(
+    ir: &EssIr,
+    branch: (&ResolvedCommand, &ResolvedOutcome, &EntityHandle),
+    (steer, addressed): (Option<&Steer<'_>>, Option<&Addressed>),
+    row: Option<&Arrangement>,
+    (input, distinction): (BTreeMap<String, Node>, Distinction),
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    match (steer, addressed) {
+        (Some(steer), Some(addressed)) => {
+            past_refusals(ir, branch, (steer, addressed), row, (&input, distinction))
+                .ok_or_else(unarranged)
+        }
+        _ => Ok(input),
+    }
+}
+
+/// [`arranged_at`] with the addressed row steered past the refusals of `steer`, where one is
+/// given, and what the arrangement left in that row.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arrangement, read in the order the precedence plan answers its branches"
+)]
+fn arranged_at_on(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, goal): (Distinction, Option<&Goal>),
+    around: Option<Around<'_>>,
+    steer: Option<&Steer<'_>>,
+) -> Result<Arranged, RefusalCause> {
+    let ir = models.arrangement;
     let others = around.map_or(&[][..], |around| around.rows);
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let field = via.field();
@@ -4811,19 +5240,20 @@ fn arranged_at(
     // guards read the row through: that row is the one the link names, so it is arranged through
     // the link and the input sent naming it, beside the rows `others` names.
     if let Some(link) = linked_through(ir, command, outcome, (field, entity)) {
-        let (mut setup, input, lonely) = stored::arranged_through(
+        let ((mut setup, input, lonely), addressed) = stored::arranged_through_on(
             models,
             command,
             outcome,
             actors,
             (distinction, goal),
             (link, entity),
+            steer,
         )?;
         place_beside(ir, outcome, &mut setup, others);
         prepend_beside(&mut setup, others);
-        return Ok((setup, input, lonely));
+        return Ok(((setup, input, lonely), addressed));
     }
-    let mut setup = own_arrangement(
+    let (mut setup, addressed) = own_arrangement_on(
         ir,
         command,
         outcome,
@@ -4831,6 +5261,7 @@ fn arranged_at(
         distinction,
         (field, entity),
         others,
+        steer,
     )?;
     let names_subject = outcome.subject.as_ref().is_some_and(|subject| {
         matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
@@ -4917,7 +5348,13 @@ fn arranged_at(
         models.mark(super::caller::InvocationPhase::Arrange, &mut sends);
         send_each_without_row(ir, command, actors, &setup.bound, each, &mut sends);
         models.mark(super::caller::InvocationPhase::Act, &mut sends);
-        input
+        steered_past(
+            ir,
+            (command, outcome, entity),
+            (steer, addressed.as_ref()),
+            None,
+            (input, distinction),
+        )?
     } else {
         // The owners the branch's own arrangement already names for a link input — its subject,
         // or the subject's owner — are the ones it is sent naming: the related row is arranged
@@ -4964,6 +5401,13 @@ fn arranged_at(
             around,
             (&pinned, &setup.steps, &fixed),
         )?;
+        let input = steered_past(
+            ir,
+            (command, outcome, entity),
+            (steer, addressed.as_ref()),
+            Some(&row),
+            (input, distinction),
+        )?;
         let owners = subject_fact::bind_pinned(
             ir, command, outcome, entity, actors, &mut row, &input, &pinned,
         )?;
@@ -4994,7 +5438,7 @@ fn arranged_at(
     setup.steps.append(&mut sends);
     setup.source.insert(entity_ref(entity));
     prepend_beside(&mut setup, others);
-    Ok((setup, input, lonely))
+    Ok(((setup, input, lonely), addressed))
 }
 
 /// The input field naming `outcome`'s subject, with the struct identity the arrangement created
@@ -5032,6 +5476,33 @@ fn own_arrangement(
     guarded: super::related::Guarded<'_>,
     others: &[Beside<'_>],
 ) -> Result<Setup, RefusalCause> {
+    own_arrangement_on(
+        ir,
+        command,
+        outcome,
+        actors,
+        distinction,
+        guarded,
+        others,
+        None,
+    )
+    .map(|(setup, _)| setup)
+}
+
+/// [`own_arrangement`], the addressed row steered past the refusals of `steer` where one is given
+/// ([`steered_subject`]), and what the arrangement left in the row the command addresses, where it
+/// arranged one.
+#[allow(clippy::too_many_arguments)]
+fn own_arrangement_on(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    guarded: super::related::Guarded<'_>,
+    others: &[Beside<'_>],
+    steer: Option<&Steer<'_>>,
+) -> Result<(Setup, Option<Addressed>), RefusalCause> {
     // The rows arranged beside the guarded one (beyond10x/ess#283) are the guards' to arrange too.
     let each: Vec<super::related::Guarded<'_>> = std::iter::once(guarded)
         .chain(others.iter().map(|other| (other.via.field(), other.entity)))
@@ -5043,9 +5514,13 @@ fn own_arrangement(
             super::related::arrange_except_each(ir, outcome, actors, distinction, setup, &each)
         }
     };
-    let setup = match (&outcome.subject, acting(command)) {
-        (None, Some(_)) => beside_acting(ir, command, outcome, actors, distinction)
-            .expect("a sibling acts on an existing row")?,
+    Ok(match (&outcome.subject, acting(command)) {
+        (None, Some(_)) => {
+            let (setup, addressed) =
+                beside_acting_on(ir, command, outcome, actors, distinction, steer)
+                    .expect("a sibling acts on an existing row")?;
+            (setup, Some(addressed))
+        }
         // A creation owned by the related row: the row is arranged below, once, as the related
         // row, and the owner field points at it — or, on the `exists: false` branch, at none.
         (Some(subject), _) if owner_is_related(ir, command, outcome) => {
@@ -5053,17 +5528,32 @@ fn own_arrangement(
                 .into
                 .as_ref()
                 .unwrap_or(&ir.entity(&subject.entity).lifecycle.initial);
-            except(Setup {
+            let setup = except(Setup {
                 after: Some(born.clone()),
                 ..Setup::none()
-            })?
+            })?;
+            (setup, None)
         }
         _ => {
-            let setup = super::prepare_subject(ir, outcome, actors, None, distinction)?;
-            except(setup)?
+            let existing = outcome.subject.as_ref().filter(|subject| {
+                matches!(subject.instance, ResolvedInstance::Supplied { .. })
+                    && !matches!(subject.effect, ResolvedEffect::Creates)
+            });
+            let steered = steer
+                .zip(existing)
+                .and_then(|(steer, _)| steered_subject(ir, outcome, actors, distinction, steer));
+            let setup = match steered {
+                Some(steered) => steered,
+                None => super::prepare_subject(ir, outcome, actors, None, distinction)?,
+            };
+            let addressed = existing.map(|subject| Addressed {
+                entity: subject.entity.clone(),
+                state: setup.before.clone(),
+                settled: setup.settled.clone(),
+            });
+            (except(setup)?, addressed)
         }
-    };
-    Ok(setup)
+    })
 }
 
 /// The rows `others` names, bound to the inputs naming them and their values the branch copies

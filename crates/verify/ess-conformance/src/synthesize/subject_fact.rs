@@ -7914,6 +7914,12 @@ pub(super) fn step(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Arrangement> {
     let inputs = inputs_for(ir, driver.command, entity, arrangement).ok()?;
+    // A command that refuses a missing related row its input names (`when_related: {via:
+    // input.by, exists: false}`) answers that refusal, at step 4, for the plain witness, which
+    // names no row: the row is arranged first and the input pointed at it, as the search does
+    // ([`selected_successors`]). `Claim` driving an item to `Claimed` for `Withdraw`'s held-state
+    // refusal was sent a claimer nobody registered.
+    let related = refuses_missing_related(driver.command);
     inputs.into_iter().find_map(|input| {
         selects(
             ir,
@@ -7925,20 +7931,45 @@ pub(super) fn step(
         )
         .ok()
         .flatten()
-        .filter(|branch| branch.name == driver.outcome.name)
-        .map(|_| {
-            advanced(
+        .filter(|branch| branch.name == driver.outcome.name)?;
+        if related {
+            return related_advanced(
                 ir,
-                driver,
+                (entity, driver),
                 arrangement,
                 actors,
                 &input,
                 Vec::new(),
-                false,
                 &Follow::default(),
+            );
+        }
+        Some(advanced(
+            ir,
+            driver,
+            arrangement,
+            actors,
+            &input,
+            Vec::new(),
+            false,
+            &Follow::default(),
+        ))
+    })
+}
+
+/// Whether `command` refuses a missing row an input names (`when_related: {via: input.<field>,
+/// exists: false}`).
+fn refuses_missing_related(command: &ResolvedCommand) -> bool {
+    super::related_guard::uses(command)
+        && command.outcomes.iter().any(|outcome| {
+            matches!(
+                &outcome.condition,
+                ResolvedCondition::Related {
+                    via: ess_compiler::ir::ResolvedRelatedVia::Input { .. },
+                    test: ess_compiler::ir::ResolvedRelatedTest::Absent,
+                    ..
+                }
             )
         })
-    })
 }
 
 /// A row resting in `target`, reached through branches every row on the way selects.

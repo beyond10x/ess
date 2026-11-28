@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.99.11] — 2026-11-28
+
+### Fixed
+
+- `ess verify conform synthesize` sends the scenarios of a `when_related:` guard on a row that no `when_subject:` refusal answered before it selects. On a command such as one refusing `kind == Fixed` on the addressed row before reading the row `input.by` names, the accepting branch and the `exists: false` refusal were sent a row the subject refusal answered for, so the scenario expected what the model does not oblige. The same held where the related row is arranged through the subject's stored link, beside a second refusal such as `kind != Worker`, since 0.99.7. Where no arranged row escapes every such refusal, the branch is refused by name rather than written.
+- `ess verify conform synthesize` sends a step of an arrangement that drives a row through a command reading a related row (`when_related: {via: input.by, exists: false}`) with an identity a row carries. A held state reached through such a command, and a row placed for a kept reference's check on a command reading several related rows, were sent identities no row carried, and the step was refused.
+- `ess verify conform synthesize` expects a value a branch copies from a related row (`{related: {via: input.sample_id, field: text}}`) beside a row-set guard to be the value of the row the command is sent. It expected the value of another row of that entity, created earlier in the scenario.
+
+A pinned suite of such a model moves when it is synthesized again. The fix changes no format key.
+
 ## [0.99.10] — 2026-11-28
 
 ### Fixed
